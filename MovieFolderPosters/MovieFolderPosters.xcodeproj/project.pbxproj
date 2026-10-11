@@ -6,28 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXCopyFilesBuildPhase section */
-		F1000000000000000000000C = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (F10000000000000000000008, );
-			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXBuildFile section */
-		F10000000000000000000007 = {
-			isa = PBXBuildFile;
-			fileRef = F10000000000000000000004;
-		};
-		F10000000000000000000008 = {
-			isa = PBXBuildFile;
-			fileRef = F10000000000000000000002;
-			settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); };
-		};
+		F10000000000000000000007 /* FinderSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000004 /* FinderSync.swift */; };
+		F10000000000000000000008 /* MovieFolderPostersFinder.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* MovieFolderPostersFinder.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F40000000000000000000001 = {isa = PBXBuildFile; productRef = F40000000000000000000003; };
+		F40000000000000000000002 = {isa = PBXBuildFile; productRef = F40000000000000000000004; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,43 +28,37 @@
 			remoteGlobalIDString = 4EA84238307BE08A005A22E4;
 			remoteInfo = MovieFolderPosters;
 		};
-		F1000000000000000000000D = {
+		F1000000000000000000000D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 4EA84231307BE08A005A22E4;
+			containerPortal = 4EA84231307BE08A005A22E4 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = F10000000000000000000001;
 			remoteInfo = MovieFolderPostersFinder;
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		F1000000000000000000000C /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F10000000000000000000008 /* MovieFolderPostersFinder.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		4EA84239307BE08A005A22E4 /* MovieFolderPosters.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MovieFolderPosters.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4EA84247307BE08B005A22E4 /* MovieFolderPostersTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MovieFolderPostersTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4EA84251307BE08B005A22E4 /* MovieFolderPostersUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MovieFolderPostersUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F10000000000000000000002 = {
-			isa = PBXFileReference;
-			explicitFileType = wrapper.app-extension;
-			path = MovieFolderPostersFinder.appex;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		F10000000000000000000004 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = FinderSync.swift;
-			sourceTree = "<group>";
-		};
-		F10000000000000000000005 = {
-			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
-			path = Info.plist;
-			sourceTree = "<group>";
-		};
-		F10000000000000000000006 = {
-			isa = PBXFileReference;
-			lastKnownFileType = text.plist.entitlements;
-			path = MovieFolderPostersFinder.entitlements;
-			sourceTree = "<group>";
-		};
+		F10000000000000000000002 /* MovieFolderPostersFinder.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = MovieFolderPostersFinder.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10000000000000000000004 /* FinderSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSync.swift; sourceTree = "<group>"; };
+		F10000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MovieFolderPostersFinder.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -107,6 +84,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F40000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,6 +92,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F40000000000000000000002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -124,10 +103,11 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F1000000000000000000000A = {
+		F1000000000000000000000A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -137,7 +117,7 @@
 			isa = PBXGroup;
 			children = (
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
-				F10000000000000000000003,
+				F10000000000000000000003 /* MovieFolderPostersFinder */,
 				4EA8424A307BE08B005A22E4 /* MovieFolderPostersTests */,
 				4EA84254307BE08B005A22E4 /* MovieFolderPostersUITests */,
 				4EA8423A307BE08A005A22E4 /* Products */,
@@ -148,16 +128,20 @@
 			isa = PBXGroup;
 			children = (
 				4EA84239307BE08A005A22E4 /* MovieFolderPosters.app */,
-				F10000000000000000000002,
+				F10000000000000000000002 /* MovieFolderPostersFinder.appex */,
 				4EA84247307BE08B005A22E4 /* MovieFolderPostersTests.xctest */,
 				4EA84251307BE08B005A22E4 /* MovieFolderPostersUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		F10000000000000000000003 = {
+		F10000000000000000000003 /* MovieFolderPostersFinder */ = {
 			isa = PBXGroup;
-			children = (F10000000000000000000004, F10000000000000000000005, F10000000000000000000006, );
+			children = (
+				F10000000000000000000004 /* FinderSync.swift */,
+				F10000000000000000000005 /* Info.plist */,
+				F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */,
+			);
 			path = MovieFolderPostersFinder;
 			sourceTree = "<group>";
 		};
@@ -171,18 +155,19 @@
 				4EA84235307BE08A005A22E4 /* Sources */,
 				4EA84236307BE08A005A22E4 /* Frameworks */,
 				4EA84237307BE08A005A22E4 /* Resources */,
-				F1000000000000000000000C,
+				F1000000000000000000000C /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				F1000000000000000000000E,
+				F1000000000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
 			);
 			name = MovieFolderPosters;
 			packageProductDependencies = (
+				F40000000000000000000003,
 			);
 			productName = MovieFolderPosters;
 			productReference = 4EA84239307BE08A005A22E4 /* MovieFolderPosters.app */;
@@ -206,6 +191,7 @@
 			);
 			name = MovieFolderPostersTests;
 			packageProductDependencies = (
+				F40000000000000000000004,
 			);
 			productName = MovieFolderPostersTests;
 			productReference = 4EA84247307BE08B005A22E4 /* MovieFolderPostersTests.xctest */;
@@ -234,18 +220,44 @@
 			productReference = 4EA84251307BE08B005A22E4 /* MovieFolderPostersUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		F10000000000000000000001 = {
+		F10000000000000000000001 /* MovieFolderPostersFinder */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F10000000000000000000011;
-			buildPhases = (F10000000000000000000009, F1000000000000000000000A, F1000000000000000000000B, );
-			buildRules = ();
-			dependencies = ();
+			buildConfigurationList = F10000000000000000000011 /* Build configuration list for PBXNativeTarget "MovieFolderPostersFinder" */;
+			buildPhases = (
+				F10000000000000000000009 /* Sources */,
+				F1000000000000000000000A /* Frameworks */,
+				F1000000000000000000000B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
 			name = MovieFolderPostersFinder;
 			productName = MovieFolderPostersFinder;
-			productReference = F10000000000000000000002;
+			productReference = F10000000000000000000002 /* MovieFolderPostersFinder.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F40000000000000000000005 = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/Network;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F40000000000000000000003 = {
+			isa = XCSwiftPackageProductDependency;
+			package = F40000000000000000000005;
+			productName = Network;
+		};
+		F40000000000000000000004 = {
+			isa = XCSwiftPackageProductDependency;
+			package = F40000000000000000000005;
+			productName = Network;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXProject section */
 		4EA84231307BE08A005A22E4 /* Project object */ = {
@@ -279,10 +291,11 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4EA8423A307BE08A005A22E4 /* Products */;
+			packageReferences = (F40000000000000000000005, );
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				F10000000000000000000001,
+				F10000000000000000000001 /* MovieFolderPostersFinder */,
 				4EA84238307BE08A005A22E4 /* MovieFolderPosters */,
 				4EA84246307BE08B005A22E4 /* MovieFolderPostersTests */,
 				4EA84250307BE08B005A22E4 /* MovieFolderPostersUITests */,
@@ -312,10 +325,11 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F1000000000000000000000B = {
+		F1000000000000000000000B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
@@ -342,10 +356,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F10000000000000000000009 = {
+		F10000000000000000000009 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (F10000000000000000000007, );
+			files = (
+				F10000000000000000000007 /* FinderSync.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
@@ -361,10 +377,10 @@
 			target = 4EA84238307BE08A005A22E4 /* MovieFolderPosters */;
 			targetProxy = 4EA84252307BE08B005A22E4 /* PBXContainerItemProxy */;
 		};
-		F1000000000000000000000E = {
+		F1000000000000000000000E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = F10000000000000000000001;
-			targetProxy = F1000000000000000000000D;
+			target = F10000000000000000000001 /* MovieFolderPostersFinder */;
+			targetProxy = F1000000000000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -501,6 +517,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
@@ -518,7 +535,8 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Debug;
 		};
@@ -534,6 +552,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
@@ -551,7 +570,8 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Release;
 		};
@@ -571,7 +591,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MovieFolderPosters.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MovieFolderPosters";
 			};
 			name = Debug;
@@ -592,7 +613,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MovieFolderPosters.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MovieFolderPosters";
 			};
 			name = Release;
@@ -611,7 +633,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_TARGET_NAME = MovieFolderPosters;
 			};
 			name = Debug;
@@ -630,12 +653,13 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_TARGET_NAME = MovieFolderPosters;
 			};
 			name = Release;
 		};
-		F1000000000000000000000F = {
+		F1000000000000000000000F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -647,16 +671,21 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MovieFolderPostersFinder/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@executable_path/../../../../Frameworks", );
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dag.fikios.MovieFolderPosters.Finder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Debug;
 		};
-		F10000000000000000000010 = {
+		F10000000000000000000010 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -668,12 +697,17 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MovieFolderPostersFinder/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@executable_path/../../../../Frameworks", );
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dag.fikios.MovieFolderPosters.Finder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Release;
 		};
@@ -716,9 +750,12 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F10000000000000000000011 = {
+		F10000000000000000000011 /* Build configuration list for PBXNativeTarget "MovieFolderPostersFinder" */ = {
 			isa = XCConfigurationList;
-			buildConfigurations = (F1000000000000000000000F, F10000000000000000000010, );
+			buildConfigurations = (
+				F1000000000000000000000F /* Debug */,
+				F10000000000000000000010 /* Release */,
+			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};

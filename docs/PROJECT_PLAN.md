@@ -34,7 +34,7 @@ Owns requests, response decoding, poster downloads, and network error handling.
 Returns data without writing files.
 Does not own movie matching decisions, credential storage, or UI.
 
-### File
+### FileSystem
 
 Owns filesystem authorization, security-scoped access, directory enumeration,
 file operations, and native custom folder icon operations.
@@ -44,7 +44,7 @@ Does not perform networking or decide which movie matches a folder.
 
 Owns durable record storage, retrieval, schema changes, and storage integrity.
 The application owns cache expiration, retry, and processing policies.
-Downloaded image files are managed through File.
+Downloaded image files are managed through FileSystem.
 
 ### Application-specific behavior
 
@@ -175,6 +175,8 @@ Supported behavior is deterministic; uncertain names are not silently guessed.
 
 ## Phase 4 — Network service and conservative matching
 
+Status: completed on 2026-10-11 on `feature/tmdb-matching`. Independent review: PASS.
+
 ### 4.1 Introduce Network
 
 Implement the minimum TMDb search and poster-download APIs.
@@ -207,6 +209,25 @@ Acceptance:
 Ambiguous results remain unresolved.
 The first search result is not automatically accepted.
 
+Implementation:
+
+- Added the local Network SPM service with injectable transport, TMDb decoding, and in-memory poster retrieval.
+- Credentials are injected in memory; no secret is saved, logged, or committed. Persistent credential UI/storage
+  remains configuration work. This phase was tested without live credentials or live TMDb requests.
+- Added application-specific exact normalized title/original-title and exact optional-year matching.
+- Incomplete searches and ties remain unresolved; missing posters do not break identity ties.
+- Network's 39 cases and matching's 25 cases pass. Added a reproducible application matching harness.
+- Reviewed and verified URLSession cleanup, cancellation, redirect rejection, image validation, and pagination.
+- Linked Network to the host and unit tests, enabled host outgoing-network sandbox access, and compiled with Swift 6.
+- Signed normal and test builds passed; final signature and outgoing-network entitlement checks passed.
+- No Finder processing, persistent caching, filesystem writes, or Phase 5 work was added.
+
+See [Network and matching](NETWORK_MATCHING.md) for APIs, rules, verification, and limits.
+
+Integration note: Phase 2 is committed separately on `feature/folder-access` (e53ab10), and Phase 3 on
+`feature/release-name-parser` (519879a). This feature was created from develop. Integration of those branches
+remains separate work; this phase does not merge or push them.
+
 ## Phase 5 — Persistence and automatic processing
 
 ### 5.1 Introduce Persistence
@@ -230,7 +251,7 @@ Multiple-process access requirements are addressed explicitly.
 Finder observation → enumerate immediate children → skip unchanged processed folders
 → parse → match → download → assign icon → persist result.
 
-The application coordinates Network, File, and Persistence.
+The application coordinates Network, FileSystem, and Persistence.
 Share necessary application-specific processing source with the extension.
 
 TDD:
