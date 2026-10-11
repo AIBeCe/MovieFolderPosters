@@ -10,7 +10,7 @@
 - Never rename, move, delete, or modify movie contents.
 - Custom-icon filesystem metadata changes require an approved implementation point.
 - Do not add daemons, launch agents, watchers, polling, or additional services without explicit approval.
-- The current authorization covers only the minimum Finder Sync lifecycle probe.
+- Completed scope includes Finder lifecycle validation and the isolated Phase 2 local-poster proof.
 - Creating or approving the project plan does not authorize further product implementation.
 
 ## Proposal before implementation
@@ -68,6 +68,7 @@
 - Use release/* and hotfix/* only for explicitly authorized release or hotfix work.
 - Do not implement directly on main or develop.
 - Do not reset history, discard changes, merge, push, or publish without explicit authorization.
+- Automatically commit approved work after relevant verification and required review pass.
 - Use focused commits; exclude signing secrets, user-specific Xcode data, and build artifacts.
 - The initial lifecycle probe uses feature/finder-lifecycle.
 
@@ -76,6 +77,7 @@
 - Keep Swift source lines at or below 120 characters.
 - Prefer readable single lines up to that limit; avoid unnecessarily narrow wrapping.
 - Use programmatic AppKit for new UI.
+- Prefer Swift 6 language mode and complete concurrency checking.
 - Keep UI work on the main actor and callbacks responsive.
 - Perform networking and potentially expensive filesystem work away from UI callbacks.
 - Bound concurrent work, deduplicate requests, and handle cancellation.

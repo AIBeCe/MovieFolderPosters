@@ -67,7 +67,7 @@ public struct FileSystemService: Sendable {
         }
     }
 
-    private func validateDirectory(_ directory: URL) throws {
+    func validateDirectory(_ directory: URL) throws {
         guard directory.isFileURL else {
             throw DirectoryAccessError.invalidDirectory
         }

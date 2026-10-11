@@ -32,6 +32,7 @@
 		F20000000000000000000002 = {isa = PBXBuildFile; productRef = F20000000000000000000004; };
 		F20000000000000000000006 = {isa = PBXBuildFile; fileRef = F20000000000000000000005; };
 		F20000000000000000000007 = {isa = PBXBuildFile; fileRef = F20000000000000000000005; };
+		F2000000000000000000000A = {isa = PBXBuildFile; fileRef = F20000000000000000000009; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,6 +88,7 @@
 			sourceTree = "<group>";
 		};
 		F20000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/Phase2Configuration.swift; sourceTree = "<group>"; };
+		F20000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = image.png; path = TestPoster.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -164,7 +166,7 @@
 		};
 		F10000000000000000000003 = {
 			isa = PBXGroup;
-			children = (F10000000000000000000004, F10000000000000000000005, F10000000000000000000006, );
+			children = (F20000000000000000000009, F10000000000000000000004, F10000000000000000000005, F10000000000000000000006, );
 			path = MovieFolderPostersFinder;
 			sourceTree = "<group>";
 		};
@@ -325,7 +327,7 @@
 		F1000000000000000000000B = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (F2000000000000000000000A, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */

@@ -356,3 +356,33 @@ Status: Passed for the hardcoded development directory; final configurable-direc
 - Signed Swift 6 build passed. Actual Finder extension pid 34368 verified read/write access and removed the probe.
 - Independent re-review: PASS; I1 resolved. No permanent service or watcher was added.
 - Phase 2.2 follows on the existing develop-based feature/folder-access branch; no merge or push is authorized.
+
+## Phase 2 completion — 2026-10-11
+
+Status: Passed as an isolated development proof of concept on the current Mac.
+
+- Opening TestMovies in Finder triggered the extension to assign TestPoster.png to ObservationChild.
+- The original bundled poster is a local test artwork, not movie metadata or a TMDb download.
+- FileSystem owns immediate-child validation, proportional image rendering, existing-icon detection,
+  and native NSWorkspace.setIcon assignment. The extension remains a thin Swift 6 actor-based integration.
+- Native icon writes are serialized across service instances within each process.
+- TDD: nine poster behavior tests failed against the stub; all 15 package tests then passed.
+- Independent review passed; signed Debug build, Xcode build-for-testing, and deep signature validation passed.
+- Finder visibly displayed the poster at two icon sizes and in list view without a manual refresh.
+- The poster survived extension termination and a Finder restart while the extension was disabled.
+  pluginkit reported the extension disabled, and no extension process was running during that visual check.
+- Re-enabling the extension and revisiting the directory preserved the icon without rewriting it.
+  The native icon resource-fork hash and content-fixture hash were unchanged.
+- Folder name and existing content fixture remained unchanged. Expected native metadata changes were
+  a hidden Icon\r file with a resource fork and the folder's com.apple.FinderInfo custom-icon flag (0x0400).
+- Existing custom icons, symbolic-link targets, regular files, hidden names, and deeper paths are protected.
+- The one-folder operation completed asynchronously; no visible navigation lag was observed.
+  Collection-scale performance and Instruments profiling have not been measured in this phase.
+- Machine-specific TestMovies sandbox entitlement remains development-only. Persistent authorization for arbitrary
+  selected directories is still unresolved; an App Group alone does not grant access outside its container.
+- Extension-only processing is viable for the validated fixed directory. Its final permission strategy must be
+  validated before claiming support for configurable movie collections. No background service was needed.
+- The extension was restored to enabled state after persistence testing.
+- Next development phase: Phase 3 release-name parsing, after approval. No Phase 3 implementation was started.
+
+See PHASE_2_VERIFICATION.md for reproduction commands, scope, and remaining platform limitations.

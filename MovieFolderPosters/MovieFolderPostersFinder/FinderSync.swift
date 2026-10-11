@@ -3,18 +3,18 @@ import FinderSync
 import OSLog
 import Synchronization
 
-private actor DirectoryAccessVerifier {
+private actor PosterProcessor {
     private let service = FileSystemService()
 
-    func verify() throws {
+    func process(posterData: Data) throws -> PosterAssignmentResult {
         try Task.checkCancellation()
-        try service.verifyReadWriteAccess(in: Phase2Configuration.testDirectory)
+        return try service.assignPoster(posterData, toChild: "ObservationChild", in: Phase2Configuration.testDirectory)
     }
 }
 
 final class FinderSync: FIFinderSync {
     private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderLifecycle")
-    private let verifier = DirectoryAccessVerifier()
+    private let verifier = PosterProcessor()
     // Finder Sync's Objective-C callbacks have no actor annotation; synchronize their task ownership.
     private let verificationTask = Mutex<Task<Void, Never>?>(nil)
 
@@ -33,14 +33,21 @@ final class FinderSync: FIFinderSync {
             guard task == nil else { return }
             task = Task(priority: .utility) { [verifier, logger] in
                 do {
-                    try await verifier.verify()
+                    guard let imageURL = Bundle.main.url(forResource: "TestPoster", withExtension: "png") else {
+                        throw FolderPosterError.invalidImage
+                    }
+                    let imageData = try Data(contentsOf: imageURL)
+                    let result = try await verifier.process(posterData: imageData)
                     try Task.checkCancellation()
-                    logger.notice("Verified development directory read/write access; probe removed")
+                    switch result {
+                    case .assigned: logger.notice("Assigned bundled poster to the explicit test child")
+                    case .existingIconPreserved: logger.notice("Preserved existing custom icon; no write needed")
+                    }
                 } catch is CancellationError {
-                    logger.debug("Directory access verification cancelled")
+                    logger.debug("Poster processing cancelled")
                 } catch {
                     let failure = error as NSError
-                    logger.error("Directory access failed: \(failure.domain, privacy: .public), code=\(failure.code)")
+                    logger.error("Poster processing failed: \(failure.domain, privacy: .public), code=\(failure.code)")
                 }
             }
         }
