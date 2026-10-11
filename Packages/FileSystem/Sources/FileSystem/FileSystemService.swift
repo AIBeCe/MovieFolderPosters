@@ -1,0 +1,281 @@
+import Foundation
+import Darwin
+
+public struct FolderCandidate: Equatable, Sendable {
+    public let name: String
+    public let identity: String
+    public let fingerprint: String
+    public let hasCustomIcon: Bool
+
+    public init(name: String, identity: String, fingerprint: String, hasCustomIcon: Bool) {
+        self.name = name
+        self.identity = identity
+        self.fingerprint = fingerprint
+        self.hasCustomIcon = hasCustomIcon
+    }
+}
+
+public enum DirectoryAccessError: Error {
+    case invalidDirectory
+    case staleBookmark
+    case accessDenied
+}
+
+public struct FileSystemService: Sendable {
+    public init() {}
+
+    public func makeDirectoryBookmark(for directory: URL) throws -> Data {
+        try validateDirectory(directory)
+
+        return try directory.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+    }
+
+    public func withDirectoryAccess<Result>(
+        bookmark: Data,
+        operation: (URL) throws -> Result
+    ) throws -> Result {
+        var isStale = false
+        let directory = try URL(
+            resolvingBookmarkData: bookmark,
+            options: [.withSecurityScope, .withoutUI],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
+
+        guard !isStale else {
+            throw DirectoryAccessError.staleBookmark
+        }
+
+        guard directory.startAccessingSecurityScopedResource() else {
+            throw DirectoryAccessError.accessDenied
+        }
+        defer { directory.stopAccessingSecurityScopedResource() }
+
+        try validateDirectory(directory)
+        return try operation(directory)
+    }
+
+    public func verifyReadWriteAccess(in directory: URL) throws {
+        try Task.checkCancellation()
+        try validateDirectory(directory)
+        do {
+            try Task.checkCancellation()
+            _ = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            let probe = directory.appendingPathComponent(".MovieFolderPostersAccess-\(UUID().uuidString)")
+            let expected = Data("MovieFolderPosters access check".utf8)
+            try Task.checkCancellation()
+            try expected.write(to: probe, options: [.withoutOverwriting])
+            let actual: Data
+            do {
+                actual = try Data(contentsOf: probe)
+            } catch {
+                try FileManager.default.removeItem(at: probe)
+                throw error
+            }
+            // Finish cleanup even if observation ends while the synchronous operation is running.
+            try FileManager.default.removeItem(at: probe)
+            guard actual == expected else { throw CocoaError(.fileReadCorruptFile) }
+        }
+    }
+
+    public func candidates(in directory: URL) throws -> [FolderCandidate] {
+        try validateDirectory(directory)
+        let children = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        )
+        return try children.compactMap { child in
+            guard let identity = try? fileIdentity(at: child) else { return nil }
+            return FolderCandidate(name: child.lastPathComponent, identity: identity,
+                                   fingerprint: "\(identity):\(child.lastPathComponent)",
+                                   hasCustomIcon: try hasCustomIcon(at: child))
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    public func snapshot(ofChild name: String, in directory: URL) throws -> FolderCandidate {
+        try validateDirectory(directory)
+        guard isValidChildName(name) else { throw DirectoryAccessError.invalidDirectory }
+        let child = directory.appendingPathComponent(name, isDirectory: true)
+        let identity = try fileIdentity(at: child)
+        return FolderCandidate(name: name, identity: identity, fingerprint: "\(identity):\(name)",
+                               hasCustomIcon: try hasCustomIcon(at: child))
+    }
+
+    public func readData(named name: String, in directory: URL) throws -> Data? {
+        try validateCacheName(name)
+        let directoryDescriptor: Int32
+        do {
+            directoryDescriptor = try openCacheDirectory(directory, create: false)
+        } catch let error as NSError where error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT) {
+            return nil
+        }
+        defer { _ = close(directoryDescriptor) }
+        let descriptor = name.withCString {
+            openat(directoryDescriptor, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        }
+        if descriptor < 0, errno == ENOENT { return nil }
+        guard descriptor >= 0 else { throw posixError() }
+        defer { _ = close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0 else { throw posixError() }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { throw DirectoryAccessError.invalidDirectory }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = read(descriptor, &buffer, buffer.count)
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw posixError()
+            }
+            result.append(contentsOf: buffer[0..<count])
+        }
+        return result
+    }
+
+    public func writeData(_ data: Data, named name: String, in directory: URL) throws {
+        try validateCacheName(name)
+        let directoryDescriptor = try openCacheDirectory(directory, create: true)
+        defer { _ = close(directoryDescriptor) }
+        try validateCacheFile(name, in: directoryDescriptor)
+
+        let temporaryName = ".mfp-\(UUID().uuidString)"
+        let temporaryDescriptor = temporaryName.withCString {
+            openat(directoryDescriptor, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
+        }
+        guard temporaryDescriptor >= 0 else { throw posixError() }
+        var shouldRemoveTemporary = true
+        defer {
+            _ = close(temporaryDescriptor)
+            if shouldRemoveTemporary {
+                temporaryName.withCString { _ = unlinkat(directoryDescriptor, $0, 0) }
+            }
+        }
+        try data.withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress else { return }
+            var offset = 0
+            while offset < bytes.count {
+                let count = Darwin.write(temporaryDescriptor, base.advanced(by: offset), bytes.count - offset)
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    throw posixError()
+                }
+                guard count > 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO)) }
+                offset += count
+            }
+        }
+        guard fsync(temporaryDescriptor) == 0 else { throw posixError() }
+        let result = temporaryName.withCString { temporary in
+            name.withCString { destination in
+                renameat(directoryDescriptor, temporary, directoryDescriptor, destination)
+            }
+        }
+        guard result == 0 else { throw posixError() }
+        shouldRemoveTemporary = false
+    }
+
+    func validateDirectory(_ directory: URL) throws {
+        guard directory.isFileURL else {
+            throw DirectoryAccessError.invalidDirectory
+        }
+
+        guard (try? fileIdentity(at: directory)) != nil else {
+            throw DirectoryAccessError.invalidDirectory
+        }
+    }
+
+    func fileIdentity(at url: URL) throws -> String {
+        guard url.isFileURL else { throw DirectoryAccessError.invalidDirectory }
+        var info = stat()
+        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else {
+            throw DirectoryAccessError.invalidDirectory
+        }
+        return "\(info.st_dev):\(info.st_ino):\(info.st_birthtimespec.tv_sec):\(info.st_birthtimespec.tv_nsec)"
+    }
+
+    func isValidChildName(_ name: String) -> Bool {
+        !name.isEmpty && !name.hasPrefix(".") && !name.contains("/") && !name.contains("\\") &&
+            name != "." && name != ".."
+    }
+
+    private func validateCacheName(_ name: String) throws {
+        guard !name.isEmpty, !name.hasPrefix("."),
+              name.unicodeScalars.allSatisfy({
+                  CharacterSet.alphanumerics.contains($0) || "_-".unicodeScalars.contains($0)
+              })
+        else { throw DirectoryAccessError.invalidDirectory }
+    }
+
+    private func openCacheDirectory(_ directory: URL, create: Bool) throws -> Int32 {
+        guard directory.isFileURL else { throw DirectoryAccessError.invalidDirectory }
+        let path = directory.standardizedFileURL.path
+        guard path.hasPrefix("/") else { throw DirectoryAccessError.invalidDirectory }
+        var descriptor = open("/", O_RDONLY | O_DIRECTORY)
+        guard descriptor >= 0 else { throw posixError() }
+        let components = path.split(separator: "/").map(String.init)
+        for (index, component) in components.enumerated() {
+            let names = try cacheTraversalComponents(component, index: index)
+            for name in names {
+                var child = name.withCString {
+                    openat(descriptor, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                }
+                if child < 0, create, errno == ENOENT {
+                    let made = name.withCString { mkdirat(descriptor, $0, mode_t(0o700)) }
+                    if made != 0, errno != EEXIST {
+                        let error = cachePathError(for: posixError())
+                        _ = close(descriptor)
+                        throw error
+                    }
+                    child = name.withCString {
+                        openat(descriptor, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                    }
+                }
+                guard child >= 0 else {
+                    let error = cachePathError(for: posixError())
+                    _ = close(descriptor)
+                    throw error
+                }
+                _ = close(descriptor)
+                descriptor = child
+            }
+        }
+        return descriptor
+    }
+
+    private func cacheTraversalComponents(_ component: String, index: Int) throws -> [String] {
+        guard index == 0, component == "var" else { return [component] }
+        var info = stat()
+        guard lstat("/var", &info) == 0, (info.st_mode & S_IFMT) == S_IFLNK else { return [component] }
+        guard let resolvedPath = realpath("/var", nil) else { throw posixError() }
+        let resolved = String(cString: resolvedPath)
+        free(resolvedPath)
+        guard resolved == "/private/var" else { throw DirectoryAccessError.invalidDirectory }
+        return ["private", "var"]
+    }
+
+    private func validateCacheFile(_ name: String, in directoryDescriptor: Int32) throws {
+        let descriptor = name.withCString {
+            openat(directoryDescriptor, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        }
+        if descriptor < 0 {
+            if errno == ENOENT { return }
+            throw posixError()
+        }
+        defer { _ = close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0 else { throw posixError() }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { throw DirectoryAccessError.invalidDirectory }
+    }
+
+    private func posixError() -> NSError { NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+
+    private func cachePathError(for error: Error) -> Error {
+        let error = error as NSError
+        guard error.domain == NSPOSIXErrorDomain,
+              error.code == Int(ENOTDIR) || error.code == Int(ELOOP) else { return error }
+        return DirectoryAccessError.invalidDirectory
+    }
+}

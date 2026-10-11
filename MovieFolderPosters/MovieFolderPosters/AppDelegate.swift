@@ -1,30 +1,17 @@
-//
-//  AppDelegate.swift
-//  MovieFolderPosters
-//
-//  Created by David Alarcon on 11/10/2026.
-//
-
 import Cocoa
 
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
-
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
     @IBOutlet var window: NSWindow!
 
-
-    func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // Insert code here to initialize your application
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let label = NSTextField(wrappingLabelWithString:
+            "Phase 5 development test: open TestMovies/Phase5Integration in Finder to process the test movie folders."
+        )
+        label.frame = NSRect(x: 20, y: 20, width: 420, height: 48)
+        window.contentView?.addSubview(label)
     }
 
-    func applicationWillTerminate(_ aNotification: Notification) {
-        // Insert code here to tear down your application
-    }
-
-    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        return true
-    }
-
-
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 }
-

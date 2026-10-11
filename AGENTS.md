@@ -10,7 +10,7 @@
 - Never rename, move, delete, or modify movie contents.
 - Custom-icon filesystem metadata changes require an approved implementation point.
 - Do not add daemons, launch agents, watchers, polling, or additional services without explicit approval.
-- The current authorization covers only the minimum Finder Sync lifecycle probe.
+- Completed scope includes Finder lifecycle, parsing, matching, and Phase 5 processing with metadata fixtures.
 - Creating or approving the project plan does not authorize further product implementation.
 
 ## Proposal before implementation
@@ -26,6 +26,8 @@
 
 ## Architecture
 
+- Apply SOLID principles where they improve correctness and maintainability; avoid speculative abstractions.
+
 - Use MVVM-C for the AppKit configuration interface when that interface is implemented.
 - Views and view controllers render state and forward user actions.
 - View models own presentation state and depend on narrowly scoped service interfaces.
@@ -40,7 +42,7 @@
 
 - Organize reusable functionality into local Swift Package Manager modules.
 - Each module provides an in-process service with a narrow public API and its own tests.
-- Start with Network and File; introduce Persistence when durable storage is needed.
+- Start with Network and FileSystem; introduce Persistence when durable storage is needed.
 - The application coordinates services and owns movie-specific decisions and workflows.
 - Services must not depend on the application.
 - Add dependencies between services only when a demonstrated need justifies them.
@@ -68,6 +70,7 @@
 - Use release/* and hotfix/* only for explicitly authorized release or hotfix work.
 - Do not implement directly on main or develop.
 - Do not reset history, discard changes, merge, push, or publish without explicit authorization.
+- Automatically commit approved work after relevant verification and required review pass.
 - Use focused commits; exclude signing secrets, user-specific Xcode data, and build artifacts.
 - The initial lifecycle probe uses feature/finder-lifecycle.
 
@@ -76,6 +79,7 @@
 - Keep Swift source lines at or below 120 characters.
 - Prefer readable single lines up to that limit; avoid unnecessarily narrow wrapping.
 - Use programmatic AppKit for new UI.
+- Prefer Swift 6 language mode and complete concurrency checking.
 - Keep UI work on the main actor and callbacks responsive.
 - Perform networking and potentially expensive filesystem work away from UI callbacks.
 - Bound concurrent work, deduplicate requests, and handle cancellation.
