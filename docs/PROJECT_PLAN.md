@@ -34,7 +34,7 @@ Owns requests, response decoding, poster downloads, and network error handling.
 Returns data without writing files.
 Does not own movie matching decisions, credential storage, or UI.
 
-### File
+### FileSystem
 
 Owns filesystem authorization, security-scoped access, directory enumeration,
 file operations, and native custom folder icon operations.
@@ -44,7 +44,7 @@ Does not perform networking or decide which movie matches a folder.
 
 Owns durable record storage, retrieval, schema changes, and storage integrity.
 The application owns cache expiration, retry, and processing policies.
-Downloaded image files are managed through File.
+Downloaded image files are managed through FileSystem.
 
 ### Application-specific behavior
 
@@ -76,7 +76,8 @@ source through target membership initially. Do not introduce another package by 
 - Signed Debug build, signature checks, and embedded-extension validation passed.
 - The signing blocker was resolved after refreshing the Xcode account and allowing automatic signing.
 - Finder extension recognition, enablement, and lifecycle callbacks were verified on the development Mac.
-- No poster assignment or service packages exist yet.
+- The local FileSystem package provides directory bookmark creation and scoped access.
+- Host/extension package integration and poster assignment remain unimplemented.
 - AGENTS.md is established.
 - Git branch: feature/finder-lifecycle.
 - The public GitHub repository contains initial commit f52c8f7 on main, develop, and feature/finder-lifecycle.
@@ -111,9 +112,9 @@ Stop before processing if the intended trigger cannot be demonstrated.
 
 ## Phase 2 — One folder, one local poster
 
-### 2.1 Introduce the File service and validate access
+### 2.1 Introduce the FileSystem service and validate access
 
-Create the local File package with only the API needed by this phase.
+Create the local FileSystem package with only the API needed by this phase.
 Establish supported authorization for the isolated test directory.
 
 A minimal permission-selection control may be necessary.
@@ -135,7 +136,7 @@ Bundle a test image.
 Operate on one explicitly named immediate child of TestMovies.
 Preserve existing custom icons and reject symbolic-link targets.
 
-Keep image preparation and custom-icon assignment inside File.
+Keep image preparation and custom-icon assignment inside FileSystem.
 Preserve poster proportions without stretching.
 
 TDD:
@@ -230,7 +231,7 @@ Multiple-process access requirements are addressed explicitly.
 Finder observation → enumerate immediate children → skip unchanged processed folders
 → parse → match → download → assign icon → persist result.
 
-The application coordinates Network, File, and Persistence.
+The application coordinates Network, FileSystem, and Persistence.
 Share necessary application-specific processing source with the extension.
 
 TDD:
@@ -304,4 +305,16 @@ Status: Passed on the current development Mac.
 - User paths remained private in diagnostic logs.
 - No product code changes were required.
 - Filesystem write access and persistent custom icons remain unverified.
-- Next proposed work: Phase 2.1, File service and authorized directory access.
+- Next proposed work: Phase 2.1, FileSystem service and authorized directory access.
+
+## Phase 2.1 progress — 2026-10-11
+
+Status: FileSystem package implemented; sandbox integration remains pending.
+
+- Package location: Packages/FileSystem, with no third-party dependencies.
+- FileSystemService creates document-relative directory bookmarks and runs operations within scoped access.
+- Non-file URLs, regular files, and symbolic-link directories are rejected.
+- Stale bookmarks require reauthorization in this initial implementation.
+- TDD: all four rejection tests failed against the initial scaffold, then passed with the approved implementation.
+- Successful bookmark access and cross-process authorization have not been verified by these package tests.
+- Next proposal: minimal host authorization, shared document storage, entitlements, and extension access verification.

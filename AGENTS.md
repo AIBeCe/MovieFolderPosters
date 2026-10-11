@@ -40,7 +40,7 @@
 
 - Organize reusable functionality into local Swift Package Manager modules.
 - Each module provides an in-process service with a narrow public API and its own tests.
-- Start with Network and File; introduce Persistence when durable storage is needed.
+- Start with Network and FileSystem; introduce Persistence when durable storage is needed.
 - The application coordinates services and owns movie-specific decisions and workflows.
 - Services must not depend on the application.
 - Add dependencies between services only when a demonstrated need justifies them.
