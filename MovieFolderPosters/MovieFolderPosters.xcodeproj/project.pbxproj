@@ -28,6 +28,10 @@
 			fileRef = F10000000000000000000002;
 			settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); };
 		};
+		F20000000000000000000001 = {isa = PBXBuildFile; productRef = F20000000000000000000003; };
+		F20000000000000000000002 = {isa = PBXBuildFile; productRef = F20000000000000000000004; };
+		F20000000000000000000006 = {isa = PBXBuildFile; fileRef = F20000000000000000000005; };
+		F20000000000000000000007 = {isa = PBXBuildFile; fileRef = F20000000000000000000005; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +86,7 @@
 			path = MovieFolderPostersFinder.entitlements;
 			sourceTree = "<group>";
 		};
+		F20000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/Phase2Configuration.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -107,6 +112,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F20000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,7 +133,7 @@
 		F1000000000000000000000A = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (F20000000000000000000002, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -137,6 +143,7 @@
 			isa = PBXGroup;
 			children = (
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
+				F20000000000000000000005,
 				F10000000000000000000003,
 				4EA8424A307BE08B005A22E4 /* MovieFolderPostersTests */,
 				4EA84254307BE08B005A22E4 /* MovieFolderPostersUITests */,
@@ -183,6 +190,7 @@
 			);
 			name = MovieFolderPosters;
 			packageProductDependencies = (
+				F20000000000000000000003,
 			);
 			productName = MovieFolderPosters;
 			productReference = 4EA84239307BE08A005A22E4 /* MovieFolderPosters.app */;
@@ -240,6 +248,7 @@
 			buildPhases = (F10000000000000000000009, F1000000000000000000000A, F1000000000000000000000B, );
 			buildRules = ();
 			dependencies = ();
+			packageProductDependencies = (F20000000000000000000004, );
 			name = MovieFolderPostersFinder;
 			productName = MovieFolderPostersFinder;
 			productReference = F10000000000000000000002;
@@ -279,6 +288,7 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4EA8423A307BE08A005A22E4 /* Products */;
+			packageReferences = (F20000000000000000000008, );
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -325,6 +335,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F20000000000000000000006,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,7 +356,7 @@
 		F10000000000000000000009 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (F10000000000000000000007, );
+			files = (F10000000000000000000007, F20000000000000000000007, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
@@ -518,7 +529,8 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Debug;
 		};
@@ -551,7 +563,8 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Release;
 		};
@@ -571,7 +584,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MovieFolderPosters.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MovieFolderPosters";
 			};
 			name = Debug;
@@ -592,7 +606,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MovieFolderPosters.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MovieFolderPosters";
 			};
 			name = Release;
@@ -611,7 +626,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_TARGET_NAME = MovieFolderPosters;
 			};
 			name = Debug;
@@ -630,7 +646,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				TEST_TARGET_NAME = MovieFolderPosters;
 			};
 			name = Release;
@@ -652,7 +669,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dag.fikios.MovieFolderPosters.Finder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Debug;
 		};
@@ -673,11 +691,21 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dag.fikios.MovieFolderPosters.Finder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F20000000000000000000008 = {isa = XCLocalSwiftPackageReference; relativePath = ../Packages/FileSystem; };
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F20000000000000000000003 = {isa = XCSwiftPackageProductDependency; productName = FileSystem; };
+		F20000000000000000000004 = {isa = XCSwiftPackageProductDependency; productName = FileSystem; };
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		4EA84234307BE08A005A22E4 /* Build configuration list for PBXProject "MovieFolderPosters" */ = {

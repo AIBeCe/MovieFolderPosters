@@ -309,7 +309,7 @@ Status: Passed on the current development Mac.
 
 ## Phase 2.1 progress — 2026-10-11
 
-Status: FileSystem package implemented; sandbox integration remains pending.
+Status: FileSystem package implemented; sandbox authorization integration blocked by platform evidence.
 
 - Package location: Packages/FileSystem, with no third-party dependencies.
 - FileSystemService creates document-relative directory bookmarks and runs operations within scoped access.
@@ -318,3 +318,41 @@ Status: FileSystem package implemented; sandbox integration remains pending.
 - TDD: all four rejection tests failed against the initial scaffold, then passed with the approved implementation.
 - Successful bookmark access and cross-process authorization have not been verified by these package tests.
 - Next proposal: minimal host authorization, shared document storage, entitlements, and extension access verification.
+
+## Phase 2.1 authorization probe — 2026-10-11
+
+- Implemented the approved integration on feature/folder-access; changes remain uncommitted pending redesign.
+- Host and extension compile in Swift 6 language mode with complete concurrency checking.
+- The AppKit host uses MainActor; a dedicated actor serializes extension filesystem verification.
+- Finder Sync callbacks have no actor annotation in the current SDK. A Mutex protects the retained task handle,
+  deduplicates root-observation work, and cancels it when root observation ends or the extension object deinitializes.
+- Scoped filesystem operations are synchronous inside the actor, with cancellation checks before mutation and
+  cleanup completed before returning. No suspension occurs while scoped directory access is open.
+- The host and extension link the local FileSystem package and carry matching App Group entitlements.
+- Four new rejection tests failed against the scaffold, then all eight package tests passed.
+- Signed Debug build, deep signature validation, project plist validation, and Swift 120-character checks passed.
+- Build emitted only App Intents metadata extraction notices because neither target imports AppIntents.
+- Actual host test: selecting TestMovies in NSOpenPanel produced “The file couldn’t be opened.”
+  Persistent host-to-extension access, extension probe cleanup, and restart persistence did not pass verification.
+- Independent review: FAIL, I1. Document-scoped bookmarks support individual files, not directory targets.
+  The approved document-relative directory bookmark design is therefore invalid. Rejection tests and successful
+  compilation did not establish support for the required successful directory authorization path.
+- Apple reference: https://developer.apple.com/library/archive/technotes/tn2312/_index.html, Persistent File Access.
+- Apple DTS corroboration: https://developer.apple.com/forums/thread/798402?answerId=855880022.
+- Stop point: propose a supported directory authorization approach and validate it across host/extension lifetimes
+  before Phase 2.2. Do not introduce a background service or broaden sandbox permissions without approval.
+- No poster icons were assigned; Phase 2 remains incomplete.
+
+## Phase 2.1 revised access — 2026-10-11
+
+Status: Passed for the hardcoded development directory; final configurable-directory authorization remains unresolved.
+
+- User authorized continued Phase 2 work through completion after the bookmark design failed.
+- Removed the document-scoped host authorization UI and App Group entitlements from the spike.
+- FileSystem bookmarks now use app scope and must be created/resolved by the same application identity.
+- Finder extension uses Apple's documented temporary absolute-path read/write exception for TestMovies only.
+  Sandbox remains enabled; this machine-specific entitlement is not the final distribution permission strategy.
+- All six relevant package tests passed, including preservation and cleanup of the directory access probe.
+- Signed Swift 6 build passed. Actual Finder extension pid 34368 verified read/write access and removed the probe.
+- Independent re-review: PASS; I1 resolved. No permanent service or watcher was added.
+- Phase 2.2 follows on the existing develop-based feature/folder-access branch; no merge or push is authorized.

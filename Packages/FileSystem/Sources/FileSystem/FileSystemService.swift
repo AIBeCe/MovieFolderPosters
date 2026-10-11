@@ -6,29 +6,28 @@ public enum DirectoryAccessError: Error {
     case accessDenied
 }
 
-public struct FileSystemService {
+public struct FileSystemService: Sendable {
     public init() {}
 
-    public func makeDirectoryBookmark(for directory: URL, relativeTo document: URL) throws -> Data {
+    public func makeDirectoryBookmark(for directory: URL) throws -> Data {
         try validateDirectory(directory)
 
         return try directory.bookmarkData(
             options: [.withSecurityScope],
             includingResourceValuesForKeys: nil,
-            relativeTo: document
+            relativeTo: nil
         )
     }
 
     public func withDirectoryAccess<Result>(
         bookmark: Data,
-        relativeTo document: URL,
         operation: (URL) throws -> Result
     ) throws -> Result {
         var isStale = false
         let directory = try URL(
             resolvingBookmarkData: bookmark,
             options: [.withSecurityScope, .withoutUI],
-            relativeTo: document,
+            relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
 
@@ -43,6 +42,29 @@ public struct FileSystemService {
 
         try validateDirectory(directory)
         return try operation(directory)
+    }
+
+    public func verifyReadWriteAccess(in directory: URL) throws {
+        try Task.checkCancellation()
+        try validateDirectory(directory)
+        do {
+            try Task.checkCancellation()
+            _ = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            let probe = directory.appendingPathComponent(".MovieFolderPostersAccess-\(UUID().uuidString)")
+            let expected = Data("MovieFolderPosters access check".utf8)
+            try Task.checkCancellation()
+            try expected.write(to: probe, options: [.withoutOverwriting])
+            let actual: Data
+            do {
+                actual = try Data(contentsOf: probe)
+            } catch {
+                try FileManager.default.removeItem(at: probe)
+                throw error
+            }
+            // Finish cleanup even if observation ends while the synchronous operation is running.
+            try FileManager.default.removeItem(at: probe)
+            guard actual == expected else { throw CocoaError(.fileReadCorruptFile) }
+        }
     }
 
     private func validateDirectory(_ directory: URL) throws {
