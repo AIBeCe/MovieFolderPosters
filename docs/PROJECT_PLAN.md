@@ -73,13 +73,13 @@ source through target membership initially. Do not introduce another package by 
 - Finder Sync extension is embedded in the host.
 - One hardcoded TestMovies directory is registered.
 - Initialization and begin/end observation callbacks are logged.
-- Unsigned Debug build and embedded-extension validation passed.
-- Signed build is blocked by a missing usable development certificate.
-- Finder recognition, enablement, and callbacks remain unverified.
+- Signed Debug build, signature checks, and embedded-extension validation passed.
+- The signing blocker was resolved after refreshing the Xcode account and allowing automatic signing.
+- Finder extension recognition, enablement, and lifecycle callbacks were verified on the development Mac.
 - No poster assignment or service packages exist yet.
 - AGENTS.md is established.
 - Git branch: feature/finder-lifecycle.
-- Public GitHub repository exists; no files have been pushed.
+- The public GitHub repository contains initial commit f52c8f7 on main, develop, and feature/finder-lifecycle.
 
 ## Phase 1 — Complete Finder Sync validation
 
@@ -290,3 +290,18 @@ Propose the smallest adjustment before adding processes or services.
 
 Do not claim completion until Finder displays a persistent movie poster
 through the intended extension workflow.
+
+## Phase 1 verification — 2026-10-11
+
+Status: Passed on the current development Mac.
+
+- Automatic-signing build and signature validation passed.
+- macOS recognized and enabled the sandboxed Finder Sync extension.
+- Finder open/close/reopen and subdirectory callbacks were observed.
+- Duplicate windows did not produce additional begin-observation callbacks.
+- Open/Save dialogs received callbacks in a process separate from Finder.
+- The tested Open/Save dialogs reused the same extension process.
+- User paths remained private in diagnostic logs.
+- No product code changes were required.
+- Filesystem write access and persistent custom icons remain unverified.
+- Next proposed work: Phase 2.1, File service and authorized directory access.
