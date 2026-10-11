@@ -155,6 +155,8 @@ Only this result establishes the first functional milestone.
 
 ## Phase 3 — Simple release-name parsing
 
+Status: completed on 2026-10-11 on `feature/release-name-parser`. Independent review: PASS.
+
 Keep the parser in application-specific code, independent of Finder and networking.
 
 Start with straightforward title/year examples.
@@ -172,6 +174,19 @@ Use full folder names as fixtures, not truncated screenshot labels.
 
 Acceptance:
 Supported behavior is deterministic; uncertain names are not silently guessed.
+
+Implementation and verification:
+
+- Added a Foundation-only, immutable Sendable parser in the application target.
+- All 47 fixture cases pass across seven Swift Testing functions, covering full releases, title tokens, and ambiguity.
+- Enabled Swift 6 and complete concurrency checking for all Xcode targets on this feature branch.
+- Added `scripts/test-parser.sh` to run the actual source and fixtures without the AppKit host.
+- Xcode `build-for-testing` passed. Hosted assertions completed, but Xcode result-bundle finalization stalled;
+  the cause remains unresolved. The standalone harness completes normally.
+- Parsing has no Finder integration or network side effects. Phase 4 remains separate and requires authorization.
+
+See [parser behavior and verification](RELEASE_NAME_PARSER.md) for the supported grammar and limitations.
+
 
 ## Phase 4 — Network service and conservative matching
 
