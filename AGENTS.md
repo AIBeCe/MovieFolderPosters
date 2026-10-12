@@ -70,7 +70,10 @@
 - Branch new features from develop once the repository has an established commit history.
 - Use release/* and hotfix/* only for explicitly authorized release or hotfix work.
 - Do not implement directly on main or develop.
-- Do not reset history, discard changes, merge, push, or publish without explicit authorization.
+- A completed, approved feature includes its verified commit and a non-fast-forward merge into develop.
+- The user's GitFlow instruction authorizes that feature integration; do not ask for separate merge approval.
+- Create subsequent feature branches from the updated develop branch.
+- Do not reset history, discard changes, push, publish, or merge into main without explicit authorization.
 - Automatically commit approved work after relevant verification and required review pass.
 - Use focused commits; exclude signing secrets, user-specific Xcode data, and build artifacts.
 - The initial lifecycle probe uses feature/finder-lifecycle.
