@@ -34,7 +34,7 @@ Owns requests, response decoding, poster downloads, and network error handling.
 Returns data without writing files.
 Does not own movie matching decisions, credential storage, or UI.
 
-### File
+### FileSystem
 
 Owns filesystem authorization, security-scoped access, directory enumeration,
 file operations, and native custom folder icon operations.
@@ -44,7 +44,7 @@ Does not perform networking or decide which movie matches a folder.
 
 Owns durable record storage, retrieval, schema changes, and storage integrity.
 The application owns cache expiration, retry, and processing policies.
-Downloaded image files are managed through File.
+Downloaded image files are managed through FileSystem.
 
 ### Application-specific behavior
 
@@ -175,6 +175,8 @@ Supported behavior is deterministic; uncertain names are not silently guessed.
 
 ## Phase 4 — Network service and conservative matching
 
+Status: completed on 2026-10-11 on `feature/tmdb-matching`. Independent review: PASS.
+
 ### 4.1 Introduce Network
 
 Implement the minimum TMDb search and poster-download APIs.
@@ -207,15 +209,41 @@ Acceptance:
 Ambiguous results remain unresolved.
 The first search result is not automatically accepted.
 
+Implementation:
+
+- Added the local Network SPM service with injectable transport, TMDb decoding, and in-memory poster retrieval.
+- Credentials are injected in memory; no secret is saved, logged, or committed. Persistent credential UI/storage
+  remains configuration work. This phase was tested without live credentials or live TMDb requests.
+- Added application-specific exact normalized title/original-title and exact optional-year matching.
+- Incomplete searches and ties remain unresolved; missing posters do not break identity ties.
+- Network's 39 cases and matching's 25 cases pass. Added a reproducible application matching harness.
+- Reviewed and verified URLSession cleanup, cancellation, redirect rejection, image validation, and pagination.
+- Linked Network to the host and unit tests, enabled host outgoing-network sandbox access, and compiled with Swift 6.
+- Signed normal and test builds passed; final signature and outgoing-network entitlement checks passed.
+- No Finder processing, persistent caching, filesystem writes, or Phase 5 work was added.
+
+See [Network and matching](NETWORK_MATCHING.md) for APIs, rules, verification, and limits.
+
+Integration note: Phase 2 is committed separately on `feature/folder-access` (e53ab10), and Phase 3 on
+`feature/release-name-parser` (519879a). This feature was created from develop. Integration of those branches
+remains separate work; this phase does not merge or push them.
+
 ## Phase 5 — Persistence and automatic processing
+
+Status: implemented and verified with controlled metadata responses. Live TMDb credential setup and
+arbitrary directory authorization remain outstanding; no production account verification is claimed.
+See [AUTOMATIC_PROCESSING.md](AUTOMATIC_PROCESSING.md) and
+[PHASE_5_VERIFICATION.md](PHASE_5_VERIFICATION.md) for policy and executed evidence.
 
 ### 5.1 Introduce Persistence
 
 Define the minimum records needed for processed folders, movie identity,
 poster references, and unresolved results.
 
-Choose the storage mechanism through a separate proposal.
-Do not assume a database is necessary.
+Approved storage: a local Persistence package with versioned opaque records, atomic writes, and
+nonblocking cross-process leases. Filesystem descriptors pin record access against path replacement.
+No database or external dependency is needed. Folder records retain identity fingerprints, status,
+retry dates, and matched movie identifiers/poster paths; query records retain conservative search results.
 
 TDD:
 Test saving, reopening, updating, missing records, and invalid stored data.
@@ -230,8 +258,18 @@ Multiple-process access requirements are addressed explicitly.
 Finder observation → enumerate immediate children → skip unchanged processed folders
 → parse → match → download → assign icon → persist result.
 
-The application coordinates Network, File, and Persistence.
-Share necessary application-specific processing source with the extension.
+The application coordinates Network, FileSystem, and Persistence. The extension compiles the same
+application-specific processor, parser, and matcher. Processing uses one candidate at a time and a
+cross-process root lease. Existing custom icons are preserved without metadata requests or icon writes.
+Missing icons can be restored from cached posters; ambiguous matches remain unresolved.
+
+Query and unresolved-result lifetimes are 24 hours; transient folder failures retry after ten minutes.
+Authentication errors defer the root for 24 hours; rate-limit delays honor Retry-After within one minute
+to 24 hours. Removed folder records and expired queries are pruned on observation. Cached poster files
+are retained without a separate eviction service. Cancelled work does not persist a negative result.
+
+Debug Finder verification uses explicitly enabled deterministic responses through TMDbClient. Phase 6 adds secure
+credential configuration; Release always uses live transport and never the development fixture.
 
 TDD:
 
@@ -252,6 +290,14 @@ All operations remain within authorized configured directories.
 
 ## Phase 6 — Minimal AppKit configuration
 
+Status: completed and independently reviewed on 2026-10-12 on `feature/directory-configuration`.
+Signed Debug and Release builds passed. Native folder selection, shared Data Protection Keychain access,
+Finder poster assignment, persistent extension-owned authorization after restart, repair, and removal passed.
+Configuration tests passed 16/16 in both Debug and Release; view-model tests 5/5 and UI launch test 1/1 passed.
+See [Directory configuration](DIRECTORY_CONFIGURATION.md) and [Phase 6 verification](PHASE_6_VERIFICATION.md).
+Live TMDb credentials, reboot, and physical external-volume recovery remain unverified.
+
+
 Replace the template interface with programmatic AppKit using MVVM-C.
 
 Provide monitored-directory management and necessary credential configuration.
@@ -265,6 +311,16 @@ Acceptance:
 The host remains a configuration utility, not a movie browser.
 
 ## Phase 7 — Optional manual Finder actions
+
+Status: completed and independently reviewed on 2026-10-12 on `feature/finder-actions`.
+Added direct Finder commands and minimal host confirmation windows for refresh, movie selection, removal, and TMDb.
+FileSystem ownership proofs preserve foreign/replaced icons; durable suppression prevents automatic reassignment.
+Stable cross-process root coordination and a current-configuration lease fence manual mutations after network waits.
+Native refresh, removal, and explicit selection passed with controlled metadata responses and unchanged movie bytes.
+All focused suites, final signed Debug/Release builds, signature checks, and test compilation passed.
+See [Finder actions](FINDER_ACTIONS.md) and [Phase 7 verification](PHASE_7_VERIFICATION.md) for evidence and limits.
+No merge or push was performed. Further product work requires a new authorization.
+
 
 Propose individual actions only after automatic processing is stable:
 
