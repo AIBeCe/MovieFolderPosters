@@ -361,3 +361,12 @@ Status: Passed on the current development Mac.
 - No product code changes were required.
 - Filesystem write access and persistent custom icons remain unverified.
 - Next proposed work: Phase 2.1, File service and authorized directory access.
+
+## GitFlow integration — 2026-10-12
+
+All completed Phase 1–7 feature branch tips are ancestors of local develop.
+The final reviewed Phase 7 implementation was merged with a non-fast-forward merge.
+Its earlier source dependencies were already included, so older feature histories were merged while preserving
+that tested tree instead of reintroducing obsolete configuration code. Exact tree equality was verified afterward.
+The agent rules now make merge into develop part of approved feature completion. Subsequent feature branches
+start from updated develop. Main and remote branches were not changed; no push was performed.
