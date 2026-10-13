@@ -11,11 +11,11 @@
 		F10000000000000000000008 /* MovieFolderPostersFinder.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* MovieFolderPostersFinder.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F40000000000000000000001 /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F40000000000000000000003 /* Network */; };
 		F40000000000000000000002 /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F40000000000000000000004 /* Network */; };
-		F5000000000000000000000C /* MovieFolderPostersFinder/TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* MovieFolderPostersFinder/TestPoster.png */; };
-		F5000000000000000000000D /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift */; };
-		F5000000000000000000000E /* MovieFolderPosters/ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* MovieFolderPosters/ReleaseNameParser.swift */; };
-		F5000000000000000000000F /* MovieFolderPosters/MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieFolderPosters/MovieMatcher.swift */; };
-		F50000000000000000000010 /* MovieFolderPosters/MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderPosters/MovieFolderProcessor.swift */; };
+		F5000000000000000000000C /* MovieFolderPostersFinder/TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
+		F5000000000000000000000D /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
+		F5000000000000000000000E /* MovieFolderPosters/ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
+		F5000000000000000000000F /* MovieFolderPosters/MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
+		F50000000000000000000010 /* MovieFolderPosters/MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
 		F50000000000000000000046 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000028 /* FileSystem */; };
 		F50000000000000000000047 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000029 /* FileSystem */; };
 		F50000000000000000000048 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000002A /* FileSystem */; };
@@ -23,20 +23,20 @@
 		F50000000000000000000051 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000033 /* Persistence */; };
 		F50000000000000000000052 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000034 /* Persistence */; };
 		F5000000000000000000005B /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000005A /* Network */; };
-		F60000000000000000000014 /* Shared/DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* Shared/DirectoryConfiguration.swift */; };
-		F60000000000000000000015 /* Shared/ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* Shared/ConfigurationRepository.swift */; };
-		F60000000000000000000016 /* Shared/SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* Shared/SharedEnvironment.swift */; };
-		F60000000000000000000017 /* Shared/KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* Shared/KeychainCredentialStore.swift */; };
-		F60000000000000000000018 /* Shared/DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* Shared/DirectoryObservationScheduler.swift */; };
-		F6000000000000000000001E /* Shared/DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* Shared/DirectoryConfiguration.swift */; };
-		F6000000000000000000001F /* Shared/ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* Shared/ConfigurationRepository.swift */; };
-		F60000000000000000000020 /* Shared/SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* Shared/SharedEnvironment.swift */; };
-		F60000000000000000000021 /* Shared/KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* Shared/KeychainCredentialStore.swift */; };
-		F60000000000000000000022 /* Shared/DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* Shared/DirectoryObservationScheduler.swift */; };
-		F70000000000000000000001 /* Shared/MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* Shared/MoviePosterRequest.swift */; };
-		F70000000000000000000002 /* Shared/MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* Shared/MoviePosterRequest.swift */; };
-		F70000000000000000000004 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift */; };
-		F70000000000000000000005 /* MovieFolderPostersFinder/TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* MovieFolderPostersFinder/TestPoster.png */; };
+		F60000000000000000000014 /* Shared/DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
+		F60000000000000000000015 /* Shared/ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
+		F60000000000000000000016 /* Shared/SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
+		F60000000000000000000017 /* Shared/KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
+		F60000000000000000000018 /* Shared/DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
+		F6000000000000000000001E /* Shared/DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
+		F6000000000000000000001F /* Shared/ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
+		F60000000000000000000020 /* Shared/SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
+		F60000000000000000000021 /* Shared/KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
+		F60000000000000000000022 /* Shared/DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
+		F70000000000000000000001 /* Shared/MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
+		F70000000000000000000002 /* Shared/MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
+		F70000000000000000000004 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
+		F70000000000000000000005 /* MovieFolderPostersFinder/TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,17 +85,17 @@
 		F10000000000000000000004 /* FinderSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSync.swift; sourceTree = "<group>"; };
 		F10000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MovieFolderPostersFinder.entitlements; sourceTree = "<group>"; };
-		F50000000000000000000002 /* MovieFolderPostersFinder/TestPoster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MovieFolderPostersFinder/TestPoster.png; sourceTree = SOURCE_ROOT; };
-		F50000000000000000000003 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderPostersFinder/DevelopmentTMDbTransport.swift; sourceTree = SOURCE_ROOT; };
-		F50000000000000000000004 /* MovieFolderPosters/ReleaseNameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderPosters/ReleaseNameParser.swift; sourceTree = SOURCE_ROOT; };
-		F50000000000000000000005 /* MovieFolderPosters/MovieMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderPosters/MovieMatcher.swift; sourceTree = SOURCE_ROOT; };
-		F50000000000000000000006 /* MovieFolderPosters/MovieFolderProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderPosters/MovieFolderProcessor.swift; sourceTree = SOURCE_ROOT; };
-		F6000000000000000000000A /* Shared/DirectoryConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/DirectoryConfiguration.swift; sourceTree = SOURCE_ROOT; };
-		F6000000000000000000000B /* Shared/ConfigurationRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/ConfigurationRepository.swift; sourceTree = SOURCE_ROOT; };
-		F6000000000000000000000C /* Shared/SharedEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/SharedEnvironment.swift; sourceTree = SOURCE_ROOT; };
-		F6000000000000000000000D /* Shared/KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/KeychainCredentialStore.swift; sourceTree = SOURCE_ROOT; };
-		F6000000000000000000000E /* Shared/DirectoryObservationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/DirectoryObservationScheduler.swift; sourceTree = SOURCE_ROOT; };
-		F70000000000000000000003 /* Shared/MoviePosterRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/MoviePosterRequest.swift; sourceTree = SOURCE_ROOT; };
+		F50000000000000000000002 /* TestPoster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = TestPoster.png; sourceTree = "<group>"; };
+		F50000000000000000000003 /* DevelopmentTMDbTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentTMDbTransport.swift; sourceTree = "<group>"; };
+		F50000000000000000000004 /* ReleaseNameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNameParser.swift; sourceTree = "<group>"; };
+		F50000000000000000000005 /* MovieMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieMatcher.swift; sourceTree = "<group>"; };
+		F50000000000000000000006 /* MovieFolderProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderProcessor.swift; sourceTree = "<group>"; };
+		F6000000000000000000000A /* DirectoryConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryConfiguration.swift; sourceTree = "<group>"; };
+		F6000000000000000000000B /* ConfigurationRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationRepository.swift; sourceTree = "<group>"; };
+		F6000000000000000000000C /* SharedEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedEnvironment.swift; sourceTree = "<group>"; };
+		F6000000000000000000000D /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
+		F6000000000000000000000E /* DirectoryObservationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryObservationScheduler.swift; sourceTree = "<group>"; };
+		F70000000000000000000003 /* MoviePosterRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePosterRequest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -160,17 +160,8 @@
 		4EA84230307BE08A005A22E4 = {
 			isa = PBXGroup;
 			children = (
-				F70000000000000000000003 /* Shared/MoviePosterRequest.swift */,
-				F6000000000000000000000A /* Shared/DirectoryConfiguration.swift */,
-				F6000000000000000000000B /* Shared/ConfigurationRepository.swift */,
-				F6000000000000000000000C /* Shared/SharedEnvironment.swift */,
-				F6000000000000000000000D /* Shared/KeychainCredentialStore.swift */,
-				F6000000000000000000000E /* Shared/DirectoryObservationScheduler.swift */,
-				F50000000000000000000002 /* MovieFolderPostersFinder/TestPoster.png */,
-				F50000000000000000000003 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift */,
-				F50000000000000000000004 /* MovieFolderPosters/ReleaseNameParser.swift */,
-				F50000000000000000000005 /* MovieFolderPosters/MovieMatcher.swift */,
-				F50000000000000000000006 /* MovieFolderPosters/MovieFolderProcessor.swift */,
+				F80000000000000000000001 /* Shared */,
+				F80000000000000000000002 /* Movie Processing */,
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
 				F10000000000000000000003 /* MovieFolderPostersFinder */,
 				4EA8424A307BE08B005A22E4 /* MovieFolderPostersTests */,
@@ -193,11 +184,38 @@
 		F10000000000000000000003 /* MovieFolderPostersFinder */ = {
 			isa = PBXGroup;
 			children = (
+				F50000000000000000000002 /* TestPoster.png */,
+				F50000000000000000000003 /* DevelopmentTMDbTransport.swift */,
 				F10000000000000000000004 /* FinderSync.swift */,
 				F10000000000000000000005 /* Info.plist */,
 				F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */,
 			);
 			path = MovieFolderPostersFinder;
+			sourceTree = "<group>";
+		};
+		F80000000000000000000001 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F70000000000000000000003 /* MoviePosterRequest.swift */,
+				F6000000000000000000000A /* DirectoryConfiguration.swift */,
+				F6000000000000000000000B /* ConfigurationRepository.swift */,
+				F6000000000000000000000C /* SharedEnvironment.swift */,
+				F6000000000000000000000D /* KeychainCredentialStore.swift */,
+				F6000000000000000000000E /* DirectoryObservationScheduler.swift */,
+			);
+			name = "Shared";
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		F80000000000000000000002 /* Movie Processing */ = {
+			isa = PBXGroup;
+			children = (
+				F50000000000000000000004 /* ReleaseNameParser.swift */,
+				F50000000000000000000005 /* MovieMatcher.swift */,
+				F50000000000000000000006 /* MovieFolderProcessor.swift */,
+			);
+			name = "Movie Processing";
+			path = MovieFolderPosters;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
