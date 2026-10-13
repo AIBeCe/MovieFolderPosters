@@ -24,6 +24,22 @@ private let maximumIconBytes = 4 * 1024 * 1024
 private struct PosterOwnership: Codable {
     let identity: String
     let digest: String
+    let appearance: PosterAppearance
+
+    init(identity: String, digest: String, appearance: PosterAppearance = .raw) {
+        self.identity = identity
+        self.digest = digest
+        self.appearance = appearance
+    }
+
+    private enum CodingKeys: String, CodingKey { case identity, digest, appearance }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        identity = try values.decode(String.self, forKey: .identity)
+        digest = try values.decode(String.self, forKey: .digest)
+        appearance = try values.decodeIfPresent(PosterAppearance.self, forKey: .appearance) ?? .raw
+    }
 }
 
 extension FileSystemService {
@@ -41,6 +57,14 @@ extension FileSystemService {
     public func assignPoster(
         _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = nil
     ) throws -> PosterAssignmentResult {
+        try assignPoster(imageData, toChild: name, in: directory, appearance: .raw,
+                         expectedIdentity: expectedIdentity)
+    }
+
+    public func assignPoster(
+        _ imageData: Data, toChild name: String, in directory: URL,
+        appearance: PosterAppearance, expectedIdentity: String? = nil
+    ) throws -> PosterAssignmentResult {
         try Task.checkCancellation()
         try validatePosterTarget(name, in: directory)
         let child = directory.appendingPathComponent(name, isDirectory: true)
@@ -49,12 +73,12 @@ extension FileSystemService {
             if try suppressionExists(at: child, identity: identity) || hasCustomIcon(at: child) {
                 return .existingIconPreserved
             }
-            let image = try makePosterImage(from: imageData)
+            let image = try makePosterImage(from: imageData, appearance: appearance)
             try Task.checkCancellation()
             guard NSWorkspace.shared.setIcon(image, forFile: child.path, options: []) else {
                 throw FolderPosterError.iconAssignmentFailed
             }
-            recordOwnership(of: child, identity: identity)
+            recordOwnership(of: child, identity: identity, appearance: appearance)
             clearSuppression(at: child, identity: identity)
             return .assigned
         }
@@ -71,11 +95,30 @@ extension FileSystemService {
         }
     }
 
+    public func assignedPosterAppearance(
+        toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    ) throws -> PosterAppearance? {
+        try validatePosterTarget(name, in: directory)
+        let child = directory.appendingPathComponent(name, isDirectory: true)
+        return try iconAssignmentLock.withLock { _ in
+            let identity = try lockedIdentity(of: child, expected: expectedIdentity)
+            return assignedAppearance(at: child, identity: identity)
+        }
+    }
+
     public func replaceAssignedPoster(
         _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = nil
     ) throws -> PosterAssignmentResult {
+        try replaceAssignedPoster(imageData, toChild: name, in: directory, appearance: .raw,
+                                  expectedIdentity: expectedIdentity)
+    }
+
+    public func replaceAssignedPoster(
+        _ imageData: Data, toChild name: String, in directory: URL,
+        appearance: PosterAppearance, expectedIdentity: String? = nil
+    ) throws -> PosterAssignmentResult {
         try validatePosterTarget(name, in: directory)
-        let image = try makePosterImage(from: imageData)
+        let image = try makePosterImage(from: imageData, appearance: appearance)
         let child = directory.appendingPathComponent(name, isDirectory: true)
         return try iconAssignmentLock.withLock { _ in
             let identity = try lockedIdentity(of: child, expected: expectedIdentity)
@@ -85,8 +128,29 @@ extension FileSystemService {
             guard NSWorkspace.shared.setIcon(image, forFile: child.path, options: []) else {
                 throw FolderPosterError.iconAssignmentFailed
             }
-            recordOwnership(of: child, identity: identity)
+            recordOwnership(of: child, identity: identity, appearance: appearance)
             clearSuppression(at: child, identity: identity)
+            return .assigned
+        }
+    }
+
+    public func restyleAssignedPoster(
+        _ imageData: Data, toChild name: String, in directory: URL,
+        appearance: PosterAppearance, expectedIdentity: String? = nil
+    ) throws -> PosterAssignmentResult {
+        try validatePosterTarget(name, in: directory)
+        let image = try makePosterImage(from: imageData, appearance: appearance)
+        let child = directory.appendingPathComponent(name, isDirectory: true)
+        return try iconAssignmentLock.withLock { _ in
+            let identity = try lockedIdentity(of: child, expected: expectedIdentity)
+            if try suppressionExists(at: child, identity: identity) || !isOwnedIcon(at: child, identity: identity) {
+                return .existingIconPreserved
+            }
+            try Task.checkCancellation()
+            guard NSWorkspace.shared.setIcon(image, forFile: child.path, options: []) else {
+                throw FolderPosterError.iconAssignmentFailed
+            }
+            recordOwnership(of: child, identity: identity, appearance: appearance)
             return .assigned
         }
     }
@@ -129,23 +193,9 @@ extension FileSystemService {
         return identity
     }
 
-    private func makePosterImage(from data: Data) throws -> NSImage {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let poster = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                  kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true,
-                  kCGImageSourceThumbnailMaxPixelSize: 512
-              ] as CFDictionary),
-              let context = CGContext(data: nil, width: 512, height: 512, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            throw FolderPosterError.invalidImage
-        }
-        let bounds = try posterBounds(for: CGSize(width: poster.width, height: poster.height))
-        context.interpolationQuality = .high
-        context.draw(poster, in: bounds)
-        guard let icon = context.makeImage() else { throw FolderPosterError.invalidImage }
-        return NSImage(cgImage: icon, size: NSSize(width: 512, height: 512))
+    private func makePosterImage(from data: Data, appearance: PosterAppearance) throws -> NSImage {
+        let image = try PosterAppearanceRenderer.image(from: data, appearance: appearance)
+        return NSImage(cgImage: image, size: NSSize(width: 512, height: 512))
     }
 
     func hasCustomIcon(at directory: URL) throws -> Bool {
@@ -207,21 +257,25 @@ extension FileSystemService {
     }
 
     private func isOwnedIcon(at folder: URL, identity: String) -> Bool {
-        guard (try? hasCustomIcon(at: folder)) == true else { return false }
-        guard let descriptor = iconDescriptor(in: folder, identity: identity) else { return false }
+        assignedAppearance(at: folder, identity: identity) != nil
+    }
+
+    private func assignedAppearance(at folder: URL, identity: String) -> PosterAppearance? {
+        guard (try? hasCustomIcon(at: folder)) == true else { return nil }
+        guard let descriptor = iconDescriptor(in: folder, identity: identity) else { return nil }
         defer { _ = close(descriptor) }
         guard let marker = readAttribute(ownershipAttribute, from: descriptor),
               let ownership = try? JSONDecoder().decode(PosterOwnership.self, from: marker),
-              ownership.identity == identity, let digest = iconDigest(descriptor: descriptor) else { return false }
-        return ownership.digest == digest
+              ownership.identity == identity, let digest = iconDigest(descriptor: descriptor) else { return nil }
+        return ownership.digest == digest ? ownership.appearance : nil
     }
 
-    private func recordOwnership(of folder: URL, identity: String) {
+    private func recordOwnership(of folder: URL, identity: String, appearance: PosterAppearance) {
         guard let descriptor = iconDescriptor(in: folder, identity: identity) else { return }
         defer { _ = close(descriptor) }
         guard let digest = iconDigest(descriptor: descriptor) else { return }
         guard let marker = try? JSONEncoder().encode(
-            PosterOwnership(identity: identity, digest: digest)
+            PosterOwnership(identity: identity, digest: digest, appearance: appearance)
         ) else { return }
         _ = marker.withUnsafeBytes {
             fsetxattr(descriptor, ownershipAttribute, $0.baseAddress, $0.count, 0, 0)

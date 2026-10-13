@@ -1,3 +1,4 @@
+import FileSystem
 import Foundation
 import Persistence
 import Synchronization
@@ -5,6 +6,21 @@ import Testing
 @testable import MovieFolderPosters
 
 struct DirectoryConfigurationServiceTests {
+    @Test func appearanceUpdatesSnapshotWithoutChangingCredentialsOrFolders() async throws {
+        let fixture = try ConfigurationServiceFixture()
+        defer { fixture.cleanup() }
+        fixture.credentials.save("appearance-fixture")
+        try fixture.repository.update { $0.directories = [] }
+        let before = try fixture.repository.read()
+        try await fixture.service.setPosterAppearance(.matteFrame)
+        let snapshot = try await fixture.service.snapshot()
+        #expect(snapshot.posterAppearance == .matteFrame)
+        #expect(snapshot.credentialConfigured)
+        #expect(snapshot.directories.isEmpty)
+        #expect(fixture.credentials.read() == "appearance-fixture")
+        #expect(try fixture.repository.read().credentialRevision == before.credentialRevision)
+    }
+
     @Test func missingAuthorizationOffersRepairAndDoesNotDropSelection() async throws {
         let fixture = try ConfigurationServiceFixture()
         defer { fixture.cleanup() }

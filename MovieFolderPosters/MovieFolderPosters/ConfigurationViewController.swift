@@ -1,4 +1,5 @@
 import AppKit
+import FileSystem
 
 @MainActor
 final class ConfigurationViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
@@ -9,6 +10,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     private let refreshButton = NSButton(title: "Refresh Status", target: nil, action: nil)
     private let removeButton = NSButton(title: "Remove", target: nil, action: nil)
     private let reauthorizeButton = NSButton(title: "Locate Folder…", target: nil, action: nil)
+    private let posterAppearancePopup = NSPopUpButton()
     private let credentialField = NSSecureTextField()
     private let saveCredentialButton = NSButton(title: "Save Token", target: nil, action: nil)
     private let removeCredentialButton = NSButton(title: "Remove Token", target: nil, action: nil)
@@ -75,6 +77,11 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         removeCredentialButton.target = self
         removeCredentialButton.action = #selector(removeCredential)
 
+        posterAppearancePopup.addItems(withTitles: ["Raw (no styling)", "Soft finish", "Matte frame"])
+        posterAppearancePopup.target = self
+        posterAppearancePopup.action = #selector(posterAppearanceChanged)
+        posterAppearancePopup.setAccessibilityLabel("Poster appearance")
+
         credentialField.placeholderString = "TMDb API read access token"
         credentialField.setAccessibilityLabel("TMDb API read access token")
         errorLabel.textColor = .systemRed
@@ -94,6 +101,21 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         folderButtons.alignment = .centerY
         folderButtons.spacing = 8
 
+        let appearanceHeading = NSTextField(labelWithString: "Poster appearance")
+        appearanceHeading.setContentHuggingPriority(.required, for: .horizontal)
+        posterAppearancePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
+        let appearanceRow = NSStackView(views: [appearanceHeading, posterAppearancePopup])
+        appearanceRow.orientation = .horizontal
+        appearanceRow.alignment = .centerY
+        appearanceRow.spacing = 12
+        let appearanceHelp = NSTextField(wrappingLabelWithString:
+            "Applies to all configured movie folders. Existing posters update when you revisit a configured " +
+            "folder in Finder."
+        )
+        appearanceHelp.textColor = .secondaryLabelColor
+        appearanceHelp.maximumNumberOfLines = 2
+        appearanceHelp.widthAnchor.constraint(equalTo: rootView.widthAnchor, constant: -40).isActive = true
+
         let credentialHeading = NSTextField(labelWithString: "TMDb API credential")
         credentialHeading.font = .boldSystemFont(ofSize: 13)
         credentialStatusLabel.setContentHuggingPriority(.required, for: .horizontal)
@@ -110,8 +132,8 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         credentialField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         credentialField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let content = NSStackView(views: [heading, folderInstruction, scrollView, folderButtons, credentialHeading,
-                                          credentialRow, errorLabel])
+        let content = NSStackView(views: [heading, folderInstruction, scrollView, folderButtons, appearanceRow,
+                                          appearanceHelp, credentialHeading, credentialRow, errorLabel])
         content.orientation = .vertical
         content.alignment = .leading
         content.spacing = 12
@@ -143,6 +165,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
 
     private func updateControls() {
         credentialStatusLabel.stringValue = viewModel.credentialConfigured ? "Configured" : "Not configured"
+        posterAppearancePopup.selectItem(at: PosterAppearance.allCases.firstIndex(of: viewModel.posterAppearance) ?? 1)
         errorLabel.stringValue = viewModel.errorMessage ?? " "
 
         addButton.isEnabled = !viewModel.isBusy
@@ -154,6 +177,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         saveCredentialButton.isEnabled = !viewModel.isBusy
         removeCredentialButton.isEnabled = !viewModel.isBusy && viewModel.credentialConfigured
         credentialField.isEnabled = !viewModel.isBusy
+        posterAppearancePopup.isEnabled = !viewModel.isBusy
         tableView.isEnabled = !viewModel.isBusy
     }
 
@@ -214,6 +238,12 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
             guard let self else { return }
             Task { await self.viewModel.reauthorizeDirectory(identifier, with: directory) }
         }
+    }
+
+    @objc private func posterAppearanceChanged() {
+        let appearances = PosterAppearance.allCases
+        guard appearances.indices.contains(posterAppearancePopup.indexOfSelectedItem) else { return }
+        Task { await viewModel.setPosterAppearance(appearances[posterAppearancePopup.indexOfSelectedItem]) }
     }
 
     @objc private func saveCredential() {

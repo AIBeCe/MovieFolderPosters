@@ -53,7 +53,13 @@ actor DirectoryConfigurationService: ConfigurationServicing {
             }
             notify()
         }
-        return ConfigurationSnapshot(directories: statuses, credentialConfigured: try credentials.read() != nil)
+        return ConfigurationSnapshot(directories: statuses, credentialConfigured: try credentials.read() != nil,
+                                     posterAppearance: configuration.posterAppearance)
+    }
+
+    func setPosterAppearance(_ appearance: PosterAppearance) throws {
+        try repository.update { $0.posterAppearance = appearance }
+        notify()
     }
 
     func addDirectory(_ directory: URL) throws {

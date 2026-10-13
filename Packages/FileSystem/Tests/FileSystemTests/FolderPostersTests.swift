@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import ImageIO
 import Testing
 @testable import FileSystem
@@ -115,6 +116,99 @@ struct FolderPostersTests {
         #expect(try service.replaceAssignedPoster(makePoster(color: .blue), toChild: "Movie", in: root) == .assigned)
         #expect(try service.hasAssignedPoster(toChild: "Movie", in: root))
         #expect(try FileManager.default.contentsOfDirectory(atPath: movie.path) == ["Icon\r"])
+    }
+
+    @Test func legacyAssignmentRecordsRawAppearanceAndStyledReplacementUpdatesIt() throws {
+        let (root, movie) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .raw)
+        #expect(try service.replaceAssignedPoster(makePoster(), toChild: "Movie", in: root,
+                                                   appearance: .softFinish) == .assigned)
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .softFinish)
+        #expect(try service.replaceAssignedPoster(makePoster(color: .blue), toChild: "Movie", in: root,
+                                                   appearance: .matteFrame) == .assigned)
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .matteFrame)
+
+        #expect(NSWorkspace.shared.setIcon(makeNSImage(color: .green), forFile: movie.path, options: []))
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == nil)
+    }
+
+    @Test func appearanceAwareAssignmentRecordsSelectedStyle() throws {
+        let (root, _) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root,
+                                        appearance: .softFinish) == .assigned)
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .softFinish)
+    }
+
+    @Test func automaticRestyleRequiresCurrentOwnedUnsuppressedIcon() throws {
+        let (foreignRoot, foreignMovie) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: foreignRoot) }
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: foreignRoot) == .assigned)
+        #expect(NSWorkspace.shared.setIcon(makeNSImage(color: .blue), forFile: foreignMovie.path, options: []))
+        #expect(try service.restyleAssignedPoster(makePoster(), toChild: "Movie", in: foreignRoot,
+                                                  appearance: .softFinish) == .existingIconPreserved)
+
+        let (missingRoot, missingMovie) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: missingRoot) }
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: missingRoot) == .assigned)
+        #expect(NSWorkspace.shared.setIcon(nil, forFile: missingMovie.path, options: []))
+        #expect(try service.restyleAssignedPoster(makePoster(), toChild: "Movie", in: missingRoot,
+                                                  appearance: .matteFrame) == .existingIconPreserved)
+        #expect(try !service.hasCustomIcon(at: missingMovie))
+
+        let (suppressedRoot, _) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: suppressedRoot) }
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: suppressedRoot) == .assigned)
+        #expect(try service.removeAssignedPoster(toChild: "Movie", in: suppressedRoot))
+        #expect(try service.restyleAssignedPoster(makePoster(), toChild: "Movie", in: suppressedRoot,
+                                                  appearance: .softFinish) == .existingIconPreserved)
+        #expect(try service.isPosterSuppressed(toChild: "Movie", in: suppressedRoot))
+    }
+
+    @Test func explicitStyledAssignmentOverridesSuppressionAndLegacyRemainsRaw() throws {
+        let (root, _) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
+        #expect(try service.removeAssignedPoster(toChild: "Movie", in: root))
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .existingIconPreserved)
+        #expect(try service.replaceAssignedPoster(makePoster(), toChild: "Movie", in: root,
+                                                  appearance: .matteFrame) == .assigned)
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .matteFrame)
+    }
+
+    @Test func ownershipMarkerWithoutAppearanceDecodesAsRaw() throws {
+        let (root, movie) = try makeMovieDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root,
+                                        appearance: .softFinish) == .assigned)
+
+        let icon = movie.appendingPathComponent("Icon\r")
+        let descriptor = open(icon.path, O_RDONLY | O_NOFOLLOW)
+        #expect(descriptor >= 0)
+        guard descriptor >= 0 else { return }
+        defer { _ = close(descriptor) }
+        let attribute = "com.moviefolderposters.ownership"
+        let length = fgetxattr(descriptor, attribute, nil, 0, 0, 0)
+        #expect(length > 0)
+        guard length > 0 else { return }
+        var markerData = Data(count: length)
+        let readCount = markerData.withUnsafeMutableBytes { bytes in
+            fgetxattr(descriptor, attribute, bytes.baseAddress, length, 0, 0)
+        }
+        #expect(readCount == length)
+        var marker = try #require(JSONSerialization.jsonObject(with: markerData) as? [String: String])
+        marker.removeValue(forKey: "appearance")
+        markerData = try JSONSerialization.data(withJSONObject: marker)
+        let writeCount = markerData.withUnsafeBytes { bytes in
+            fsetxattr(descriptor, attribute, bytes.baseAddress, bytes.count, 0, 0)
+        }
+        #expect(writeCount == 0)
+        #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .raw)
     }
 
     @Test func userReplacementIsPreservedAndCannotBeRemoved() throws {

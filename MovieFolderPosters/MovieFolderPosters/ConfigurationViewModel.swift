@@ -1,3 +1,4 @@
+import FileSystem
 import Foundation
 
 @MainActor
@@ -7,6 +8,7 @@ final class ConfigurationViewModel {
     var onChange: (@MainActor () -> Void)?
     private(set) var directories: [ConfiguredDirectoryStatus] = []
     private(set) var credentialConfigured = false
+    private(set) var posterAppearance: PosterAppearance = .softFinish
     private(set) var isBusy = false
     private(set) var errorMessage: String?
 
@@ -55,8 +57,21 @@ final class ConfigurationViewModel {
         }
     }
 
+    func setPosterAppearance(_ appearance: PosterAppearance) async {
+        guard !isBusy, appearance != posterAppearance else { return }
+        let previousAppearance = posterAppearance
+        posterAppearance = appearance
+        await perform(failureMessage: "Could not save the poster appearance.", onFailure: {
+            self.posterAppearance = previousAppearance
+        }) {
+            try await self.service.setPosterAppearance(appearance)
+            return try await self.service.snapshot()
+        }
+    }
+
     private func perform(
         failureMessage: String,
+        onFailure: @MainActor () -> Void = {},
         operation: @MainActor () async throws -> ConfigurationSnapshot
     ) async {
         guard !isBusy else { return }
@@ -68,6 +83,7 @@ final class ConfigurationViewModel {
         do {
             apply(try await operation())
         } catch {
+            onFailure()
             errorMessage = failureMessage
         }
 
@@ -78,6 +94,7 @@ final class ConfigurationViewModel {
     private func apply(_ snapshot: ConfigurationSnapshot) {
         directories = snapshot.directories
         credentialConfigured = snapshot.credentialConfigured
+        posterAppearance = snapshot.posterAppearance
     }
 
     private func publish() {

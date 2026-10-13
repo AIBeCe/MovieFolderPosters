@@ -19,6 +19,26 @@ nonisolated public protocol PosterAssigner: Sendable {
         in directory: URL,
         expectedIdentity: String?
     ) throws -> PosterAssignmentResult
+
+    func assignPoster(
+        _ imageData: Data,
+        toChild name: String,
+        in directory: URL,
+        appearance: PosterAppearance,
+        expectedIdentity: String?
+    ) throws -> PosterAssignmentResult
+}
+
+nonisolated extension PosterAssigner {
+    func assignPoster(
+        _ imageData: Data,
+        toChild name: String,
+        in directory: URL,
+        appearance: PosterAppearance,
+        expectedIdentity: String?
+    ) throws -> PosterAssignmentResult {
+        try assignPoster(imageData, toChild: name, in: directory, expectedIdentity: expectedIdentity)
+    }
 }
 
 nonisolated extension FileSystemService: PosterAssigner {}
@@ -38,6 +58,7 @@ nonisolated public enum PosterActionError: Error, Equatable {
 nonisolated public struct ProcessingSummary: Equatable, Sendable {
     public var examined: Int
     public var assigned: Int
+    public var restyled: Int
     public var unresolved: Int
     public var transientFailures: Int
     public var skippedExistingIcons: Int
@@ -49,6 +70,7 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     public init(
         examined: Int = 0,
         assigned: Int = 0,
+        restyled: Int = 0,
         unresolved: Int = 0,
         transientFailures: Int = 0,
         skippedExistingIcons: Int = 0,
@@ -59,6 +81,7 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     ) {
         self.examined = examined
         self.assigned = assigned
+        self.restyled = restyled
         self.unresolved = unresolved
         self.transientFailures = transientFailures
         self.skippedExistingIcons = skippedExistingIcons
@@ -84,6 +107,7 @@ public actor MovieFolderProcessor {
     private let posterAssigner: any PosterAssigner
     private let now: @Sendable () -> Date
     private let beforeManualMutation: @Sendable () throws -> PersistenceLease?
+    private let appearance: PosterAppearance
     private let parser = ReleaseNameParser()
     private let matcher = MovieMatcher()
 
@@ -95,7 +119,8 @@ public actor MovieFolderProcessor {
         posterAssigner: any PosterAssigner = FileSystemService(),
         now: @escaping @Sendable () -> Date = Date.init,
         coordinationStore: PersistenceStore? = nil,
-        beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil }
+        beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil },
+        appearance: PosterAppearance = .softFinish
     ) {
         self.fileSystem = fileSystem
         self.persistence = persistence
@@ -105,6 +130,7 @@ public actor MovieFolderProcessor {
         self.posterAssigner = posterAssigner
         self.now = now
         self.beforeManualMutation = beforeManualMutation
+        self.appearance = appearance
     }
 
     public func process(root: URL) async throws -> ProcessingSummary {
@@ -144,14 +170,30 @@ public actor MovieFolderProcessor {
                 stateChanged = true
             }
         }
+        var summary = ProcessingSummary()
+        for candidate in candidates where candidate.hasCustomIcon {
+            try Task.checkCancellation()
+            do {
+                if try restyleOwnedPosterIfPossible(candidate, in: root, state: state) {
+                    summary.restyled += 1
+                } else {
+                    summary.skippedExistingIcons += 1
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+                summary.transientFailures += 1
+            }
+        }
         if let backoff = state.rootBackoffUntil, backoff > currentTime {
             if stateChanged { try saveState(state, to: lease) }
-            return ProcessingSummary(rootBackoffUntil: backoff)
+            summary.rootBackoffUntil = backoff
+            return summary
         }
         if state.rootBackoffUntil != nil { stateChanged = true }
         state.rootBackoffUntil = nil
         if stateChanged { try saveState(state, to: lease) }
-        var summary = ProcessingSummary()
         for candidate in candidates {
             try Task.checkCancellation()
             do {
@@ -161,7 +203,6 @@ public actor MovieFolderProcessor {
                 continue
             }
             if candidate.hasCustomIcon {
-                summary.skippedExistingIcons += 1
                 continue
             }
 
@@ -448,7 +489,8 @@ public actor MovieFolderProcessor {
         let result: PosterAssignmentResult
         do {
             result = try fileSystem.replaceAssignedPoster(
-                data, toChild: candidate.name, in: root, expectedIdentity: candidate.identity
+                data, toChild: candidate.name, in: root, appearance: appearance,
+                expectedIdentity: candidate.identity
             )
         } catch let error as FolderPosterError {
             if case .invalidChild = error { throw PosterActionError.changedIdentity }
@@ -483,7 +525,33 @@ public actor MovieFolderProcessor {
         }
         guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
         return try posterAssigner.assignPoster(data, toChild: candidate.name, in: root,
-                                               expectedIdentity: candidate.identity)
+                                               appearance: appearance, expectedIdentity: candidate.identity)
+    }
+
+    private func restyleOwnedPosterIfPossible(
+        _ candidate: FolderCandidate, in root: URL, state: ProcessingState
+    ) throws -> Bool {
+        guard try !fileSystem.isPosterSuppressed(toChild: candidate.name, in: root),
+              try fileSystem.hasAssignedPoster(toChild: candidate.name, in: root,
+                                               expectedIdentity: candidate.identity) else { return false }
+        guard try fileSystem.assignedPosterAppearance(toChild: candidate.name, in: root,
+                                                      expectedIdentity: candidate.identity) != appearance else {
+            return false
+        }
+        guard let record = state.folders[candidate.name], record.fingerprint == candidate.fingerprint,
+              record.status == .processed, let posterPath = record.posterPath,
+              record.matchedMovieID != nil, let data = cachedPoster(for: posterPath) else { return false }
+        try Task.checkCancellation()
+        let current = try fileSystem.snapshot(ofChild: candidate.name, in: root)
+        guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
+        let styleLease = try beforeManualMutation()
+        defer { withExtendedLifetime(styleLease) {} }
+        let result = try fileSystem.restyleAssignedPoster(
+            data, toChild: candidate.name, in: root, appearance: appearance,
+            expectedIdentity: candidate.identity
+        )
+        if case .assigned = result { return true }
+        return false
     }
 
     private func recordUnresolved(_ candidate: FolderCandidate, in state: inout ProcessingState) {
