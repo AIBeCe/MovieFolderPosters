@@ -255,3 +255,41 @@ This recommendation does not approve implementation or select features from the 
 - [100 new feature ideas](NEW_FEATURE_IDEAS.md)
 - [Current project plan](PROJECT_PLAN.md)
 - [Poster appearance behavior and startup correction](POSTER_APPEARANCE.md)
+
+## Visual concept comparisons — 2026-10-14
+
+These generated images illustrate layout and material alternatives. They are not running app screenshots, exact
+AppKit renderings, accessibility evidence, or approved implementation specifications. Sample counts, file labels,
+buttons, and detail fields are illustrative. The written scope and safeguards above remain authoritative.
+Actual OS glass appearance depends on macOS, desktop background, and accessibility settings.
+
+### Settings: S1, S2, S3
+
+S1 separates preferences into panes; S2 uses a Settings sidebar; S3 embeds preferences in the main window.
+The corrected preview keeps poster artwork sharp and distinguishes a graphite frame from an image texture.
+
+![Settings alternatives S1, S2, S3](images/ui-proposals/settings-s1-s2-s3.png)
+
+### Materials: G0 and G3
+
+G0 uses standard surfaces. G3 deliberately explores extensive glass to show its visual impact on dense information.
+G3 remains an exploratory option, not the recommended treatment for operational results.
+
+![Standard surfaces versus extensive glass](images/ui-proposals/glass-g0-g3.png)
+
+### Materials: G1 and G2
+
+G1 relies on native system styling. G2 demonstrates a restrained custom-glass toolbar with calmer content surfaces.
+These can be combined with a separately chosen Settings layout; the boards do not depict every cross-combination.
+
+![Native system styling versus restrained custom glass](images/ui-proposals/glass-g1-g2.png)
+
+### Additional main-window comparisons
+
+These supplementary boards illustrate the previously proposed main-window layouts A through D.
+Styling and sample artwork in them are illustrative; use the corrected Settings board and the actual poster renderer
+preview in [Poster appearance](POSTER_APPEARANCE.md) to assess the implemented poster finishes.
+
+![Main-window layouts A and B](images/ui-proposals/layouts-ab.png)
+
+![Main-window layouts C and D](images/ui-proposals/layouts-cd.png)
