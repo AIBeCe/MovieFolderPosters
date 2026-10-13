@@ -69,6 +69,7 @@
 - Inspect Git status before changes and preserve user edits.
 - Use main for releases, develop for integration, and feature/* for normal development.
 - Branch new features from develop once the repository has an established commit history.
+- Use bugfix/* from develop for unreleased bug fixes; reserve hotfix/* for released fixes from main.
 - Use release/* and hotfix/* only for explicitly authorized release or hotfix work.
 - Do not implement directly on main or develop.
 - A completed, approved feature includes its verified commit and a non-fast-forward merge into develop.

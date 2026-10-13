@@ -5,6 +5,14 @@ import Testing
 
 struct ConfigurationViewModelTests {
     @Test @MainActor
+    func configurationViewLoadsWithoutLayoutExceptions() {
+        let viewModel = ConfigurationViewModel(service: ConfigurationServiceFake())
+        let controller = ConfigurationViewController(viewModel: viewModel)
+
+        #expect(!controller.view.subviews.isEmpty)
+    }
+
+    @Test @MainActor
     func loadPublishesConfiguredDirectoriesAndCredentialState() async {
         let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
         let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(

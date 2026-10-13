@@ -55,3 +55,19 @@ comparison within Finder still require manual checks. Xcode GUI test hosts were 
 Independent review passed. A removal/suppression race was corrected by requiring verified ownership and no
 suppression again inside the final automatic-restyle mutation lock; its regression demonstrated RED then GREEN.
 Explicit manual replacement retains its existing behavior.
+
+## Startup layout correction — 2026-10-13
+
+A subsequent user launch exposed an AppKit exception: the appearance help label's width constraint was activated
+before the label and root view shared an ancestor. Earlier view-model tests compiled the controller but did not load
+its view; process liveness alone did not establish that the configuration window could open.
+
+The correction activates the help label's width constraint alongside the other layout constraints, after attaching
+the content stack. A regression test loads the real controller view: it reproduced the same uncaught exception before
+the change, then passed afterward. All nine configuration UI tests pass in the isolated SwiftPM harness.
+
+This fix uses `bugfix/fix-appearance-layout`, branched from develop, following the clarified GitFlow convention.
+The signed Debug build and `build_and_run.sh --verify` passed. Native accessibility inspection confirmed the
+configuration window opened with configured directories, credential status, and Soft finish selected.
+The fix was committed on the bugfix branch and merged into local develop with a non-fast-forward merge; no push.
+Live Finder refresh and reboot checks remain unverified.
