@@ -72,7 +72,9 @@
 - Use bugfix/* from develop for unreleased bug fixes; reserve hotfix/* for released fixes from main.
 - Use release/* and hotfix/* only for explicitly authorized release or hotfix work.
 - Do not implement directly on main or develop.
-- A completed, approved feature includes its verified commit and a non-fast-forward merge into develop.
+- A completed, approved feature or bugfix includes its verified commit and a fast-forward-only merge into develop.
+- Use `git merge --ff-only` by default to keep history linear; do not use `--no-ff` or create merge commits.
+- If a fast-forward merge fails, report the divergence; do not rewrite history or change merge strategy without approval.
 - The user's GitFlow instruction authorizes that feature integration; do not ask for separate merge approval.
 - Create subsequent feature branches from the updated develop branch.
 - Do not reset history, discard changes, push, publish, or merge into main without explicit authorization.
