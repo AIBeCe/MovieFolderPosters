@@ -114,7 +114,6 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         )
         appearanceHelp.textColor = .secondaryLabelColor
         appearanceHelp.maximumNumberOfLines = 2
-        appearanceHelp.widthAnchor.constraint(equalTo: rootView.widthAnchor, constant: -40).isActive = true
 
         let credentialHeading = NSTextField(labelWithString: "TMDb API credential")
         credentialHeading.font = .boldSystemFont(ofSize: 13)
@@ -141,6 +140,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         rootView.addSubview(content)
 
         NSLayoutConstraint.activate([
+            appearanceHelp.widthAnchor.constraint(equalTo: content.widthAnchor),
             content.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 20),
             content.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -20),
             content.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 20),
