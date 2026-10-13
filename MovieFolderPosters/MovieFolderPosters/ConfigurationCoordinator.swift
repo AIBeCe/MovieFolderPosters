@@ -20,7 +20,8 @@ final class ConfigurationCoordinator {
         let viewController = ConfigurationViewController(viewModel: viewModel)
         let window = NSWindow(contentViewController: viewController)
         window.title = "Movie Folder Posters"
-        window.setContentSize(NSSize(width: 760, height: 460))
+        window.setContentSize(NSSize(width: 760, height: 570))
+        window.minSize = NSSize(width: 650, height: 570)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
 

@@ -1,3 +1,4 @@
+import FileSystem
 import Foundation
 import Testing
 @testable import MovieFolderPosters
@@ -7,7 +8,7 @@ struct ConfigurationViewModelTests {
     func loadPublishesConfiguredDirectoriesAndCredentialState() async {
         let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
         let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
-            directories: [directory], credentialConfigured: true
+            directories: [directory], credentialConfigured: true, posterAppearance: .matteFrame
         ))
         let viewModel = ConfigurationViewModel(service: service)
 
@@ -15,8 +16,59 @@ struct ConfigurationViewModelTests {
 
         #expect(viewModel.directories == [directory])
         #expect(viewModel.credentialConfigured)
+        #expect(viewModel.posterAppearance == .matteFrame)
         #expect(!viewModel.isBusy)
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test @MainActor
+    func changingAppearancePersistsAndRefreshesTheVisibleSnapshot() async {
+        let service = ConfigurationServiceFake()
+        let viewModel = ConfigurationViewModel(service: service)
+
+        await viewModel.load()
+        #expect(viewModel.posterAppearance == .softFinish)
+        await viewModel.setPosterAppearance(.matteFrame)
+
+        #expect(viewModel.posterAppearance == .matteFrame)
+        #expect(service.calls.contains(.setPosterAppearance(.matteFrame)))
+        #expect(!viewModel.isBusy)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test @MainActor
+    func failedAppearanceChangeRevertsToLastSavedChoice() async {
+        let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+            directories: [], credentialConfigured: false, posterAppearance: .raw
+        ))
+        let viewModel = ConfigurationViewModel(service: service)
+        await viewModel.load()
+        service.failNextOperation(with: TestServiceError(message: "write failed"))
+
+        await viewModel.setPosterAppearance(.matteFrame)
+
+        #expect(viewModel.posterAppearance == .raw)
+        #expect(viewModel.errorMessage == "Could not save the poster appearance.")
+        #expect(!viewModel.isBusy)
+    }
+
+    @Test @MainActor
+    func appearanceChangeIsSerializedWithOtherConfigurationMutations() async {
+        let gate = AsyncOperationGate()
+        let service = ConfigurationServiceFake(gate: gate)
+        let viewModel = ConfigurationViewModel(service: service)
+        let change = Task { await viewModel.setPosterAppearance(.raw) }
+        await gate.waitUntilEntered()
+        #expect(viewModel.isBusy)
+
+        await viewModel.setPosterAppearance(.matteFrame)
+        #expect(service.calls == [.setPosterAppearance(.raw)])
+
+        await gate.open()
+        await change.value
+        #expect(service.calls == [.setPosterAppearance(.raw), .snapshot])
+        #expect(viewModel.posterAppearance == .raw)
+        #expect(!viewModel.isBusy)
     }
 
     @Test @MainActor
@@ -43,7 +95,7 @@ struct ConfigurationViewModelTests {
             id: directoryID, path: "/Volumes/Movies", availability: .reauthorizationRequired
         )
         let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
-            directories: [directory], credentialConfigured: false
+            directories: [directory], credentialConfigured: false, posterAppearance: .softFinish
         ))
         let viewModel = ConfigurationViewModel(service: service)
         let replacementURL = URL(fileURLWithPath: "/Volumes/Movies", isDirectory: true)
@@ -111,6 +163,7 @@ private enum ConfigurationServiceCall: Equatable {
     case reauthorize(UUID, URL)
     case saveCredential(String)
     case removeCredential
+    case setPosterAppearance(PosterAppearance)
 }
 
 private struct TestServiceError: Error, Sendable {
@@ -125,7 +178,9 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
     private let gate: AsyncOperationGate?
 
     init(
-        snapshot: ConfigurationSnapshot = ConfigurationSnapshot(directories: [], credentialConfigured: false),
+        snapshot: ConfigurationSnapshot = ConfigurationSnapshot(
+            directories: [], credentialConfigured: false, posterAppearance: .softFinish
+        ),
         gate: AsyncOperationGate? = nil
     ) {
         currentSnapshot = snapshot
@@ -153,7 +208,8 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
             )
             currentSnapshot = ConfigurationSnapshot(
                 directories: currentSnapshot.directories + [status],
-                credentialConfigured: currentSnapshot.credentialConfigured
+                credentialConfigured: currentSnapshot.credentialConfigured,
+                posterAppearance: currentSnapshot.posterAppearance
             )
         }
     }
@@ -163,7 +219,8 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
         lock.withLock {
             currentSnapshot = ConfigurationSnapshot(
                 directories: currentSnapshot.directories.filter { $0.id != identifier },
-                credentialConfigured: currentSnapshot.credentialConfigured
+                credentialConfigured: currentSnapshot.credentialConfigured,
+                posterAppearance: currentSnapshot.posterAppearance
             )
         }
     }
@@ -176,7 +233,8 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
             )
             currentSnapshot = ConfigurationSnapshot(
                 directories: currentSnapshot.directories.map { $0.id == identifier ? status : $0 },
-                credentialConfigured: currentSnapshot.credentialConfigured
+                credentialConfigured: currentSnapshot.credentialConfigured,
+                posterAppearance: currentSnapshot.posterAppearance
             )
         }
     }
@@ -185,7 +243,20 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
         try await prepare(.saveCredential(value))
         lock.withLock {
             currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories, credentialConfigured: true
+                directories: currentSnapshot.directories,
+                credentialConfigured: true,
+                posterAppearance: currentSnapshot.posterAppearance
+            )
+        }
+    }
+
+    func setPosterAppearance(_ appearance: PosterAppearance) async throws {
+        try await prepare(.setPosterAppearance(appearance))
+        lock.withLock {
+            currentSnapshot = ConfigurationSnapshot(
+                directories: currentSnapshot.directories,
+                credentialConfigured: currentSnapshot.credentialConfigured,
+                posterAppearance: appearance
             )
         }
     }
@@ -194,7 +265,9 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
         try await prepare(.removeCredential)
         lock.withLock {
             currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories, credentialConfigured: false
+                directories: currentSnapshot.directories,
+                credentialConfigured: false,
+                posterAppearance: currentSnapshot.posterAppearance
             )
         }
     }

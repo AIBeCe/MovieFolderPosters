@@ -1,9 +1,38 @@
+import FileSystem
 import Foundation
 import Persistence
 import Testing
 @testable import MovieFolderPosters
 
 struct DirectoryConfigurationTests {
+    @Test func appearanceMigratesOldSettingsWithoutLosingAuthorizationOrCredentialRevision() throws {
+        var configuration = DirectoryConfiguration()
+        configuration.directories = [MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1, 2]),
+                                                         authorizationVersion: UUID())]
+        var old = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
+            as? [String: Any])
+        old.removeValue(forKey: "posterAppearance")
+        let migrated = try JSONDecoder().decode(DirectoryConfiguration.self,
+                                                from: JSONSerialization.data(withJSONObject: old))
+        #expect(migrated.posterAppearance == .softFinish)
+        #expect(migrated.directories == configuration.directories)
+        #expect(migrated.credentialRevision == configuration.credentialRevision)
+        #expect(migrated.developmentFixtures == configuration.developmentFixtures)
+    }
+
+    @Test(arguments: PosterAppearance.allCases)
+    func appearancePersistsWithoutInvalidatingMovieRecords(_ appearance: PosterAppearance) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
+        try repository.update { $0.directories = [] }
+        let before = try repository.read()
+        try repository.update { $0.posterAppearance = appearance }
+        let reopened = try ConfigurationRepository(store: repository.store).read()
+        #expect(reopened.posterAppearance == appearance)
+        #expect(reopened.credentialRevision == before.credentialRevision)
+    }
+
     @Test func holdingReadPreventsChangesUntilMutationFinishes() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -370,3 +370,16 @@ Its earlier source dependencies were already included, so older feature historie
 that tested tree instead of reintroducing obsolete configuration code. Exact tree equality was verified afterward.
 The agent rules now make merge into develop part of approved feature completion. Subsequent feature branches
 start from updated develop. Main and remote branches were not changed; no push was performed.
+
+## Poster appearance feature — 2026-10-13
+
+Approved scope: a global Raw / Soft finish / Matte frame selector, with Soft finish as the migration and new-install
+default. FileSystem owns native bitmap styling and verified icon ownership; the main target owns settings and
+movie processing. Cached sources restyle owned icons without invalidating matches or making network requests.
+Foreign icons, suppression, missing source images and explicit movie selections are preserved.
+
+Implemented on `feature/poster-appearance`; independent review passed after correcting a removal/suppression
+race in automatic restyling. FileSystem 44, processing 40, configuration 20 and UI eight tests passed. Final signed
+Debug/Release builds, complete bundle signature checks, and all Xcode test-target compilation passed.
+The verified feature is committed and merged into local develop using a non-fast-forward merge; no push was performed. Native UI automation timed out; live selector interaction and Finder appearance checks are
+unverified. See [Poster appearance](POSTER_APPEARANCE.md) for decisions and verification limits.

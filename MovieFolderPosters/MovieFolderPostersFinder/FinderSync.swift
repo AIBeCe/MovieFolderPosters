@@ -53,7 +53,7 @@ private actor FinderConfigurationRuntime {
                                                      cacheDirectory: container.appendingPathComponent("Posters"),
                                                      coordinationStore: try PersistenceStore(
                                                         directory: container.appendingPathComponent("ProcessingLocks")
-                                                     ))
+                                                     ), appearance: configuration.posterAppearance)
                     logger.notice("Shared Keychain credential available")
                 } else {
                     logger.notice("TMDb credential is not configured")

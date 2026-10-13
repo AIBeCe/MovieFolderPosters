@@ -160,7 +160,8 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         guard let directory = current.directories.first(where: { $0.id == context.directory.id }),
               directory.authorizationVersion == context.directory.authorizationVersion,
               current.credentialRevision == context.configuration.credentialRevision,
-              current.developmentFixtures == context.configuration.developmentFixtures else {
+              current.developmentFixtures == context.configuration.developmentFixtures,
+              current.posterAppearance == context.configuration.posterAppearance else {
             throw MoviePosterActionServiceError.configurationChanged
         }
     }
@@ -194,6 +195,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         let expectedDirectory = context.directory
         let expectedRevision = context.configuration.credentialRevision
         let expectedFixtures = context.configuration.developmentFixtures
+        let expectedAppearance = context.configuration.posterAppearance
         let repository = try SharedEnvironment.repository()
         let beforeManualMutation: @Sendable () throws -> PersistenceLease? = {
             let (current, lease) = try repository.readHoldingLease()
@@ -201,16 +203,19 @@ actor MoviePosterActionService: MoviePosterActionServicing {
                   currentDirectory.path == expectedDirectory.path,
                   currentDirectory.authorizationVersion == expectedDirectory.authorizationVersion,
                   current.credentialRevision == expectedRevision,
-                  current.developmentFixtures == expectedFixtures else {
+                  current.developmentFixtures == expectedFixtures,
+                  current.posterAppearance == expectedAppearance else {
                 withExtendedLifetime(lease) {}
                 throw MoviePosterActionServiceError.configurationChanged
             }
             return lease
         }
         return MovieFolderProcessor(persistence: try PersistenceStore(directory: recordDirectory),
-                                    provider: provider, cacheDirectory: container.appendingPathComponent("Posters"),
+                                    provider: provider,
+                                    cacheDirectory: container.appendingPathComponent("Posters"),
                                     coordinationStore: try PersistenceStore(directory: coordinationDirectory),
-                                    beforeManualMutation: beforeManualMutation)
+                                    beforeManualMutation: beforeManualMutation,
+                                    appearance: context.configuration.posterAppearance)
     }
 }
 

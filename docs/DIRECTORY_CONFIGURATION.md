@@ -25,6 +25,12 @@ Finder Sync observation is a navigation trigger, not a general filesystem change
 may require closing all views of its collection and reopening it. Duplicate Finder windows need not cause another
 begin-observation callback. Open/Save dialogs can run separate extension instances.
 
+## Poster appearance
+
+Choose Raw (no styling), Soft finish (default), or Matte frame in the configuration window. The selection is shared
+with the Finder extension. Cached application-owned icons update when a configured collection is revisited; foreign
+and suppressed icons remain intact. See [Poster appearance](POSTER_APPEARANCE.md) for rendering and verification.
+
 ## Signing and process permissions
 
 Both bundles use registered App Group `group.dag.fikios.MovieFolderPosters`, provisioned for team `N74TV576H8` on the

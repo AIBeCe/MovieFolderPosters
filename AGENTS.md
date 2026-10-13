@@ -11,6 +11,7 @@
 - Custom-icon filesystem metadata changes require an approved implementation point.
 - Do not add daemons, launch agents, watchers, polling, or additional services without explicit approval.
 - Completed scope includes Finder lifecycle, parsing, matching, processing, Phase 6 configuration, and Phase 7 manual actions.
+- Approved poster appearance scope adds Raw, default Soft finish, and graphite Matte frame settings.
 - Keep fixtures explicitly opt-in in Debug; Release uses the configured TMDb read access token.
 - Creating or approving the project plan does not authorize further product implementation.
 

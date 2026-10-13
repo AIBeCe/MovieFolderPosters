@@ -396,6 +396,187 @@ final class MovieFolderProcessorTests: XCTestCase {
         XCTAssertEqual(summary.transientFailures, 1)
         XCTAssertEqual(fixture.assigner.assignmentCount, 0)
     }
+
+    func testAppearanceChangeRestylesCachedPosterWithoutProviderRequests() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let provider = CountingProvider()
+        let fileSystem = FileSystemService()
+        let rawProcessor = try fixture.processor(provider: provider, appearance: .raw,
+                                                  posterAssigner: fileSystem)
+        let initial = try await rawProcessor.process(root: fixture.movies)
+
+        let styledProcessor = try fixture.processor(provider: provider, appearance: .softFinish,
+                                                      posterAssigner: fileSystem)
+        let styled = try await styledProcessor.process(root: fixture.movies)
+
+        let appearance = try fileSystem.assignedPosterAppearance(
+            toChild: "Dune (2021)", in: fixture.movies
+        )
+        let searchCount = await provider.searchCount
+        let posterCount = await provider.posterCount
+        XCTAssertEqual(initial.assigned, 1)
+        XCTAssertEqual(styled.restyled, 1)
+        XCTAssertEqual(appearance, .softFinish)
+        XCTAssertEqual(searchCount, 1)
+        XCTAssertEqual(posterCount, 1)
+    }
+
+    func testUnchangedAppearanceDoesNotRewriteOwnedIcon() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let provider = CountingProvider()
+        let fileSystem = FileSystemService()
+        let processor = try fixture.processor(provider: provider, appearance: .softFinish,
+                                              posterAssigner: fileSystem)
+        _ = try await processor.process(root: fixture.movies)
+
+        let second = try await processor.process(root: fixture.movies)
+
+        let searchCount = await provider.searchCount
+        let posterCount = await provider.posterCount
+        XCTAssertEqual(second.assigned, 0)
+        XCTAssertEqual(second.restyled, 0)
+        XCTAssertEqual(searchCount, 1)
+        XCTAssertEqual(posterCount, 1)
+    }
+
+    func testRestylePreservesManuallySelectedMovieID() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let fileSystem = FileSystemService()
+        let rawProcessor = try fixture.processor(provider: CountingProvider(), appearance: .raw,
+                                                  posterAssigner: fileSystem)
+        let identity = try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).identity
+        let selected = MovieMetadata(id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+                                     posterPath: "/selected.jpg")
+        _ = try await rawProcessor.selectMovie(selected, root: fixture.movies, child: "Dune (2021)",
+                                               expectedIdentity: identity)
+        let styledProcessor = try fixture.processor(provider: CountingProvider(), appearance: .softFinish,
+                                                     posterAssigner: fileSystem)
+
+        let summary = try await styledProcessor.process(root: fixture.movies)
+        let matchedID = try await styledProcessor.matchedMovieID(
+            root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
+        )
+
+        XCTAssertEqual(summary.restyled, 1)
+        XCTAssertEqual(matchedID, 713)
+    }
+
+    func testForeignIconIsNotReplacedForAppearanceChange() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        try fixture.markCustomIcon("Dune (2021)")
+        let fileSystem = FileSystemService()
+        let processor = try fixture.processor(provider: CountingProvider(), appearance: .matteFrame,
+                                              posterAssigner: fileSystem)
+
+        let summary = try await processor.process(root: fixture.movies)
+
+        XCTAssertEqual(summary.restyled, 0)
+        XCTAssertTrue(try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+        XCTAssertNil(try fileSystem.assignedPosterAppearance(toChild: "Dune (2021)", in: fixture.movies))
+    }
+
+    func testSuppressedOwnedIconIsNotRestoredForAppearanceChange() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let fileSystem = FileSystemService()
+        let rawProcessor = try fixture.processor(provider: CountingProvider(), appearance: .raw,
+                                                  posterAssigner: fileSystem)
+        let identity = try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).identity
+        let selected = MovieMetadata(id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+                                     posterPath: "/selected.jpg")
+        _ = try await rawProcessor.selectMovie(selected, root: fixture.movies, child: "Dune (2021)",
+                                               expectedIdentity: identity)
+        let removed = try await rawProcessor.removePoster(root: fixture.movies, child: "Dune (2021)",
+                                                          expectedIdentity: identity)
+        XCTAssertTrue(removed)
+        let styledProcessor = try fixture.processor(provider: CountingProvider(), appearance: .softFinish,
+                                                     posterAssigner: fileSystem)
+
+        let summary = try await styledProcessor.process(root: fixture.movies)
+
+        XCTAssertEqual(summary.assigned, 0)
+        XCTAssertEqual(summary.restyled, 0)
+        XCTAssertTrue(try fileSystem.isPosterSuppressed(toChild: "Dune (2021)", in: fixture.movies))
+    }
+
+    func testMissingCachedSourceLeavesOwnedIconAtItsCurrentAppearance() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let provider = CountingProvider()
+        let fileSystem = FileSystemService()
+        let rawProcessor = try fixture.processor(provider: provider, appearance: .raw,
+                                                  posterAssigner: fileSystem)
+        _ = try await rawProcessor.process(root: fixture.movies)
+        let cacheKey = SHA256.hash(data: Data("/dune.jpg".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        try FileManager.default.removeItem(at: fixture.cache.appendingPathComponent("poster-\(cacheKey)"))
+        let styledProcessor = try fixture.processor(provider: provider, appearance: .softFinish,
+                                                     posterAssigner: fileSystem)
+
+        let summary = try await styledProcessor.process(root: fixture.movies)
+
+        let appearance = try fileSystem.assignedPosterAppearance(
+            toChild: "Dune (2021)", in: fixture.movies
+        )
+        let searchCount = await provider.searchCount
+        let posterCount = await provider.posterCount
+        XCTAssertEqual(summary.restyled, 0)
+        XCTAssertEqual(appearance, .raw)
+        XCTAssertEqual(searchCount, 1)
+        XCTAssertEqual(posterCount, 1)
+    }
+
+    func testCachedRestyleRunsBeforeRootBackoffNetworkFailure() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let provider = CountingProvider()
+        let fileSystem = FileSystemService()
+        let rawProcessor = try fixture.processor(provider: provider, appearance: .raw,
+                                                  posterAssigner: fileSystem)
+        _ = try await rawProcessor.process(root: fixture.movies)
+        try fixture.addFolder("Arrival (2016)")
+        await provider.failNextSearch(with: .authentication)
+        _ = try await rawProcessor.process(root: fixture.movies)
+        let styledProcessor = try fixture.processor(provider: provider, appearance: .softFinish,
+                                                     posterAssigner: fileSystem)
+
+        let summary = try await styledProcessor.process(root: fixture.movies)
+
+        let appearance = try fileSystem.assignedPosterAppearance(
+            toChild: "Dune (2021)", in: fixture.movies
+        )
+        XCTAssertNotNil(summary.rootBackoffUntil)
+        XCTAssertEqual(summary.restyled, 1)
+        XCTAssertEqual(appearance, .softFinish)
+    }
+
+    func testRestyleDoesNotRecreatePosterSuppressedBeforeFinalWrite() async throws {
+        let fixture = try Fixture()
+        try fixture.addFolder("Dune (2021)")
+        let fileSystem = FileSystemService()
+        let identity = try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).identity
+        let rawProcessor = try fixture.processor(provider: CountingProvider(), appearance: .raw,
+                                                  posterAssigner: fileSystem)
+        _ = try await rawProcessor.process(root: fixture.movies)
+        let styledProcessor = try fixture.processor(
+            provider: CountingProvider(), appearance: .softFinish, posterAssigner: fileSystem,
+            beforeManualMutation: {
+                _ = try fileSystem.removeAssignedPoster(toChild: "Dune (2021)", in: fixture.movies,
+                                                        expectedIdentity: identity)
+                return nil
+            }
+        )
+
+        let summary = try await styledProcessor.process(root: fixture.movies)
+
+        XCTAssertEqual(summary.restyled, 0)
+        XCTAssertFalse(try fileSystem.hasAssignedPoster(toChild: "Dune (2021)", in: fixture.movies))
+        XCTAssertTrue(try fileSystem.isPosterSuppressed(toChild: "Dune (2021)", in: fixture.movies))
+    }
 }
 
 private struct Fixture {
@@ -434,10 +615,14 @@ private struct Fixture {
 
     func processor(
         provider: CountingProvider,
-        clock: @escaping @Sendable () -> Date = Date.init
+        clock: @escaping @Sendable () -> Date = Date.init,
+        appearance: PosterAppearance = .softFinish,
+        posterAssigner: (any PosterAssigner)? = nil,
+        beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil }
     ) throws -> MovieFolderProcessor {
         MovieFolderProcessor(fileSystem: FileSystemService(), persistence: persistence, provider: provider,
-                             cacheDirectory: cache, posterAssigner: assigner, now: clock)
+                             cacheDirectory: cache, posterAssigner: posterAssigner ?? assigner, now: clock,
+                             beforeManualMutation: beforeManualMutation, appearance: appearance)
     }
 }
 
@@ -449,6 +634,7 @@ private actor CountingProvider: MovieMetadataProvider {
     private let searchError: TMDbError?
     private let cancellationError: TMDbError?
     private var failuresRemaining: Int
+    private var nextSearchError: TMDbError?
     private var searchContinuation: CheckedContinuation<MovieSearchResult, Error>?
     private var searchStarted: CheckedContinuation<Void, Never>?
 
@@ -468,6 +654,10 @@ private actor CountingProvider: MovieMetadataProvider {
 
     func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
         searchCount += 1
+        if let nextSearchError {
+            self.nextSearchError = nil
+            throw nextSearchError
+        }
         if let searchError, failuresRemaining > 0 {
             failuresRemaining -= 1
             throw searchError
@@ -487,6 +677,10 @@ private actor CountingProvider: MovieMetadataProvider {
             MovieMetadata(id: 42, title: title, originalTitle: title, releaseYear: year,
                           posterPath: "/dune.jpg")
         ], hasMorePages: false)
+    }
+
+    func failNextSearch(with error: TMDbError) {
+        nextSearchError = error
     }
 
     func downloadPoster(path: String) async throws -> Data {
