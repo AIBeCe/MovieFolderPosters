@@ -3,6 +3,8 @@
 Date: 2026-10-14
 Status: Brainstorming candidates; not an approved implementation plan.
 
+An additional [100 new feature concepts](NEW_FEATURE_IDEAS.md) explores optional capabilities and scope expansions.
+
 ## Purpose and boundaries
 
 Improve the reliability, clarity, and presentation of movie poster folder icons while Finder remains the movie browser.
