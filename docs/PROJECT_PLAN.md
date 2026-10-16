@@ -2,6 +2,11 @@
 
 Status: Approved. Implementation requires separate approval for each point.
 
+> Release planning now lives in [Versioned production roadmap](PRODUCTION_ROADMAP.md), with complete
+> [idea triage](IDEA_TRIAGE.md) and [native UI enhancements](UI_ENHANCEMENTS.md). This document retains the original
+> Phase 1–7 architecture and dated evidence. Do not interpret historical phase status as current release qualification.
+> Documentation approval does not authorize the next implementation point.
+
 ## Main goal
 
 Display movie posters as native folder icons in Finder instead of generic folder icons.
