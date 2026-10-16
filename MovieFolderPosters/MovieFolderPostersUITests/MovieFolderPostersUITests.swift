@@ -2,14 +2,23 @@ import XCTest
 
 final class MovieFolderPostersUITests: XCTestCase {
     @MainActor
-    func testConfigurationWindowOpensWithFolderAndTokenControls() throws {
+    func testNativeMainSettingsAndLogWindows() throws {
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Add Folder…"].exists)
-        XCTAssertTrue(app.buttons["Refresh Status"].exists)
-        XCTAssertTrue(app.buttons["Save Token"].exists)
-        XCTAssertTrue(app.secureTextFields["TMDb API read access token"].exists)
+        let main = app.windows["Movie Folder Posters"]
+        XCTAssertTrue(main.waitForExistence(timeout: 10))
+        XCTAssertTrue(main.buttons["Add collection"].exists)
+        XCTAssertFalse(main.secureTextFields["TMDb API read access token"].exists)
         XCTAssertFalse(app.alerts["Configuration storage is unavailable"].exists)
+        main.buttons["Settings"].click()
+        let tmdb = app.toolbars.buttons["TMDb"]
+        XCTAssertTrue(tmdb.waitForExistence(timeout: 5))
+        tmdb.click()
+        XCTAssertTrue(app.secureTextFields["TMDb API read access token"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Save Token"].exists)
+        app.windows["TMDb"].buttons[XCUIIdentifierCloseWindow].click()
+        main.buttons["Log"].click()
+        XCTAssertTrue(app.windows["Log — Movie Folder Posters"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.windows["Log — Movie Folder Posters"].buttons["Clear"].exists)
     }
 }

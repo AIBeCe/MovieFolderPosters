@@ -1,274 +1,359 @@
 import AppKit
-import FileSystem
+import UniformTypeIdentifiers
 
 @MainActor
 final class ConfigurationViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let viewModel: ConfigurationViewModel
-    private let tableView = NSTableView()
+    private var presentedDirectories: [ConfiguredDirectoryStatus] = []
+    private let tableView = CollectionTableView()
     private let scrollView = NSScrollView()
-    private let addButton = NSButton(title: "Add Folder…", target: nil, action: nil)
-    private let refreshButton = NSButton(title: "Refresh Status", target: nil, action: nil)
-    private let removeButton = NSButton(title: "Remove", target: nil, action: nil)
-    private let reauthorizeButton = NSButton(title: "Locate Folder…", target: nil, action: nil)
-    private let posterAppearancePopup = NSPopUpButton()
-    private let credentialField = NSSecureTextField()
-    private let saveCredentialButton = NSButton(title: "Save Token", target: nil, action: nil)
-    private let removeCredentialButton = NSButton(title: "Remove Token", target: nil, action: nil)
-    private let credentialStatusLabel = NSTextField(labelWithString: "Not configured")
+    private let addButton = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: nil)!,
+                                     target: nil, action: nil)
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
+    private let openSettings: @MainActor () -> Void
+    private let openLog: @MainActor () -> Void
 
-    init(viewModel: ConfigurationViewModel) {
+    init(viewModel: ConfigurationViewModel, onOpenSettings: @escaping @MainActor () -> Void = {},
+         onOpenLog: @escaping @MainActor () -> Void = {}) {
         self.viewModel = viewModel
+        openSettings = onOpenSettings
+        openLog = onOpenLog
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is unavailable")
-    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     override func loadView() {
-        let rootView = NSView()
-        rootView.translatesAutoresizingMaskIntoConstraints = false
-        view = rootView
-
+        view = NSView()
         configureTable()
-        configureControls()
-        buildLayout(in: rootView)
-        viewModel.onChange = { [weak self] in self?.updatePresentation() }
+        let log = iconButton("doc.text", label: "Log", action: #selector(showLog))
+        let settings = iconButton("gearshape", label: "Settings", action: #selector(showSettings))
+        errorLabel.textColor = .systemRed
+        errorLabel.maximumNumberOfLines = 2
+        let footer = NSStackView(views: [log, errorLabel, NSView(), settings])
+        footer.orientation = .horizontal
+        footer.alignment = .centerY
+        footer.spacing = 10
+        for child in [scrollView, footer] {
+            child.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(child)
+        }
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
+            scrollView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -10),
+            footer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            errorLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 540)
+        ])
+        _ = viewModel.observeChanges { [weak self] in self?.refresh() }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        updatePresentation()
+        refresh()
         Task { await viewModel.load() }
     }
 
     private func configureTable() {
-        tableView.headerView = nil
-        tableView.usesAutomaticRowHeights = true
-        tableView.rowHeight = 42
+        tableView.style = .plain
+        tableView.intercellSpacing = .zero
+        tableView.headerView = CollectionHeaderView(frame: NSRect(x: 0, y: 0, width: 780, height: 24))
+        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.rowHeight = 32
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.allowsMultipleSelection = false
-
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("directory"))
-        column.title = "Movie Folders"
-        column.width = 650
-        tableView.addTableColumn(column)
-
-        scrollView.borderType = .bezelBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.documentView = tableView
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-    }
-
-    private func configureControls() {
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
+        tableView.allowsColumnReordering = false
+        for (id, title, width) in [("collection", "Collection", 290.0), ("done", "Done", 80.0),
+                                   ("notFound", "Not found", 90.0), ("matches", "Several matches", 130.0),
+                                   ("total", "Total", 75.0), ("remove", "", 32.0)] {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
+            column.title = title
+            column.width = width
+            column.minWidth = id == "collection" ? 180 : width
+            column.resizingMask = []
+            column.headerCell.alignment = id == "collection" ? .left : .center
+            tableView.addTableColumn(column)
+        }
         addButton.target = self
         addButton.action = #selector(addDirectory)
-        refreshButton.target = self
-        refreshButton.action = #selector(refreshStatus)
-        removeButton.target = self
-        removeButton.action = #selector(removeSelectedDirectory)
-        reauthorizeButton.target = self
-        reauthorizeButton.action = #selector(reauthorizeSelectedDirectory)
-        saveCredentialButton.target = self
-        saveCredentialButton.action = #selector(saveCredential)
-        removeCredentialButton.target = self
-        removeCredentialButton.action = #selector(removeCredential)
-
-        posterAppearancePopup.addItems(withTitles: ["Raw (no styling)", "Soft finish", "Matte frame"])
-        posterAppearancePopup.target = self
-        posterAppearancePopup.action = #selector(posterAppearanceChanged)
-        posterAppearancePopup.setAccessibilityLabel("Poster appearance")
-
-        credentialField.placeholderString = "TMDb API read access token"
-        credentialField.setAccessibilityLabel("TMDb API read access token")
-        errorLabel.textColor = .systemRed
-        errorLabel.maximumNumberOfLines = 2
+        addButton.bezelStyle = .smallSquare
+        addButton.controlSize = .small
+        addButton.setAccessibilityLabel("Add collection")
+        addButton.toolTip = "Add Collection"
+        addButton.translatesAutoresizingMaskIntoConstraints = false
+        if let header = tableView.headerView {
+            header.addSubview(addButton)
+            (header as? CollectionHeaderView)?.addButton = addButton
+            NSLayoutConstraint.activate([
+                addButton.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 76),
+                addButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+                addButton.widthAnchor.constraint(equalToConstant: 22),
+                addButton.heightAnchor.constraint(equalToConstant: 20)
+            ])
+        }
+        tableView.menuForRow = { [weak self] in self?.contextMenu(row: $0) }
+        tableView.deleteSelection = { [weak self] in
+            guard let self, self.presentedDirectories.indices.contains(self.tableView.selectedRow) else { return }
+            self.removeCollection(self.presentedDirectories[self.tableView.selectedRow].id)
+        }
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .bezelBorder
     }
 
-    private func buildLayout(in rootView: NSView) {
-        let heading = NSTextField(labelWithString: "Movie folders")
-        heading.font = .boldSystemFont(ofSize: 15)
-        let folderInstruction = NSTextField(labelWithString:
-            "Open these folders in Finder to apply posters."
-        )
-        folderInstruction.textColor = .secondaryLabelColor
-
-        let folderButtons = NSStackView(views: [addButton, removeButton, reauthorizeButton, refreshButton])
-        folderButtons.orientation = .horizontal
-        folderButtons.alignment = .centerY
-        folderButtons.spacing = 8
-
-        let appearanceHeading = NSTextField(labelWithString: "Poster appearance")
-        appearanceHeading.setContentHuggingPriority(.required, for: .horizontal)
-        posterAppearancePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
-        let appearanceRow = NSStackView(views: [appearanceHeading, posterAppearancePopup])
-        appearanceRow.orientation = .horizontal
-        appearanceRow.alignment = .centerY
-        appearanceRow.spacing = 12
-        let appearanceHelp = NSTextField(wrappingLabelWithString:
-            "Applies to all configured movie folders. Existing posters update when you revisit a configured " +
-            "folder in Finder."
-        )
-        appearanceHelp.textColor = .secondaryLabelColor
-        appearanceHelp.maximumNumberOfLines = 2
-
-        let credentialHeading = NSTextField(labelWithString: "TMDb API credential")
-        credentialHeading.font = .boldSystemFont(ofSize: 13)
-        credentialStatusLabel.setContentHuggingPriority(.required, for: .horizontal)
-
-        let credentialButtons = NSStackView(views: [saveCredentialButton, removeCredentialButton])
-        credentialButtons.orientation = .horizontal
-        credentialButtons.alignment = .centerY
-        credentialButtons.spacing = 8
-
-        let credentialRow = NSStackView(views: [credentialField, credentialButtons, credentialStatusLabel])
-        credentialRow.orientation = .horizontal
-        credentialRow.alignment = .centerY
-        credentialRow.spacing = 10
-        credentialField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        credentialField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let content = NSStackView(views: [heading, folderInstruction, scrollView, folderButtons, appearanceRow,
-                                          appearanceHelp, credentialHeading, credentialRow, errorLabel])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 12
-        content.translatesAutoresizingMaskIntoConstraints = false
-        rootView.addSubview(content)
-
-        NSLayoutConstraint.activate([
-            appearanceHelp.widthAnchor.constraint(equalTo: content.widthAnchor),
-            content.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 20),
-            content.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -20),
-            content.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 20),
-            content.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -20),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
-            credentialField.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            errorLabel.widthAnchor.constraint(equalTo: content.widthAnchor)
-        ])
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let width = scrollView.contentView.bounds.width
+        guard width > 0 else { return }
+        let metricsWidth = tableView.tableColumns.dropFirst().reduce(0) { $0 + $1.width }
+        tableView.tableColumns[0].width = max(180, width - metricsWidth)
+        tableView.setFrameSize(NSSize(width: width, height: tableView.frame.height))
     }
 
-    private func updatePresentation() {
-        let selectedIdentifier = selectedDirectory?.id
+    private func iconButton(_ symbol: String, label: String, action: Selector) -> NSButton {
+        let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)!,
+                              target: self, action: action)
+        button.isBordered = false
+        button.setAccessibilityLabel(label)
+        button.toolTip = label
+        return button
+    }
+
+    private func refresh() {
+        guard isViewLoaded else { return }
+        let selected = presentedDirectories.indices.contains(tableView.selectedRow)
+            ? presentedDirectories[tableView.selectedRow].id : nil
+        presentedDirectories = viewModel.directories
         tableView.reloadData()
-        if let selectedIdentifier,
-           let selectedRow = viewModel.directories.firstIndex(where: { $0.id == selectedIdentifier }) {
-            tableView.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
+        if let row = presentedDirectories.firstIndex(where: { $0.id == selected }) {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         } else {
             tableView.deselectAll(nil)
         }
-        updateControls()
-    }
-
-    private func updateControls() {
-        credentialStatusLabel.stringValue = viewModel.credentialConfigured ? "Configured" : "Not configured"
-        posterAppearancePopup.selectItem(at: PosterAppearance.allCases.firstIndex(of: viewModel.posterAppearance) ?? 1)
-        errorLabel.stringValue = viewModel.errorMessage ?? " "
-
         addButton.isEnabled = !viewModel.isBusy
-        refreshButton.isEnabled = !viewModel.isBusy
-        removeButton.isEnabled = !viewModel.isBusy && selectedDirectory != nil
-        reauthorizeButton.isEnabled = !viewModel.isBusy && selectedDirectory.map {
-            $0.availability != .available
-        } == true
-        saveCredentialButton.isEnabled = !viewModel.isBusy
-        removeCredentialButton.isEnabled = !viewModel.isBusy && viewModel.credentialConfigured
-        credentialField.isEnabled = !viewModel.isBusy
-        posterAppearancePopup.isEnabled = !viewModel.isBusy
         tableView.isEnabled = !viewModel.isBusy
+        errorLabel.stringValue = viewModel.errorMessage ?? ""
+        errorLabel.isHidden = viewModel.errorMessage == nil
     }
 
-    private var selectedDirectory: ConfiguredDirectoryStatus? {
-        guard tableView.selectedRow >= 0, tableView.selectedRow < viewModel.directories.count else { return nil }
-        return viewModel.directories[tableView.selectedRow]
-    }
-
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        viewModel.directories.count
-    }
+    func numberOfRows(in tableView: NSTableView) -> Int { presentedDirectories.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard viewModel.directories.indices.contains(row) else { return nil }
-        let directory = viewModel.directories[row]
-        let status = switch directory.availability {
-        case .available: "Available"
-        case .unavailable: "Volume unavailable — use Refresh Status after mounting"
-        case .reauthorizationRequired: "Access needs to be restored"
-        }
+        guard presentedDirectories.indices.contains(row) else { return nil }
+        let directory = presentedDirectories[row]
         let cell = NSTableCellView()
-        let label = NSTextField(wrappingLabelWithString: "\(directory.path)\n\(status)")
-        label.maximumNumberOfLines = 2
-        label.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-        ])
+        let label = NSTextField(labelWithString: "")
+        label.lineBreakMode = .byTruncatingMiddle
         cell.textField = label
+        if tableColumn?.identifier.rawValue == "collection" {
+            let url = URL(fileURLWithPath: directory.path)
+            label.stringValue = url.deletingLastPathComponent().lastPathComponent + " / " + url.lastPathComponent
+            label.toolTip = directory.path + "\n" + availabilityDescription(directory.availability)
+            let folder = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
+            folder.translatesAutoresizingMaskIntoConstraints = false
+            let state = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)!)
+            state.contentTintColor = directory.availability == .available ? .systemGreen : .systemOrange
+            state.toolTip = availabilityDescription(directory.availability)
+            state.translatesAutoresizingMaskIntoConstraints = false
+            let row = NSStackView(views: [folder, label, state])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 6
+            row.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(row)
+            NSLayoutConstraint.activate([
+                row.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+                row.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -6),
+                row.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                folder.widthAnchor.constraint(equalToConstant: 20), folder.heightAnchor.constraint(equalToConstant: 20),
+                state.widthAnchor.constraint(equalToConstant: 8), state.heightAnchor.constraint(equalToConstant: 8)
+            ])
+        } else if tableColumn?.identifier.rawValue == "remove" {
+            return NSView()
+        } else {
+            let value: Int?
+            switch tableColumn?.identifier.rawValue {
+            case "done": value = directory.counts?.done
+            case "notFound": value = directory.counts?.notFound
+            case "matches": value = directory.counts?.severalMatches
+            default: value = directory.counts?.total
+            }
+            label.stringValue = value.map(String.init) ?? "—"
+            label.toolTip = value == nil ? "No processing summary is available." : nil
+            label.alignment = .center
+            label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 3),
+                label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -3),
+                label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+            ])
+        }
         return cell
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        updateControls()
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        guard presentedDirectories.indices.contains(row) else { return nil }
+        let rowView = CollectionRowView()
+        let identifier = presentedDirectories[row].id
+        rowView.onRemove = { [weak self] in self?.removeCollection(identifier) }
+        return rowView
     }
 
-    @objc private func addDirectory() {
-        chooseDirectory(prompt: "Choose Movie Folder") { [weak self] directory in
-            guard let self else { return }
-            Task { await self.viewModel.addDirectory(directory) }
+    private func availabilityDescription(_ availability: DirectoryAvailability) -> String {
+        switch availability {
+        case .available: "Available"
+        case .unavailable: "Volume unavailable"
+        case .reauthorizationRequired: "Access needs to be restored"
         }
     }
 
-    @objc private func refreshStatus() {
-        Task { await viewModel.load() }
+    private func contextMenu(row: Int) -> NSMenu {
+        let menu = NSMenu()
+        if presentedDirectories.indices.contains(row) {
+            let directory = presentedDirectories[row]
+            if directory.availability != .available {
+                let locate = NSMenuItem(title: "Locate Folder…", action: #selector(locateFolder(_:)), keyEquivalent: "")
+                locate.target = self
+                locate.representedObject = directory.id
+                locate.isEnabled = !viewModel.isBusy
+                menu.addItem(locate)
+            }
+            let remove = NSMenuItem(title: "Remove Collection", action: #selector(removeFromMenu(_:)),
+                                    keyEquivalent: "")
+            remove.target = self
+            remove.representedObject = directory.id
+            remove.isEnabled = !viewModel.isBusy
+            menu.addItem(remove)
+        }
+        let refresh = NSMenuItem(title: "Refresh Status", action: #selector(refreshStatus), keyEquivalent: "")
+        refresh.target = self
+        menu.addItem(refresh)
+        return menu
     }
 
-    @objc private func removeSelectedDirectory() {
-        guard let identifier = selectedDirectory?.id else { return }
+    @objc private func showSettings() { openSettings() }
+    @objc private func showLog() { openLog() }
+    @objc private func refreshStatus() { Task { await viewModel.load() } }
+    @objc private func addDirectory() { chooseDirectory(identifier: nil) }
+
+    @objc private func locateFolder(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? UUID else { return }
+        chooseDirectory(identifier: identifier)
+    }
+
+    @objc private func removeFromMenu(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? UUID else { return }
+        removeCollection(identifier)
+    }
+
+    private func removeCollection(_ identifier: UUID) {
+        guard !viewModel.isBusy else { return }
         Task { await viewModel.removeDirectory(identifier) }
     }
 
-    @objc private func reauthorizeSelectedDirectory() {
-        guard let identifier = selectedDirectory?.id else { return }
-        chooseDirectory(prompt: "Restore Folder Access") { [weak self] directory in
-            guard let self else { return }
-            Task { await self.viewModel.reauthorizeDirectory(identifier, with: directory) }
-        }
-    }
-
-    @objc private func posterAppearanceChanged() {
-        let appearances = PosterAppearance.allCases
-        guard appearances.indices.contains(posterAppearancePopup.indexOfSelectedItem) else { return }
-        Task { await viewModel.setPosterAppearance(appearances[posterAppearancePopup.indexOfSelectedItem]) }
-    }
-
-    @objc private func saveCredential() {
-        let credential = credentialField.stringValue
-        guard !credential.isEmpty else { return }
-        credentialField.stringValue = ""
-        saveCredentialButton.isEnabled = false
-        Task { await viewModel.saveCredential(credential) }
-    }
-
-    @objc private func removeCredential() {
-        Task { await viewModel.removeCredential() }
-    }
-
-    private func chooseDirectory(prompt: String, completion: @escaping (URL) -> Void) {
-        guard let window = view.window else { return }
+    private func chooseDirectory(identifier: UUID?) {
+        guard !viewModel.isBusy, let window = view.window else { return }
         let panel = NSOpenPanel()
-        panel.title = prompt
-        panel.prompt = "Choose"
+        panel.title = identifier == nil ? "Choose Movie Folder" : "Restore Folder Access"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.beginSheetModal(for: window) { response in
-            guard response == .OK, let directory = panel.url else { return }
-            completion(directory)
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            Task {
+                if let identifier { await self.viewModel.reauthorizeDirectory(identifier, with: url) }
+                else { await self.viewModel.addDirectory(url) }
+            }
         }
+    }
+}
+
+@MainActor
+private final class CollectionTableView: NSTableView {
+    var menuForRow: ((Int) -> NSMenu?)?
+    var deleteSelection: (() -> Void)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuForRow?(row(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 51 || event.keyCode == 117 { deleteSelection?() }
+        else { super.keyDown(with: event) }
+    }
+}
+
+@MainActor
+private final class CollectionRowView: NSTableRowView {
+    var onRemove: (() -> Void)?
+    private let removeButton = NSButton(
+        image: NSImage(systemSymbolName: "minus.circle", accessibilityDescription: nil)!, target: nil, action: nil
+    )
+    private var tracking: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        removeButton.isBordered = false
+        removeButton.target = self
+        removeButton.action = #selector(remove)
+        removeButton.setAccessibilityLabel("Remove collection")
+        removeButton.alphaValue = 0
+        removeButton.setAccessibilityHidden(true)
+        removeButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(removeButton)
+        NSLayoutConstraint.activate([
+            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            removeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            removeButton.widthAnchor.constraint(equalToConstant: 22),
+            removeButton.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Remove collection", handler: { [weak self] in
+            self?.onRemove?()
+            return true
+        })])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { setHovered(true) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        removeButton.alphaValue = hovered ? 1 : 0
+        removeButton.setAccessibilityHidden(!hovered)
+    }
+
+    @objc private func remove() { onRemove?() }
+}
+
+
+@MainActor
+private final class CollectionHeaderView: NSTableHeaderView {
+    weak var addButton: NSButton?
+
+    override func accessibilityChildren() -> [Any]? {
+        var children = super.accessibilityChildren() ?? []
+        if let addButton, !children.contains(where: { ($0 as? NSButton) === addButton }) {
+            children.append(addButton)
+        }
+        return children
     }
 }

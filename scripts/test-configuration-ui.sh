@@ -18,6 +18,15 @@ rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Co
     "$configuration_harness/Sources/MovieFolderPosters/ConfigurationViewController.swift"
 rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/ConfigurationCoordinator.swift" \
     "$configuration_harness/Sources/MovieFolderPosters/ConfigurationCoordinator.swift"
+for source in SettingsViewController AppAppearanceSettings LogViewController PreviewChoiceButton; do
+    if [[ -f "$configuration_repository/MovieFolderPosters/MovieFolderPosters/$source.swift" ]]; then
+        rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/$source.swift" \
+            "$configuration_harness/Sources/MovieFolderPosters/$source.swift"
+    fi
+done
+rtk proxy mkdir -p "$configuration_harness/Sources/MovieFolderPosters/Resources"
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/PreviewPoster.png" \
+    "$configuration_harness/Sources/MovieFolderPosters/Resources/PreviewPoster.png"
 rtk proxy cp \
     "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/ConfigurationViewModelTests.swift" \
     "$configuration_harness/Tests/MovieFolderPostersTests/ConfigurationViewModelTests.swift"
@@ -30,7 +39,8 @@ let package = Package(
     platforms: [.macOS("26.5")],
     dependencies: [.package(path: "FileSystem")],
     targets: [
-        .target(name: "MovieFolderPosters", dependencies: [.product(name: "FileSystem", package: "FileSystem")]),
+        .target(name: "MovieFolderPosters", dependencies: [.product(name: "FileSystem", package: "FileSystem")],
+                resources: [.process("Resources")]),
         .testTarget(name: "MovieFolderPostersTests", dependencies: [
             "MovieFolderPosters", .product(name: "FileSystem", package: "FileSystem")
         ])

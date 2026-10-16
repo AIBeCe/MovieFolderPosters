@@ -11,6 +11,14 @@ nonisolated struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equatable 
     let id: UUID
     let path: String
     let availability: DirectoryAvailability
+    var counts: CollectionCounts? = nil
+}
+
+nonisolated struct CollectionCounts: Sendable, Equatable {
+    let done: Int
+    let notFound: Int
+    let severalMatches: Int
+    let total: Int
 }
 
 nonisolated struct ConfigurationSnapshot: Sendable, Equatable {

@@ -11,11 +11,11 @@
 		F10000000000000000000008 /* MovieFolderPostersFinder.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* MovieFolderPostersFinder.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F40000000000000000000001 /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F40000000000000000000003 /* Network */; };
 		F40000000000000000000002 /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F40000000000000000000004 /* Network */; };
-		F5000000000000000000000C /* MovieFolderPostersFinder/TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
-		F5000000000000000000000D /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
-		F5000000000000000000000E /* MovieFolderPosters/ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
-		F5000000000000000000000F /* MovieFolderPosters/MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
-		F50000000000000000000010 /* MovieFolderPosters/MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
+		F5000000000000000000000C /* TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
+		F5000000000000000000000D /* DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
+		F5000000000000000000000E /* ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
+		F5000000000000000000000F /* MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
+		F50000000000000000000010 /* MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
 		F50000000000000000000046 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000028 /* FileSystem */; };
 		F50000000000000000000047 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000029 /* FileSystem */; };
 		F50000000000000000000048 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000002A /* FileSystem */; };
@@ -23,20 +23,20 @@
 		F50000000000000000000051 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000033 /* Persistence */; };
 		F50000000000000000000052 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000034 /* Persistence */; };
 		F5000000000000000000005B /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000005A /* Network */; };
-		F60000000000000000000014 /* Shared/DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
-		F60000000000000000000015 /* Shared/ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
-		F60000000000000000000016 /* Shared/SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
-		F60000000000000000000017 /* Shared/KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
-		F60000000000000000000018 /* Shared/DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
-		F6000000000000000000001E /* Shared/DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
-		F6000000000000000000001F /* Shared/ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
-		F60000000000000000000020 /* Shared/SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
-		F60000000000000000000021 /* Shared/KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
-		F60000000000000000000022 /* Shared/DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
-		F70000000000000000000001 /* Shared/MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
-		F70000000000000000000002 /* Shared/MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
-		F70000000000000000000004 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
-		F70000000000000000000005 /* MovieFolderPostersFinder/TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
+		F60000000000000000000014 /* DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
+		F60000000000000000000015 /* ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
+		F60000000000000000000016 /* SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
+		F60000000000000000000017 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
+		F60000000000000000000018 /* DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
+		F6000000000000000000001E /* DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
+		F6000000000000000000001F /* ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
+		F60000000000000000000020 /* SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
+		F60000000000000000000021 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
+		F60000000000000000000022 /* DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
+		F70000000000000000000001 /* MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
+		F70000000000000000000002 /* MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
+		F70000000000000000000004 /* DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
+		F70000000000000000000005 /* TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -203,7 +203,6 @@
 				F6000000000000000000000D /* KeychainCredentialStore.swift */,
 				F6000000000000000000000E /* DirectoryObservationScheduler.swift */,
 			);
-			name = "Shared";
 			path = Shared;
 			sourceTree = "<group>";
 		};
@@ -374,7 +373,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F70000000000000000000005 /* MovieFolderPostersFinder/TestPoster.png in Resources */,
+				F70000000000000000000005 /* TestPoster.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -396,7 +395,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F5000000000000000000000C /* MovieFolderPostersFinder/TestPoster.png in Resources */,
+				F5000000000000000000000C /* TestPoster.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -407,13 +406,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F70000000000000000000001 /* Shared/MoviePosterRequest.swift in Sources */,
-				F70000000000000000000004 /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */,
-				F60000000000000000000014 /* Shared/DirectoryConfiguration.swift in Sources */,
-				F60000000000000000000015 /* Shared/ConfigurationRepository.swift in Sources */,
-				F60000000000000000000016 /* Shared/SharedEnvironment.swift in Sources */,
-				F60000000000000000000017 /* Shared/KeychainCredentialStore.swift in Sources */,
-				F60000000000000000000018 /* Shared/DirectoryObservationScheduler.swift in Sources */,
+				F70000000000000000000001 /* MoviePosterRequest.swift in Sources */,
+				F70000000000000000000004 /* DevelopmentTMDbTransport.swift in Sources */,
+				F60000000000000000000014 /* DirectoryConfiguration.swift in Sources */,
+				F60000000000000000000015 /* ConfigurationRepository.swift in Sources */,
+				F60000000000000000000016 /* SharedEnvironment.swift in Sources */,
+				F60000000000000000000017 /* KeychainCredentialStore.swift in Sources */,
+				F60000000000000000000018 /* DirectoryObservationScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -435,16 +434,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F70000000000000000000002 /* Shared/MoviePosterRequest.swift in Sources */,
-				F6000000000000000000001E /* Shared/DirectoryConfiguration.swift in Sources */,
-				F6000000000000000000001F /* Shared/ConfigurationRepository.swift in Sources */,
-				F60000000000000000000020 /* Shared/SharedEnvironment.swift in Sources */,
-				F60000000000000000000021 /* Shared/KeychainCredentialStore.swift in Sources */,
-				F60000000000000000000022 /* Shared/DirectoryObservationScheduler.swift in Sources */,
-				F5000000000000000000000D /* MovieFolderPostersFinder/DevelopmentTMDbTransport.swift in Sources */,
-				F5000000000000000000000E /* MovieFolderPosters/ReleaseNameParser.swift in Sources */,
-				F5000000000000000000000F /* MovieFolderPosters/MovieMatcher.swift in Sources */,
-				F50000000000000000000010 /* MovieFolderPosters/MovieFolderProcessor.swift in Sources */,
+				F70000000000000000000002 /* MoviePosterRequest.swift in Sources */,
+				F6000000000000000000001E /* DirectoryConfiguration.swift in Sources */,
+				F6000000000000000000001F /* ConfigurationRepository.swift in Sources */,
+				F60000000000000000000020 /* SharedEnvironment.swift in Sources */,
+				F60000000000000000000021 /* KeychainCredentialStore.swift in Sources */,
+				F60000000000000000000022 /* DirectoryObservationScheduler.swift in Sources */,
+				F5000000000000000000000D /* DevelopmentTMDbTransport.swift in Sources */,
+				F5000000000000000000000E /* ReleaseNameParser.swift in Sources */,
+				F5000000000000000000000F /* MovieMatcher.swift in Sources */,
+				F50000000000000000000010 /* MovieFolderProcessor.swift in Sources */,
 				F10000000000000000000007 /* FinderSync.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

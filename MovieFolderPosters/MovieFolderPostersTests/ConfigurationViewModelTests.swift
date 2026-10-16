@@ -319,3 +319,165 @@ private actor AsyncOperationGate {
         operationContinuation = nil
     }
 }
+
+
+@MainActor
+@Test func sharedPresentationObserversStayConnectedAcrossWindows() async {
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+    var mainUpdates = 0
+    var settingsUpdates = 0
+    var legacyUpdates = 0
+    model.onChange = { legacyUpdates += 1 }
+    let mainToken = model.observeChanges { mainUpdates += 1 }
+    _ = model.observeChanges { settingsUpdates += 1 }
+    await model.load()
+    #expect(mainUpdates > 0)
+    #expect(settingsUpdates == mainUpdates)
+    #expect(legacyUpdates == mainUpdates)
+    model.removeChangeObserver(mainToken)
+    let previous = mainUpdates
+    await model.saveCredential("fake-secret")
+    #expect(mainUpdates == previous)
+    #expect(settingsUpdates > previous)
+}
+
+@MainActor
+@Test func mainKeepsSettingsInTheirOwnWindowAndPreservesCountColumns() async throws {
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        directories: [.init(id: UUID(), path: "/Movies/Comedy", availability: .available)],
+        credentialConfigured: false
+    )))
+    await model.load()
+    let controller = ConfigurationViewController(viewModel: model)
+    func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    let views = descendants(controller.view)
+    #expect(!views.contains { $0 is NSSecureTextField })
+    let table = try #require(views.compactMap { $0 as? NSTableView }.first)
+    #expect(table.tableColumns.prefix(5).map(\.title) == [
+        "Collection", "Done", "Not found", "Several matches", "Total"
+    ])
+    #expect(table.headerView?.accessibilityChildren()?.contains {
+        ($0 as? NSButton)?.accessibilityLabel() == "Add collection"
+    } == true)
+    table.reloadData()
+    let cell = try #require(table.view(atColumn: 1, row: 0, makeIfNecessary: true))
+    #expect(descendants(cell).compactMap { $0 as? NSTextField }.first?.stringValue == "—")
+}
+
+@MainActor
+@Test func logIsBoundedAndClearDoesNotChangeConfiguration() async {
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+    await model.saveCredential("fake-secret")
+    let log = HostActivityLog()
+    for index in 0..<510 { log.append(text: "Event \(index)", category: "Configuration") }
+    #expect(log.entries.count == 500)
+    #expect(log.entries.first?.text == "Event 10")
+    log.clear()
+    #expect(log.entries.isEmpty)
+    #expect(model.credentialConfigured)
+}
+
+@MainActor
+@Test func activityMessagesDoNotExposeCredentialsOrUnderlyingErrors() async {
+    let service = ConfigurationServiceFake()
+    let model = ConfigurationViewModel(service: service)
+    let log = HostActivityLog()
+    model.onActivity = { log.append(text: $0, category: $1) }
+    let secret = "fake-sensitive-token"
+    service.failNextOperation(with: TestServiceError(message: secret))
+    await model.saveCredential(secret)
+    #expect(!log.entries.isEmpty)
+    #expect(log.entries.allSatisfy { !$0.text.contains(secret) })
+    #expect(log.entries.last?.category == "Error")
+}
+
+
+@MainActor
+@Test func removingAnotherCollectionPreservesTheSelectedIdentity() async throws {
+    let first = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/A", availability: .available)
+    let second = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/B", availability: .available)
+    let third = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/C", availability: .available)
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        directories: [first, second, third], credentialConfigured: false
+    )))
+    await model.load()
+    let controller = ConfigurationViewController(viewModel: model)
+    let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)
+    table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+    await model.removeDirectory(first.id)
+    #expect(model.directories.count == 2)
+    #expect(table.selectedRow == 0)
+    #expect(model.directories[table.selectedRow].id == second.id)
+}
+
+@MainActor
+@Test func trailingColumnsFitWithLegacyScrollbars() throws {
+    for width in [680.0, 780.0] {
+        let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+        let controller = ConfigurationViewController(viewModel: model)
+        let window = NSWindow(contentViewController: controller)
+        window.setContentSize(NSSize(width: width, height: 310))
+        let scroll = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSScrollView }.first)
+        scroll.scrollerStyle = .legacy
+        scroll.autohidesScrollers = false
+        controller.view.layoutSubtreeIfNeeded()
+        controller.viewDidLayout()
+        let table = try #require(scroll.documentView as? NSTableView)
+        #expect(table.rect(ofColumn: 5).maxX <= scroll.contentView.bounds.width + 0.5)
+    }
+    let controller = LogViewController(log: HostActivityLog())
+    let window = NSWindow(contentViewController: controller)
+    window.setContentSize(NSSize(width: 650, height: 280))
+    let scroll = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSScrollView }.first)
+    scroll.scrollerStyle = .legacy
+    scroll.autohidesScrollers = false
+    controller.view.layoutSubtreeIfNeeded()
+    controller.viewDidLayout()
+    let table = try #require(scroll.documentView as? NSTableView)
+    #expect(table.rect(ofColumn: 2).maxX <= scroll.contentView.bounds.width + 0.5)
+}
+
+@MainActor
+private func nativeViews(in root: NSView) -> [NSView] {
+    [root] + root.subviews.flatMap { nativeViews(in: $0) }
+}
+
+
+@Test @MainActor
+func settingsShowsThreeLabeledPosterExamplesWithSavedSelection() async throws {
+    let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        directories: [], credentialConfigured: false, posterAppearance: .matteFrame
+    ))
+    let model = ConfigurationViewModel(service: service)
+    await model.load()
+    let settings = SettingsViewController(viewModel: model, appearanceSettings: AppAppearanceSettings())
+    let pane = try #require(settings.tabViewItems[0].viewController)
+    let buttons = nativeViews(in: pane.view).compactMap { $0 as? NSButton }
+    for title in ["Raw", "Soft finish", "Matte frame"] {
+        let button = try #require(buttons.first { $0.title == title })
+        #expect(button.image != nil)
+        #expect(button.state == (title == "Matte frame" ? .on : .off))
+        #expect(button.accessibilityLabel() == title)
+    }
+}
+
+@Test @MainActor
+func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
+    let suite = "AppearancePreviewTests.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let appearance = AppAppearanceSettings(defaults: defaults)
+    let settings = SettingsViewController(
+        viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()), appearanceSettings: appearance
+    )
+    let pane = try #require(settings.tabViewItems[2].viewController)
+    let buttons = nativeViews(in: pane.view).compactMap { $0 as? NSButton }
+    #expect(buttons.map(\.title) == ["System", "Light", "Dark"])
+    #expect(buttons.allSatisfy { $0.image != nil })
+    let dark = try #require(buttons.first { $0.title == "Dark" })
+    dark.performClick(nil)
+    #expect(appearance.choice == .dark)
+    #expect(AppAppearanceSettings(defaults: defaults).choice == .dark)
+    #expect(dark.state == .on)
+    #expect(buttons.filter { $0.state == .on }.count == 1)
+}
