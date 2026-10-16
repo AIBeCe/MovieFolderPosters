@@ -21,6 +21,13 @@ This is a production roadmap, not a code-level implementation plan. For each bou
 inspect current code, propose actual changes/tests/code, obtain approval, then use TDD and independent review
 where appropriate. Approval here does not authorize building every release or skipping those gates.
 
+## GitHub tracking
+
+Repository Issues are the tracker; no separate GitHub Projects board is required. Each consolidated deliverable
+has one coded issue and its target milestone. The complete [GitHub tracking index](GITHUB_TRACKING.md) records
+verified issue/milestone links. Original E/N and new U ideas link to those issues through their owning deliverables.
+Issue creation does not authorize implementation, change release scope, or imply completion.
+
 ## Decisions and constraints
 
 - Finder remains the movie browser; the host remains a configuration and focused operational utility.
@@ -89,11 +96,15 @@ The eventual 2.0 candidate work may fit later 1.x releases if compatibility is p
 
 ## 1.0.0 — Dependable Finder poster utility
 
+Milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
+
 Complete and verify the existing core before adding new workflows. Counts and Finder logs must become real; setup, failures, repair, safety, accessibility, and distribution must be dependable.
 
 <a id="r100-01"></a>
 
 ### R100-01 — Verify installation, access, and platform readiness
+
+GitHub issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Audit current behavior first; distinguish disconnected, missing, unauthorized, read-only, and unsupported roots. Explain overlapping roots and reconcile renames only with validated stable identity. Provide bounded checks for extension registration, component versions, shared storage, and enablement guidance; report unknown state honestly.
 - Dependencies: Current develop baseline; inspect PROJECT_PLAN.md and NATIVE_APPKIT_UI.md before proposing the first point.
@@ -104,6 +115,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 
 ### R100-02 — Persist authoritative processing outcomes and collection summaries
 
+GitHub issue: [#2](https://github.com/AIBeCe/MovieFolderPosters/issues/2); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
+
 - [ ] Scope: Define operation IDs, folder outcomes, collection snapshot revisions, and retention before connecting Main. Keep outcome records separate from activity events. Show actual Done, Not found, Several matches, and Total with reasons, verified identity, icon ownership, retry eligibility, and last completed run. Preserve unknown, partial, interrupted, and stale states.
 - Dependencies: R100-01; inspect existing ProcessingSummary and Persistence APIs.
 - Acceptance: Tests pin mutually exclusive folder outcomes, snapshot consistency across processes, interruption and stale revisions. Total is the count of visible immediate child directories in the inspected snapshot, excluding files, hidden entries, and symlinks; ignored/preserved/failed entries remain explainable in details. The three headline outcome counts need not sum to Total. Unavailable summaries never become fabricated zeros.
@@ -112,6 +125,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 <a id="r100-03"></a>
 
 ### R100-03 — Connect bounded Finder and host activity to Log
+
+GitHub issue: [#3](https://github.com/AIBeCe/MovieFolderPosters/issues/3); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Add a bounded sanitized activity stream across actual host/extension operations, using existing Persistence capabilities where sufficient. Retain the separate native Log window. Notifications may invalidate views, but persisted records remain authoritative; no timer, watcher, or log-scraping dependency.
 - Dependencies: R100-02; event/outcome schemas and privacy rules agreed before storage changes.
@@ -122,6 +137,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 
 ### R100-04 — Make network failure and interruption recovery predictable
 
+GitHub issue: [#4](https://github.com/AIBeCe/MovieFolderPosters/issues/4); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
+
 - [ ] Scope: Expose authentication, connectivity, server failure, and provider throttling separately. Coordinate provider backoff across extension processes and persist safe progress. Resume eligible unfinished work only on a later authorized invocation. Add a bounded recovery launch path that prevents new processing in participating processes while configuration and diagnostics remain usable.
 - Dependencies: R100-02 and R100-03; no new background process.
 - Acceptance: Controlled tests cover 401/403, 429 with changing Retry-After, server errors, cancellation, process loss, and a later explicit resume without repeating completed writes. A next-eligible time is never presented as a scheduled execution promise. Recovery mode cannot be bypassed by another entry point or stale process.
@@ -130,6 +147,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 <a id="r100-05"></a>
 
 ### R100-05 — Resolve and retry specific failed folders
+
+GitHub issue: [#5](https://github.com/AIBeCe/MovieFolderPosters/issues/5); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Expose a focused unresolved-results sheet from Main, reuse the existing Choose Movie flow, and allow a bounded selected retry with cancellation. Keep Finder as the browser; there is no persistent movie grid.
 - Dependencies: R100-02 through R100-04; reuse MoviePosterActionCoordinator and service boundaries.
@@ -140,6 +159,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 
 ### R100-06 — Make credential setup and replacement understandable
 
+GitHub issue: [#6](https://github.com/AIBeCe/MovieFolderPosters/issues/6); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
+
 - [ ] Scope: Add concise token guidance, an explicit credential test, and deliberate replacement while retaining current secure storage. Show which parsed identification fields a provider request uses; never display the token.
 - Dependencies: R100-04; existing Keychain and Network interfaces.
 - Acceptance: Invalid/offline/valid tests have distinct safe results. Replacement preserves roots and confirmed matches. Credentials never enter URLs, exported diagnostics, snapshots, or UI errors. Native credential entry is performed by the user for live verification.
@@ -148,6 +169,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 <a id="r100-07"></a>
 
 ### R100-07 — Complete essential native usability and accessibility
+
+GitHub issue: [#7](https://github.com/AIBeCe/MovieFolderPosters/issues/7); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Keep Main, Settings, and Log and the accepted AppKit styling. Add conventional Settings/menu shortcuts, helpful empty/busy/error states, explicit access explanations, keyboard alternatives to hover actions, meaningful VoiceOver labels, and stable focus and window behavior.
 - Dependencies: R100-01 through R100-06; UI_ENHANCEMENTS.md U01-U05 and U08-U10.
@@ -158,6 +181,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 
 ### R100-08 — Handle corrupt cached artwork safely
 
+GitHub issue: [#8](https://github.com/AIBeCe/MovieFolderPosters/issues/8); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
+
 - [ ] Scope: Expose invalid/missing cache artwork as recoverable conditions. Reuse the existing validation and ownership mechanisms; distinguish source-cache repair from rewriting folder icons.
 - Dependencies: R100-02 and R100-04.
 - Acceptance: Corrupt/truncated image tests and missing-source cases cannot produce repeated invalid writes, silent match loss, or foreign-icon replacement. Repair remains bounded and explicitly invoked.
@@ -166,6 +191,8 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 <a id="r100-09"></a>
 
 ### R100-09 — Qualify and distribute the first production release
+
+GitHub issue: [#9](https://github.com/AIBeCe/MovieFolderPosters/issues/9); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Finish the app icon, minimal reviewed redacted diagnostic export, installation documentation, TMDb attribution, signed/notarized packaging, and the release matrix below. No update service or App Store distribution is implied.
 - Dependencies: All R100 deliverables and completed baseline regression checks.
@@ -194,11 +221,15 @@ checked document box: attach current test, build, review, and native-observation
 
 ## 1.1.0 — Everyday collection management
 
+Milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
+
 Improve routine setup, exclusions, private operational views, Finder navigation, and support information.
 
 <a id="r110-01"></a>
 
 ### R110-01 — Simplify collection setup and naming
+
+GitHub issue: [#10](https://github.com/AIBeCe/MovieFolderPosters/issues/10); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
 - [ ] Scope: Accept dropped roots through the same authorization flow as the picker. Add friendly display names and a short setup flow for access, current identification policy, and artwork settings; no profile engine yet.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -209,6 +240,8 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 
 ### R110-02 — Pause collections and exclude folders reversibly
 
+GitHub issue: [#11](https://github.com/AIBeCe/MovieFolderPosters/issues/11); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
+
 - [ ] Scope: Unify Ignore Folder and explicit child exclusions into one reversible policy. Pausing a root preserves configuration and icons. Distinguish exclusion from durable poster-removal suppression.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Exclusion/pause changes fence in-flight automatic and manual writes across processes. Re-enable does not clear unrelated suppression or authorize overwriting foreign icons.
@@ -217,6 +250,8 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 <a id="r110-03"></a>
 
 ### R110-03 — Improve result and Log filtering with private history
+
+GitHub issue: [#12](https://github.com/AIBeCe/MovieFolderPosters/issues/12); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
 - [ ] Scope: Add result filters plus Log search/category/severity controls and an optional bounded network-purpose ledger. Private collection settings minimize identifying optional history without breaking necessary local state.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -227,6 +262,8 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 
 ### R110-04 — Connect results with focused Finder utilities
 
+GitHub issue: [#13](https://github.com/AIBeCe/MovieFolderPosters/issues/13); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
+
 - [ ] Scope: Open the existing result/evidence sheet from Finder, reveal unresolved children in Finder, and copy verified titles or identifiers. Navigation and copy operations never mutate movie names or icons.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Commands validate selected roots/children, distinguish unconfirmed identity, and reveal only explicitly selected authorized results. An unverified title is never labelled confirmed.
@@ -236,6 +273,8 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 
 ### R110-05 — Explain local data and produce focused support exports
 
+GitHub issue: [#14](https://github.com/AIBeCe/MovieFolderPosters/issues/14); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
+
 - [ ] Scope: Show cache/record storage usage and a safe inspector of app-held categories. Extend basic diagnostic export to a user-selected support session; later mutation receipts appear only when R140-01 exists.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Storage estimates identify scope and measurement time. Export preview/redaction excludes secrets, access grants, and identifying paths by default. Export does not send anything to a third party.
@@ -243,11 +282,15 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 
 ## 1.2.0 — More accurate identification and correction
 
+Milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
+
 Increase supported naming/evidence cases without lowering conservative automatic-matching safeguards.
 
 <a id="r120-01"></a>
 
 ### R120-01 — Add verified aliases and language preferences
+
+GitHub issue: [#15](https://github.com/AIBeCe/MovieFolderPosters/issues/15); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
 
 - [ ] Scope: Use provider-verified alternative/original titles and explicit search-language settings. Preserve exact identity and ambiguity safeguards; changing language cannot silently reassign confirmed movies.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -258,6 +301,8 @@ Increase supported naming/evidence cases without lowering conservative automatic
 
 ### R120-02 — Improve year, edition, and spelling evidence
 
+GitHub issue: [#16](https://github.com/AIBeCe/MovieFolderPosters/issues/16); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
+
 - [ ] Scope: Recognize edition metadata without stripping title words. Use documented release-date evidence for year differences; suggest likely spelling errors. Nearby years or fuzzy names alone do not authorize assignment.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Realistic ambiguous fixtures and adversarial title/year cases demonstrate no automatic first-result choice. Suggestions remain explicit when corroborating evidence is insufficient.
@@ -266,6 +311,8 @@ Increase supported naming/evidence cases without lowering conservative automatic
 <a id="r120-03"></a>
 
 ### R120-03 — Search additional pages within a finite budget
+
+GitHub issue: [#17](https://github.com/AIBeCe/MovieFolderPosters/issues/17); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
 
 - [ ] Scope: Allow bounded pagination and clearly explain when a result set is still incomplete. Apply shared backoff and cancellation instead of fetching every page unconditionally.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -276,6 +323,8 @@ Increase supported naming/evidence cases without lowering conservative automatic
 
 ### R120-04 — Use explicit identifiers and opt-in local evidence
 
+GitHub issue: [#18](https://github.com/AIBeCe/MovieFolderPosters/issues/18); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
+
 - [ ] Scope: Validate labelled TMDb/IMDb identifiers and support explicitly enabled read-only NFO and immediate video-name evidence. Define precedence and conflicts before combining evidence sources.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Conflicting IDs, malformed NFO, uninformative names, symlinks, and replaced files remain safe. No recursive media scan or sidecar write is introduced; reading movie-adjacent data requires the approved scoped workflow.
@@ -284,6 +333,8 @@ Increase supported naming/evidence cases without lowering conservative automatic
 <a id="r120-05"></a>
 
 ### R120-05 — Remember explicit corrections without renaming
+
+GitHub issue: [#19](https://github.com/AIBeCe/MovieFolderPosters/issues/19); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
 
 - [ ] Scope: Persist folder-specific title/year overrides, deliberate rejections, and reviewed reuse of confirmed identity for equivalent releases. Stable identity and policy changes determine validity.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -294,6 +345,8 @@ Increase supported naming/evidence cases without lowering conservative automatic
 
 ### R120-06 — Make candidate comparison and sequential resolution useful
 
+GitHub issue: [#20](https://github.com/AIBeCe/MovieFolderPosters/issues/20); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
+
 - [ ] Scope: Show candidate artwork, title/year, available country/language/director, and explainable evidence in a focused correction sheet. Allow sequential resolution of selected problems without a library browser.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Sparse provider data is labelled unavailable. Rejected/ambiguous candidates do not auto-apply; cancellation and focus preservation work across the selected problem sequence.
@@ -301,11 +354,15 @@ Increase supported naming/evidence cases without lowering conservative automatic
 
 ## 1.3.0 — Artwork choice and offline workflows
 
+Milestone: [1.3.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/5).
+
 Add local/alternative artwork, explicit source policies, quality/language choices, and style scope.
 
 <a id="r130-01"></a>
 
 ### R130-01 — Choose provider alternatives or a local poster
+
+GitHub issue: [#21](https://github.com/AIBeCe/MovieFolderPosters/issues/21); milestone: [1.3.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/5).
 
 - [ ] Scope: Separate artwork choice from confirmed movie identity. Validate explicitly selected local images and retain available source/attribution information without asserting an unknown license.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -316,6 +373,8 @@ Add local/alternative artwork, explicit source policies, quality/language choice
 
 ### R130-02 — Support local-artwork and offline collection workflows
 
+GitHub issue: [#22](https://github.com/AIBeCe/MovieFolderPosters/issues/22); milestone: [1.3.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/5).
+
 - [ ] Scope: Recognize only approved local artwork names when enabled, define source precedence, and offer offline-only and strict-privacy collection policies plus credential-free local-artwork onboarding.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Offline policy is enforced at every host/Finder network entry point, including retries and manual actions. Tests prove zero remote requests, deterministic precedence, and safe local read scope. No local files are edited.
@@ -324,6 +383,8 @@ Add local/alternative artwork, explicit source policies, quality/language choice
 <a id="r130-03"></a>
 
 ### R130-03 — Select artwork by language and quality
+
+GitHub issue: [#23](https://github.com/AIBeCe/MovieFolderPosters/issues/23); milestone: [1.3.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/5).
 
 - [ ] Scope: Offer language/textless preferences and a minimum source-quality threshold with explicit fallback behavior. Unavailable artwork remains unresolved rather than silently generated or substituted.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -334,6 +395,8 @@ Add local/alternative artwork, explicit source policies, quality/language choice
 
 ### R130-04 — Add style scope and realistic previews
 
+GitHub issue: [#24](https://github.com/AIBeCe/MovieFolderPosters/issues/24); milestone: [1.3.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/5).
+
 - [ ] Scope: Add representative Finder-size previews and explicit global/collection/folder style precedence. Provide bounded immediate restyling of verified owned posters using cached sources where possible.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Preview output matches the production renderer. Style-only changes avoid metadata requests where a valid source exists; foreign/replaced icons, suppression, missing source, and cancellation are preserved.
@@ -341,11 +404,15 @@ Add local/alternative artwork, explicit source policies, quality/language choice
 
 ## 1.4.0 — Reviewable batch work
 
+Milestone: [1.4.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/6).
+
 Build receipts, dry runs, finite queues, saved approvals, and undo in that dependency order.
 
 <a id="r140-01"></a>
 
 ### R140-01 — Record exact mutation receipts and session summaries
+
+GitHub issue: [#25](https://github.com/AIBeCe/MovieFolderPosters/issues/25); milestone: [1.4.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/6).
 
 - [ ] Scope: Extend the operation model with bounded receipts of actual committed app-owned icon mutations and their identity/ownership evidence. Distinguish proposed, attempted, failed, and completed writes.
 - Dependencies: 1.3 baseline; R100 outcome/event semantics.
@@ -356,6 +423,8 @@ Build receipts, dry runs, finite queues, saved approvals, and undo in that depen
 
 ### R140-02 — Preview changes without writing icons
 
+GitHub issue: [#26](https://github.com/AIBeCe/MovieFolderPosters/issues/26); milestone: [1.4.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/6).
+
 - [ ] Scope: Unify batch preview, dry run, metadata-only preparation, and side-by-side icon comparison. Show bounded resource estimates as estimates, recording the evidence and policies used.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Dry runs perform no icon writes. Metadata-only mode performs no poster download. Comparisons use the actual current icon and proposed renderer output; estimates are not scheduling or request-count guarantees.
@@ -364,6 +433,8 @@ Build receipts, dry runs, finite queues, saved approvals, and undo in that depen
 <a id="r140-03"></a>
 
 ### R140-03 — Run finite batches and explicit queues
+
+GitHub issue: [#27](https://github.com/AIBeCe/MovieFolderPosters/issues/27); milestone: [1.4.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/6).
 
 - [ ] Scope: Extend reviewed single-folder controls to selected roots/owned posters and a finite app-session queue. No automatic wake-up, persistent agent, polling, or silent restart of queued work.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -374,6 +445,8 @@ Build receipts, dry runs, finite queues, saved approvals, and undo in that depen
 
 ### R140-04 — Apply reviewed plans and deferred approvals safely
 
+GitHub issue: [#28](https://github.com/AIBeCe/MovieFolderPosters/issues/28); milestone: [1.4.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/6).
+
 - [ ] Scope: Add saved plans, review-first policy, selected deferral, and an approval inbox inside focused operational sheets. Expire approvals when relevant evidence or policy changes.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Immediately before mutation, validate authorization, folder identity, ownership, suppression, policy, evidence, and approval validity. Finder entry points cannot bypass review-first policy.
@@ -383,6 +456,8 @@ Build receipts, dry runs, finite queues, saved approvals, and undo in that depen
 
 ### R140-05 — Undo the latest eligible poster change
 
+GitHub issue: [#29](https://github.com/AIBeCe/MovieFolderPosters/issues/29); milestone: [1.4.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/6).
+
 - [ ] Scope: Use mutation receipts and retained prior icon state to reverse the latest eligible app mutation. Make retention and unavailable undo explicit; there is no unlimited icon-history promise.
 - Dependencies: R140-01 and current ownership proof; R140-04 validation model.
 - Acceptance: Undo rejects replaced folders, user-changed icons, missing prior state, expired evidence, and unsafe ownership transitions. Reversal changes only permitted custom-icon metadata.
@@ -390,11 +465,15 @@ Build receipts, dry runs, finite queues, saved approvals, and undo in that depen
 
 ## 1.5.0 — Portability, maintenance, and recovery
 
+Milestone: [1.5.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/7).
+
 Protect user-confirmed decisions, validate imports, manage app-owned storage, and support safe migration.
 
 <a id="r150-01"></a>
 
 ### R150-01 — Export portable configuration and confirmed decisions
+
+GitHub issue: [#30](https://github.com/AIBeCe/MovieFolderPosters/issues/30); milestone: [1.5.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/7).
 
 - [ ] Scope: Define a documented versioned export for settings, confirmed identity, local-artwork references, and explicitly selected source-image bundles. Keep transient cache separate from user decisions.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -405,6 +484,8 @@ Protect user-confirmed decisions, validate imports, manage app-owned storage, an
 
 ### R150-02 — Review imports, mappings, and root relocation
 
+GitHub issue: [#31](https://github.com/AIBeCe/MovieFolderPosters/issues/31); milestone: [1.5.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/7).
+
 - [ ] Scope: Use one reviewed import pipeline for the neutral format, constrained CSV, and folder/movie/artwork mappings. Validate compatibility, conflicts, path remapping, and newly selected root permissions.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Malicious paths, stale identities, duplicate/conflicting mappings, missing artwork, and incompatible versions are rejected or explicitly resolved. Cross-Mac restore cannot transfer access grants or authorize overwriting an existing icon. The app does not relocate movie files.
@@ -413,6 +494,8 @@ Protect user-confirmed decisions, validate imports, manage app-owned storage, an
 <a id="r150-03"></a>
 
 ### R150-03 — Maintain caches and remove app records deliberately
+
+GitHub issue: [#32](https://github.com/AIBeCe/MovieFolderPosters/issues/32); milestone: [1.5.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/7).
 
 - [ ] Scope: Distinguish cache cleanup, decision deletion, pre-uninstall export, and app-owned icon cleanup. Preview each operation scope; keep these separate actions rather than a single destructive reset.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -423,6 +506,8 @@ Protect user-confirmed decisions, validate imports, manage app-owned storage, an
 
 ### R150-04 — Recover configuration and evolve stored data safely
 
+GitHub issue: [#33](https://github.com/AIBeCe/MovieFolderPosters/issues/33); milestone: [1.5.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/7).
+
 - [ ] Scope: Validate backups, offer reviewed recovery for damaged app settings, explain significant migrations, and retain bounded pre-upgrade decision snapshots without secrets or access grants.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Interrupted/failed/unsupported migrations retain recoverable originals. Recovery does not silently reset credentials, reauthorize roots, resurrect stale approvals, or replace existing folder icons.
@@ -432,6 +517,8 @@ Protect user-confirmed decisions, validate imports, manage app-owned storage, an
 
 ### R150-05 — Document reusable service examples
 
+GitHub issue: [#34](https://github.com/AIBeCe/MovieFolderPosters/issues/34); milestone: [1.5.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/7).
+
 - [ ] Scope: Provide small opt-in examples for existing Network, FileSystem, and Persistence APIs after their contracts stabilize. This is a supporting developer-documentation track, not a new distributed product.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Examples compile independently, contain no secrets, request only their necessary permissions, and do not introduce application dependencies into services. This supporting track does not block the app release.
@@ -439,11 +526,15 @@ Protect user-confirmed decisions, validate imports, manage app-owned storage, an
 
 ## 1.6.0 — Advanced preferences without a policy engine by default
 
+Milestone: [1.6.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/8).
+
 Add reusable configuration only after the underlying settings and workflows are proven.
 
 <a id="r160-01"></a>
 
 ### R160-01 — Introduce small reusable processing profiles
+
+GitHub issue: [#35](https://github.com/AIBeCe/MovieFolderPosters/issues/35); milestone: [1.6.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/8).
 
 - [ ] Scope: Unify named profiles, templates, inheritance, and policy copying around existing explicit settings. Show effective values and exceptions; copying never duplicates access grants or processing identity.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -454,6 +545,8 @@ Add reusable configuration only after the underlying settings and workflows are 
 
 ### R160-02 — Group collections for bounded operations
 
+GitHub issue: [#36](https://github.com/AIBeCe/MovieFolderPosters/issues/36); milestone: [1.6.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/8).
+
 - [ ] Scope: Group existing configured roots as operation selections, without creating a hierarchical movie library or adding new filesystem scope.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Grouping does not register new roots, bypass disabled collections, or change folder identity. Group actions use existing finite queue and cancellation behavior.
@@ -462,6 +555,8 @@ Add reusable configuration only after the underlying settings and workflows are 
 <a id="r160-03"></a>
 
 ### R160-03 — Retain bounded policy versions
+
+GitHub issue: [#37](https://github.com/AIBeCe/MovieFolderPosters/issues/37); milestone: [1.6.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/8).
 
 - [ ] Scope: Keep named policy snapshots with reviewable restoration, separate from movie decisions and installed icons.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -472,6 +567,8 @@ Add reusable configuration only after the underlying settings and workflows are 
 
 ### R160-04 — Add constrained name-expansion dictionaries
 
+GitHub issue: [#38](https://github.com/AIBeCe/MovieFolderPosters/issues/38); milestone: [1.6.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/8).
+
 - [ ] Scope: Support explicit collection-scoped abbreviation expansions with original/transformed query previews. Do not introduce scripting or automatically treat a transformed query as verified movie evidence.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Conflicting/cyclic expansions are rejected; user corrections remain inspectable. Ambiguity checks still apply after transformation.
@@ -481,6 +578,8 @@ Add reusable configuration only after the underlying settings and workflows are 
 
 ### R160-05 — Offer restrained matte-frame customization
 
+GitHub issue: [#39](https://github.com/AIBeCe/MovieFolderPosters/issues/39); milestone: [1.6.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/8).
+
 - [ ] Scope: After the three presets remain stable, investigate a small width range and contrast-tested frame palette inside Poster Layout. Preserve the accepted presets and defaults.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Production renderer and realistic previews agree at supported Finder sizes. Light/dark and contrast checks demonstrate legibility; changing customization does not affect identity or unowned icons.
@@ -488,11 +587,15 @@ Add reusable configuration only after the underlying settings and workflows are 
 
 ## 1.7.0 — Optional macOS entry points and curated artwork
 
+Milestone: [1.7.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/9).
+
 Investigate native entry points one at a time and reuse existing safe operations. R170-04 is research-only.
 
 <a id="r170-01"></a>
 
 ### R170-01 — Add native navigation and Finder entry points
+
+GitHub issue: [#40](https://github.com/AIBeCe/MovieFolderPosters/issues/40); milestone: [1.7.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/9).
 
 - [ ] Scope: Investigate a Finder toolbar command, Services add flow, supplied-artwork Quick Action, and navigation-only deep links. Reuse existing authorization, queue, and artwork pipelines.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -503,6 +606,8 @@ Investigate native entry points one at a time and reuse existing safe operations
 
 ### R170-02 — Expose bounded Shortcuts operations and status
 
+GitHub issue: [#41](https://github.com/AIBeCe/MovieFolderPosters/issues/41); milestone: [1.7.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/9).
+
 - [ ] Scope: Investigate explicit Shortcuts processing and read-only status actions; no schedule or permanent helper is installed by this feature.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Actions preserve authorization, cancellation, privacy, review-first, and offline policy. Status queries cause no metadata requests. Unsupported interactions are documented, not emulated with a daemon.
@@ -511,6 +616,8 @@ Investigate native entry points one at a time and reuse existing safe operations
 <a id="r170-03"></a>
 
 ### R170-03 — Apply reviewed local artwork packs
+
+GitHub issue: [#42](https://github.com/AIBeCe/MovieFolderPosters/issues/42); milestone: [1.7.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/9).
 
 - [ ] Scope: Treat a user-selected pack as a constrained local image/mapping import through the existing review pipeline; never execute pack code or trust supplied paths.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -521,6 +628,8 @@ Investigate native entry points one at a time and reuse existing safe operations
 
 ### R170-04 — Evaluate a clearly non-movie fallback image
 
+GitHub issue: [#43](https://github.com/AIBeCe/MovieFolderPosters/issues/43); milestone: [1.7.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/9).
+
 - [ ] Scope: Research only: determine whether an explicitly opted-in neutral fallback helps users without hiding unresolved identity. It must never look like a confirmed movie match.
 - Dependencies: R130 artwork policies and R140 review pipeline; research does not authorize fallback writes.
 - Acceptance: A design review must demonstrate that unresolved state stays visible and confirmed/foreign icons cannot be overwritten. Ship only after separate scope approval; reject the feature if this cannot be achieved.
@@ -528,11 +637,15 @@ Investigate native entry points one at a time and reuse existing safe operations
 
 ## 1.8.0 — Evidence-based reports and optimization
 
+Milestone: [1.8.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/10).
+
 Use retained structured evidence for on-demand insight and measure reuse before optimizing it.
 
 <a id="r180-01"></a>
 
 ### R180-01 — Report outcome patterns without becoming a library
+
+GitHub issue: [#44](https://github.com/AIBeCe/MovieFolderPosters/issues/44); milestone: [1.8.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/10).
 
 - [ ] Scope: Build bounded on-demand collection comparisons, source/rejection/ownership breakdowns, correction history, evidence-age views, and dated exports from structured records. Use focused reports, not a media dashboard.
 - Dependencies: Previous deliverable in this release; previous release baseline.
@@ -543,6 +656,8 @@ Use retained structured evidence for on-demand insight and measure reuse before 
 
 ### R180-02 — Measure and improve cache reuse across collections
 
+GitHub issue: [#45](https://github.com/AIBeCe/MovieFolderPosters/issues/45); milestone: [1.8.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/10).
+
 - [ ] Scope: Measure actual cache effectiveness before optimizing equivalent cross-root metadata queries. Bound reuse by provider, language, freshness, credentials, and relevant policy.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Cross-root tests prove valid deduplication without stale identity reuse or cross-credential/private-data leakage. Statistics come from completed operations, not guessed request savings.
@@ -552,6 +667,8 @@ Use retained structured evidence for on-demand insight and measure reuse before 
 
 ### R180-03 — Compare policies using stored evidence
 
+GitHub issue: [#46](https://github.com/AIBeCe/MovieFolderPosters/issues/46); milestone: [1.8.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/10).
+
 - [ ] Scope: Evaluate two approved profile versions against retained evidence without applying either result. Surface incomplete evidence explicitly.
 - Dependencies: R160 profiles/version snapshots and R140 dry-run validation.
 - Acceptance: Comparisons make no icon writes and do not silently fetch missing evidence. Results preserve provenance and cannot be treated as live approval for a later mutation.
@@ -559,11 +676,15 @@ Use retained structured evidence for on-demand insight and measure reuse before 
 
 ## 2.0 candidates — Architecture and scope investigations
 
+Milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
+
 These are research candidates, not committed shipping requirements. Each needs evidence, a separate scope decision, and an implementation proposal. A failed feasibility study closes the candidate with a reason.
 
 <a id="x200-01"></a>
 
 ### X200-01 — Research additional metadata providers and credentials
+
+GitHub issue: [#47](https://github.com/AIBeCe/MovieFolderPosters/issues/47); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
 
 - [ ] Scope: Assess real coverage gaps, documented APIs, usage terms, provider capabilities, identity conflicts, and credential isolation before proposing another provider. Health comparison is user-invoked.
 - Dependencies: Stable single-provider behavior and explicit new architecture/scope approval.
@@ -574,6 +695,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 
 ### X200-02 — Research edition-specific identity
 
+GitHub issue: [#48](https://github.com/AIBeCe/MovieFolderPosters/issues/48); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
+
 - [ ] Scope: Determine whether available provider evidence can represent editions/cuts separately without inventing identifiers or breaking existing confirmed matches.
 - Dependencies: R120 parsing/evidence and X200-01 if another provider is needed.
 - Acceptance: Document evidence availability, migration, UI distinction, and identity conflicts. Keep edition parsing separate from a claim that edition identity is verified.
@@ -582,6 +705,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 <a id="x200-03"></a>
 
 ### X200-03 — Research a finite command-line interface
+
+GitHub issue: [#49](https://github.com/AIBeCe/MovieFolderPosters/issues/49); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
 
 - [ ] Scope: Assess a user-invoked CLI including machine-readable dry runs, permission acquisition, secure credential access, packaging, and process coordination.
 - Dependencies: R140 operations/plans and explicit distribution-boundary approval.
@@ -592,6 +717,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 
 ### X200-04 — Research a narrow read-only integration API
 
+GitHub issue: [#50](https://github.com/AIBeCe/MovieFolderPosters/issues/50); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
+
 - [ ] Scope: Justify a specific consumer before choosing transport and authentication. Keep queries read-only and local unless a separately approved architecture explicitly changes that boundary.
 - Dependencies: Proven integration use case and separate security/architecture approval.
 - Acceptance: Trust, authorization, information disclosure, lifecycle, and compatibility decisions are reviewed before exposing an endpoint. No always-running service is implied.
@@ -600,6 +727,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 <a id="x200-05"></a>
 
 ### X200-05 — Research explicitly bounded nested roots
+
+GitHub issue: [#51](https://github.com/AIBeCe/MovieFolderPosters/issues/51); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
 
 - [ ] Scope: Evaluate an opt-in depth policy and its filesystem/identity/performance consequences. The current product remains immediate-child-only until this scope change is approved.
 - Dependencies: Separate filesystem-scope approval; safe existing discovery and queue.
@@ -610,6 +739,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 
 ### X200-06 — Research constrained custom parser rules
 
+GitHub issue: [#52](https://github.com/AIBeCe/MovieFolderPosters/issues/52); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
+
 - [ ] Scope: Assess a data-only, previewable rule format only after dictionaries/overrides prove insufficient. Do not silently introduce arbitrary code execution or unbounded regular-expression processing.
 - Dependencies: R160-04 and demonstrated naming cases requiring more than explicit overrides.
 - Acceptance: Rules have explicit bounds, invalid/conflicting rules fail safely, original inputs stay visible, and no transformation bypasses conservative matching.
@@ -619,6 +750,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 
 ### X200-07 — Research specific read-only media-tool import formats
 
+GitHub issue: [#53](https://github.com/AIBeCe/MovieFolderPosters/issues/53); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
+
 - [ ] Scope: Select a concrete documented external export and map it into the neutral validated import pipeline. No media-tool commands, file organization, or continuous integration is included.
 - Dependencies: R150 import/export and a specific supported external format.
 - Acceptance: Format/version uncertainty, identifier conflicts, path handling, authorization, and data provenance are reviewed. Imported claims never become permission or icon ownership proof.
@@ -627,6 +760,8 @@ These are research candidates, not committed shipping requirements. Each needs e
 <a id="x200-08"></a>
 
 ### X200-08 — Research explicit remote artwork URL import
+
+GitHub issue: [#54](https://github.com/AIBeCe/MovieFolderPosters/issues/54); milestone: [2.0 candidates](https://github.com/AIBeCe/MovieFolderPosters/milestone/11).
 
 - [ ] Scope: Assess whether local-image import is insufficient. Define image-origin, redirect, scheme, private-network, size, content-validation, and provenance rules before accepting user-supplied remote URLs.
 - Dependencies: R130 artwork import, demonstrated need, and separate network security review.

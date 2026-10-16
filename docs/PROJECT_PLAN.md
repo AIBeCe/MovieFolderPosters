@@ -6,6 +6,7 @@ Status: Approved. Implementation requires separate approval for each point.
 > [idea triage](IDEA_TRIAGE.md) and [native UI enhancements](UI_ENHANCEMENTS.md). This document retains the original
 > Phase 1–7 architecture and dated evidence. Do not interpret historical phase status as current release qualification.
 > Documentation approval does not authorize the next implementation point.
+> Release milestones and deliverable issues are indexed in [GitHub tracking](GITHUB_TRACKING.md).
 
 ## Main goal
 
