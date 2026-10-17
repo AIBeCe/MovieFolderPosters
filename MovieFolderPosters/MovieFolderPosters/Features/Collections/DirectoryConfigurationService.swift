@@ -44,7 +44,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
         self.authorization = authorization
     }
 
-    func snapshot() async throws -> ConfigurationSnapshot {
+    func configurationSummary() async throws -> ConfigurationSummary {
         let configuration = try await repository.readWhenAvailable()
         var statuses: [ConfiguredDirectoryStatus] = []
         var refreshed: [UUID: MonitoredDirectory] = [:]
@@ -119,7 +119,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
             }
             notifier.configurationDidChange()
         }
-        return ConfigurationSnapshot(directories: statuses, credentialConfigured: try credentials.read() != nil,
+        return ConfigurationSummary(directories: statuses, credentialConfigured: try credentials.read() != nil,
                                      posterAppearance: configuration.posterAppearance)
     }
 

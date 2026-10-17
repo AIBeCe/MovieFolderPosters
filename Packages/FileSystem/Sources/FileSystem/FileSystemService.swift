@@ -96,7 +96,7 @@ public struct FileSystemService: Sendable {
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    public func snapshot(ofChild name: String, in directory: URL) throws -> FolderCandidate {
+    public func readCurrentState(ofChild name: String, in directory: URL) throws -> FolderCandidate {
         try validateDirectory(directory)
         guard isValidChildName(name) else { throw DirectoryAccessError.invalidDirectory }
         let child = directory.appendingPathComponent(name, isDirectory: true)

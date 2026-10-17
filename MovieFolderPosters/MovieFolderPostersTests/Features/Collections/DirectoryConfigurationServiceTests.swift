@@ -31,7 +31,7 @@ struct DirectoryConfigurationServiceTests {
                 for: "host-\(directory.id)-\(directory.authorizationVersion)"))
             try lease.write(Data([1]))
         }
-        #expect(try await fixture.service.snapshot().directories.first?.availability == .disconnected)
+        #expect(try await fixture.service.configurationSummary().directories.first?.availability == .disconnected)
         #expect(try fixture.repository.read().directories == [directory])
     }
 
@@ -58,8 +58,8 @@ struct DirectoryConfigurationServiceTests {
         let child = MonitoredDirectory(id: UUID(), path: "/Movies/Action", transferBookmark: Data([2]),
                                         authorizationVersion: UUID())
         try fixture.repository.update { $0.directories = [parent, child] }
-        let snapshot = try await fixture.service.snapshot()
-        #expect(snapshot.directories.map(\.availability) == [.overlapping, .overlapping])
+        let summary = try await fixture.service.configurationSummary()
+        #expect(summary.directories.map(\.availability) == [.overlapping, .overlapping])
         #expect(try fixture.repository.read().directories == [parent, child])
     }
 
@@ -81,12 +81,12 @@ struct DirectoryConfigurationServiceTests {
             try lease.write(directory.transferBookmark)
         }
         try FileManager.default.moveItem(at: original, to: renamed)
-        let snapshot = try await fixture.service.snapshot()
+        let summary = try await fixture.service.configurationSummary()
         let saved = try #require(try fixture.repository.read().directories.first)
         #expect(saved.id == directory.id)
         #expect(saved.identity == identity)
         #expect(saved.path == renamed.resolvingSymlinksInPath().standardizedFileURL.path)
-        #expect(snapshot.directories.first?.path == saved.path)
+        #expect(summary.directories.first?.path == saved.path)
     }
 
     @Test func missingAuthorizedFolderIsNotReportedAsDisconnected() async throws {
@@ -101,7 +101,7 @@ struct DirectoryConfigurationServiceTests {
             let lease = try #require(try fixture.authorizations.acquireLease(for: key))
             try lease.write(Data([1]))
         }
-        #expect(try await fixture.service.snapshot().directories.first?.availability == .missing)
+        #expect(try await fixture.service.configurationSummary().directories.first?.availability == .missing)
         #expect(try fixture.repository.read().directories == [directory])
     }
 
@@ -114,25 +114,25 @@ struct DirectoryConfigurationServiceTests {
         do {
             let key = "host-\(directory.id)-\(directory.authorizationVersion)"
             let held = try #require(try fixture.authorizations.acquireLease(for: key))
-            let snapshot = try await fixture.service.snapshot()
-            #expect(snapshot.directories.first?.availability.rawValue == "checkUnavailable")
+            let summary = try await fixture.service.configurationSummary()
+            #expect(summary.directories.first?.availability.rawValue == "checkUnavailable")
             #expect(try fixture.repository.read().directories == [directory])
             withExtendedLifetime(held) {}
         }
-        #expect(try await fixture.service.snapshot().directories.first?.availability == .reauthorizationRequired)
+        #expect(try await fixture.service.configurationSummary().directories.first?.availability == .reauthorizationRequired)
     }
 
-    @Test func appearanceUpdatesSnapshotWithoutChangingCredentialsOrFolders() async throws {
+    @Test func appearanceUpdatesSummaryWithoutChangingCredentialsOrFolders() async throws {
         let fixture = try ConfigurationServiceFixture()
         defer { fixture.cleanup() }
         fixture.credentials.save("appearance-fixture")
         try fixture.repository.update { $0.directories = [] }
         let before = try fixture.repository.read()
         try await fixture.service.setPosterAppearance(.matteFrame)
-        let snapshot = try await fixture.service.snapshot()
-        #expect(snapshot.posterAppearance == .matteFrame)
-        #expect(snapshot.credentialConfigured)
-        #expect(snapshot.directories.isEmpty)
+        let summary = try await fixture.service.configurationSummary()
+        #expect(summary.posterAppearance == .matteFrame)
+        #expect(summary.credentialConfigured)
+        #expect(summary.directories.isEmpty)
         #expect(fixture.credentials.read() == "appearance-fixture")
         #expect(try fixture.repository.read().credentialRevision == before.credentialRevision)
     }
@@ -143,8 +143,8 @@ struct DirectoryConfigurationServiceTests {
         let directory = MonitoredDirectory(id: UUID(), path: "/Unavailable", transferBookmark: Data([1]),
                                            authorizationVersion: UUID())
         try fixture.repository.update { $0.directories = [directory] }
-        let snapshot = try await fixture.service.snapshot()
-        #expect(snapshot.directories == [ConfiguredDirectoryStatus(id: directory.id, path: directory.path,
+        let summary = try await fixture.service.configurationSummary()
+        #expect(summary.directories == [ConfiguredDirectoryStatus(id: directory.id, path: directory.path,
                                                                    availability: .reauthorizationRequired)])
         #expect(try fixture.repository.read().directories == [directory])
     }
@@ -166,7 +166,7 @@ struct DirectoryConfigurationServiceTests {
         let fixture = try ConfigurationServiceFixture()
         defer { fixture.cleanup() }
         try await fixture.service.saveCredential("fixture-secret-value")
-        #expect(try await fixture.service.snapshot().credentialConfigured)
+        #expect(try await fixture.service.configurationSummary().credentialConfigured)
         let settings = try #require(try fixture.repository.store.acquireLease(for: ConfigurationRepository.recordKey))
         let bytes = try #require(try settings.read())
         #expect(!String(decoding: bytes, as: UTF8.self).contains("fixture-secret-value"))
@@ -180,7 +180,7 @@ struct DirectoryConfigurationServiceTests {
         try await fixture.service.saveCredential("fixture-value")
         let previous = try fixture.repository.read().credentialRevision
         try await fixture.service.removeCredential()
-        #expect(!(try await fixture.service.snapshot().credentialConfigured))
+        #expect(!(try await fixture.service.configurationSummary().credentialConfigured))
         #expect(try fixture.repository.read().credentialRevision != previous)
     }
 }

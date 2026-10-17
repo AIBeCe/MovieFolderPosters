@@ -37,10 +37,10 @@ final class ConfigurationViewModel {
     private(set) var posterAppearance: PosterAppearance = .softFinish
     private(set) var isBusy = false
     private(set) var errorMessage: String?
-    private(set) var hasLoadedSnapshot = false
+    private(set) var hasLoadedSummary = false
 
     var installationSetupDescription: String {
-        guard hasLoadedSnapshot else { return "Setup has not been loaded. Use Refresh Status separately." }
+        guard hasLoadedSummary else { return "Setup has not been loaded. Use Refresh Status separately." }
         let accessible = directories.filter { $0.availability == .available }.count
         let token = credentialConfigured ? "Configured; provider validation was not performed."
             : "Not configured. Save a read access token in Settings."
@@ -55,21 +55,21 @@ final class ConfigurationViewModel {
 
     func load() async {
         await perform(message: "Collections refreshed.", failureMessage: "Could not load configuration.") {
-            try await self.service.snapshot()
+            try await self.service.configurationSummary()
         }
     }
 
     func addDirectory(_ directory: URL) async {
         await perform(message: "Collection added.", failureMessage: "Could not add this folder.") {
             try await self.service.addDirectory(directory)
-            return try await self.service.snapshot()
+            return try await self.service.configurationSummary()
         }
     }
 
     func removeDirectory(_ identifier: UUID) async {
         await perform(message: "Collection removed.", failureMessage: "Could not remove this folder.") {
             try await self.service.removeDirectory(identifier)
-            return try await self.service.snapshot()
+            return try await self.service.configurationSummary()
         }
     }
 
@@ -77,21 +77,21 @@ final class ConfigurationViewModel {
         await perform(message: "Collection access restored.",
                       failureMessage: "Could not restore access to this folder.") {
             try await self.service.reauthorizeDirectory(identifier, directory)
-            return try await self.service.snapshot()
+            return try await self.service.configurationSummary()
         }
     }
 
     func saveCredential(_ credential: String) async {
         await perform(message: "TMDb credential saved.", failureMessage: "Could not save the API credential.") {
             try await self.service.saveCredential(credential)
-            return try await self.service.snapshot()
+            return try await self.service.configurationSummary()
         }
     }
 
     func removeCredential() async {
         await perform(message: "TMDb credential removed.", failureMessage: "Could not remove the API credential.") {
             try await self.service.removeCredential()
-            return try await self.service.snapshot()
+            return try await self.service.configurationSummary()
         }
     }
 
@@ -104,7 +104,7 @@ final class ConfigurationViewModel {
             self.posterAppearance = previousAppearance
         }) {
             try await self.service.setPosterAppearance(appearance)
-            return try await self.service.snapshot()
+            return try await self.service.configurationSummary()
         }
     }
 
@@ -112,7 +112,7 @@ final class ConfigurationViewModel {
         message: String,
         failureMessage: String,
         onFailure: @MainActor () -> Void = {},
-        operation: @MainActor () async throws -> ConfigurationSnapshot
+        operation: @MainActor () async throws -> ConfigurationSummary
     ) async {
         guard !isBusy else { return }
 
@@ -142,11 +142,11 @@ final class ConfigurationViewModel {
         publish()
     }
 
-    private func apply(_ snapshot: ConfigurationSnapshot) {
-        hasLoadedSnapshot = true
-        directories = snapshot.directories
-        credentialConfigured = snapshot.credentialConfigured
-        posterAppearance = snapshot.posterAppearance
+    private func apply(_ summary: ConfigurationSummary) {
+        hasLoadedSummary = true
+        directories = summary.directories
+        credentialConfigured = summary.credentialConfigured
+        posterAppearance = summary.posterAppearance
     }
 
     private func publish() {

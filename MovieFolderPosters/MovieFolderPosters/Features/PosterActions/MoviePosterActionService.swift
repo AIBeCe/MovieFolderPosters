@@ -142,7 +142,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         }
         let child: FolderCandidate
         do {
-            child = try fileSystem.snapshot(ofChild: request.childName, in: rootAccess.url)
+            child = try fileSystem.readCurrentState(ofChild: request.childName, in: rootAccess.url)
         } catch {
             throw MoviePosterActionServiceError.childChanged
         }

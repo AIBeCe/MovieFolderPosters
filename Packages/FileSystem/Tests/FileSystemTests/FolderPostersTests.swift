@@ -47,7 +47,7 @@ struct FolderPostersTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let movie = root.appendingPathComponent("Movie", isDirectory: true)
         try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
-        let identity = try service.snapshot(ofChild: "Movie", in: root).identity
+        let identity = try service.readCurrentState(ofChild: "Movie", in: root).identity
         try FileManager.default.removeItem(at: movie)
         try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
 
@@ -262,7 +262,7 @@ struct FolderPostersTests {
     @Test func staleIdentityCannotRemovePosterAndInvalidDataLeavesItIntact() throws {
         let (root, movie) = try makeMovieDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let identity = try service.snapshot(ofChild: "Movie", in: root).identity
+        let identity = try service.readCurrentState(ofChild: "Movie", in: root).identity
         #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
         #expect(throws: FolderPosterError.self) {
             try service.replaceAssignedPoster(Data([0, 1, 2]), toChild: "Movie", in: root)

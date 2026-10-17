@@ -34,7 +34,7 @@ final class MoviePosterActionTests: XCTestCase {
             _ = try await task.value
             XCTFail("A newly overlapping root must prevent mutation after network suspension")
         } catch ConfigurationError.configurationChanged {}
-        XCTAssertFalse(try FileSystemService().snapshot(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+        XCTAssertFalse(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
     }
 
     func testSelectingExplicitMovieBypassesAmbiguousSearchAndRecordsSelection() async throws {
@@ -234,7 +234,7 @@ final class MoviePosterActionTests: XCTestCase {
             )
             XCTFail("Corrupt processing state must fail before assigning an icon")
         } catch {
-            XCTAssertFalse(try FileSystemService().snapshot(ofChild: "Dune (2021)", in: fixture.movies)
+            XCTAssertFalse(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
                 .hasCustomIcon)
         }
         let posterPaths = await provider.posterPaths
@@ -306,7 +306,7 @@ final class MoviePosterActionTests: XCTestCase {
         let storedID = try await processor.matchedMovieID(
             root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
         )
-        let hasCustomIcon = try FileSystemService().snapshot(ofChild: "Dune (2021)", in: fixture.movies)
+        let hasCustomIcon = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
             .hasCustomIcon
         let posterPaths = await provider.posterPaths
         XCTAssertNil(storedID)
@@ -380,7 +380,7 @@ private struct ActionFixture {
     }
 
     func identity(of child: String) throws -> String {
-        try FileSystemService().snapshot(ofChild: child, in: movies).identity
+        try FileSystemService().readCurrentState(ofChild: child, in: movies).identity
     }
 
     func writeRawState(_ data: Data) throws {

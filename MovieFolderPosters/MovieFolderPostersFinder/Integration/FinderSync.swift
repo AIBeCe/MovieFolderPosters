@@ -232,7 +232,7 @@ final class FinderSync: FIFinderSync {
             let root = URL(fileURLWithPath: directory.path, isDirectory: true)
                 .resolvingSymlinksInPath().standardizedFileURL
             guard root == parent,
-                  let candidate = try? FileSystemService().snapshot(ofChild: url.lastPathComponent, in: root) else {
+                  let candidate = try? FileSystemService().readCurrentState(ofChild: url.lastPathComponent, in: root) else {
                 continue
             }
             return MoviePosterRequest(rootID: directory.id, childName: candidate.name,

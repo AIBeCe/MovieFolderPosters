@@ -473,7 +473,7 @@ public actor MovieFolderProcessor {
     private func actionCandidate(root: URL, child: String, expectedIdentity: String) throws -> FolderCandidate {
         let candidate: FolderCandidate
         do {
-            candidate = try fileSystem.snapshot(ofChild: child, in: root)
+            candidate = try fileSystem.readCurrentState(ofChild: child, in: root)
         } catch {
             throw PosterActionError.changedIdentity
         }
@@ -531,7 +531,7 @@ public actor MovieFolderProcessor {
         defer { withExtendedLifetime(settingsLease) {} }
         let current: FolderCandidate
         do {
-            current = try fileSystem.snapshot(ofChild: candidate.name, in: root)
+            current = try fileSystem.readCurrentState(ofChild: candidate.name, in: root)
         } catch {
             throw ProcessingFailure.changedIdentity
         }
@@ -554,7 +554,7 @@ public actor MovieFolderProcessor {
               record.status == .processed, let posterPath = record.posterPath,
               record.matchedMovieID != nil, let data = cachedPoster(for: posterPath) else { return false }
         try Task.checkCancellation()
-        let current = try fileSystem.snapshot(ofChild: candidate.name, in: root)
+        let current = try fileSystem.readCurrentState(ofChild: candidate.name, in: root)
         guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
         let styleLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
         defer { withExtendedLifetime(styleLease) {} }

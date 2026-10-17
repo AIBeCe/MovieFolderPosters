@@ -492,7 +492,7 @@ final class MovieFolderProcessorTests: XCTestCase {
         let fileSystem = FileSystemService()
         let rawProcessor = try fixture.processor(provider: CountingProvider(), appearance: .raw,
                                                   posterAssigner: fileSystem)
-        let identity = try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).identity
+        let identity = try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).identity
         let selected = MovieMetadata(id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
                                      posterPath: "/selected.jpg")
         _ = try await rawProcessor.selectMovie(selected, root: fixture.movies, child: "Dune (2021)",
@@ -520,7 +520,7 @@ final class MovieFolderProcessorTests: XCTestCase {
         let summary = try await processor.process(root: fixture.movies)
 
         XCTAssertEqual(summary.restyled, 0)
-        XCTAssertTrue(try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+        XCTAssertTrue(try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
         XCTAssertNil(try fileSystem.assignedPosterAppearance(toChild: "Dune (2021)", in: fixture.movies))
     }
 
@@ -530,7 +530,7 @@ final class MovieFolderProcessorTests: XCTestCase {
         let fileSystem = FileSystemService()
         let rawProcessor = try fixture.processor(provider: CountingProvider(), appearance: .raw,
                                                   posterAssigner: fileSystem)
-        let identity = try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).identity
+        let identity = try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).identity
         let selected = MovieMetadata(id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
                                      posterPath: "/selected.jpg")
         _ = try await rawProcessor.selectMovie(selected, root: fixture.movies, child: "Dune (2021)",
@@ -603,7 +603,7 @@ final class MovieFolderProcessorTests: XCTestCase {
         let fixture = try Fixture()
         try fixture.addFolder("Dune (2021)")
         let fileSystem = FileSystemService()
-        let identity = try fileSystem.snapshot(ofChild: "Dune (2021)", in: fixture.movies).identity
+        let identity = try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).identity
         let rawProcessor = try fixture.processor(provider: CountingProvider(), appearance: .raw,
                                                   posterAssigner: fileSystem)
         _ = try await rawProcessor.process(root: fixture.movies)

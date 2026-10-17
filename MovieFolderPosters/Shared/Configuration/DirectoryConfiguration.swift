@@ -56,7 +56,7 @@ nonisolated struct CollectionCounts: Sendable, Equatable {
     let total: Int
 }
 
-nonisolated struct ConfigurationSnapshot: Sendable, Equatable {
+nonisolated struct ConfigurationSummary: Sendable, Equatable {
     let directories: [ConfiguredDirectoryStatus]
     let credentialConfigured: Bool
     let posterAppearance: PosterAppearance
@@ -70,7 +70,7 @@ nonisolated struct ConfigurationSnapshot: Sendable, Equatable {
 }
 
 nonisolated protocol ConfigurationServicing: Sendable {
-    func snapshot() async throws -> ConfigurationSnapshot
+    func configurationSummary() async throws -> ConfigurationSummary
     func addDirectory(_ directory: URL) async throws
     func removeDirectory(_ identifier: UUID) async throws
     func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) async throws

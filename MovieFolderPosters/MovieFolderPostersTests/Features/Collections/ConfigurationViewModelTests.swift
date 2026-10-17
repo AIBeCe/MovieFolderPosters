@@ -17,7 +17,7 @@ struct ConfigurationViewModelTests {
 
     @Test @MainActor
     func readinessHasVisibleTextAndAccessibleExplanation() async throws {
-        let model = ConfigurationViewModel(service: ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        let model = ConfigurationViewModel(service: ConfigurationServiceFake(summary: ConfigurationSummary(
             directories: [.init(id: UUID(), path: "/Movies", availability: .checkUnavailable)],
             credentialConfigured: false
         )))
@@ -46,7 +46,7 @@ struct ConfigurationViewModelTests {
     @Test @MainActor
     func loadPublishesConfiguredDirectoriesAndCredentialState() async {
         let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
-        let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        let service = ConfigurationServiceFake(summary: ConfigurationSummary(
             directories: [directory], credentialConfigured: true, posterAppearance: .matteFrame
         ))
         let viewModel = ConfigurationViewModel(service: service)
@@ -61,7 +61,7 @@ struct ConfigurationViewModelTests {
     }
 
     @Test @MainActor
-    func changingAppearancePersistsAndRefreshesTheVisibleSnapshot() async {
+    func changingAppearancePersistsAndRefreshesTheVisibleSummary() async {
         let service = ConfigurationServiceFake()
         let viewModel = ConfigurationViewModel(service: service)
 
@@ -77,7 +77,7 @@ struct ConfigurationViewModelTests {
 
     @Test @MainActor
     func failedAppearanceChangeRevertsToLastSavedChoice() async {
-        let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        let service = ConfigurationServiceFake(summary: ConfigurationSummary(
             directories: [], credentialConfigured: false, posterAppearance: .raw
         ))
         let viewModel = ConfigurationViewModel(service: service)
@@ -105,13 +105,13 @@ struct ConfigurationViewModelTests {
 
         await gate.open()
         await change.value
-        #expect(service.calls == [.setPosterAppearance(.raw), .snapshot])
+        #expect(service.calls == [.setPosterAppearance(.raw), .configurationSummary])
         #expect(viewModel.posterAppearance == .raw)
         #expect(!viewModel.isBusy)
     }
 
     @Test @MainActor
-    func successfulDirectoryAndCredentialActionsRefreshTheVisibleSnapshot() async {
+    func successfulDirectoryAndCredentialActionsRefreshTheVisibleSummary() async {
         let service = ConfigurationServiceFake()
         let viewModel = ConfigurationViewModel(service: service)
         let directory = URL(fileURLWithPath: "/Movies/Drama", isDirectory: true)
@@ -133,7 +133,7 @@ struct ConfigurationViewModelTests {
         let directory = ConfiguredDirectoryStatus(
             id: directoryID, path: "/Volumes/Movies", availability: .reauthorizationRequired
         )
-        let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        let service = ConfigurationServiceFake(summary: ConfigurationSummary(
             directories: [directory], credentialConfigured: false, posterAppearance: .softFinish
         ))
         let viewModel = ConfigurationViewModel(service: service)
@@ -150,11 +150,11 @@ struct ConfigurationViewModelTests {
 
         #expect(viewModel.directories.isEmpty)
         #expect(service.calls == [
-            .snapshot,
+            .configurationSummary,
             .reauthorize(directoryID, replacementURL),
-            .snapshot,
+            .configurationSummary,
             .remove(directoryID),
-            .snapshot
+            .configurationSummary
         ])
     }
 
@@ -191,12 +191,12 @@ struct ConfigurationViewModelTests {
         await firstOperation.value
 
         #expect(!viewModel.isBusy)
-        #expect(service.calls == [.add(first), .snapshot])
+        #expect(service.calls == [.add(first), .configurationSummary])
     }
 }
 
 private enum ConfigurationServiceCall: Equatable {
-    case snapshot
+    case configurationSummary
     case add(URL)
     case remove(UUID)
     case reauthorize(UUID, URL)
@@ -211,18 +211,18 @@ private struct TestServiceError: Error, Sendable {
 
 private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendable {
     private let lock = NSLock()
-    private var currentSnapshot: ConfigurationSnapshot
+    private var currentSummary: ConfigurationSummary
     private var recordedCalls: [ConfigurationServiceCall] = []
     private var nextError: TestServiceError?
     private let gate: AsyncOperationGate?
 
     init(
-        snapshot: ConfigurationSnapshot = ConfigurationSnapshot(
+        summary: ConfigurationSummary = ConfigurationSummary(
             directories: [], credentialConfigured: false, posterAppearance: .softFinish
         ),
         gate: AsyncOperationGate? = nil
     ) {
-        currentSnapshot = snapshot
+        currentSummary = summary
         self.gate = gate
     }
 
@@ -234,9 +234,9 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
         lock.withLock { nextError = error }
     }
 
-    func snapshot() async throws -> ConfigurationSnapshot {
-        try record(.snapshot)
-        return lock.withLock { currentSnapshot }
+    func configurationSummary() async throws -> ConfigurationSummary {
+        try record(.configurationSummary)
+        return lock.withLock { currentSummary }
     }
 
     func addDirectory(_ directory: URL) async throws {
@@ -245,10 +245,10 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
             let status = ConfiguredDirectoryStatus(
                 id: UUID(), path: directory.path, availability: .available
             )
-            currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories + [status],
-                credentialConfigured: currentSnapshot.credentialConfigured,
-                posterAppearance: currentSnapshot.posterAppearance
+            currentSummary = ConfigurationSummary(
+                directories: currentSummary.directories + [status],
+                credentialConfigured: currentSummary.credentialConfigured,
+                posterAppearance: currentSummary.posterAppearance
             )
         }
     }
@@ -256,10 +256,10 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
     func removeDirectory(_ identifier: UUID) async throws {
         try await prepare(.remove(identifier))
         lock.withLock {
-            currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories.filter { $0.id != identifier },
-                credentialConfigured: currentSnapshot.credentialConfigured,
-                posterAppearance: currentSnapshot.posterAppearance
+            currentSummary = ConfigurationSummary(
+                directories: currentSummary.directories.filter { $0.id != identifier },
+                credentialConfigured: currentSummary.credentialConfigured,
+                posterAppearance: currentSummary.posterAppearance
             )
         }
     }
@@ -270,10 +270,10 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
             let status = ConfiguredDirectoryStatus(
                 id: identifier, path: directory.path, availability: .available
             )
-            currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories.map { $0.id == identifier ? status : $0 },
-                credentialConfigured: currentSnapshot.credentialConfigured,
-                posterAppearance: currentSnapshot.posterAppearance
+            currentSummary = ConfigurationSummary(
+                directories: currentSummary.directories.map { $0.id == identifier ? status : $0 },
+                credentialConfigured: currentSummary.credentialConfigured,
+                posterAppearance: currentSummary.posterAppearance
             )
         }
     }
@@ -281,10 +281,10 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
     func saveCredential(_ value: String) async throws {
         try await prepare(.saveCredential(value))
         lock.withLock {
-            currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories,
+            currentSummary = ConfigurationSummary(
+                directories: currentSummary.directories,
                 credentialConfigured: true,
-                posterAppearance: currentSnapshot.posterAppearance
+                posterAppearance: currentSummary.posterAppearance
             )
         }
     }
@@ -292,9 +292,9 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
     func setPosterAppearance(_ appearance: PosterAppearance) async throws {
         try await prepare(.setPosterAppearance(appearance))
         lock.withLock {
-            currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories,
-                credentialConfigured: currentSnapshot.credentialConfigured,
+            currentSummary = ConfigurationSummary(
+                directories: currentSummary.directories,
+                credentialConfigured: currentSummary.credentialConfigured,
                 posterAppearance: appearance
             )
         }
@@ -303,10 +303,10 @@ private final class ConfigurationServiceFake: ConfigurationServicing, @unchecked
     func removeCredential() async throws {
         try await prepare(.removeCredential)
         lock.withLock {
-            currentSnapshot = ConfigurationSnapshot(
-                directories: currentSnapshot.directories,
+            currentSummary = ConfigurationSummary(
+                directories: currentSummary.directories,
                 credentialConfigured: false,
-                posterAppearance: currentSnapshot.posterAppearance
+                posterAppearance: currentSummary.posterAppearance
             )
         }
     }
@@ -398,7 +398,7 @@ private struct InstallationServiceFake: InstallationReadinessServicing {
 
 @MainActor
 @Test func mainKeepsSettingsInTheirOwnWindowAndPreservesCountColumns() async throws {
-    let model = ConfigurationViewModel(service: ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake(summary: ConfigurationSummary(
         directories: [.init(id: UUID(), path: "/Movies/Comedy", availability: .available)],
         credentialConfigured: false
     )))
@@ -453,7 +453,7 @@ private struct InstallationServiceFake: InstallationReadinessServicing {
     let first = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/A", availability: .available)
     let second = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/B", availability: .available)
     let third = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/C", availability: .available)
-    let model = ConfigurationViewModel(service: ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake(summary: ConfigurationSummary(
         directories: [first, second, third], credentialConfigured: false
     )))
     await model.load()
@@ -501,7 +501,7 @@ private func nativeViews(in root: NSView) -> [NSView] {
 
 @Test @MainActor
 func settingsShowsThreeLabeledPosterExamplesWithSavedSelection() async throws {
-    let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+    let service = ConfigurationServiceFake(summary: ConfigurationSummary(
         directories: [], credentialConfigured: false, posterAppearance: .matteFrame
     ))
     let model = ConfigurationViewModel(service: service)
@@ -662,7 +662,7 @@ private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, Hos
 @Test func tableDeletionAndRowRemovalPreserveCollectionIdentity() async throws {
     let first = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/A", availability: .available)
     let second = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/B", availability: .available)
-    let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+    let service = ConfigurationServiceFake(summary: ConfigurationSummary(
         directories: [first, second], credentialConfigured: false
     ))
     let model = ConfigurationViewModel(service: service)
@@ -670,7 +670,7 @@ private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, Hos
     let controller = ConfigurationViewController(viewModel: model)
     let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)
     // Complete the controller's initial refresh before dispatching another mutation.
-    for _ in 0..<100 where service.calls.filter({ $0 == .snapshot }).count < 2 || model.isBusy {
+    for _ in 0..<100 where service.calls.filter({ $0 == .configurationSummary }).count < 2 || model.isBusy {
         try await Task.sleep(for: .milliseconds(5))
     }
     let contextClick = try #require(NSEvent.mouseEvent(
