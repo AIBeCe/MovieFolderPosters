@@ -47,4 +47,7 @@ limits in [Installation readiness](INSTALLATION_READINESS.md) remain in effect.
   suggestions. No build errors remain.
 - Native Finder activation/reconnection/reboot, sandbox handoff, and filesystem compatibility qualification were not
   repeated. This refactor does not close the existing installation-readiness qualification work.
-- Work remains on the existing feature branch; integration, push, and issue closure remain on hold.
+- The delegate refactor was committed as `5beabc6`. The complete readiness feature was subsequently integrated into
+  local `develop` at `55ba0a6` on 2026-10-17; issue #1 is closed and its feature branch was deleted. No push was performed.
+- Later native checks are recorded in [Native qualification](NATIVE_READINESS_QUALIFICATION.md); they are separate
+  evidence from the delegate refactor's original verification.

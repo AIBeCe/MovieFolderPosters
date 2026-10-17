@@ -1,7 +1,11 @@
 # Installation and access readiness — R100-01
 
 Issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1).
-Implementation authorized as a whole on 2026-10-16. Status: implemented, automatically verified, independently reviewed PASS, and committed. Controlled native UI, mounted-volume, and isolated signed sandbox checks are recorded in [Native qualification](NATIVE_READINESS_QUALIFICATION.md). Physical-device, reboot, and clean production-install limits remain explicit. The user authorized committing the native follow-up, verified fast-forward integration into `develop`, and issue closure on 2026-10-17.
+Implementation authorized as a whole on 2026-10-16. **Completed on 2026-10-17:** issue #1 is closed; the verified
+feature was fast-forwarded into local `develop` at `55ba0a6`, and `feature/installation-readiness` was deleted.
+Final verification passed 236 tests and independent review. Signed Debug/Release builds and controlled native checks
+passed. No push or release was performed. See [Native qualification](NATIVE_READINESS_QUALIFICATION.md) for the
+recorded checks and remaining physical-device, reboot, filesystem, and clean production-install limits.
 
 ## Design and implementation
 
@@ -129,8 +133,9 @@ Standalone configuration tests inject ordinary bookmark creation/acquisition to 
 behavior without the unavailable ScopedBookmarksAgent; they do not prove signed security-scoped authorization.
 
 No real collection contents or custom icons were changed for this work. Tests use isolated temporary fixtures.
-Hold feature integration and issue closure for user approval and required native qualification; no push or release
-is authorized. This record must not be used as production release qualification.
+At the original 2026-10-16 checkpoint, feature integration and issue closure were held for approval and qualification.
+The user subsequently approved completion on 2026-10-17; the current completion state is recorded above. This record
+must not be used as complete production release qualification.
 
 ## Native follow-up on 2026-10-17
 
@@ -142,5 +147,5 @@ be read with this follow-up rather than overwritten as if those observations had
 
 Reboot is optional durability qualification and is deferred at the user's request. Physical media and incompatible
 filesystems, a clean production installation, actual Finder-process authorization repair, and VoiceOver speech remain
-unqualified. The OS denied exFAT test-image creation; no exFAT compatibility claim is made. Integration into `develop`
-and issue closure were subsequently authorized by the user after verification on 2026-10-17.
+unqualified. The OS denied exFAT test-image creation; no exFAT compatibility claim is made. The user approved completion after verification on 2026-10-17; the feature was integrated into local `develop`
+at `55ba0a6`, its branch was deleted, and issue #1 was closed. Publication remains unperformed.

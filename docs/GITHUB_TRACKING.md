@@ -1,7 +1,7 @@
 # GitHub Roadmap Tracking
 
-Date: 2026-10-16
-Status: Milestones/issues created and verified; no product work is authorized by tracking.
+Updated: 2026-10-17. Tracking was initially created and verified on 2026-10-16.
+Status: R100-01 is completed and issue #1 is closed. Tracking does not authorize another implementation point.
 Repository: [AIBeCe/MovieFolderPosters](https://github.com/AIBeCe/MovieFolderPosters).
 Tracker: repository Issues. No separate Projects board is used.
 
@@ -16,6 +16,13 @@ The roadmap documentation commits are local until an explicit push; do not assum
 There are 10 milestones and 54 coded issues. They represent 176 future-source ideas, not 54 cherry-picked ideas.
 The three delivered baseline ideas need no duplicate issue; conditional E40/C01 remains inactive. Merged source
 ideas share their owning issue rather than duplicating implementation tasks.
+
+## Completed delivery — R100-01
+
+Issue #1 was closed as completed after the user approved feature completion. Final verification passed 236 tests;
+independent reviews, signed builds, and controlled native checks passed. Local `develop` was fast-forwarded to
+`55ba0a6`, and `feature/installation-readiness` was deleted. The integration has not been pushed.
+See [Native qualification](NATIVE_READINESS_QUALIFICATION.md) for evidence and unperformed release checks.
 
 ## Milestones
 
@@ -40,7 +47,7 @@ release/decision criteria; a supporting issue is not automatically an applicatio
 
 | Code | Issue | Milestone | Kind |
 | --- | --- | --- | --- |
-| R100-01 | [#1 — Verify installation, access, and platform readiness](https://github.com/AIBeCe/MovieFolderPosters/issues/1) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
+| R100-01 | [#1 — Verify installation, access, and platform readiness](https://github.com/AIBeCe/MovieFolderPosters/issues/1) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed 2026-10-17 |
 | R100-02 | [#2 — Persist authoritative processing outcomes and collection summaries](https://github.com/AIBeCe/MovieFolderPosters/issues/2) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-03 | [#3 — Connect bounded Finder and host activity to Log](https://github.com/AIBeCe/MovieFolderPosters/issues/3) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-04 | [#4 — Make network failure and interruption recovery predictable](https://github.com/AIBeCe/MovieFolderPosters/issues/4) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |

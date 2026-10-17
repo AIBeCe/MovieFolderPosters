@@ -10,9 +10,12 @@ Status: Approved. Implementation requires separate approval for each point.
 
 ## Main goal
 
-Current R100-01 work is recorded in [Installation readiness](INSTALLATION_READINESS.md). The user authorized the whole
-issue as a batch on 2026-10-16; the feature awaits final approval and native qualification. Historical phase evidence
-below does not establish readiness for the new implementation.
+R100-01 is complete. [Issue #1](https://github.com/AIBeCe/MovieFolderPosters/issues/1) was closed as completed on
+2026-10-17 after user approval, independent review, and 236 passing tests on merged `develop`. The feature was
+fast-forwarded into local `develop` at `55ba0a6`, and `feature/installation-readiness` was deleted. No push was performed.
+See [Installation readiness](INSTALLATION_READINESS.md) and [Native qualification](NATIVE_READINESS_QUALIFICATION.md)
+for implementation evidence and the remaining release-qualification limits. These results do not authorize the next
+deliverable or establish production release readiness.
 
 Display movie posters as native folder icons in Finder instead of generic folder icons.
 

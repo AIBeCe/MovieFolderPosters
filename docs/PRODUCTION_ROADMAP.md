@@ -106,10 +106,13 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 
 GitHub issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
-Implementation and current qualification evidence: [Installation readiness](INSTALLATION_READINESS.md).
-Code changes do not close the native installation/access matrix or authorize a release.
+Status: **Completed — 2026-10-17.** Issue #1 is closed. The verified feature was fast-forwarded into local `develop`
+at `55ba0a6`; its feature branch was deleted. No push or release was performed.
+Implementation evidence: [Installation readiness](INSTALLATION_READINESS.md).
+Controlled native evidence and explicit release-qualification limits: [Native qualification](NATIVE_READINESS_QUALIFICATION.md).
+Completion satisfies this deliverable's documented-matrix criterion; it does not qualify every filesystem or authorize a release.
 
-- [ ] Scope: Audit current behavior first; distinguish disconnected, missing, unauthorized, read-only, and unsupported roots. Explain overlapping roots and reconcile renames only with validated stable identity. Provide bounded checks for extension registration, component versions, shared storage, and enablement guidance; report unknown state honestly.
+- [x] Scope: Audit current behavior first; distinguish disconnected, missing, unauthorized, read-only, and unsupported roots. Explain overlapping roots and reconcile renames only with validated stable identity. Provide bounded checks for extension registration, component versions, shared storage, and enablement guidance; report unknown state honestly.
 - Dependencies: Current develop baseline; inspect PROJECT_PLAN.md and NATIVE_APPKIT_UI.md before proposing the first point.
 - Acceptance: A documented installation/access matrix covers fresh setup, stale access, unplugged media, read-only storage, overlapping roots, replaced directories, and app/extension mismatch. A root is never marked ready just because its path exists. Native checks distinguish observed activation from user instructions.
 - Source ideas: E51, E52, E53, E54, E59, E76, E77, N91, N92, N93, N94.
@@ -832,10 +835,11 @@ Do not claim a passing test harness proves an unperformed native workflow.
 
 References checked 2026-10-16. Revalidate time-sensitive provider/platform requirements at implementation/release.
 
-## Handoff and stop point
+## Current handoff
 
-Documentation is the only authorized output of this task. No product implementation, live credential entry,
-filesystem-icon mutation, or release publication is authorized. After writing and verifying the documents, stop.
+R100-01 was completed and issue #1 closed on 2026-10-17. Integration is local in `develop` at `55ba0a6`; publication
+has not been performed. Its installation/access matrix and native qualification limits are linked above.
 
-Next proposed product phase: 1.0.0, starting with R100-01. Its first implementation point is a focused baseline
-and readiness proposal grounded in current code/evidence; do not implement the whole release from roadmap approval.
+The next planned deliverable is R100-02: persist authoritative processing outcomes and collection summaries.
+Start with a focused proposal grounded in the current implementation and acceptance criteria, then wait for approval.
+Completing R100-01 does not authorize R100-02, the rest of version 1.0.0, or release publication.

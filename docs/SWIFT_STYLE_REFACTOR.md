@@ -28,4 +28,6 @@ and their tests. The user authorized implementation and necessary API naming imp
 - Builds retain App Intents metadata notices and test-only weak-variable suggestions. Host lint reports six existing
   trailing-closure layout warnings, unrelated to the required style checks above.
 - Live Finder lifecycle, reboot/reconnection, and filesystem qualification checks were not repeated for this style pass.
-- No commit, merge, or push was performed.
+- The style refactor was committed as `ee59871` after user approval. The completed readiness feature was then
+  fast-forwarded into local `develop` at `55ba0a6` on 2026-10-17; issue #1 is closed and its feature branch was deleted.
+  No push was performed. Later native checks are recorded in [Native qualification](NATIVE_READINESS_QUALIFICATION.md).

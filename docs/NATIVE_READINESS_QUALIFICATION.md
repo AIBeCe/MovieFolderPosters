@@ -2,8 +2,8 @@
 
 Date: 2026-10-17, Europe/Stockholm. Issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1).
 The implementation and style baseline is commit `ee59871`. These checks supplement the automated evidence in
-[Installation readiness](INSTALLATION_READINESS.md). The user authorized feature completion on 2026-10-17 after verification, including a fast-forward integration into
-`develop` and issue closure. No reboot was performed.
+[Installation readiness](INSTALLATION_READINESS.md). Feature completion was approved and executed on 2026-10-17: local `develop` was fast-forwarded to `55ba0a6`,
+`feature/installation-readiness` was deleted, and issue #1 was closed as completed. No push or reboot was performed.
 
 ## Live application observations
 
@@ -91,14 +91,14 @@ The substantive observations are recorded above.
   regression harnesses provide the recorded UI evidence.
 
 These limits must remain visible during release qualification. They do not invalidate the documented installation
-matrix or convert unknown filesystem/registration state into a readiness claim. No issue closure, integration,
-push, or release is authorized by this verification record.
+matrix or convert unknown filesystem/registration state into a readiness claim. The user separately approved feature completion, now recorded above. This verification record does not authorize
+publication or a production release.
 
 ## Review outcome
 
 Independent review: **PASS**. The evidence supports the recorded matrix and preserves unknown states honestly;
 no material inaccuracies were found. The issue's acceptance criterion requires a documented installation/access
 matrix and bounded readiness evidence, not a reboot or complete production-release qualification. The environment
-limits above remain unperformed checks, not newly imposed acceptance requirements. The user subsequently authorized committing this documentation, completing the feature through a verified
-fast-forward integration into `develop`, and closing issue #1. Git history records the resulting commits and
-integration; the release-qualification limits above remain unchanged.
+limits above remain unperformed checks, not newly imposed acceptance requirements. The user subsequently approved completion. The qualification record was committed as `55ba0a6`; local `develop`
+was fast-forwarded to that commit, the feature branch was deleted, and issue #1 was closed. All 236 tests passed on
+the merged tree. The integration has not been pushed; the release-qualification limits above remain unchanged.
