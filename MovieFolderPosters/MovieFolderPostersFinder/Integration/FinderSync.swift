@@ -4,8 +4,8 @@ import Network
 import OSLog
 import Persistence
 
-private actor FinderConfigurationRuntime {
-    private struct AuthorizedRoot: Sendable {
+private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
+    fileprivate struct AuthorizedRoot: Sendable {
         let directory: MonitoredDirectory
         let access: DirectoryAccessLease
         let identity: String
@@ -16,7 +16,7 @@ private actor FinderConfigurationRuntime {
     private let fileSystem = FileSystemService()
     private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
 
-    func reload() async -> Set<URL> {
+    func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL> {
         recordActivation()
         do {
             let configuration = try await SharedEnvironment.repository().readWhenAvailable()
@@ -60,25 +60,14 @@ private actor FinderConfigurationRuntime {
                     let container = try SharedEnvironment.container()
                     let records = container.appendingPathComponent("Processing/\(configuration.credentialRevision)")
                     let repository = try SharedEnvironment.repository()
-                    let expectedRoots = updated
-                    let beforeAutomaticMutation: @Sendable (URL) throws -> PersistenceLease? = { url in
-                        guard let expected = expectedRoots[url.standardizedFileURL] else {
-                            throw DirectoryAccessError.identityChanged
-                        }
-                        let lease = try repository.mutationLease(for: expected.directory,
-                                                                expectedConfiguration: configuration)
-                        guard try FileSystemService().persistentDirectoryIdentity(at: url) == expected.identity else {
-                            withExtendedLifetime(lease) {}
-                            throw DirectoryAccessError.identityChanged
-                        }
-                        return lease
-                    }
+                    let mutationGuard = FinderMutationGuard(repository: repository, configuration: configuration,
+                                                            roots: updated)
                     processor = MovieFolderProcessor(persistence: try PersistenceStore(directory: records),
                                                      provider: client,
                                                      cacheDirectory: container.appendingPathComponent("Posters"),
                                                      coordinationStore: try PersistenceStore(
                                                         directory: container.appendingPathComponent("ProcessingLocks")
-                                                     ), beforeAutomaticMutation: beforeAutomaticMutation,
+                                                     ), mutationGuard: mutationGuard,
                                                      appearance: configuration.posterAppearance)
                     logger.notice("Shared Keychain credential available")
                 } else {
@@ -114,7 +103,7 @@ private actor FinderConfigurationRuntime {
         }
     }
 
-    func process(_ url: URL) async throws {
+    func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws {
         guard let root = roots[url], let processor else { return }
         guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
             throw DirectoryAccessError.identityChanged
@@ -142,6 +131,26 @@ private actor FinderConfigurationRuntime {
 
 }
 
+nonisolated private struct FinderMutationGuard: MovieFolderMutationGuard {
+    let repository: ConfigurationRepository
+    let configuration: DirectoryConfiguration
+    let roots: [URL: FinderConfigurationRuntime.AuthorizedRoot]
+
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? {
+        guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
+        let lease = try repository.mutationLease(for: expected.directory, expectedConfiguration: configuration)
+        guard try FileSystemService().persistentDirectoryIdentity(at: root) == expected.identity else {
+            withExtendedLifetime(lease) {}
+            throw DirectoryAccessError.identityChanged
+        }
+        return lease
+    }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? { nil }
+}
+
 final class FinderSync: FIFinderSync {
     private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderLifecycle")
     private let scheduler: DirectoryObservationScheduler
@@ -150,8 +159,7 @@ final class FinderSync: FIFinderSync {
 
     override init() {
         let runtime = FinderConfigurationRuntime()
-        scheduler = DirectoryObservationScheduler(load: { await runtime.reload() },
-                                                  process: { try await runtime.process($0) })
+        scheduler = DirectoryObservationScheduler(delegate: runtime)
         super.init()
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(configurationChanged), name: SharedEnvironment.configurationChanged, object: nil

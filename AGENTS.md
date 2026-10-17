@@ -57,6 +57,9 @@
   retain cycles. Ensure the owning coordinator or other flow owner retains the delegate for the required lifetime.
 - For non-UI delegation, define actor isolation and Sendable requirements explicitly; preserve responsive callbacks
   and avoid crossing isolation boundaries unsafely.
+- Strongly retain required service collaborators and mutation guards through narrow Sendable protocols; weak
+  event delegates must never control whether authorization or other required safety checks run.
+- When several views observe one model, preserve all subscribers with weak, identity-deduplicated delegates.
 - Keep closures for local operations such as map/filter and framework APIs that require them. Prefer delegate
   protocols when designing the application's own callback interfaces.
 - Refactor existing closure-based communication only within explicitly approved implementation scope.

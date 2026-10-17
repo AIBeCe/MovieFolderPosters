@@ -8,11 +8,10 @@ struct ConfigurationViewModelTests {
     @Test @MainActor
     func installationDiagnosticDoesNotRefreshOrMutateCollectionConfiguration() async {
         let service = ConfigurationServiceFake()
-        let coordinator = ConfigurationCoordinator(service: service, checkInstallation: {
-            InstallationReadinessReport(text: "Controlled installation evidence")
-        })
+        let coordinator = ConfigurationCoordinator(service: service, installationService: InstallationServiceFake())
         let report = await coordinator.installationReport()
         #expect(service.calls.isEmpty)
+        #expect(report.text.contains("Controlled installation evidence"))
         #expect(report.text.contains("Setup has not been loaded"))
     }
 
@@ -353,23 +352,48 @@ private actor AsyncOperationGate {
 
 
 @MainActor
-@Test func sharedPresentationObserversStayConnectedAcrossWindows() async {
+@Test func presentationDelegatesAreDeduplicatedRemovableAndWeak() async {
     let model = ConfigurationViewModel(service: ConfigurationServiceFake())
-    var mainUpdates = 0
-    var settingsUpdates = 0
-    var legacyUpdates = 0
-    model.onChange = { legacyUpdates += 1 }
-    let mainToken = model.observeChanges { mainUpdates += 1 }
-    _ = model.observeChanges { settingsUpdates += 1 }
+    let main = ConfigurationDelegateProbe()
+    let settings = ConfigurationDelegateProbe()
+    model.addDelegate(main)
+    model.addDelegate(main)
+    model.addDelegate(settings)
     await model.load()
-    #expect(mainUpdates > 0)
-    #expect(settingsUpdates == mainUpdates)
-    #expect(legacyUpdates == mainUpdates)
-    model.removeChangeObserver(mainToken)
-    let previous = mainUpdates
+    #expect(main.updates == 2)
+    #expect(settings.updates == main.updates)
+    model.removeDelegate(main)
     await model.saveCredential("fake-secret")
-    #expect(mainUpdates == previous)
-    #expect(settingsUpdates > previous)
+    #expect(main.updates == 2)
+    #expect(settings.updates == 4)
+    weak var released: ConfigurationDelegateProbe?
+    do {
+        let temporary = ConfigurationDelegateProbe()
+        released = temporary
+        model.addDelegate(temporary)
+        model.activityDelegate = temporary
+    }
+    #expect(released == nil)
+    #expect(model.activityDelegate == nil)
+    await model.load()
+    #expect(settings.updates == 6)
+}
+
+@MainActor
+private final class ConfigurationDelegateProbe: ConfigurationViewModelDelegate, ConfigurationViewModelActivityDelegate {
+    var updates = 0
+    let log = HostActivityLog()
+
+    func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) { updates += 1 }
+    func configurationViewModel(_ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String) {
+        log.append(text: text, category: category)
+    }
+}
+
+private struct InstallationServiceFake: InstallationReadinessServicing {
+    func check() async -> InstallationReadinessReport {
+        InstallationReadinessReport(text: "Controlled installation evidence")
+    }
 }
 
 @MainActor
@@ -412,8 +436,9 @@ private actor AsyncOperationGate {
 @Test func activityMessagesDoNotExposeCredentialsOrUnderlyingErrors() async {
     let service = ConfigurationServiceFake()
     let model = ConfigurationViewModel(service: service)
-    let log = HostActivityLog()
-    model.onActivity = { log.append(text: $0, category: $1) }
+    let probe = ConfigurationDelegateProbe()
+    model.activityDelegate = probe
+    let log = probe.log
     let secret = "fake-sensitive-token"
     service.failNextOperation(with: TestServiceError(message: secret))
     await model.saveCredential(secret)
@@ -511,4 +536,165 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
     #expect(AppAppearanceSettings(defaults: defaults).choice == .dark)
     #expect(dark.state == .on)
     #expect(buttons.filter { $0.state == .on }.count == 1)
+}
+
+@MainActor
+@Test func navigationRequestsUseAWeakDelegate() throws {
+    let controller = ConfigurationViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()))
+    var delegate: NavigationDelegateProbe? = NavigationDelegateProbe()
+    controller.delegate = delegate
+    let buttons = nativeViews(in: controller.view).compactMap { $0 as? NSButton }
+    try #require(buttons.first { $0.accessibilityLabel() == "Settings" }).performClick(nil)
+    try #require(buttons.first { $0.accessibilityLabel() == "Log" }).performClick(nil)
+    try #require(buttons.first { $0.title == "Check Installation…" }).performClick(nil)
+    #expect(delegate?.requests == ["settings", "log", "installation"])
+    #expect(delegate?.lastSender === controller)
+    weak var released = delegate
+    delegate = nil
+    #expect(released == nil)
+    #expect(controller.delegate == nil)
+}
+
+@MainActor
+private final class NavigationDelegateProbe: ConfigurationViewControllerDelegate {
+    var requests: [String] = []
+    weak var lastSender: ConfigurationViewController?
+    func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController) {
+        lastSender = controller
+        requests.append("settings")
+    }
+    func configurationViewControllerDidRequestLog(_ controller: ConfigurationViewController) {
+        lastSender = controller
+        requests.append("log")
+    }
+    func configurationViewControllerDidRequestInstallationReadiness(_ controller: ConfigurationViewController) {
+        lastSender = controller
+        requests.append("installation")
+    }
+}
+
+@MainActor
+@Test func appearanceAndLogDelegatesNotifyAndRelease() throws {
+    let suite = "DelegateAppearanceTests.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = AppAppearanceSettings(defaults: defaults)
+    let log = HostActivityLog()
+    var probe: SettingsLogDelegateProbe? = SettingsLogDelegateProbe()
+    settings.delegate = probe
+    log.delegate = probe
+    settings.select(.dark)
+    settings.select(.dark)
+    log.append(text: "Event", category: "Test")
+    log.clear()
+    #expect(probe?.appearanceUpdates == 1)
+    #expect(probe?.logEntryCounts == [1, 0])
+    #expect(probe?.lastAppearance === settings)
+    #expect(probe?.lastLog === log)
+    weak var released = probe
+    probe = nil
+    #expect(released == nil)
+    #expect(settings.delegate == nil)
+    #expect(log.delegate == nil)
+}
+
+@MainActor
+private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, HostActivityLogDelegate {
+    var appearanceUpdates = 0
+    var logEntryCounts: [Int] = []
+    weak var lastAppearance: AppAppearanceSettings?
+    weak var lastLog: HostActivityLog?
+    func appAppearanceSettingsDidChange(_ settings: AppAppearanceSettings) {
+        appearanceUpdates += 1
+        lastAppearance = settings
+    }
+    func hostActivityLogDidChange(_ log: HostActivityLog) {
+        logEntryCounts.append(log.entries.count)
+        lastLog = log
+    }
+}
+
+@MainActor
+@Test func mainAndSettingsReceiveSharedModelUpdatesAcrossVisibilityChanges() async throws {
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+    let main = ConfigurationViewController(viewModel: model)
+    let table = try #require(nativeViews(in: main.view).compactMap { $0 as? NSTableView }.first)
+    let settings = SettingsViewController(viewModel: model, appearanceSettings: AppAppearanceSettings())
+    _ = settings.view
+    settings.selectedTabViewItemIndex = 1
+    let pane = try #require(settings.tabViewItems[1].viewController)
+    let labels = nativeViews(in: pane.view).compactMap { $0 as? NSTextField }
+    let status = try #require(labels.first { $0.stringValue == "Not configured" })
+    settings.viewWillAppear()
+    settings.viewWillAppear()
+    await model.addDirectory(URL(fileURLWithPath: "/Movies"))
+    await model.saveCredential("fake-secret")
+    #expect(table.numberOfRows == 1)
+    #expect(status.stringValue == "Configured")
+    settings.viewDidDisappear()
+    await model.removeCredential()
+    #expect(status.stringValue == "Configured")
+    settings.viewWillAppear()
+    await model.saveCredential("another-fake-secret")
+    await model.removeCredential()
+    #expect(status.stringValue == "Not configured")
+}
+
+@MainActor
+@Test func logControllerRefreshesForAppendAndClear() throws {
+    let log = HostActivityLog()
+    let controller = LogViewController(log: log)
+    let views = nativeViews(in: controller.view)
+    let table = try #require(views.compactMap { $0 as? NSTableView }.first)
+    let clear = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Clear" })
+    #expect(table.numberOfRows == 0)
+    #expect(!clear.isEnabled)
+    log.append(text: "Test event", category: "Test")
+    #expect(table.numberOfRows == 1)
+    #expect(clear.isEnabled)
+    clear.performClick(nil)
+    #expect(log.entries.isEmpty)
+    #expect(table.numberOfRows == 0)
+    #expect(!clear.isEnabled)
+}
+
+@MainActor
+@Test func tableDeletionAndRowRemovalPreserveCollectionIdentity() async throws {
+    let first = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/A", availability: .available)
+    let second = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/B", availability: .available)
+    let service = ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+        directories: [first, second], credentialConfigured: false
+    ))
+    let model = ConfigurationViewModel(service: service)
+    await model.load()
+    let controller = ConfigurationViewController(viewModel: model)
+    let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)
+    // Complete the controller's initial refresh before dispatching another mutation.
+    for _ in 0..<100 where service.calls.filter({ $0 == .snapshot }).count < 2 || model.isBusy {
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    let contextClick = try #require(NSEvent.mouseEvent(
+        with: .rightMouseDown, location: table.convert(NSPoint(x: 10, y: 10), to: nil),
+        modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+        eventNumber: 1, clickCount: 1, pressure: 0
+    ))
+    let menu = try #require(table.menu(for: contextClick))
+    let removeItem = try #require(menu.items.first { $0.title == "Remove Collection" })
+    #expect(removeItem.representedObject as? UUID == first.id)
+    let row = try #require(controller.tableView(table, rowViewForRow: 1))
+    let remove = try #require(nativeViews(in: row).compactMap { $0 as? NSButton }.first)
+    remove.performClick(nil)
+    for _ in 0..<100 where !service.calls.contains(.remove(second.id)) { try await Task.sleep(for: .milliseconds(5)) }
+    for _ in 0..<100 where model.isBusy { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(model.directories.map(\.id) == [first.id])
+    table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+    let delete = try #require(NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: 0, context: nil, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}",
+        isARepeat: false, keyCode: 51
+    ))
+    table.keyDown(with: delete)
+    for _ in 0..<100 where !service.calls.contains(.remove(first.id)) { try await Task.sleep(for: .milliseconds(5)) }
+    for _ in 0..<100 where model.isBusy { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(model.directories.isEmpty)
 }

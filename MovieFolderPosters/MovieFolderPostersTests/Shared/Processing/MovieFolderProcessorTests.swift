@@ -8,6 +8,27 @@ import XCTest
 @testable import MovieFolderPosters
 
 final class MovieFolderProcessorTests: XCTestCase {
+    func testRetainsMutationGuardAndHoldsReturnedLeaseThroughAssignment() async throws {
+        let fixture = try Fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        try fixture.addFolder("Dune (2021)")
+        let store = try PersistenceStore(directory: fixture.base.appendingPathComponent("guard"))
+        var guardProbe: LeaseMutationGuard? = LeaseMutationGuard(store: store)
+        weak var weakGuard = guardProbe
+        let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: CountingProvider(),
+            cacheDirectory: fixture.cache, posterAssigner: LeaseCheckingAssigner(store: store),
+            mutationGuard: guardProbe)
+        guardProbe = nil
+        XCTAssertNotNil(weakGuard)
+
+        let summary = try await processor.process(root: fixture.movies)
+
+        XCTAssertEqual(summary.assigned, 1)
+        XCTAssertEqual(weakGuard?.roots, [fixture.movies, fixture.movies])
+        XCTAssertEqual(weakGuard?.senderIDs, [ObjectIdentifier(processor), ObjectIdentifier(processor)])
+        XCTAssertNotNil(try store.acquireLease(for: "mutation"))
+    }
+
     func testAutomaticMutationRevalidatesRootAfterProviderSuspension() async throws {
         let fixture = try Fixture()
         defer { try? FileManager.default.removeItem(at: fixture.base) }
@@ -16,12 +37,7 @@ final class MovieFolderProcessorTests: XCTestCase {
         let provider = CountingProvider(delaysSearch: true)
         let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
             cacheDirectory: fixture.cache, posterAssigner: fixture.assigner,
-            beforeAutomaticMutation: { root in
-                guard FileSystemService().inspectDirectory(at: root).identity == expected else {
-                    throw DirectoryAccessError.identityChanged
-                }
-                return nil
-            })
+            mutationGuard: RootIdentityMutationGuard(expectedIdentity: expected))
         let task = Task { try await processor.process(root: fixture.movies) }
         await provider.waitForSearch()
         let moved = fixture.base.appendingPathComponent("Moved")
@@ -593,11 +609,7 @@ final class MovieFolderProcessorTests: XCTestCase {
         _ = try await rawProcessor.process(root: fixture.movies)
         let styledProcessor = try fixture.processor(
             provider: CountingProvider(), appearance: .softFinish, posterAssigner: fileSystem,
-            beforeManualMutation: {
-                _ = try fileSystem.removeAssignedPoster(toChild: "Dune (2021)", in: fixture.movies,
-                                                        expectedIdentity: identity)
-                return nil
-            }
+            mutationGuard: SuppressingMutationGuard(root: fixture.movies, identity: identity)
         )
 
         let summary = try await styledProcessor.process(root: fixture.movies)
@@ -647,11 +659,11 @@ private struct Fixture {
         clock: @escaping @Sendable () -> Date = Date.init,
         appearance: PosterAppearance = .softFinish,
         posterAssigner: (any PosterAssigner)? = nil,
-        beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil }
+        mutationGuard: (any MovieFolderMutationGuard)? = nil
     ) throws -> MovieFolderProcessor {
         MovieFolderProcessor(fileSystem: FileSystemService(), persistence: persistence, provider: provider,
                              cacheDirectory: cache, posterAssigner: posterAssigner ?? assigner, now: clock,
-                             beforeManualMutation: beforeManualMutation, appearance: appearance)
+                             mutationGuard: mutationGuard, appearance: appearance)
     }
 }
 
@@ -790,5 +802,69 @@ private final class TestClock: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         date.addTimeInterval(interval)
+    }
+}
+
+private struct RootIdentityMutationGuard: MovieFolderMutationGuard {
+    let expectedIdentity: String
+
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? {
+        guard FileSystemService().inspectDirectory(at: root).identity == expectedIdentity else {
+            throw DirectoryAccessError.identityChanged
+        }
+        return nil
+    }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? { nil }
+}
+
+private struct SuppressingMutationGuard: MovieFolderMutationGuard {
+    let root: URL
+    let identity: String
+
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? { nil }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? {
+        _ = try FileSystemService().removeAssignedPoster(toChild: "Dune (2021)", in: root,
+                                                        expectedIdentity: identity)
+        return nil
+    }
+}
+
+private final class LeaseMutationGuard: MovieFolderMutationGuard, @unchecked Sendable {
+    let store: PersistenceStore
+    private let lock = NSLock()
+    private var recordedRoots: [URL] = []
+    private var recordedSenderIDs: [ObjectIdentifier] = []
+
+    init(store: PersistenceStore) { self.store = store }
+
+    var roots: [URL] { lock.withLock { recordedRoots } }
+    var senderIDs: [ObjectIdentifier] { lock.withLock { recordedSenderIDs } }
+
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? {
+        lock.withLock {
+            recordedRoots.append(root)
+            recordedSenderIDs.append(ObjectIdentifier(processor))
+        }
+        return try XCTUnwrap(store.acquireLease(for: "mutation"))
+    }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? { nil }
+}
+
+private struct LeaseCheckingAssigner: PosterAssigner {
+    let store: PersistenceStore
+
+    func assignPoster(_ imageData: Data, toChild name: String, in directory: URL,
+                      expectedIdentity: String?) throws -> PosterAssignmentResult {
+        XCTAssertNil(try store.acquireLease(for: "mutation"), "Mutation guard lease must cover icon assignment")
+        return .assigned
     }
 }

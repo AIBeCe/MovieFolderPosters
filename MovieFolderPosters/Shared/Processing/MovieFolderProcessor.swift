@@ -92,6 +92,12 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     }
 }
 
+nonisolated public protocol MovieFolderMutationGuard: Sendable {
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease?
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease?
+}
+
 public actor MovieFolderProcessor {
     private static let unresolvedRetryInterval: TimeInterval = 24 * 60 * 60
     private static let transientRetryInterval: TimeInterval = 10 * 60
@@ -106,8 +112,7 @@ public actor MovieFolderProcessor {
     private let cacheDirectory: URL
     private let posterAssigner: any PosterAssigner
     private let now: @Sendable () -> Date
-    private let beforeManualMutation: @Sendable () throws -> PersistenceLease?
-    private let beforeAutomaticMutation: @Sendable (URL) throws -> PersistenceLease?
+    private let mutationGuard: (any MovieFolderMutationGuard)?
     private let appearance: PosterAppearance
     private let parser = ReleaseNameParser()
     private let matcher = MovieMatcher()
@@ -120,8 +125,7 @@ public actor MovieFolderProcessor {
         posterAssigner: any PosterAssigner = FileSystemService(),
         now: @escaping @Sendable () -> Date = Date.init,
         coordinationStore: PersistenceStore? = nil,
-        beforeAutomaticMutation: @escaping @Sendable (URL) throws -> PersistenceLease? = { _ in nil },
-        beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil },
+        mutationGuard: (any MovieFolderMutationGuard)? = nil,
         appearance: PosterAppearance = .softFinish
     ) {
         self.fileSystem = fileSystem
@@ -131,8 +135,7 @@ public actor MovieFolderProcessor {
         self.cacheDirectory = cacheDirectory
         self.posterAssigner = posterAssigner
         self.now = now
-        self.beforeManualMutation = beforeManualMutation
-        self.beforeAutomaticMutation = beforeAutomaticMutation
+        self.mutationGuard = mutationGuard
         self.appearance = appearance
     }
 
@@ -152,7 +155,7 @@ public actor MovieFolderProcessor {
         defer { withExtendedLifetime(lease) {} }
 
         do {
-            let settingsLease = try beforeAutomaticMutation(root)
+            let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)
             withExtendedLifetime(settingsLease) {}
         }
         let candidates: [FolderCandidate]
@@ -362,7 +365,7 @@ public actor MovieFolderProcessor {
         guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
         candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
         try ensureReplaceableIcon(for: candidate, in: root)
-        let settingsLease = try beforeManualMutation()
+        let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
         defer { withExtendedLifetime(settingsLease) {} }
         try replacePoster(imageData, candidate: candidate, root: root)
         try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
@@ -393,7 +396,7 @@ public actor MovieFolderProcessor {
         guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
         candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
         try ensureReplaceableIcon(for: candidate, in: root)
-        let settingsLease = try beforeManualMutation()
+        let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
         defer { withExtendedLifetime(settingsLease) {} }
         try replacePoster(imageData, candidate: candidate, root: root)
         try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
@@ -424,7 +427,7 @@ public actor MovieFolderProcessor {
             return false
         }
         try Task.checkCancellation()
-        let settingsLease = try beforeManualMutation()
+        let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
         defer { withExtendedLifetime(settingsLease) {} }
         let removed: Bool
         do {
@@ -524,7 +527,7 @@ public actor MovieFolderProcessor {
     private func assign(_ data: Data, to candidate: FolderCandidate, in root: URL) throws
         -> PosterAssignmentResult {
         try Task.checkCancellation()
-        let settingsLease = try beforeAutomaticMutation(root)
+        let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)
         defer { withExtendedLifetime(settingsLease) {} }
         let current: FolderCandidate
         do {
@@ -553,9 +556,9 @@ public actor MovieFolderProcessor {
         try Task.checkCancellation()
         let current = try fileSystem.snapshot(ofChild: candidate.name, in: root)
         guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
-        let styleLease = try beforeManualMutation()
+        let styleLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
         defer { withExtendedLifetime(styleLease) {} }
-        let settingsLease = try beforeAutomaticMutation(root)
+        let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)
         defer { withExtendedLifetime(settingsLease) {} }
         let result = try fileSystem.restyleAssignedPoster(
             data, toChild: candidate.name, in: root, appearance: appearance,

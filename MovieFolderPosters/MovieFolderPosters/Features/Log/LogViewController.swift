@@ -8,24 +8,30 @@ struct HostLogEntry: Identifiable {
 }
 
 @MainActor
+protocol HostActivityLogDelegate: AnyObject {
+    func hostActivityLogDidChange(_ log: HostActivityLog)
+}
+
+@MainActor
 final class HostActivityLog {
     private(set) var entries: [HostLogEntry] = []
-    var onChange: (@MainActor () -> Void)?
+    weak var delegate: (any HostActivityLogDelegate)?
 
     func append(text: String, category: String) {
         entries.append(HostLogEntry(text: text, category: category))
         if entries.count > 500 { entries.removeFirst(entries.count - 500) }
-        onChange?()
+        delegate?.hostActivityLogDidChange(self)
     }
 
     func clear() {
         entries.removeAll()
-        onChange?()
+        delegate?.hostActivityLogDidChange(self)
     }
 }
 
 @MainActor
-final class LogViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+final class LogViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate,
+    HostActivityLogDelegate {
     private let log: HostActivityLog
     private let table = NSTableView()
     private let scroll = NSScrollView()
@@ -78,7 +84,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
             footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -14)
         ])
-        log.onChange = { [weak self] in self?.refresh() }
+        log.delegate = self
         refresh()
     }
 
@@ -106,6 +112,8 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
         label.toolTip = text
         return label
     }
+
+    func hostActivityLogDidChange(_ log: HostActivityLog) { refresh() }
 
     @objc private func clear() { log.clear() }
 

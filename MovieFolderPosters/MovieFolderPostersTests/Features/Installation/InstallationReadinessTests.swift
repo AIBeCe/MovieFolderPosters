@@ -99,27 +99,9 @@ struct InstallationReadinessTests {
         #expect(!report.text.contains("secret"))
     }
 
-    @Test func serviceReadsEachEvidenceSourceOncePerExplicitCheck() async {
+    @Test @MainActor func serviceReadsEachEvidenceSourceOncePerExplicitCheck() async {
         let counts = ReadinessCallCounts()
-        let service = InstallationReadinessService(
-            inspectInstallation: {
-                counts.incrementInstallation()
-                return .valid
-            },
-            extensionEnabled: {
-                counts.incrementEnablement()
-                return true
-            },
-            readReceipt: {
-                counts.incrementReceipt()
-                return .missing
-            },
-            checkSharedStorage: {
-                counts.incrementStorage()
-                return .healthy
-            },
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }
-        )
+        let service = InstallationReadinessService(environment: counts)
 
         let report = await service.check()
         #expect(report.text.contains("Finder activation: Not yet observed."))
@@ -129,17 +111,18 @@ struct InstallationReadinessTests {
         #expect(counts.snapshot.3 == 1)
     }
 
-    @Test func underlyingStorageErrorsAreNotIncludedInReport() async {
-        let service = InstallationReadinessService(
-            inspectInstallation: { .valid },
-            extensionEnabled: { nil },
-            readReceipt: { .unavailable(.failed) },
-            checkSharedStorage: {
-                throw NSError(domain: "private container path", code: 17,
-                              userInfo: [NSLocalizedDescriptionKey: "token-value at /Users/private"])
-            },
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }
-        )
+    @Test @MainActor func serviceRetainsItsEvidenceProvider() async {
+        var provider: ReadinessCallCounts? = ReadinessCallCounts()
+        weak var retainedProvider = provider
+        let service = InstallationReadinessService(environment: provider!)
+        provider = nil
+        #expect(retainedProvider != nil)
+        _ = await service.check()
+        #expect(retainedProvider?.snapshot.3 == 1)
+    }
+
+    @Test @MainActor func underlyingStorageErrorsAreNotIncludedInReport() async {
+        let service = InstallationReadinessService(environment: FailingReadinessEnvironment())
 
         let report = await service.check()
         #expect(!report.text.contains("private container path"))
@@ -218,17 +201,30 @@ private struct PersistenceFixture {
     func cleanup() { try? FileManager.default.removeItem(at: directory) }
 }
 
-private final class ReadinessCallCounts: @unchecked Sendable {
+private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unchecked Sendable {
     private let lock = NSLock()
     private var installation = 0
     private var enablement = 0
     private var receipt = 0
     private var storage = 0
 
-    func incrementInstallation() { lock.withLock { installation += 1 } }
-    func incrementEnablement() { lock.withLock { enablement += 1 } }
-    func incrementReceipt() { lock.withLock { receipt += 1 } }
-    func incrementStorage() { lock.withLock { storage += 1 } }
+    func inspectInstallation() -> InstallationMetadata {
+        lock.withLock { installation += 1 }
+        return .valid
+    }
+    func extensionEnabled() async -> Bool? {
+        lock.withLock { enablement += 1 }
+        return true
+    }
+    func readReceipt() -> ExtensionReceiptEvidence {
+        lock.withLock { receipt += 1 }
+        return .missing
+    }
+    func checkSharedStorage() throws -> SharedStorageEvidence {
+        lock.withLock { storage += 1 }
+        return .healthy
+    }
+    func currentDate() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
 
     var snapshot: (Int, Int, Int, Int) {
         lock.withLock { (installation, enablement, receipt, storage) }
@@ -243,4 +239,15 @@ private extension InstallationMetadata {
                                       build: "7", extensionPoint: "com.apple.FinderSync")
         return InstallationMetadata(host: host, embeddedExtension: embedded)
     }
+}
+
+private struct FailingReadinessEnvironment: InstallationReadinessEnvironment {
+    func inspectInstallation() -> InstallationMetadata { .valid }
+    func extensionEnabled() async -> Bool? { nil }
+    func readReceipt() -> ExtensionReceiptEvidence { .unavailable(.failed) }
+    func checkSharedStorage() throws -> SharedStorageEvidence {
+        throw NSError(domain: "private container path", code: 17,
+                      userInfo: [NSLocalizedDescriptionKey: "token-value at /Users/private"])
+    }
+    func currentDate() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
 }

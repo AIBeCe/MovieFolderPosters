@@ -2,29 +2,46 @@ import FileSystem
 import Foundation
 import Persistence
 
+nonisolated protocol ConfigurationChangeNotifying: Sendable {
+    func configurationDidChange()
+}
+
+nonisolated struct SharedConfigurationChangeNotifier: ConfigurationChangeNotifying {
+    func configurationDidChange() { SharedEnvironment.notifyConfigurationChanged() }
+}
+
+nonisolated protocol DirectoryAuthorizationProviding: Sendable {
+    func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccessLease
+    func makeBookmark(for directory: URL) throws -> Data
+}
+
+nonisolated struct SecurityScopedDirectoryAuthorization: DirectoryAuthorizationProviding {
+    func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccessLease {
+        try FileSystemService().acquireDirectoryAccess(bookmark: bookmark, securityScoped: true,
+                                                       expectedIdentity: expectedIdentity)
+    }
+    func makeBookmark(for directory: URL) throws -> Data {
+        try FileSystemService().makeDirectoryBookmark(for: directory)
+    }
+}
+
 actor DirectoryConfigurationService: ConfigurationServicing {
     private let repository: ConfigurationRepository
     private let authorizations: PersistenceStore
     private let credentials: any CredentialStoring
     private let fileSystem = FileSystemService()
-    private let notify: @Sendable () -> Void
-    private let acquireAccess: @Sendable (Data, String?) throws -> DirectoryAccessLease
-    private let makeBookmark: @Sendable (URL) throws -> Data
+    private let notifier: any ConfigurationChangeNotifying
+    private let authorization: any DirectoryAuthorizationProviding
 
     init(repository: ConfigurationRepository, authorizations: PersistenceStore,
          credentials: any CredentialStoring = KeychainCredentialStore(),
-         notify: @escaping @Sendable () -> Void = SharedEnvironment.notifyConfigurationChanged,
-         acquireAccess: @escaping @Sendable (Data, String?) throws -> DirectoryAccessLease = {
-             try FileSystemService().acquireDirectoryAccess(bookmark: $0, securityScoped: true, expectedIdentity: $1)
-         }, makeBookmark: @escaping @Sendable (URL) throws -> Data = {
-             try FileSystemService().makeDirectoryBookmark(for: $0)
-         }) {
+         notifier: any ConfigurationChangeNotifying = SharedConfigurationChangeNotifier(),
+         authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization()) {
         self.repository = repository
         self.authorizations = authorizations
         self.credentials = credentials
-        self.notify = notify
-        self.acquireAccess = acquireAccess
-        self.makeBookmark = makeBookmark
+        self.notifier = notifier
+        self.authorization = authorization
     }
 
     func snapshot() async throws -> ConfigurationSnapshot {
@@ -40,7 +57,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
                 guard let bookmark = try lease.read() else {
                     throw DirectoryAccessError.staleBookmark
                 }
-                let access = try acquireAccess(bookmark, directory.identity)
+                let access = try authorization.acquireAccess(bookmark: bookmark, expectedIdentity: directory.identity)
                 let evidence = fileSystem.inspectDirectory(at: access.url, expectedIdentity: directory.identity)
                 var updated = directory
                 let resolvedPath = access.url.resolvingSymlinksInPath().standardizedFileURL.path
@@ -53,7 +70,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
                     updated.volumePath = evidence.volumePath ?? directory.volumePath
                     updated.transferBookmark = try fileSystem.makeTransferBookmark(for: access.url)
                     if updated.path != directory.path {
-                        try lease.write(makeBookmark(access.url))
+                        try lease.write(authorization.makeBookmark(for: access.url))
                     }
                     refreshed[directory.id] = updated
                 }
@@ -100,7 +117,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
                     }
                 }
             }
-            notify()
+            notifier.configurationDidChange()
         }
         return ConfigurationSnapshot(directories: statuses, credentialConfigured: try credentials.read() != nil,
                                      posterAppearance: configuration.posterAppearance)
@@ -108,7 +125,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
 
     func setPosterAppearance(_ appearance: PosterAppearance) throws {
         try repository.update { $0.posterAppearance = appearance }
-        notify()
+        notifier.configurationDidChange()
     }
 
     func addDirectory(_ directory: URL) throws {
@@ -122,14 +139,14 @@ actor DirectoryConfigurationService: ConfigurationServicing {
             }
             configuration.directories.append(value)
         }
-        notify()
+        notifier.configurationDidChange()
     }
 
     func removeDirectory(_ identifier: UUID) throws {
         try repository.update { configuration in
             configuration.directories.removeAll { $0.id == identifier }
         }
-        notify()
+        notifier.configurationDidChange()
     }
 
     func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {
@@ -146,25 +163,25 @@ actor DirectoryConfigurationService: ConfigurationServicing {
             }) else { throw ConfigurationError.overlappingDirectory }
             configuration.directories[index] = value
         }
-        notify()
+        notifier.configurationDidChange()
     }
 
     func saveCredential(_ value: String) throws {
-        defer { notify() }
+        defer { notifier.configurationDidChange() }
         try repository.update({ $0.credentialRevision = UUID() }, afterCommit: {
             try credentials.save(value.trimmingCharacters(in: .whitespacesAndNewlines))
         })
     }
 
     func removeCredential() throws {
-        defer { notify() }
+        defer { notifier.configurationDidChange() }
         try repository.update({ $0.credentialRevision = UUID() }, afterCommit: { try credentials.remove() })
     }
 
     #if DEBUG
     func setDevelopmentFixtures(_ enabled: Bool) throws {
         try repository.update { $0.developmentFixtures = enabled; $0.credentialRevision = UUID() }
-        notify()
+        notifier.configurationDidChange()
     }
     #endif
 
@@ -182,7 +199,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
         guard let lease = try authorizations.acquireLease(for: authorizationKey(value)) else {
             throw ConfigurationError.busy
         }
-        try lease.write(makeBookmark(canonical))
+        try lease.write(authorization.makeBookmark(for: canonical))
         return value
     }
 

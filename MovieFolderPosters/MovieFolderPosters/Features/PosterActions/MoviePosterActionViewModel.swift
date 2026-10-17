@@ -2,6 +2,19 @@ import Foundation
 import Network
 
 @MainActor
+protocol MoviePosterActionViewModelDelegate: AnyObject {
+    func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel)
+}
+
+@MainActor
+protocol MoviePosterActionViewModelNavigationDelegate: AnyObject {
+    func moviePosterActionViewModel(
+        _ viewModel: MoviePosterActionViewModel,
+        didRequestOpeningMoviePage url: URL
+    )
+}
+
+@MainActor
 final class MoviePosterActionViewModel {
     private let service: any MoviePosterActionServicing
     private let request: MoviePosterRequest
@@ -9,8 +22,8 @@ final class MoviePosterActionViewModel {
     private var operationTask: Task<Void, Never>?
     private var operationID = UUID()
 
-    var onChange: (@MainActor () -> Void)?
-    var onOpenMoviePage: (@MainActor (URL) -> Void)?
+    weak var delegate: (any MoviePosterActionViewModelDelegate)?
+    weak var navigationDelegate: (any MoviePosterActionViewModelNavigationDelegate)?
 
     private(set) var query: String
     private(set) var yearText: String
@@ -133,7 +146,7 @@ final class MoviePosterActionViewModel {
         }
         statusMessage = "Opening the selected movie on TMDb."
         errorMessage = nil
-        onOpenMoviePage?(url)
+        navigationDelegate?.moviePosterActionViewModel(self, didRequestOpeningMoviePage: url)
         publish()
     }
 
@@ -172,7 +185,9 @@ final class MoviePosterActionViewModel {
                 return
             }
             self?.statusMessage = "Opening the assigned movie on TMDb."
-            self?.onOpenMoviePage?(url)
+            if let self {
+                self.navigationDelegate?.moviePosterActionViewModel(self, didRequestOpeningMoviePage: url)
+            }
         }
     }
 
@@ -232,7 +247,7 @@ final class MoviePosterActionViewModel {
     }
 
     private func publish() {
-        onChange?()
+        delegate?.moviePosterActionViewModelDidChange(self)
     }
 
     private func userMessage(for error: Error) -> String {

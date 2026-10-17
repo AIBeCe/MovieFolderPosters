@@ -20,9 +20,9 @@ final class MoviePosterActionTests: XCTestCase {
         try repository.update { $0.directories = [target, other] }
         let before = try repository.read()
         let provider = ActionProvider(posterData: fixture.posterData, delaysSearch: true)
-        let processor = fixture.processor(provider: provider, beforeManualMutation: {
-            try repository.mutationLease(for: target, expectedConfiguration: before)
-        })
+        let processor = fixture.processor(provider: provider,
+            mutationGuard: ConfigurationMutationGuard(repository: repository, directory: target,
+                                                        configuration: before))
         let identity = try fixture.identity(of: "Dune (2021)")
         let task = Task {
             try await processor.refreshPoster(root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity)
@@ -290,9 +290,7 @@ final class MoviePosterActionTests: XCTestCase {
         try fixture.addFolder("Dune (2021)")
         let identity = try fixture.identity(of: "Dune (2021)")
         let provider = ActionProvider(posterData: fixture.posterData)
-        let processor = fixture.processor(provider: provider, beforeManualMutation: {
-            throw PosterActionError.busy
-        })
+        let processor = fixture.processor(provider: provider, mutationGuard: RefusingMutationGuard())
         let selected = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune",
                                      releaseYear: 2021, posterPath: "/chosen.jpg")
 
@@ -396,12 +394,12 @@ private struct ActionFixture {
     func processor(
         provider: ActionProvider,
         coordinationStore: PersistenceStore? = nil,
-        beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil }
+        mutationGuard: (any MovieFolderMutationGuard)? = nil
     ) -> MovieFolderProcessor {
         MovieFolderProcessor(persistence: persistence, provider: provider,
                              cacheDirectory: base.appendingPathComponent("cache"),
                              coordinationStore: coordinationStore,
-                             beforeManualMutation: beforeManualMutation)
+                             mutationGuard: mutationGuard)
     }
 }
 
@@ -471,4 +469,26 @@ private actor ActionProvider: MovieMetadataProvider {
         posterPaths.append(path)
         return posterData
     }
+}
+
+private struct ConfigurationMutationGuard: MovieFolderMutationGuard {
+    let repository: ConfigurationRepository
+    let directory: MonitoredDirectory
+    let configuration: DirectoryConfiguration
+
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? { nil }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? {
+        try repository.mutationLease(for: directory, expectedConfiguration: configuration)
+    }
+}
+
+private struct RefusingMutationGuard: MovieFolderMutationGuard {
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? { nil }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? { throw PosterActionError.busy }
 }

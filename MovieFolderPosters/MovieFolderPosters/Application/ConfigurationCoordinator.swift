@@ -2,24 +2,23 @@ import AppKit
 import FinderSync
 
 @MainActor
-final class ConfigurationCoordinator {
+final class ConfigurationCoordinator: ConfigurationViewControllerDelegate, ConfigurationViewModelActivityDelegate,
+    AppAppearanceSettingsDelegate {
     private let viewModel: ConfigurationViewModel
     private let appearance = AppAppearanceSettings()
     private let log = HostActivityLog()
     private var mainWindow: NSWindowController?
     private var settingsWindow: NSWindowController?
     private var logWindow: NSWindowController?
-    private let checkInstallation: @Sendable () async -> InstallationReadinessReport
+    private let installationService: any InstallationReadinessServicing
     private var checkingInstallation = false
 
     init(service: any ConfigurationServicing,
-         checkInstallation: @escaping @Sendable () async -> InstallationReadinessReport = {
-             await InstallationReadinessService().check()
-         }) {
-        self.checkInstallation = checkInstallation
+         installationService: any InstallationReadinessServicing = InstallationReadinessService()) {
+        self.installationService = installationService
         viewModel = ConfigurationViewModel(service: service)
-        viewModel.onActivity = { [weak log] text, category in log?.append(text: text, category: category) }
-        appearance.onChange = { [weak self] in self?.applyAppearance() }
+        viewModel.activityDelegate = self
+        appearance.delegate = self
         log.append(text: "Application opened.", category: "Application")
     }
 
@@ -28,10 +27,8 @@ final class ConfigurationCoordinator {
             show(mainWindow)
             return
         }
-        let controller = ConfigurationViewController(viewModel: viewModel,
-            onOpenSettings: { [weak self] in self?.showSettings() },
-            onOpenLog: { [weak self] in self?.showLog() },
-            onCheckInstallation: { [weak self] in self?.showInstallationReadiness() })
+        let controller = ConfigurationViewController(viewModel: viewModel)
+        controller.delegate = self
         let window = makeWindow(title: "Movie Folder Posters", controller: controller,
                                 size: NSSize(width: 780, height: 310), minimum: NSSize(width: 680, height: 260))
         mainWindow = window
@@ -108,7 +105,7 @@ final class ConfigurationCoordinator {
 
     func installationReport() async -> InstallationReadinessReport {
         let setup = viewModel.installationSetupDescription
-        let report = await checkInstallation()
+        let report = await installationService.check()
         return InstallationReadinessReport(text: report.text + "\n\n" + setup)
     }
 
@@ -129,6 +126,18 @@ final class ConfigurationCoordinator {
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
     }
+
+    func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController) { showSettings() }
+    func configurationViewControllerDidRequestLog(_ controller: ConfigurationViewController) { showLog() }
+    func configurationViewControllerDidRequestInstallationReadiness(_ controller: ConfigurationViewController) {
+        showInstallationReadiness()
+    }
+
+    func configurationViewModel(_ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String) {
+        log.append(text: text, category: category)
+    }
+
+    func appAppearanceSettingsDidChange(_ settings: AppAppearanceSettings) { applyAppearance() }
 
     private func applyAppearance() {
         for controller in [mainWindow, settingsWindow, logWindow] {

@@ -1,9 +1,13 @@
 import Foundation
 import OSLog
 
+protocol DirectoryObservationSchedulerDelegate: Sendable {
+    func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL>
+    func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws
+}
+
 actor DirectoryObservationScheduler {
-    private let load: @Sendable () async -> Set<URL>
-    private let process: @Sendable (URL) async throws -> Void
+    private let delegate: any DirectoryObservationSchedulerDelegate
     private var roots: Set<URL> = []
     private var observed: Set<URL> = []
     private var pending: [URL] = []
@@ -15,9 +19,8 @@ actor DirectoryObservationScheduler {
     private var isStopped = false
     private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "ObservationScheduler")
 
-    init(load: @escaping @Sendable () async -> Set<URL>, process: @escaping @Sendable (URL) async throws -> Void) {
-        self.load = load
-        self.process = process
+    init(delegate: any DirectoryObservationSchedulerDelegate) {
+        self.delegate = delegate
     }
 
     func reload() async {
@@ -35,7 +38,7 @@ actor DirectoryObservationScheduler {
             activeURL = nil
             pending = []
             guard !isStopped else { return }
-            roots = await load()
+            roots = await delegate.directoryObservationSchedulerLoadRoots(self)
             observed.formIntersection(roots)
             pending = Array(observed).sorted { $0.path < $1.path }
         } while reloadRequested && !isStopped
@@ -74,7 +77,10 @@ actor DirectoryObservationScheduler {
             activeURL = next
             let identifier = generation
             activeTask = Task(priority: .utility) { [self] in
-                do { try Task.checkCancellation(); try await process(next) }
+                do {
+                    try Task.checkCancellation()
+                    try await delegate.directoryObservationScheduler(self, process: next)
+                }
                 catch is CancellationError { logger.debug("Poster processing cancelled") }
                 catch { logger.error("Poster processing failed") }
                 completed(identifier)

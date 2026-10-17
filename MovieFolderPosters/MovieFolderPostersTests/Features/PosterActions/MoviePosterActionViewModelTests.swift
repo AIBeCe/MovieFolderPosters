@@ -43,16 +43,18 @@ struct MoviePosterActionViewModelTests {
         await waitForIdle(viewModel)
 
         #expect(viewModel.hasMorePages)
-        var openedURL: URL?
-        viewModel.onOpenMoviePage = { openedURL = $0 }
+        let navigation = ActionNavigationProbe()
+        viewModel.navigationDelegate = navigation
         viewModel.openSelectedMoviePage()
-        #expect(openedURL == nil)
+        #expect(navigation.openedURL == nil)
 
         let countsBeforeApply = await service.callCounts
         #expect(countsBeforeApply.apply == 0)
         #expect(viewModel.selectMovie(id: 7))
         viewModel.openSelectedMoviePage()
-        #expect(openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
+        #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
+        #expect(navigation.sender === viewModel)
+        #expect(navigation.statusMessage == "Opening the selected movie on TMDb.")
         let countsBeforeExplicitApply = await service.callCounts
         #expect(countsBeforeExplicitApply.apply == 0)
 
@@ -103,14 +105,68 @@ struct MoviePosterActionViewModelTests {
     }
 
     private func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
-        await withCheckedContinuation { continuation in
-            viewModel.onChange = {
-                guard !viewModel.isBusy else { return }
-                viewModel.onChange = nil
-                continuation.resume()
-            }
-        }
+        let probe = ActionStateProbe()
+        viewModel.delegate = probe
+        await probe.waitForIdle(viewModel)
     }
+
+    @Test func stateDelegateReadsUpdatedStateFromSender() async {
+        let viewModel = MoviePosterActionViewModel(service: ActionServiceStub(), request: request(.change))
+        let state = ActionStateProbe()
+        let navigation = ActionNavigationProbe()
+        viewModel.delegate = state
+        viewModel.navigationDelegate = navigation
+
+        viewModel.setQuery("Updated title")
+        viewModel.setYear("invalid")
+        viewModel.search()
+
+        #expect(state.sender === viewModel)
+        #expect(state.query == "Updated title")
+        #expect(state.yearText == "invalid")
+        #expect(state.errorMessage == "Enter a release year from 1888 through 2099, or leave it blank.")
+        #expect(navigation.openedURL == nil)
+    }
+
+    @Test func navigationDelegateReceivesAssignedMovieURLWithoutReplacingStateDelegate() async {
+        let viewModel = MoviePosterActionViewModel(service: ActionServiceStub(), request: request(.view))
+        let state = ActionStateProbe()
+        let navigation = ActionNavigationProbe()
+        viewModel.delegate = state
+        viewModel.navigationDelegate = navigation
+
+        viewModel.openMoviePage()
+        await state.waitForIdle(viewModel)
+
+        #expect(navigation.sender === viewModel)
+        #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
+        #expect(navigation.statusMessage == "Opening the assigned movie on TMDb.")
+        #expect(state.statusMessage == "Opening the assigned movie on TMDb.")
+        #expect(state.isBusy == false)
+        #expect(viewModel.delegate === state)
+    }
+
+    @Test func delegatesAreWeakAndOperationsRemainSafeAfterTheirRelease() {
+        let viewModel = MoviePosterActionViewModel(service: ActionServiceStub(), request: request(.change))
+        var state: ActionStateProbe? = ActionStateProbe()
+        var navigation: ActionNavigationProbe? = ActionNavigationProbe()
+        weak var weakState = state
+        weak var weakNavigation = navigation
+        viewModel.delegate = state
+        viewModel.navigationDelegate = navigation
+
+        state = nil
+        navigation = nil
+
+        #expect(weakState == nil)
+        #expect(weakNavigation == nil)
+        #expect(viewModel.delegate == nil)
+        #expect(viewModel.navigationDelegate == nil)
+        viewModel.setQuery("")
+        viewModel.search()
+        #expect(viewModel.errorMessage == "Enter a movie title to search.")
+    }
+
 }
 
 private actor ActionServiceStub: MoviePosterActionServicing {
@@ -167,5 +223,51 @@ private actor ActionServiceStub: MoviePosterActionServicing {
     func matchedMovieID(for request: MoviePosterRequest) async throws -> Int? {
         callCounts.view += 1
         return 7
+    }
+}
+
+@MainActor
+private final class ActionStateProbe: MoviePosterActionViewModelDelegate {
+    weak var sender: MoviePosterActionViewModel?
+    private(set) var query: String?
+    private(set) var yearText: String?
+    private(set) var statusMessage: String?
+    private(set) var errorMessage: String?
+    private(set) var isBusy: Bool?
+    private var idleContinuation: CheckedContinuation<Void, Never>?
+
+    func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel) {
+        sender = viewModel
+        query = viewModel.query
+        yearText = viewModel.yearText
+        statusMessage = viewModel.statusMessage
+        errorMessage = viewModel.errorMessage
+        isBusy = viewModel.isBusy
+        if !viewModel.isBusy {
+            let continuation = idleContinuation
+            idleContinuation = nil
+            continuation?.resume()
+        }
+    }
+
+    func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
+        guard viewModel.isBusy else { return }
+        await withCheckedContinuation { idleContinuation = $0 }
+    }
+}
+
+@MainActor
+private final class ActionNavigationProbe: MoviePosterActionViewModelNavigationDelegate {
+    weak var sender: MoviePosterActionViewModel?
+    private(set) var openedURL: URL?
+    private(set) var statusMessage: String?
+
+    func moviePosterActionViewModel(
+        _ viewModel: MoviePosterActionViewModel,
+        didRequestOpeningMoviePage url: URL
+    ) {
+        sender = viewModel
+        openedURL = url
+        statusMessage = viewModel.statusMessage
     }
 }

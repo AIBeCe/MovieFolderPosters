@@ -2,10 +2,9 @@ import AppKit
 import FileSystem
 
 @MainActor
-final class SettingsViewController: NSTabViewController {
+final class SettingsViewController: NSTabViewController, ConfigurationViewModelDelegate {
     private let viewModel: ConfigurationViewModel
     private let appearanceSettings: AppAppearanceSettings
-    private var changeObserverID: UUID?
 
     init(viewModel: ConfigurationViewModel, appearanceSettings: AppAppearanceSettings) {
         self.viewModel = viewModel
@@ -36,22 +35,19 @@ final class SettingsViewController: NSTabViewController {
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        guard changeObserverID == nil else { return }
-        changeObserverID = viewModel.observeChanges { [weak self] in
-            guard let self, self.tabViewItems.indices.contains(self.selectedTabViewItemIndex),
-                  let pane = self.tabViewItems[self.selectedTabViewItemIndex]
-                    .viewController as? SettingsPaneController,
-                  pane.isViewLoaded else { return }
-            pane.updatePresentation()
-        }
+        viewModel.addDelegate(self)
     }
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        if let changeObserverID {
-            viewModel.removeChangeObserver(changeObserverID)
-            self.changeObserverID = nil
-        }
+        viewModel.removeDelegate(self)
+    }
+
+    func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) {
+        guard tabViewItems.indices.contains(selectedTabViewItemIndex),
+              let pane = tabViewItems[selectedTabViewItemIndex].viewController as? SettingsPaneController,
+              pane.isViewLoaded else { return }
+        pane.updatePresentation()
     }
 
     private func addTab(label: String, image: NSImage?, pane: () -> SettingsPaneController) {

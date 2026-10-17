@@ -2,7 +2,8 @@ import AppKit
 import Network
 
 @MainActor
-final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate {
+final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
+    MoviePosterActionViewModelNavigationDelegate {
     private let service: any MoviePosterActionServicing
     private var windowController: NSWindowController?
     private var viewModel: MoviePosterActionViewModel?
@@ -36,13 +37,20 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
 
-        viewModel.onOpenMoviePage = { url in _ = NSWorkspace.shared.open(url) }
+        viewModel.navigationDelegate = self
         let controller = NSWindowController(window: window)
         self.viewModel = viewModel
         activeRequest = request
         windowController = controller
         controller.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    func moviePosterActionViewModel(
+        _ viewModel: MoviePosterActionViewModel,
+        didRequestOpeningMoviePage url: URL
+    ) {
+        _ = NSWorkspace.shared.open(url)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -64,7 +72,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate {
 }
 
 @MainActor
-private final class MoviePosterActionViewController: NSViewController {
+private final class MoviePosterActionViewController: NSViewController, MoviePosterActionViewModelDelegate {
     private let viewModel: MoviePosterActionViewModel
     private let queryField = NSTextField()
     private let yearField = NSTextField()
@@ -124,7 +132,11 @@ private final class MoviePosterActionViewController: NSViewController {
         super.viewDidLoad()
         queryField.stringValue = viewModel.query
         yearField.stringValue = viewModel.yearText
-        viewModel.onChange = { [weak self] in self?.render() }
+        viewModel.delegate = self
+        render()
+    }
+
+    func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel) {
         render()
     }
 

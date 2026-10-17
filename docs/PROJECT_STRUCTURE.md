@@ -80,3 +80,9 @@ production Swift code, resource contents, credentials, or signing entitlements c
 Build/test results establish relocation integration, not new Finder runtime or native qualification evidence.
 Existing R100-01 native limitations in [Installation readiness](INSTALLATION_READINESS.md) remain in effect.
 The user authorized committing the verified work. Integration, push, and issue closure remain on hold.
+
+## Protocol-based communication
+
+Existing object callbacks use focused delegate protocols. UI delegates are weak and main-actor isolated;
+configuration presentation supports multiple weak subscribers. Required service collaborators and mutation guards
+remain strongly owned. See [Delegate refactor](DELEGATE_REFACTOR.md) for scope and verification.

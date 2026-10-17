@@ -7,44 +7,44 @@ nonisolated struct InstallationReadinessReport: Sendable, Equatable {
     let text: String
 }
 
-actor InstallationReadinessService {
-    private let inspectInstallation: @Sendable () -> InstallationMetadata
-    private let extensionEnabled: @Sendable () async -> Bool?
-    private let readReceipt: @Sendable () -> ExtensionReceiptEvidence
-    private let checkSharedStorage: @Sendable () throws -> SharedStorageEvidence
-    private let now: @Sendable () -> Date
+protocol InstallationReadinessServicing: Sendable {
+    nonisolated func check() async -> InstallationReadinessReport
+}
 
-    init() {
-        inspectInstallation = Self.inspectMainBundle
-        extensionEnabled = {
-            await MainActor.run { FIFinderSyncController.isExtensionEnabled }
-        }
-        readReceipt = Self.readExtensionReceipt
-        checkSharedStorage = Self.performSharedStorageCheck
-        now = Date.init
+protocol InstallationReadinessEnvironment: Sendable {
+    nonisolated func inspectInstallation() -> InstallationMetadata
+    nonisolated func extensionEnabled() async -> Bool?
+    nonisolated func readReceipt() -> ExtensionReceiptEvidence
+    nonisolated func checkSharedStorage() throws -> SharedStorageEvidence
+    nonisolated func currentDate() -> Date
+}
+
+nonisolated struct SystemInstallationReadinessEnvironment: InstallationReadinessEnvironment {
+    func inspectInstallation() -> InstallationMetadata { InstallationReadinessService.inspectMainBundle() }
+    func extensionEnabled() async -> Bool? {
+        await MainActor.run { FIFinderSyncController.isExtensionEnabled }
     }
+    func readReceipt() -> ExtensionReceiptEvidence { InstallationReadinessService.readExtensionReceipt() }
+    func checkSharedStorage() throws -> SharedStorageEvidence {
+        InstallationReadinessService.performSharedStorageCheck()
+    }
+    func currentDate() -> Date { Date() }
+}
 
-    init(
-        inspectInstallation: @escaping @Sendable () -> InstallationMetadata,
-        extensionEnabled: @escaping @Sendable () async -> Bool?,
-        readReceipt: @escaping @Sendable () -> ExtensionReceiptEvidence,
-        checkSharedStorage: @escaping @Sendable () throws -> SharedStorageEvidence,
-        now: @escaping @Sendable () -> Date = Date.init
-    ) {
-        self.inspectInstallation = inspectInstallation
-        self.extensionEnabled = extensionEnabled
-        self.readReceipt = readReceipt
-        self.checkSharedStorage = checkSharedStorage
-        self.now = now
+actor InstallationReadinessService: InstallationReadinessServicing {
+    private let environment: any InstallationReadinessEnvironment
+
+    init(environment: any InstallationReadinessEnvironment = SystemInstallationReadinessEnvironment()) {
+        self.environment = environment
     }
 
     func check() async -> InstallationReadinessReport {
-        let installation = inspectInstallation()
-        let enabled = await extensionEnabled()
-        let receipt = readReceipt()
+        let installation = environment.inspectInstallation()
+        let enabled = await environment.extensionEnabled()
+        let receipt = environment.readReceipt()
         let storage: SharedStorageEvidence
         do {
-            storage = try checkSharedStorage()
+            storage = try environment.checkSharedStorage()
         } catch {
             storage = .failed
         }
@@ -53,11 +53,11 @@ actor InstallationReadinessService {
             extensionEnabled: enabled,
             receipt: receipt,
             storage: storage,
-            now: now()
+            now: environment.currentDate()
         )
     }
 
-    private static func inspectMainBundle() -> InstallationMetadata {
+    nonisolated fileprivate static func inspectMainBundle() -> InstallationMetadata {
         let hostBundle = Bundle.main
         let extensionURL = hostBundle.builtInPlugInsURL?
             .appendingPathComponent("MovieFolderPostersFinder.appex", isDirectory: true)
@@ -88,7 +88,7 @@ actor InstallationReadinessService {
         )
     }
 
-    private static func codeSignatureStatus(at url: URL) -> CodeSignatureEvidence {
+    nonisolated private static func codeSignatureStatus(at url: URL) -> CodeSignatureEvidence {
         var code: SecStaticCode?
         let creationStatus = SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &code)
         guard creationStatus == errSecSuccess, let code else { return .unknown }
@@ -100,7 +100,7 @@ actor InstallationReadinessService {
         return verificationStatus == errSecSuccess ? .valid : .invalid
     }
 
-    private static func readExtensionReceipt() -> ExtensionReceiptEvidence {
+    nonisolated fileprivate static func readExtensionReceipt() -> ExtensionReceiptEvidence {
         do {
             let store = try PersistenceStore(
                 directory: SharedEnvironment.container().appendingPathComponent("Readiness", isDirectory: true)
@@ -117,7 +117,7 @@ actor InstallationReadinessService {
         }
     }
 
-    private static func performSharedStorageCheck() -> SharedStorageEvidence {
+    nonisolated fileprivate static func performSharedStorageCheck() -> SharedStorageEvidence {
         do {
             let store = try PersistenceStore(
                 directory: SharedEnvironment.container().appendingPathComponent("Readiness", isDirectory: true)
@@ -128,7 +128,7 @@ actor InstallationReadinessService {
         }
     }
 
-    static func checkSharedStorage(in store: PersistenceStore) -> SharedStorageEvidence {
+    nonisolated static func checkSharedStorage(in store: PersistenceStore) -> SharedStorageEvidence {
         do {
             guard let lease = try store.acquireLease(for: "readiness-check") else { return .busy }
             defer { withExtendedLifetime(lease) {} }

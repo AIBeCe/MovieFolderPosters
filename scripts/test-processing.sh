@@ -44,8 +44,12 @@ let package = Package(name: "ProcessingVerification", platforms: [.macOS("26.5")
     ], resources: [.copy("TestPoster.png")])
 ], swiftLanguageModes: [.v6])
 SWIFT
+processing_test_options=(--disable-sandbox)
 if [[ -n "${PROCESSING_TEST_FILTER:-}" ]]; then
-    rtk proxy swift test --package-path "$processing_harness" --filter "$PROCESSING_TEST_FILTER"
-else
-    rtk proxy swift test --package-path "$processing_harness"
+    processing_test_options+=(--filter "$PROCESSING_TEST_FILTER")
 fi
+SWIFTPM_MODULECACHE_OVERRIDE="$processing_harness/.module-cache" \
+    rtk proxy swift test --package-path "$processing_harness" \
+    --scratch-path "$processing_harness/.build" --cache-path "$processing_harness/.cache" \
+    --config-path "$processing_harness/.config" --security-path "$processing_harness/.security" \
+    "${processing_test_options[@]}"

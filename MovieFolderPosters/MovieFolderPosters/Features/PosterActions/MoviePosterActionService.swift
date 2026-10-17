@@ -195,26 +195,37 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         let container = try SharedEnvironment.container()
         let recordDirectory = container.appendingPathComponent("Processing/\(context.configuration.credentialRevision)")
         let coordinationDirectory = container.appendingPathComponent("ProcessingLocks")
-        let expectedDirectory = context.directory
-        let expectedConfiguration = context.configuration
-        let expectedRoot = context.root
-        let expectedRootIdentity = context.rootIdentity
-        let repository = try SharedEnvironment.repository()
-        let beforeManualMutation: @Sendable () throws -> PersistenceLease? = {
-            let lease = try repository.mutationLease(for: expectedDirectory,
-                                                     expectedConfiguration: expectedConfiguration)
-            guard try FileSystemService().persistentDirectoryIdentity(at: expectedRoot) == expectedRootIdentity else {
-                withExtendedLifetime(lease) {}
-                throw MoviePosterActionServiceError.configurationChanged
-            }
-            return lease
-        }
+        let mutationGuard = PosterActionMutationGuard(repository: try SharedEnvironment.repository(),
+                                                      directory: context.directory,
+                                                      configuration: context.configuration,
+                                                      root: context.root, rootIdentity: context.rootIdentity)
         return MovieFolderProcessor(persistence: try PersistenceStore(directory: recordDirectory),
                                     provider: provider,
                                     cacheDirectory: container.appendingPathComponent("Posters"),
                                     coordinationStore: try PersistenceStore(directory: coordinationDirectory),
-                                    beforeManualMutation: beforeManualMutation,
+                                    mutationGuard: mutationGuard,
                                     appearance: context.configuration.posterAppearance)
+    }
+}
+
+nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
+    let repository: ConfigurationRepository
+    let directory: MonitoredDirectory
+    let configuration: DirectoryConfiguration
+    let root: URL
+    let rootIdentity: String
+
+    func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
+        throws -> PersistenceLease? { nil }
+
+    func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
+        throws -> PersistenceLease? {
+        let lease = try repository.mutationLease(for: directory, expectedConfiguration: configuration)
+        guard try FileSystemService().persistentDirectoryIdentity(at: root) == rootIdentity else {
+            withExtendedLifetime(lease) {}
+            throw MoviePosterActionServiceError.configurationChanged
+        }
+        return lease
     }
 }
 

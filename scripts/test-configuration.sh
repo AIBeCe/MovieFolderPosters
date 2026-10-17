@@ -29,4 +29,8 @@ let package = Package(name: "ConfigurationVerification", platforms: [.macOS("26.
     .testTarget(name: "MovieFolderPostersTests", dependencies: ["MovieFolderPosters", "Persistence"])
 ], swiftLanguageModes: [.v6])
 SWIFT
-rtk proxy swift test ${CONFIGURATION_TEST_FLAGS:-} --package-path "$configuration_harness"
+SWIFTPM_MODULECACHE_OVERRIDE="$configuration_harness/.module-cache" \
+    rtk proxy swift test --disable-sandbox ${CONFIGURATION_TEST_FLAGS:-} \
+    --package-path "$configuration_harness" --scratch-path "$configuration_harness/.build" \
+    --cache-path "$configuration_harness/.cache" --config-path "$configuration_harness/.config" \
+    --security-path "$configuration_harness/.security"

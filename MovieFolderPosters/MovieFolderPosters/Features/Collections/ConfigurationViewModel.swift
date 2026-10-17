@@ -2,21 +2,36 @@ import FileSystem
 import Foundation
 
 @MainActor
+protocol ConfigurationViewModelDelegate: AnyObject {
+    func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel)
+}
+
+@MainActor
+protocol ConfigurationViewModelActivityDelegate: AnyObject {
+    func configurationViewModel(_ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String)
+}
+
+@MainActor
 final class ConfigurationViewModel {
     private let service: any ConfigurationServicing
 
-    var onChange: (@MainActor () -> Void)?
-    var onActivity: (@MainActor (String, String) -> Void)?
-    private var observers: [UUID: @MainActor () -> Void] = [:]
-
-    @discardableResult
-    func observeChanges(_ observer: @escaping @MainActor () -> Void) -> UUID {
-        let identifier = UUID()
-        observers[identifier] = observer
-        return identifier
+    private struct WeakDelegate {
+        weak var value: (any ConfigurationViewModelDelegate)?
     }
 
-    func removeChangeObserver(_ identifier: UUID) { observers.removeValue(forKey: identifier) }
+    weak var activityDelegate: (any ConfigurationViewModelActivityDelegate)?
+    private var delegates: [WeakDelegate] = []
+
+    func addDelegate(_ delegate: any ConfigurationViewModelDelegate) {
+        delegates.removeAll { $0.value == nil }
+        guard !delegates.contains(where: { $0.value === delegate }) else { return }
+        delegates.append(WeakDelegate(value: delegate))
+    }
+
+    func removeDelegate(_ delegate: any ConfigurationViewModelDelegate) {
+        delegates.removeAll { $0.value == nil || $0.value === delegate }
+    }
+
     private(set) var directories: [ConfiguredDirectoryStatus] = []
     private(set) var credentialConfigured = false
     private(set) var posterAppearance: PosterAppearance = .softFinish
@@ -107,7 +122,7 @@ final class ConfigurationViewModel {
 
         do {
             apply(try await operation())
-            onActivity?(message, "Configuration")
+            activityDelegate?.configurationViewModel(self, didRecordActivity: message, category: "Configuration")
         } catch {
             onFailure()
             let explanation: String
@@ -120,7 +135,7 @@ final class ConfigurationViewModel {
                 explanation = failureMessage
             }
             errorMessage = explanation
-            onActivity?(explanation, "Error")
+            activityDelegate?.configurationViewModel(self, didRecordActivity: explanation, category: "Error")
         }
 
         isBusy = false
@@ -135,7 +150,7 @@ final class ConfigurationViewModel {
     }
 
     private func publish() {
-        onChange?()
-        for observer in Array(observers.values) { observer() }
+        delegates.removeAll { $0.value == nil }
+        for delegate in delegates.compactMap(\.value) { delegate.configurationViewModelDidChange(self) }
     }
 }

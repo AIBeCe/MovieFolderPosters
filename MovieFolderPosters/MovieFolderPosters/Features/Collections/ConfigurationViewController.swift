@@ -2,7 +2,15 @@ import AppKit
 import UniformTypeIdentifiers
 
 @MainActor
-final class ConfigurationViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+protocol ConfigurationViewControllerDelegate: AnyObject {
+    func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController)
+    func configurationViewControllerDidRequestLog(_ controller: ConfigurationViewController)
+    func configurationViewControllerDidRequestInstallationReadiness(_ controller: ConfigurationViewController)
+}
+
+@MainActor
+final class ConfigurationViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate,
+    ConfigurationViewModelDelegate, CollectionTableViewActionDelegate, CollectionRowViewDelegate {
     private let viewModel: ConfigurationViewModel
     private var presentedDirectories: [ConfiguredDirectoryStatus] = []
     private let tableView = CollectionTableView()
@@ -10,17 +18,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     private let addButton = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: nil)!,
                                      target: nil, action: nil)
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private let openSettings: @MainActor () -> Void
-    private let openLog: @MainActor () -> Void
-    private let checkInstallation: @MainActor () -> Void
+    weak var delegate: (any ConfigurationViewControllerDelegate)?
 
-    init(viewModel: ConfigurationViewModel, onOpenSettings: @escaping @MainActor () -> Void = {},
-         onOpenLog: @escaping @MainActor () -> Void = {},
-         onCheckInstallation: @escaping @MainActor () -> Void = {}) {
+    init(viewModel: ConfigurationViewModel) {
         self.viewModel = viewModel
-        openSettings = onOpenSettings
-        openLog = onOpenLog
-        checkInstallation = onCheckInstallation
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -54,7 +55,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
             footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
             errorLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 540)
         ])
-        _ = viewModel.observeChanges { [weak self] in self?.refresh() }
+        viewModel.addDelegate(self)
     }
 
     override func viewDidLoad() {
@@ -101,11 +102,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
                 addButton.heightAnchor.constraint(equalToConstant: 20)
             ])
         }
-        tableView.menuForRow = { [weak self] in self?.contextMenu(row: $0) }
-        tableView.deleteSelection = { [weak self] in
-            guard let self, self.presentedDirectories.indices.contains(self.tableView.selectedRow) else { return }
-            self.removeCollection(self.presentedDirectories[self.tableView.selectedRow].id)
-        }
+        tableView.actionDelegate = self
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -217,8 +214,8 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         guard presentedDirectories.indices.contains(row) else { return nil }
         let rowView = CollectionRowView()
-        let identifier = presentedDirectories[row].id
-        rowView.onRemove = { [weak self] in self?.removeCollection(identifier) }
+        rowView.directoryIdentifier = presentedDirectories[row].id
+        rowView.removalDelegate = self
         return rowView
     }
 
@@ -250,9 +247,27 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         return menu
     }
 
-    @objc private func showSettings() { openSettings() }
-    @objc private func showLog() { openLog() }
-    @objc private func showInstallationReadiness() { checkInstallation() }
+    func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) { refresh() }
+
+    fileprivate func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int) -> NSMenu? {
+        contextMenu(row: row)
+    }
+
+    fileprivate func collectionTableViewDidRequestSelectionRemoval(_ tableView: CollectionTableView) {
+        guard presentedDirectories.indices.contains(tableView.selectedRow) else { return }
+        removeCollection(presentedDirectories[tableView.selectedRow].id)
+    }
+
+    fileprivate func collectionRowViewDidRequestRemoval(_ rowView: CollectionRowView) {
+        guard let identifier = rowView.directoryIdentifier else { return }
+        removeCollection(identifier)
+    }
+
+    @objc private func showSettings() { delegate?.configurationViewControllerDidRequestSettings(self) }
+    @objc private func showLog() { delegate?.configurationViewControllerDidRequestLog(self) }
+    @objc private func showInstallationReadiness() {
+        delegate?.configurationViewControllerDidRequestInstallationReadiness(self)
+    }
     @objc private func refreshStatus() { Task { await viewModel.load() } }
     @objc private func addDirectory() { chooseDirectory(identifier: nil) }
 
@@ -289,23 +304,36 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
 }
 
 @MainActor
+private protocol CollectionTableViewActionDelegate: AnyObject {
+    func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int) -> NSMenu?
+    func collectionTableViewDidRequestSelectionRemoval(_ tableView: CollectionTableView)
+}
+
+@MainActor
 private final class CollectionTableView: NSTableView {
-    var menuForRow: ((Int) -> NSMenu?)?
-    var deleteSelection: (() -> Void)?
+    weak var actionDelegate: (any CollectionTableViewActionDelegate)?
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        menuForRow?(row(at: convert(event.locationInWindow, from: nil)))
+        actionDelegate?.collectionTableView(self, menuForRow: row(at: convert(event.locationInWindow, from: nil)))
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 51 || event.keyCode == 117 { deleteSelection?() }
+        if event.keyCode == 51 || event.keyCode == 117 {
+            actionDelegate?.collectionTableViewDidRequestSelectionRemoval(self)
+        }
         else { super.keyDown(with: event) }
     }
 }
 
 @MainActor
+private protocol CollectionRowViewDelegate: AnyObject {
+    func collectionRowViewDidRequestRemoval(_ rowView: CollectionRowView)
+}
+
+@MainActor
 private final class CollectionRowView: NSTableRowView {
-    var onRemove: (() -> Void)?
+    weak var removalDelegate: (any CollectionRowViewDelegate)?
+    var directoryIdentifier: UUID?
     private let removeButton = NSButton(
         image: NSImage(systemSymbolName: "minus.circle", accessibilityDescription: nil)!, target: nil, action: nil
     )
@@ -328,7 +356,7 @@ private final class CollectionRowView: NSTableRowView {
             removeButton.heightAnchor.constraint(equalToConstant: 22)
         ])
         setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Remove collection", handler: { [weak self] in
-            self?.onRemove?()
+            self?.remove()
             return true
         })])
     }
@@ -353,7 +381,7 @@ private final class CollectionRowView: NSTableRowView {
         removeButton.setAccessibilityHidden(!hovered)
     }
 
-    @objc private func remove() { onRemove?() }
+    @objc private func remove() { removalDelegate?.collectionRowViewDidRequestRemoval(self) }
 }
 
 

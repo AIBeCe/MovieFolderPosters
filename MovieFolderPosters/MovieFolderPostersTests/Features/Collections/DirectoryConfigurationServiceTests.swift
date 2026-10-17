@@ -6,10 +6,20 @@ import Testing
 @testable import MovieFolderPosters
 
 struct DirectoryConfigurationServiceTests {
+    @Test func configurationChangesReachRetainedNotifierAfterPersistence() async throws {
+        let fixture = try ConfigurationServiceFixture()
+        defer { fixture.cleanup() }
+        var notifier: ConfigurationNotifierProbe? = ConfigurationNotifierProbe(repository: fixture.repository)
+        weak var retainedNotifier = notifier
+        let service = DirectoryConfigurationService(repository: fixture.repository,
+            authorizations: fixture.authorizations, credentials: fixture.credentials, notifier: notifier!)
+        notifier = nil
+        try await service.setPosterAppearance(.raw)
+        #expect(retainedNotifier?.observedAppearance == .raw)
+    }
+
     @Test func staleBookmarkDoesNotHideKnownDisconnectedVolume() async throws {
-        let fixture = try ConfigurationServiceFixture(acquireAccess: { _, _ in
-            throw DirectoryAccessError.staleBookmark
-        })
+        let fixture = try ConfigurationServiceFixture(authorization: TestDirectoryAuthorization(mode: .stale))
         defer { fixture.cleanup() }
         let volume = fixture.root.appendingPathComponent("DisconnectedVolume")
         let directory = MonitoredDirectory(id: UUID(), path: volume.appendingPathComponent("Movies").path,
@@ -54,10 +64,7 @@ struct DirectoryConfigurationServiceTests {
     }
 
     @Test func reconcilesRenamedRootOnlyWithSavedIdentity() async throws {
-        let fixture = try ConfigurationServiceFixture(acquireAccess: { bookmark, identity in
-            try FileSystemService().acquireDirectoryAccess(bookmark: bookmark, securityScoped: false,
-                                                           expectedIdentity: identity)
-        })
+        let fixture = try ConfigurationServiceFixture(authorization: TestDirectoryAuthorization(mode: .implicit))
         defer { fixture.cleanup() }
         let original = fixture.root.appendingPathComponent("Movies", isDirectory: true)
         let renamed = fixture.root.appendingPathComponent("Renamed", isDirectory: true)
@@ -83,9 +90,7 @@ struct DirectoryConfigurationServiceTests {
     }
 
     @Test func missingAuthorizedFolderIsNotReportedAsDisconnected() async throws {
-        let fixture = try ConfigurationServiceFixture(acquireAccess: { _, _ in
-            throw DirectoryAccessError.invalidDirectory
-        })
+        let fixture = try ConfigurationServiceFixture(authorization: TestDirectoryAuthorization(mode: .invalid))
         defer { fixture.cleanup() }
         let missing = fixture.root.appendingPathComponent("Missing", isDirectory: true)
         let directory = MonitoredDirectory(id: UUID(), path: missing.path, transferBookmark: Data([1]),
@@ -187,17 +192,15 @@ private struct ConfigurationServiceFixture {
     let credentials = ConfigurationCredentialProbe()
     let service: DirectoryConfigurationService
 
-    init(acquireAccess: @escaping @Sendable (Data, String?) throws -> DirectoryAccessLease = {
-        try FileSystemService().acquireDirectoryAccess(bookmark: $0, securityScoped: true, expectedIdentity: $1)
-    }) throws {
+    init(authorization: any DirectoryAuthorizationProviding = TestDirectoryAuthorization()) throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         repository = ConfigurationRepository(store: try PersistenceStore(directory: root
             .appendingPathComponent("Shared")))
         authorizations = try PersistenceStore(directory: root.appendingPathComponent("Private"))
         service = DirectoryConfigurationService(repository: repository,
                                                 authorizations: authorizations,
-                                                credentials: credentials, notify: {}, acquireAccess: acquireAccess,
-                                                makeBookmark: { try FileSystemService().makeTransferBookmark(for: $0) })
+                                                credentials: credentials, notifier: SilentConfigurationNotifier(),
+                                                authorization: authorization)
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: root) }
@@ -208,4 +211,38 @@ private final class ConfigurationCredentialProbe: CredentialStoring {
     func read() -> String? { value.withLock { $0 } }
     func save(_ value: String) { self.value.withLock { $0 = value } }
     func remove() { value.withLock { $0 = nil } }
+}
+
+private struct SilentConfigurationNotifier: ConfigurationChangeNotifying {
+    func configurationDidChange() {}
+}
+
+private struct TestDirectoryAuthorization: DirectoryAuthorizationProviding {
+    enum Mode { case scoped, implicit, stale, invalid }
+    var mode: Mode = .scoped
+
+    func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccessLease {
+        switch mode {
+        case .stale: throw DirectoryAccessError.staleBookmark
+        case .invalid: throw DirectoryAccessError.invalidDirectory
+        case .scoped, .implicit:
+            return try FileSystemService().acquireDirectoryAccess(bookmark: bookmark,
+                securityScoped: mode == .scoped, expectedIdentity: expectedIdentity)
+        }
+    }
+    func makeBookmark(for directory: URL) throws -> Data {
+        try FileSystemService().makeTransferBookmark(for: directory)
+    }
+}
+
+private final class ConfigurationNotifierProbe: ConfigurationChangeNotifying, Sendable {
+    private let repository: ConfigurationRepository
+    private let appearance = Mutex<PosterAppearance?>(nil)
+
+    init(repository: ConfigurationRepository) { self.repository = repository }
+    func configurationDidChange() {
+        let saved = try? repository.read().posterAppearance
+        appearance.withLock { $0 = saved }
+    }
+    var observedAppearance: PosterAppearance? { appearance.withLock { $0 } }
 }
