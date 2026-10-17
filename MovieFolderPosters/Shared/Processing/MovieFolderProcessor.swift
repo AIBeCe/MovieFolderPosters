@@ -107,6 +107,7 @@ public actor MovieFolderProcessor {
     private let posterAssigner: any PosterAssigner
     private let now: @Sendable () -> Date
     private let beforeManualMutation: @Sendable () throws -> PersistenceLease?
+    private let beforeAutomaticMutation: @Sendable (URL) throws -> PersistenceLease?
     private let appearance: PosterAppearance
     private let parser = ReleaseNameParser()
     private let matcher = MovieMatcher()
@@ -119,6 +120,7 @@ public actor MovieFolderProcessor {
         posterAssigner: any PosterAssigner = FileSystemService(),
         now: @escaping @Sendable () -> Date = Date.init,
         coordinationStore: PersistenceStore? = nil,
+        beforeAutomaticMutation: @escaping @Sendable (URL) throws -> PersistenceLease? = { _ in nil },
         beforeManualMutation: @escaping @Sendable () throws -> PersistenceLease? = { nil },
         appearance: PosterAppearance = .softFinish
     ) {
@@ -130,6 +132,7 @@ public actor MovieFolderProcessor {
         self.posterAssigner = posterAssigner
         self.now = now
         self.beforeManualMutation = beforeManualMutation
+        self.beforeAutomaticMutation = beforeAutomaticMutation
         self.appearance = appearance
     }
 
@@ -148,6 +151,10 @@ public actor MovieFolderProcessor {
         }
         defer { withExtendedLifetime(lease) {} }
 
+        do {
+            let settingsLease = try beforeAutomaticMutation(root)
+            withExtendedLifetime(settingsLease) {}
+        }
         let candidates: [FolderCandidate]
         do {
             candidates = try fileSystem.candidates(in: root)
@@ -517,6 +524,8 @@ public actor MovieFolderProcessor {
     private func assign(_ data: Data, to candidate: FolderCandidate, in root: URL) throws
         -> PosterAssignmentResult {
         try Task.checkCancellation()
+        let settingsLease = try beforeAutomaticMutation(root)
+        defer { withExtendedLifetime(settingsLease) {} }
         let current: FolderCandidate
         do {
             current = try fileSystem.snapshot(ofChild: candidate.name, in: root)
@@ -546,6 +555,8 @@ public actor MovieFolderProcessor {
         guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
         let styleLease = try beforeManualMutation()
         defer { withExtendedLifetime(styleLease) {} }
+        let settingsLease = try beforeAutomaticMutation(root)
+        defer { withExtendedLifetime(settingsLease) {} }
         let result = try fileSystem.restyleAssignedPoster(
             data, toChild: candidate.name, in: root, appearance: appearance,
             expectedIdentity: candidate.identity

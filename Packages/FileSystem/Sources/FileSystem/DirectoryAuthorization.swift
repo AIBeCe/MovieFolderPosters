@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public final class DirectoryAccessLease: Sendable {
@@ -29,7 +30,8 @@ public extension FileSystemService {
 
     func acquireDirectoryAccess(
         bookmark: Data,
-        securityScoped: Bool
+        securityScoped: Bool,
+        expectedIdentity: String? = nil
     ) throws -> DirectoryAccessLease {
         var resolutionOptions: URL.BookmarkResolutionOptions = [.withoutUI, .withoutMounting]
         if securityScoped {
@@ -49,7 +51,7 @@ public extension FileSystemService {
             throw DirectoryAccessError.invalidDirectory
         }
 
-        guard !isStale else {
+        guard !isStale || expectedIdentity != nil else {
             throw DirectoryAccessError.staleBookmark
         }
 
@@ -65,20 +67,78 @@ public extension FileSystemService {
         }
 
         try validateDirectory(directory)
-        do {
-            _ = try FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil,
-                options: []
-            )
-        } catch {
-            throw DirectoryAccessError.accessDenied
-        }
+        try validateDirectoryDescriptorAccess(directory, service: self, expectedIdentity: expectedIdentity)
 
         transferAccessToLease = startedAccessing
         return DirectoryAccessLease(
             url: directory,
             isAccessingSecurityScopedResource: startedAccessing
         )
+    }
+}
+
+private func validateDirectoryDescriptorAccess(
+    _ directory: URL,
+    service: FileSystemService,
+    expectedIdentity: String?
+) throws {
+    let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard descriptor >= 0 else {
+        switch errno {
+        case EACCES, EPERM:
+            throw DirectoryAccessError.accessDenied
+        case ELOOP:
+            throw DirectoryAccessError.invalidDirectory
+        default:
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+    }
+    defer { _ = close(descriptor) }
+
+    var openedInfo = stat()
+    guard fstat(descriptor, &openedInfo) == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    guard (openedInfo.st_mode & S_IFMT) == S_IFDIR else {
+        throw DirectoryAccessError.invalidDirectory
+    }
+
+    let openedObjectIdentity = "\(openedInfo.st_dev):\(openedInfo.st_ino):"
+        + "\(openedInfo.st_birthtimespec.tv_sec):\(openedInfo.st_birthtimespec.tv_nsec)"
+    let currentPathObjectIdentity = try service.fileIdentity(at: directory)
+    try validateDirectoryObjectIdentity(
+        openedIdentity: openedObjectIdentity,
+        currentPathIdentity: currentPathObjectIdentity
+    )
+    do {
+        let openedPersistentIdentity = try persistentIdentity(
+            at: directory,
+            descriptor: descriptor,
+            service: service
+        )
+        try validateDirectoryIdentity(
+            openedIdentity: openedPersistentIdentity,
+            currentPathIdentity: openedPersistentIdentity,
+            expectedIdentity: expectedIdentity
+        )
+    } catch is DirectoryIdentityUnavailable where expectedIdentity == nil {
+        // The descriptor and current path already match; durable identity is optional for this lease.
+    }
+}
+
+func validateDirectoryObjectIdentity(openedIdentity: String, currentPathIdentity: String) throws {
+    guard openedIdentity == currentPathIdentity else {
+        throw DirectoryAccessError.identityChanged
+    }
+}
+
+func validateDirectoryIdentity(
+    openedIdentity: String,
+    currentPathIdentity: String,
+    expectedIdentity: String?
+) throws {
+    guard openedIdentity == currentPathIdentity,
+          expectedIdentity == nil || expectedIdentity == openedIdentity else {
+        throw DirectoryAccessError.identityChanged
     }
 }

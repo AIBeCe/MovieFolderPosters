@@ -37,6 +37,9 @@
 		F70000000000000000000002 /* MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
 		F70000000000000000000004 /* DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
 		F70000000000000000000005 /* TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
+		F90000000000000000000001 /* ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
+		F90000000000000000000002 /* MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
+		F90000000000000000000003 /* MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,9 +101,23 @@
 		F70000000000000000000003 /* MoviePosterRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePosterRequest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F90000000000000000000010 /* Host configuration inputs */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Configuration/HostInfo.plist,
+				Configuration/MovieFolderPosters.entitlements,
+			);
+			target = 4EA84238307BE08A005A22E4 /* MovieFolderPosters */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4EA8423B307BE08A005A22E4 /* MovieFolderPosters */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F90000000000000000000010 /* Host configuration inputs */,
+			);
 			path = MovieFolderPosters;
 			sourceTree = "<group>";
 		};
@@ -161,7 +178,6 @@
 			isa = PBXGroup;
 			children = (
 				F80000000000000000000001 /* Shared */,
-				F80000000000000000000002 /* Movie Processing */,
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
 				F10000000000000000000003 /* MovieFolderPostersFinder */,
 				4EA8424A307BE08B005A22E4 /* MovieFolderPostersTests */,
@@ -184,11 +200,9 @@
 		F10000000000000000000003 /* MovieFolderPostersFinder */ = {
 			isa = PBXGroup;
 			children = (
-				F50000000000000000000002 /* TestPoster.png */,
-				F50000000000000000000003 /* DevelopmentTMDbTransport.swift */,
-				F10000000000000000000004 /* FinderSync.swift */,
-				F10000000000000000000005 /* Info.plist */,
-				F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */,
+				F90000000000000000000024 /* Integration */,
+				F90000000000000000000025 /* Configuration */,
+				F90000000000000000000026 /* Resources */,
 			);
 			path = MovieFolderPostersFinder;
 			sourceTree = "<group>";
@@ -196,25 +210,83 @@
 		F80000000000000000000001 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				F70000000000000000000003 /* MoviePosterRequest.swift */,
-				F6000000000000000000000A /* DirectoryConfiguration.swift */,
-				F6000000000000000000000B /* ConfigurationRepository.swift */,
-				F6000000000000000000000C /* SharedEnvironment.swift */,
-				F6000000000000000000000D /* KeychainCredentialStore.swift */,
-				F6000000000000000000000E /* DirectoryObservationScheduler.swift */,
+				F90000000000000000000020 /* Configuration */,
+				F80000000000000000000002 /* Processing */,
+				F90000000000000000000021 /* FinderIntegration */,
+				F90000000000000000000022 /* Security */,
+				F90000000000000000000023 /* Development */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
 		};
-		F80000000000000000000002 /* Movie Processing */ = {
+		F90000000000000000000020 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				F6000000000000000000000A /* DirectoryConfiguration.swift */,
+				F6000000000000000000000B /* ConfigurationRepository.swift */,
+				F6000000000000000000000C /* SharedEnvironment.swift */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		F80000000000000000000002 /* Processing */ = {
 			isa = PBXGroup;
 			children = (
 				F50000000000000000000004 /* ReleaseNameParser.swift */,
 				F50000000000000000000005 /* MovieMatcher.swift */,
 				F50000000000000000000006 /* MovieFolderProcessor.swift */,
 			);
-			name = "Movie Processing";
-			path = MovieFolderPosters;
+			path = Processing;
+			sourceTree = "<group>";
+		};
+		F90000000000000000000021 /* FinderIntegration */ = {
+			isa = PBXGroup;
+			children = (
+				F6000000000000000000000E /* DirectoryObservationScheduler.swift */,
+				F70000000000000000000003 /* MoviePosterRequest.swift */,
+			);
+			path = FinderIntegration;
+			sourceTree = "<group>";
+		};
+		F90000000000000000000022 /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				F6000000000000000000000D /* KeychainCredentialStore.swift */,
+			);
+			path = Security;
+			sourceTree = "<group>";
+		};
+		F90000000000000000000023 /* Development */ = {
+			isa = PBXGroup;
+			children = (
+				F50000000000000000000003 /* DevelopmentTMDbTransport.swift */,
+			);
+			path = Development;
+			sourceTree = "<group>";
+		};
+		F90000000000000000000024 /* Integration */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000004 /* FinderSync.swift */,
+			);
+			path = Integration;
+			sourceTree = "<group>";
+		};
+		F90000000000000000000025 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000005 /* Info.plist */,
+				F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		F90000000000000000000026 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F50000000000000000000002 /* TestPoster.png */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -406,6 +478,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F90000000000000000000001 /* ReleaseNameParser.swift in Sources */,
+				F90000000000000000000002 /* MovieMatcher.swift in Sources */,
+				F90000000000000000000003 /* MovieFolderProcessor.swift in Sources */,
 				F70000000000000000000001 /* MoviePosterRequest.swift in Sources */,
 				F70000000000000000000004 /* DevelopmentTMDbTransport.swift in Sources */,
 				F60000000000000000000014 /* DirectoryConfiguration.swift in Sources */,
@@ -594,17 +669,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MovieFolderPosters/MovieFolderPosters.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MovieFolderPosters/Configuration/MovieFolderPosters.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Shared/HostInfo.plist;
+				INFOPLIST_FILE = MovieFolderPosters/Configuration/HostInfo.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -630,17 +705,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MovieFolderPosters/MovieFolderPosters.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MovieFolderPosters/Configuration/MovieFolderPosters.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Shared/HostInfo.plist;
+				INFOPLIST_FILE = MovieFolderPosters/Configuration/HostInfo.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -666,7 +741,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -688,7 +763,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -709,7 +784,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -729,7 +804,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -749,14 +824,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = MovieFolderPostersFinder/MovieFolderPostersFinder.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MovieFolderPostersFinder/Configuration/MovieFolderPostersFinder.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = MovieFolderPostersFinder/Info.plist;
+				INFOPLIST_FILE = MovieFolderPostersFinder/Configuration/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -776,14 +851,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = MovieFolderPostersFinder/MovieFolderPostersFinder.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MovieFolderPostersFinder/Configuration/MovieFolderPostersFinder.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N74TV576H8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = MovieFolderPostersFinder/Info.plist;
+				INFOPLIST_FILE = MovieFolderPostersFinder/Configuration/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

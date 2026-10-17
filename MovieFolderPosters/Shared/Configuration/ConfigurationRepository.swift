@@ -15,6 +15,23 @@ nonisolated struct ConfigurationRepository: Sendable {
         return (try read(lease), lease)
     }
 
+    func mutationLease(for directory: MonitoredDirectory,
+                       expectedConfiguration: DirectoryConfiguration) throws -> PersistenceLease {
+        let (current, lease) = try readHoldingLease()
+        guard let configured = current.directories.first(where: { $0.id == directory.id }),
+              configured.path == directory.path,
+              configured.identity == directory.identity,
+              configured.authorizationVersion == directory.authorizationVersion,
+              !current.overlappingDirectoryIDs.contains(directory.id),
+              current.credentialRevision == expectedConfiguration.credentialRevision,
+              current.developmentFixtures == expectedConfiguration.developmentFixtures,
+              current.posterAppearance == expectedConfiguration.posterAppearance else {
+            withExtendedLifetime(lease) {}
+            throw ConfigurationError.configurationChanged
+        }
+        return lease
+    }
+
     func readWhenAvailable(
         pause: @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
     ) async throws -> DirectoryConfiguration {

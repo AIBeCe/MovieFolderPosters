@@ -8,6 +8,7 @@ private actor FinderConfigurationRuntime {
     private struct AuthorizedRoot: Sendable {
         let directory: MonitoredDirectory
         let access: DirectoryAccessLease
+        let identity: String
     }
 
     private var roots: [URL: AuthorizedRoot] = [:]
@@ -16,18 +17,28 @@ private actor FinderConfigurationRuntime {
     private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
 
     func reload() async -> Set<URL> {
+        recordActivation()
         do {
             let configuration = try await SharedEnvironment.repository().readWhenAvailable()
             let authorizations = try SharedEnvironment.privateAuthorizations()
             var updated: [URL: AuthorizedRoot] = [:]
-            for directory in configuration.directories {
+            let overlapping = configuration.overlappingDirectoryIDs
+            for directory in configuration.directories where !overlapping.contains(directory.id) {
                 do {
                     let access = try authorize(directory, store: authorizations)
-                    updated[access.url.standardizedFileURL] = AuthorizedRoot(directory: directory, access: access)
+                    guard access.url.resolvingSymlinksInPath().standardizedFileURL.path == directory.path else {
+                        throw DirectoryAccessError.staleBookmark
+                    }
+                    let identity = try fileSystem.persistentDirectoryIdentity(at: access.url)
+                    updated[access.url.standardizedFileURL] = AuthorizedRoot(directory: directory, access: access,
+                                                                            identity: identity)
                 } catch {
                     logger.notice("Directory unavailable or needs reauthorization; id=\(directory.id)")
                 }
             }
+            let grouped = Dictionary(grouping: updated.values, by: \.identity)
+            let duplicateIdentities = Set(grouped.filter { $0.value.count > 1 }.map(\.key))
+            updated = updated.filter { !duplicateIdentities.contains($0.value.identity) }
             roots = updated
             processor = nil
             do {
@@ -48,12 +59,27 @@ private actor FinderConfigurationRuntime {
                     #endif
                     let container = try SharedEnvironment.container()
                     let records = container.appendingPathComponent("Processing/\(configuration.credentialRevision)")
+                    let repository = try SharedEnvironment.repository()
+                    let expectedRoots = updated
+                    let beforeAutomaticMutation: @Sendable (URL) throws -> PersistenceLease? = { url in
+                        guard let expected = expectedRoots[url.standardizedFileURL] else {
+                            throw DirectoryAccessError.identityChanged
+                        }
+                        let lease = try repository.mutationLease(for: expected.directory,
+                                                                expectedConfiguration: configuration)
+                        guard try FileSystemService().persistentDirectoryIdentity(at: url) == expected.identity else {
+                            withExtendedLifetime(lease) {}
+                            throw DirectoryAccessError.identityChanged
+                        }
+                        return lease
+                    }
                     processor = MovieFolderProcessor(persistence: try PersistenceStore(directory: records),
                                                      provider: client,
                                                      cacheDirectory: container.appendingPathComponent("Posters"),
                                                      coordinationStore: try PersistenceStore(
                                                         directory: container.appendingPathComponent("ProcessingLocks")
-                                                     ), appearance: configuration.posterAppearance)
+                                                     ), beforeAutomaticMutation: beforeAutomaticMutation,
+                                                     appearance: configuration.posterAppearance)
                     logger.notice("Shared Keychain credential available")
                 } else {
                     logger.notice("TMDb credential is not configured")
@@ -74,8 +100,25 @@ private actor FinderConfigurationRuntime {
         }
     }
 
+    private func recordActivation() {
+        do {
+            guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                  let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return }
+            let store = try PersistenceStore(
+                directory: SharedEnvironment.container().appendingPathComponent("Readiness"))
+            guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else { return }
+            let receipt = ExtensionReadinessReceipt(version: version, build: build, observedAt: Date())
+            try lease.write(JSONEncoder().encode(receipt))
+        } catch {
+            logger.notice("Could not record extension activation evidence")
+        }
+    }
+
     func process(_ url: URL) async throws {
         guard let root = roots[url], let processor else { return }
+        guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
+            throw DirectoryAccessError.identityChanged
+        }
         let result = try await processor.process(root: root.access.url)
         withExtendedLifetime(root.access) {}
         logger.notice("Processing completed: examined=\(result.examined), assigned=\(result.assigned)")
@@ -86,10 +129,12 @@ private actor FinderConfigurationRuntime {
         let key = "extension-\(directory.id)-\(directory.authorizationVersion)"
         guard let lease = try store.acquireLease(for: key) else { throw ConfigurationError.busy }
         if let bookmark = try lease.read(),
-           let access = try? fileSystem.acquireDirectoryAccess(bookmark: bookmark, securityScoped: true) {
+           let access = try? fileSystem.acquireDirectoryAccess(bookmark: bookmark, securityScoped: true,
+                                                               expectedIdentity: directory.identity) {
             return access
         }
-        let access = try fileSystem.acquireDirectoryAccess(bookmark: directory.transferBookmark, securityScoped: false)
+        let access = try fileSystem.acquireDirectoryAccess(bookmark: directory.transferBookmark, securityScoped: false,
+                                                           expectedIdentity: directory.identity)
         try lease.write(fileSystem.makeDirectoryBookmark(for: access.url))
         logger.notice("Created extension-owned persistent authorization; id=\(directory.id)")
         return access

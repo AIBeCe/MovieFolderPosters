@@ -116,6 +116,9 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         guard let directory = configuration.directories.first(where: { $0.id == request.rootID }) else {
             throw MoviePosterActionServiceError.directoryNotConfigured
         }
+        guard !configuration.overlappingDirectoryIDs.contains(directory.id) else {
+            throw MoviePosterActionServiceError.directoryUnavailable
+        }
 
         let authorizationStore = try SharedEnvironment.privateAuthorizations()
         let authorizationKey = "host-\(directory.id)-\(directory.authorizationVersion)"
@@ -124,11 +127,12 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         }
         let rootAccess: DirectoryAccessLease
         if let bookmark = try authorizationLease.read(),
-           let persisted = try? fileSystem.acquireDirectoryAccess(bookmark: bookmark, securityScoped: true) {
+           let persisted = try? fileSystem.acquireDirectoryAccess(bookmark: bookmark, securityScoped: true,
+                                                                  expectedIdentity: directory.identity) {
             rootAccess = persisted
         } else {
             rootAccess = try fileSystem.acquireDirectoryAccess(bookmark: directory.transferBookmark,
-                                                              securityScoped: false)
+                securityScoped: false, expectedIdentity: directory.identity)
             try Task.checkCancellation()
             try authorizationLease.write(fileSystem.makeDirectoryBookmark(for: rootAccess.url))
         }
@@ -146,7 +150,8 @@ actor MoviePosterActionService: MoviePosterActionServicing {
 
         let context = AuthorizedRoot(configuration: configuration, directory: directory, root: rootAccess.url,
                                      child: child, authorizationLease: authorizationLease,
-                                     rootAccess: rootAccess)
+                                     rootAccess: rootAccess,
+                                     rootIdentity: try fileSystem.persistentDirectoryIdentity(at: rootAccess.url))
         defer {
             withExtendedLifetime(context.authorizationLease) {}
             withExtendedLifetime(context.rootAccess) {}
@@ -156,13 +161,11 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     }
 
     private func ensureConfigurationIsCurrent(_ context: AuthorizedRoot) throws {
-        let current = try SharedEnvironment.repository().read()
-        guard let directory = current.directories.first(where: { $0.id == context.directory.id }),
-              directory.authorizationVersion == context.directory.authorizationVersion,
-              current.credentialRevision == context.configuration.credentialRevision,
-              current.developmentFixtures == context.configuration.developmentFixtures,
-              current.posterAppearance == context.configuration.posterAppearance else {
-            throw MoviePosterActionServiceError.configurationChanged
+        let lease = try SharedEnvironment.repository().mutationLease(for: context.directory,
+                                                                     expectedConfiguration: context.configuration)
+        defer { withExtendedLifetime(lease) {} }
+        guard try fileSystem.persistentDirectoryIdentity(at: context.root) == context.rootIdentity else {
+            throw MoviePosterActionServiceError.directoryUnavailable
         }
     }
 
@@ -193,18 +196,14 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         let recordDirectory = container.appendingPathComponent("Processing/\(context.configuration.credentialRevision)")
         let coordinationDirectory = container.appendingPathComponent("ProcessingLocks")
         let expectedDirectory = context.directory
-        let expectedRevision = context.configuration.credentialRevision
-        let expectedFixtures = context.configuration.developmentFixtures
-        let expectedAppearance = context.configuration.posterAppearance
+        let expectedConfiguration = context.configuration
+        let expectedRoot = context.root
+        let expectedRootIdentity = context.rootIdentity
         let repository = try SharedEnvironment.repository()
         let beforeManualMutation: @Sendable () throws -> PersistenceLease? = {
-            let (current, lease) = try repository.readHoldingLease()
-            guard let currentDirectory = current.directories.first(where: { $0.id == expectedDirectory.id }),
-                  currentDirectory.path == expectedDirectory.path,
-                  currentDirectory.authorizationVersion == expectedDirectory.authorizationVersion,
-                  current.credentialRevision == expectedRevision,
-                  current.developmentFixtures == expectedFixtures,
-                  current.posterAppearance == expectedAppearance else {
+            let lease = try repository.mutationLease(for: expectedDirectory,
+                                                     expectedConfiguration: expectedConfiguration)
+            guard try FileSystemService().persistentDirectoryIdentity(at: expectedRoot) == expectedRootIdentity else {
                 withExtendedLifetime(lease) {}
                 throw MoviePosterActionServiceError.configurationChanged
             }
@@ -226,6 +225,7 @@ private struct AuthorizedRoot: Sendable {
     let child: FolderCandidate
     let authorizationLease: PersistenceLease
     let rootAccess: DirectoryAccessLease
+    let rootIdentity: String
 }
 
 private struct MissingTokenProvider: MovieMetadataProvider {

@@ -7,6 +7,36 @@ import Darwin
 @testable import MovieFolderPosters
 
 final class MoviePosterActionTests: XCTestCase {
+    func testNewOverlapDuringSearchPreventsManualPosterMutation() async throws {
+        let fixture = try ActionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        try fixture.addFolder("Dune (2021)")
+        let repository = ConfigurationRepository(store: try PersistenceStore(
+            directory: fixture.base.appendingPathComponent("configuration")))
+        let target = MonitoredDirectory(id: UUID(), path: fixture.movies.path, transferBookmark: Data([1]),
+                                         authorizationVersion: UUID(), identity: "target")
+        let other = MonitoredDirectory(id: UUID(), path: fixture.base.appendingPathComponent("Other").path,
+            transferBookmark: Data([2]), authorizationVersion: UUID(), identity: "other")
+        try repository.update { $0.directories = [target, other] }
+        let before = try repository.read()
+        let provider = ActionProvider(posterData: fixture.posterData, delaysSearch: true)
+        let processor = fixture.processor(provider: provider, beforeManualMutation: {
+            try repository.mutationLease(for: target, expectedConfiguration: before)
+        })
+        let identity = try fixture.identity(of: "Dune (2021)")
+        let task = Task {
+            try await processor.refreshPoster(root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity)
+        }
+        await provider.waitForSearch()
+        try repository.update { $0.directories[1].path = fixture.movies.appendingPathComponent("Nested").path }
+        await provider.allowSearch()
+        do {
+            _ = try await task.value
+            XCTFail("A newly overlapping root must prevent mutation after network suspension")
+        } catch ConfigurationError.configurationChanged {}
+        XCTAssertFalse(try FileSystemService().snapshot(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+    }
+
     func testSelectingExplicitMovieBypassesAmbiguousSearchAndRecordsSelection() async throws {
         let fixture = try ActionFixture()
         try fixture.addFolder("Dune (2021)")

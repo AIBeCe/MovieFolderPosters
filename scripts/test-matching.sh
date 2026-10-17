@@ -6,9 +6,9 @@ matching_repository=$(cd "$(dirname "$0")/.." && pwd)
 matching_harness=$(rtk proxy mktemp -d "${TMPDIR:-/tmp}/MovieFolderPosters-Matching.XXXXXX")
 trap 'rtk proxy rm -rf "$matching_harness"' EXIT
 rtk proxy mkdir -p "$matching_harness/Sources/MovieFolderPosters" "$matching_harness/Tests/MovieFolderPostersTests"
-rtk proxy cp "$matching_repository/MovieFolderPosters/MovieFolderPosters/MovieMatcher.swift" \
+rtk proxy cp "$matching_repository/MovieFolderPosters/Shared/Processing/MovieMatcher.swift" \
     "$matching_harness/Sources/MovieFolderPosters/MovieMatcher.swift"
-rtk proxy cp "$matching_repository/MovieFolderPosters/MovieFolderPostersTests/MovieMatcherTests.swift" \
+rtk proxy cp "$matching_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Processing/MovieMatcherTests.swift" \
     "$matching_harness/Tests/MovieFolderPostersTests/MovieMatcherTests.swift"
 # A symlink avoids interpolating repository paths into Swift source.
 rtk proxy ln -s "$matching_repository/Packages/Network" "$matching_harness/Network"

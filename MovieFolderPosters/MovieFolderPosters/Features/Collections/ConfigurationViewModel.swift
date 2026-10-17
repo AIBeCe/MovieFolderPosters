@@ -22,6 +22,17 @@ final class ConfigurationViewModel {
     private(set) var posterAppearance: PosterAppearance = .softFinish
     private(set) var isBusy = false
     private(set) var errorMessage: String?
+    private(set) var hasLoadedSnapshot = false
+
+    var installationSetupDescription: String {
+        guard hasLoadedSnapshot else { return "Setup has not been loaded. Use Refresh Status separately." }
+        let accessible = directories.filter { $0.availability == .available }.count
+        let token = credentialConfigured ? "Configured; provider validation was not performed."
+            : "Not configured. Save a read access token in Settings."
+        return "Last-loaded setup (may be stale): \(directories.count) collections; \(accessible) host access " +
+            "preflights passed. See collection rows for other states.\nTMDb token at last load: \(token)\n" +
+            "Use Refresh Status separately to recheck access; it can resume Finder processing."
+    }
 
     init(service: any ConfigurationServicing) {
         self.service = service
@@ -99,8 +110,17 @@ final class ConfigurationViewModel {
             onActivity?(message, "Configuration")
         } catch {
             onFailure()
-            errorMessage = failureMessage
-            onActivity?(failureMessage, "Error")
+            let explanation: String
+            switch error {
+            case ConfigurationError.overlappingDirectory:
+                explanation = "This folder overlaps another collection. Choose separate collection roots."
+            case ConfigurationError.duplicateDirectory:
+                explanation = "This collection is already configured."
+            default:
+                explanation = failureMessage
+            }
+            errorMessage = explanation
+            onActivity?(explanation, "Error")
         }
 
         isBusy = false
@@ -108,6 +128,7 @@ final class ConfigurationViewModel {
     }
 
     private func apply(_ snapshot: ConfigurationSnapshot) {
+        hasLoadedSnapshot = true
         directories = snapshot.directories
         credentialConfigured = snapshot.credentialConfigured
         posterAppearance = snapshot.posterAppearance

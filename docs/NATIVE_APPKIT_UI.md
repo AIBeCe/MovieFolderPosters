@@ -17,6 +17,11 @@ native reference is its preference toolbar and system table/control rendering:
 
 ## Main
 
+The R100-01 candidate adds visible/accessibility access explanations to collection rows and **Check Installation…**
+in the footer. Its bounded report uses a scrollable sheet attached to Main, preserving the three-window structure.
+See [Installation readiness](INSTALLATION_READINESS.md) for evidence and remaining native UI checks; existing images
+below precede that addition.
+
 Main contains the Collection, Done, Not found, Several matches, and Total columns. Add is beside Collection in the
 native table header. Remove appears on row hover, with equivalent keyboard and accessibility actions. Log is at
 bottom left and Settings at bottom right. Refresh Status and Locate Folder remain available through the collection

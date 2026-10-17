@@ -10,6 +10,10 @@ Status: Approved. Implementation requires separate approval for each point.
 
 ## Main goal
 
+Current R100-01 work is recorded in [Installation readiness](INSTALLATION_READINESS.md). The user authorized the whole
+issue as a batch on 2026-10-16; the feature awaits final approval and native qualification. Historical phase evidence
+below does not establish readiness for the new implementation.
+
 Display movie posters as native folder icons in Finder instead of generic folder icons.
 
 Finder remains the movie browser.
@@ -31,6 +35,9 @@ Assigned icons must persist independently of the application and extension.
 - Approval of this plan does not authorize further product implementation.
 
 ## Architecture
+
+Physical source ownership follows [Project structure](PROJECT_STRUCTURE.md): feature folders in the host,
+responsibility folders in Shared, mirrored test folders, and unchanged local SPM service modules.
 
 The application coordinates in-process services provided by local SPM modules.
 

@@ -106,6 +106,9 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 
 GitHub issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
+Implementation and current qualification evidence: [Installation readiness](INSTALLATION_READINESS.md).
+Code changes do not close the native installation/access matrix or authorize a release.
+
 - [ ] Scope: Audit current behavior first; distinguish disconnected, missing, unauthorized, read-only, and unsupported roots. Explain overlapping roots and reconcile renames only with validated stable identity. Provide bounded checks for extension registration, component versions, shared storage, and enablement guidance; report unknown state honestly.
 - Dependencies: Current develop baseline; inspect PROJECT_PLAN.md and NATIVE_APPKIT_UI.md before proposing the first point.
 - Acceptance: A documented installation/access matrix covers fresh setup, stale access, unplugged media, read-only storage, overlapping roots, replaced directories, and app/extension mismatch. A root is never marked ready just because its path exists. Native checks distinguish observed activation from user instructions.
@@ -796,7 +799,7 @@ is authorized by this roadmap.
 | --- | --- |
 | Native windows, navigation, presentation | ConfigurationCoordinator, ConfigurationViewController, SettingsViewController, LogViewController, ConfigurationViewModel |
 | Folder policy, outcomes, matching, retries | MovieFolderProcessor, ReleaseNameParser, MovieMatcher, MoviePosterActionService and shared application source |
-| Finder integration and invocation | MovieFolderPostersFinder/FinderSync.swift, shared configuration/request code |
+| Finder integration and invocation | MovieFolderPostersFinder/Integration/FinderSync.swift, shared configuration/request code |
 | HTTP, provider decoding, bounded downloads | Packages/Network; no filesystem writes or movie-match decisions |
 | Scope, identity, icon operations, local images | Packages/FileSystem; no metadata-provider requests |
 | Versioned records, leases, durable primitives | Packages/Persistence; application code owns retention and processing policy |

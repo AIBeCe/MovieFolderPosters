@@ -19,6 +19,7 @@ public enum DirectoryAccessError: Error {
     case invalidDirectory
     case staleBookmark
     case accessDenied
+    case identityChanged
 }
 
 public struct FileSystemService: Sendable {

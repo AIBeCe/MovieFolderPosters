@@ -28,6 +28,14 @@
 
 ## Architecture
 
+- Organize application code by feature in real folders that are reflected in Xcode.
+- Keep each feature's views, view models, coordinators, and services together where they belong.
+- Use Application for app-wide lifecycle/navigation, UI/Controls for reusable AppKit controls, and Resources and
+  Configuration for their respective non-source inputs. Mirror ownership in test subfolders.
+- Keep host/extension application logic in Shared subfolders by responsibility. Preserve explicit target membership
+  when moving shared sources, and update resource, signing, build, test-script, and documentation paths together.
+- Folders express ownership; local SPM modules enforce service boundaries. Add modules only when justified.
+
 - Apply SOLID principles where they improve correctness and maintainability; avoid speculative abstractions.
 
 - Use MVVM-C for the AppKit configuration interface when that interface is implemented.
@@ -42,9 +50,12 @@
 
 ## Modules and services
 
-- Organize reusable functionality into local Swift Package Manager modules.
+- Prefer local Swift Package Manager modules when functionality benefits from
+  reuse, independent testing, or a clear ownership boundary.
 - Each module provides an in-process service with a narrow public API and its own tests.
-- Start with Network and FileSystem; introduce Persistence when durable storage is needed.
+- Existing service modules are Network, FileSystem, and Persistence.
+- A service may encapsulate a technology such as Core Data when justified;
+  examples do not mandate new modules or a change in persistence technology.
 - The application coordinates services and owns movie-specific decisions and workflows.
 - Services must not depend on the application.
 - Add dependencies between services only when a demonstrated need justifies them.

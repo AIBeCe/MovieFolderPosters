@@ -7,17 +7,21 @@ processing_harness=$(rtk proxy mktemp -d "${TMPDIR:-/tmp}/MovieFolderPosters-Pro
 trap 'rtk proxy rm -rf "$processing_harness"' EXIT
 rtk proxy mkdir -p "$processing_harness/Sources/MovieFolderPosters" \
     "$processing_harness/Tests/MovieFolderPostersTests"
-rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPosters/ReleaseNameParser.swift" \
+rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/Processing/ReleaseNameParser.swift" \
     "$processing_harness/Sources/MovieFolderPosters/ReleaseNameParser.swift"
-rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPosters/MovieMatcher.swift" \
+rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/Processing/MovieMatcher.swift" \
     "$processing_harness/Sources/MovieFolderPosters/MovieMatcher.swift"
-rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPosters/MovieFolderProcessor.swift" \
+rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/Processing/MovieFolderProcessor.swift" \
     "$processing_harness/Sources/MovieFolderPosters/MovieFolderProcessor.swift"
-rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/MovieFolderProcessorTests.swift" \
+for source in Configuration/DirectoryConfiguration Configuration/ConfigurationRepository; do
+    rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/$source.swift" \
+        "$processing_harness/Sources/MovieFolderPosters/"
+done
+rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Processing/MovieFolderProcessorTests.swift" \
     "$processing_harness/Tests/MovieFolderPostersTests/MovieFolderProcessorTests.swift"
-rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/MoviePosterActionTests.swift" \
+rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Processing/MoviePosterActionTests.swift" \
     "$processing_harness/Tests/MovieFolderPostersTests/MoviePosterActionTests.swift"
-rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/TestPoster.png" \
+rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/Resources/TestPoster.png" \
     "$processing_harness/Tests/MovieFolderPostersTests/TestPoster.png"
 rtk proxy ln -s "$processing_repository/Packages/FileSystem" "$processing_harness/FileSystem"
 rtk proxy ln -s "$processing_repository/Packages/Network" "$processing_harness/Network"

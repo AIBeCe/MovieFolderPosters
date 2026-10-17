@@ -5,17 +5,17 @@ configuration_harness=$(rtk proxy mktemp -d "${TMPDIR:-/tmp}/MovieFolderPosters-
 trap 'rtk proxy rm -rf "$configuration_harness"' EXIT
 rtk proxy mkdir -p "$configuration_harness/Sources/MovieFolderPosters" \
     "$configuration_harness/Tests/MovieFolderPostersTests"
-for source in DirectoryConfiguration ConfigurationRepository DirectoryObservationScheduler SharedEnvironment KeychainCredentialStore; do
+for source in Configuration/DirectoryConfiguration Configuration/ConfigurationRepository FinderIntegration/DirectoryObservationScheduler Configuration/SharedEnvironment Security/KeychainCredentialStore; do
     rtk proxy cp "$configuration_repository/MovieFolderPosters/Shared/$source.swift" \
         "$configuration_harness/Sources/MovieFolderPosters/"
 done
-rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/DirectoryConfigurationTests.swift" \
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Configuration/DirectoryConfigurationTests.swift" \
     "$configuration_harness/Tests/MovieFolderPostersTests/"
-rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/DirectoryObservationSchedulerTests.swift" \
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/FinderIntegration/DirectoryObservationSchedulerTests.swift" \
     "$configuration_harness/Tests/MovieFolderPostersTests/"
-rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/DirectoryConfigurationService.swift" \
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Features/Collections/DirectoryConfigurationService.swift" \
     "$configuration_harness/Sources/MovieFolderPosters/"
-rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/DirectoryConfigurationServiceTests.swift" \
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/Features/Collections/DirectoryConfigurationServiceTests.swift" \
     "$configuration_harness/Tests/MovieFolderPostersTests/"
 rtk proxy ln -s "$configuration_repository/Packages/FileSystem" "$configuration_harness/FileSystem"
 rtk proxy ln -s "$configuration_repository/Packages/Persistence" "$configuration_harness/Persistence"

@@ -25,6 +25,11 @@ Finder Sync observation is a navigation trigger, not a general filesystem change
 may require closing all views of its collection and reopening it. Duplicate Finder windows need not cause another
 begin-observation callback. Open/Save dialogs can run separate extension instances.
 
+Main also provides **Check Installation…** with component, signing, enablement, dated activation, setup, and bounded
+shared-storage checks. Collection rows distinguish access evidence and uncertainty. New overlapping roots are rejected;
+legacy overlaps block processing. See [Installation readiness](INSTALLATION_READINESS.md) for recovery instructions,
+stable-identity rename behavior, the complete access matrix, and unperformed native checks.
+
 ## Poster appearance
 
 Choose Raw (no styling), Soft finish (default), or Matte frame in the configuration window. The selection is shared

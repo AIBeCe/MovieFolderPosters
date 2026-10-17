@@ -8,6 +8,35 @@ import XCTest
 @testable import MovieFolderPosters
 
 final class MovieFolderProcessorTests: XCTestCase {
+    func testAutomaticMutationRevalidatesRootAfterProviderSuspension() async throws {
+        let fixture = try Fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        try fixture.addFolder("Dune (2021)")
+        let expected = try XCTUnwrap(FileSystemService().inspectDirectory(at: fixture.movies).identity)
+        let provider = CountingProvider(delaysSearch: true)
+        let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
+            cacheDirectory: fixture.cache, posterAssigner: fixture.assigner,
+            beforeAutomaticMutation: { root in
+                guard FileSystemService().inspectDirectory(at: root).identity == expected else {
+                    throw DirectoryAccessError.identityChanged
+                }
+                return nil
+            })
+        let task = Task { try await processor.process(root: fixture.movies) }
+        await provider.waitForSearch()
+        let moved = fixture.base.appendingPathComponent("Moved")
+        try FileManager.default.moveItem(at: fixture.movies, to: moved)
+        try FileManager.default.createDirectory(at: fixture.movies, withIntermediateDirectories: false)
+        // Preserve the child's identity: only root validation can reject this relocation.
+        try FileManager.default.moveItem(at: moved.appendingPathComponent("Dune (2021)"),
+                                         to: fixture.movies.appendingPathComponent("Dune (2021)"))
+        await provider.allowSearch()
+        let summary = try await task.value
+        XCTAssertEqual(summary.assigned, 0)
+        XCTAssertEqual(fixture.assigner.assignmentCount, 0)
+        XCTAssertEqual(summary.transientFailures, 1)
+    }
+
     func testMissingIconsRestoreFromCacheWithoutProviderRequests() async throws {
         let fixture = try Fixture()
         try fixture.addFolder("Dune (2021)")

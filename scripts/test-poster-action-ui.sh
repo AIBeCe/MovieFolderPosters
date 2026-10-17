@@ -7,13 +7,13 @@ poster_harness=$(rtk proxy mktemp -d "${TMPDIR:-/tmp}/MovieFolderPosters-Action.
 trap 'rtk proxy rm -rf "$poster_harness"' EXIT
 rtk proxy mkdir -p "$poster_harness/Sources/MovieFolderPosters" \
     "$poster_harness/Tests/MovieFolderPostersTests"
-rtk proxy cp "$poster_repository/MovieFolderPosters/MovieFolderPosters/MoviePosterActionViewModel.swift" \
+rtk proxy cp "$poster_repository/MovieFolderPosters/MovieFolderPosters/Features/PosterActions/MoviePosterActionViewModel.swift" \
     "$poster_harness/Sources/MovieFolderPosters/"
-rtk proxy cp "$poster_repository/MovieFolderPosters/Shared/MoviePosterRequest.swift" \
+rtk proxy cp "$poster_repository/MovieFolderPosters/Shared/FinderIntegration/MoviePosterRequest.swift" \
     "$poster_harness/Sources/MovieFolderPosters/"
-rtk proxy cp "$poster_repository/MovieFolderPosters/MovieFolderPosters/ReleaseNameParser.swift" \
+rtk proxy cp "$poster_repository/MovieFolderPosters/Shared/Processing/ReleaseNameParser.swift" \
     "$poster_harness/Sources/MovieFolderPosters/"
-rtk proxy cp "$poster_repository/MovieFolderPosters/MovieFolderPostersTests/MoviePosterActionViewModelTests.swift" \
+rtk proxy cp "$poster_repository/MovieFolderPosters/MovieFolderPostersTests/Features/PosterActions/MoviePosterActionViewModelTests.swift" \
     "$poster_harness/Tests/MovieFolderPostersTests/"
 rtk proxy cp -R "$poster_repository/Packages/Network" "$poster_harness/Network"
 rtk proxy python3 - "$poster_repository" "$poster_harness/Sources/MovieFolderPosters/ServiceContract.swift" <<'PY'
@@ -22,7 +22,7 @@ import sys
 
 root = Path(sys.argv[1])
 target = Path(sys.argv[2])
-service = (root / "MovieFolderPosters/MovieFolderPosters/MoviePosterActionService.swift").read_text()
+service = (root / "MovieFolderPosters/MovieFolderPosters/Features/PosterActions/MoviePosterActionService.swift").read_text()
 start = service.index("nonisolated protocol MoviePosterActionServicing: Sendable {")
 end = service.index("\n}\n", start) + 2
 contract = service[start:end]

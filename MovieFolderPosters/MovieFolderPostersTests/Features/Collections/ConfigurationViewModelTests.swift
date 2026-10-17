@@ -6,6 +6,37 @@ import Testing
 
 struct ConfigurationViewModelTests {
     @Test @MainActor
+    func installationDiagnosticDoesNotRefreshOrMutateCollectionConfiguration() async {
+        let service = ConfigurationServiceFake()
+        let coordinator = ConfigurationCoordinator(service: service, checkInstallation: {
+            InstallationReadinessReport(text: "Controlled installation evidence")
+        })
+        let report = await coordinator.installationReport()
+        #expect(service.calls.isEmpty)
+        #expect(report.text.contains("Setup has not been loaded"))
+    }
+
+    @Test @MainActor
+    func readinessHasVisibleTextAndAccessibleExplanation() async throws {
+        let model = ConfigurationViewModel(service: ConfigurationServiceFake(snapshot: ConfigurationSnapshot(
+            directories: [.init(id: UUID(), path: "/Movies", availability: .checkUnavailable)],
+            credentialConfigured: false
+        )))
+        await model.load()
+        let controller = ConfigurationViewController(viewModel: model)
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let table = try #require(descendants(controller.view).compactMap { $0 as? NSTableView }.first)
+        table.reloadData()
+        let cell = try #require(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
+        #expect(descendants(cell).compactMap { $0 as? NSTextField }.contains {
+            $0.stringValue.contains("Authorization records are busy")
+        })
+        #expect(descendants(cell).compactMap { $0 as? NSImageView }.contains {
+            $0.accessibilityLabel()?.contains("Authorization records are busy") == true
+        })
+    }
+
+    @Test @MainActor
     func configurationViewLoadsWithoutLayoutExceptions() {
         let viewModel = ConfigurationViewModel(service: ConfigurationServiceFake())
         let controller = ConfigurationViewController(viewModel: viewModel)

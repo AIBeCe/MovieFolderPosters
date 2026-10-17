@@ -61,6 +61,71 @@ struct DirectoryAuthorizationTests {
         }
     }
 
+    @Test func movedDirectoryBookmarkCanBeAcceptedWithMatchingExpectedIdentity() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appendingPathComponent("Movies", isDirectory: true)
+        let moved = root.appendingPathComponent("RenamedMovies", isDirectory: true)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
+        let service = FileSystemService()
+        let expectedIdentity = try service.persistentDirectoryIdentity(at: original)
+        let bookmark = try service.makeTransferBookmark(for: original)
+        try FileManager.default.moveItem(at: original, to: moved)
+
+        let lease = try service.acquireDirectoryAccess(
+            bookmark: bookmark,
+            securityScoped: false,
+            expectedIdentity: expectedIdentity
+        )
+
+        #expect(lease.url.standardizedFileURL == moved.standardizedFileURL)
+    }
+
+    @Test func persistentDirectoryIdentitySurvivesRenameAndDetectsReplacement() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appendingPathComponent("Movies", isDirectory: true)
+        let moved = root.appendingPathComponent("RenamedMovies", isDirectory: true)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
+        let service = FileSystemService()
+        let identity = try service.persistentDirectoryIdentity(at: original)
+
+        try FileManager.default.moveItem(at: original, to: moved)
+        #expect(try service.persistentDirectoryIdentity(at: moved) == identity)
+
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
+        #expect(try service.persistentDirectoryIdentity(at: original) != identity)
+    }
+
+    @Test func movedDirectoryBookmarkRejectsDifferentExpectedIdentity() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appendingPathComponent("Movies", isDirectory: true)
+        let moved = root.appendingPathComponent("RenamedMovies", isDirectory: true)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
+        let service = FileSystemService()
+        let bookmark = try service.makeTransferBookmark(for: original)
+        try FileManager.default.moveItem(at: original, to: moved)
+
+        #expect(throws: DirectoryAccessError.self) {
+            try service.acquireDirectoryAccess(
+                bookmark: bookmark,
+                securityScoped: false,
+                expectedIdentity: "different-identity"
+            )
+        }
+    }
+
+    @Test func descriptorIdentityMustMatchExpectedIdentityAfterPathReplacement() {
+        #expect(throws: DirectoryAccessError.self) {
+            try validateDirectoryIdentity(
+                openedIdentity: "replacement",
+                currentPathIdentity: "replacement",
+                expectedIdentity: "original"
+            )
+        }
+    }
+
     @Test func leaseCanBeHeldAcrossSuspension() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

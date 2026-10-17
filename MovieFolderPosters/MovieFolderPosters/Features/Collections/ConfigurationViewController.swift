@@ -12,12 +12,15 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let openSettings: @MainActor () -> Void
     private let openLog: @MainActor () -> Void
+    private let checkInstallation: @MainActor () -> Void
 
     init(viewModel: ConfigurationViewModel, onOpenSettings: @escaping @MainActor () -> Void = {},
-         onOpenLog: @escaping @MainActor () -> Void = {}) {
+         onOpenLog: @escaping @MainActor () -> Void = {},
+         onCheckInstallation: @escaping @MainActor () -> Void = {}) {
         self.viewModel = viewModel
         openSettings = onOpenSettings
         openLog = onOpenLog
+        checkInstallation = onCheckInstallation
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -29,9 +32,11 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         configureTable()
         let log = iconButton("doc.text", label: "Log", action: #selector(showLog))
         let settings = iconButton("gearshape", label: "Settings", action: #selector(showSettings))
+        let installation = NSButton(title: "Check Installation…", target: self,
+                                    action: #selector(showInstallationReadiness))
         errorLabel.textColor = .systemRed
         errorLabel.maximumNumberOfLines = 2
-        let footer = NSStackView(views: [log, errorLabel, NSView(), settings])
+        let footer = NSStackView(views: [log, installation, errorLabel, NSView(), settings])
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 10
@@ -63,7 +68,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
         tableView.intercellSpacing = .zero
         tableView.headerView = CollectionHeaderView(frame: NSRect(x: 0, y: 0, width: 780, height: 24))
         tableView.usesAlternatingRowBackgroundColors = true
-        tableView.rowHeight = 32
+        tableView.rowHeight = 44
         tableView.dataSource = self
         tableView.delegate = self
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
@@ -160,8 +165,18 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
             let state = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)!)
             state.contentTintColor = directory.availability == .available ? .systemGreen : .systemOrange
             state.toolTip = availabilityDescription(directory.availability)
+            state.setAccessibilityLabel(availabilityDescription(directory.availability))
             state.translatesAutoresizingMaskIntoConstraints = false
-            let row = NSStackView(views: [folder, label, state])
+            let status = NSTextField(labelWithString: availabilityDescription(directory.availability))
+            status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            status.textColor = .secondaryLabelColor
+            status.lineBreakMode = .byTruncatingTail
+            status.toolTip = status.stringValue
+            let description = NSStackView(views: [label, status])
+            description.orientation = .vertical
+            description.alignment = .leading
+            description.spacing = 1
+            let row = NSStackView(views: [folder, description, state])
             row.orientation = .horizontal
             row.alignment = .centerY
             row.spacing = 6
@@ -208,11 +223,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     }
 
     private func availabilityDescription(_ availability: DirectoryAvailability) -> String {
-        switch availability {
-        case .available: "Available"
-        case .unavailable: "Volume unavailable"
-        case .reauthorizationRequired: "Access needs to be restored"
-        }
+        availability.explanation
     }
 
     private func contextMenu(row: Int) -> NSMenu {
@@ -241,6 +252,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
 
     @objc private func showSettings() { openSettings() }
     @objc private func showLog() { openLog() }
+    @objc private func showInstallationReadiness() { checkInstallation() }
     @objc private func refreshStatus() { Task { await viewModel.load() } }
     @objc private func addDirectory() { chooseDirectory(identifier: nil) }
 

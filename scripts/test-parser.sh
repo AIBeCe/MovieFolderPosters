@@ -6,9 +6,9 @@ parser_repository=$(cd "$(dirname "$0")/.." && pwd)
 parser_harness=$(rtk proxy mktemp -d "${TMPDIR:-/tmp}/MovieFolderPosters-Parser.XXXXXX")
 trap 'rtk proxy rm -rf "$parser_harness"' EXIT
 rtk proxy mkdir -p "$parser_harness/Sources/MovieFolderPosters" "$parser_harness/Tests/MovieFolderPostersTests"
-rtk proxy cp "$parser_repository/MovieFolderPosters/MovieFolderPosters/ReleaseNameParser.swift" \
+rtk proxy cp "$parser_repository/MovieFolderPosters/Shared/Processing/ReleaseNameParser.swift" \
     "$parser_harness/Sources/MovieFolderPosters/ReleaseNameParser.swift"
-rtk proxy cp "$parser_repository/MovieFolderPosters/MovieFolderPostersTests/MovieFolderPostersTests.swift" \
+rtk proxy cp "$parser_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Processing/ReleaseNameParserTests.swift" \
     "$parser_harness/Tests/MovieFolderPostersTests/ReleaseNameParserTests.swift"
 rtk proxy tee "$parser_harness/Package.swift" >/dev/null <<'SWIFT'
 // swift-tools-version: 6.2

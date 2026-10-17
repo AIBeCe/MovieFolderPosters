@@ -5,6 +5,60 @@ import Testing
 @testable import MovieFolderPosters
 
 struct DirectoryConfigurationTests {
+    @Test func mutationLeaseRejectsNewOverlapEvenWhenTargetRootIsUnchanged() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
+        let target = MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1]),
+                                         authorizationVersion: UUID(), identity: "target")
+        let other = MonitoredDirectory(id: UUID(), path: "/Other", transferBookmark: Data([2]),
+                                        authorizationVersion: UUID(), identity: "other")
+        try repository.update { $0.directories = [target, other] }
+        let before = try repository.read()
+        try repository.update { $0.directories[1].path = "/Movies/Nested" }
+        #expect(throws: ConfigurationError.self) {
+            _ = try repository.mutationLease(for: target, expectedConfiguration: before)
+        }
+    }
+
+    @Test func detectsNestedRootsButNotSiblingNamePrefixes() {
+        var configuration = DirectoryConfiguration()
+        let parent = MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1]),
+                                         authorizationVersion: UUID())
+        let child = MonitoredDirectory(id: UUID(), path: "/Movies/Action", transferBookmark: Data([2]),
+                                        authorizationVersion: UUID())
+        let sibling = MonitoredDirectory(id: UUID(), path: "/MoviesBackup", transferBookmark: Data([3]),
+                                          authorizationVersion: UUID())
+        configuration.directories = [parent, child, sibling]
+        #expect(configuration.overlappingDirectoryIDs == [parent.id, child.id])
+    }
+
+    @Test func detectsSameIdentityAtDifferentPaths() {
+        var configuration = DirectoryConfiguration()
+        let first = MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1]),
+                                        authorizationVersion: UUID(), identity: "same-object")
+        let alias = MonitoredDirectory(id: UUID(), path: "/Alias", transferBookmark: Data([2]),
+                                        authorizationVersion: UUID(), identity: "same-object")
+        configuration.directories = [first, alias]
+        #expect(configuration.overlappingDirectoryIDs == [first.id, alias.id])
+    }
+
+    @Test func legacyRootsDecodeWithoutInventingIdentityEvidence() throws {
+        let rootID = UUID()
+        let revision = UUID()
+        let authorization = UUID()
+        let json = """
+        {"version":1,"directories":[{"id":"\(rootID)","path":"/Movies","transferBookmark":"AQ==",
+        "authorizationVersion":"\(authorization)"}],"credentialRevision":"\(revision)",
+        "developmentFixtures":false}
+        """
+        let configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(json.utf8))
+        #expect(configuration.directories.first?.identity == nil)
+        #expect(configuration.directories.first?.volumePath == nil)
+        #expect(configuration.directories.first?.id == rootID)
+        #expect(configuration.credentialRevision == revision)
+    }
+
     @Test func appearanceMigratesOldSettingsWithoutLosingAuthorizationOrCredentialRevision() throws {
         var configuration = DirectoryConfiguration()
         configuration.directories = [MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1, 2]),
