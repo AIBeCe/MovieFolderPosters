@@ -1,9 +1,10 @@
 # Authoritative collection processing results — R100-02
 
-Status: Implemented, independently reviewed, and verified on `feature/processing-outcomes`; local commit authorized.
+Status: Implemented, independently reviewed, verified, and integrated locally into `develop`.
+Implementation commit: `049b74b`. Local integration uses `git merge --ff-only`.
 The user approved the complete proposal on 2026-10-17, with `FolderProcessingState` as the enum name.
 The user authorized a local commit on 2026-10-18, superseding the earlier no-commit boundary.
-Integration, push, and issue closure remain deferred.
+Local integration is authorized by the repository GitFlow instructions. Push and GitHub issue closure remain pending.
 
 ## Scope and decisions
 
@@ -100,7 +101,8 @@ Details show readable evidence and provenance, not raw filesystem fingerprints, 
 
 ## Verification record
 
-Recorded 2026-10-18 from this implementation session. No commit, merge, push, or issue closure was performed.
+Recorded 2026-10-18 from this implementation session, before commit and integration.
+The implementation was subsequently committed as `049b74b`; see the delivery status above.
 
 | Check | Result |
 | --- | --- |
@@ -144,7 +146,7 @@ recovery, visual light/dark screenshots, or native VoiceOver speech check was pe
 Controlled AppKit/native icon tests and signed builds do not substitute for those observations. No XCUITest
 UI automation was executed in the final native unit-target command.
 
-The verified feature is approved for a local commit. Integration and issue closure remain deferred. R100-03 and later deliverables are not implemented or authorized.
+The verified feature is committed and integrated locally. GitHub issue closure remains pending. R100-03 and later deliverables are not implemented or authorized.
 
 ## Approved naming cleanup — 2026-10-18
 
@@ -178,4 +180,5 @@ Naming-cleanup verification:
   for both bundles. Native report: 185 passed cases, zero failures, two intentional skips (237 parameterized executions).
 - Final native result: /tmp/MovieFolderPosters-Outcomes/Logs/Test/Test-MovieFolderPosters-2026.10.18_00-50-20-+0200.xcresult.
 
-Prior feature verification above describes the pre-cleanup implementation. No commit was made.
+Prior feature verification above describes the pre-cleanup implementation. The final renamed implementation
+was committed as `049b74b`. No push or GitHub issue closure has been performed.
