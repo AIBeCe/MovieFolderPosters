@@ -124,11 +124,11 @@ Completion satisfies this deliverable's documented-matrix criterion; it does not
 GitHub issue: [#2](https://github.com/AIBeCe/MovieFolderPosters/issues/2); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 Implementation is complete, independently reviewed, verified, committed as `049b74b`, and integrated locally
-into `develop` using a fast-forward merge. Push and GitHub issue closure remain pending. See
+into `develop` using a fast-forward merge. GitHub issue #2 is closed as completed; commits remain local. See
 [Processing results](COLLECTION_PROCESSING.md) for the design, verification, and remaining native qualification.
-The state enum is named `FolderProcessingState`; the GitHub deliverable remains open pending publication and issue closure.
+The state enum is named `FolderProcessingState`; the GitHub deliverable is closed as completed; the merged feature branch is retired.
 
-- [ ] Scope: Define operation IDs, folder outcomes, collection snapshot revisions, and retention before connecting Main. Keep outcome records separate from activity events. Show actual Done, Not found, Several matches, and Total with reasons, verified identity, icon ownership, retry eligibility, and last completed run. Preserve unknown, partial, interrupted, and stale states.
+- [x] Scope: Define operation IDs, folder outcomes, collection snapshot revisions, and retention before connecting Main. Keep outcome records separate from activity events. Show actual Done, Not found, Several matches, and Total with reasons, verified identity, icon ownership, retry eligibility, and last completed run. Preserve unknown, partial, interrupted, and stale states.
 - Dependencies: R100-01; inspect existing ProcessingSummary and Persistence APIs.
 - Acceptance: Tests pin mutually exclusive folder outcomes, snapshot consistency across processes, interruption and stale revisions. Total is the count of visible immediate child directories in the inspected snapshot, excluding files, hidden entries, and symlinks; ignored/preserved/failed entries remain explainable in details. The three headline outcome counts need not sum to Total. Unavailable summaries never become fabricated zeros.
 - Source ideas: E1, E3, E4, E5, E6, E7, E8, E57, E58.

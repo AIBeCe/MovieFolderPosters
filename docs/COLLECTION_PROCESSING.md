@@ -4,7 +4,7 @@ Status: Implemented, independently reviewed, verified, and integrated locally in
 Implementation commit: `049b74b`. Local integration uses `git merge --ff-only`.
 The user approved the complete proposal on 2026-10-17, with `FolderProcessingState` as the enum name.
 The user authorized a local commit on 2026-10-18, superseding the earlier no-commit boundary.
-Local integration is authorized by the repository GitFlow instructions. Push and GitHub issue closure remain pending.
+Local integration is authorized by the repository GitFlow instructions. GitHub issue #2 was closed as completed on 2026-10-18. Commits remain local; the merged feature branch is retired.
 
 ## Scope and decisions
 
@@ -146,7 +146,7 @@ recovery, visual light/dark screenshots, or native VoiceOver speech check was pe
 Controlled AppKit/native icon tests and signed builds do not substitute for those observations. No XCUITest
 UI automation was executed in the final native unit-target command.
 
-The verified feature is committed and integrated locally. GitHub issue closure remains pending. R100-03 and later deliverables are not implemented or authorized.
+The verified feature is committed and integrated locally. GitHub issue #2 is closed as completed. R100-03 and later deliverables are not implemented or authorized.
 
 ## Approved naming cleanup — 2026-10-18
 
@@ -181,4 +181,4 @@ Naming-cleanup verification:
 - Final native result: /tmp/MovieFolderPosters-Outcomes/Logs/Test/Test-MovieFolderPosters-2026.10.18_00-50-20-+0200.xcresult.
 
 Prior feature verification above describes the pre-cleanup implementation. The final renamed implementation
-was committed as `049b74b`. No push or GitHub issue closure has been performed.
+was committed as `049b74b`. No push has been performed. GitHub issue #2 is closed as completed.
