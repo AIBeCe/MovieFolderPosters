@@ -1,273 +1,331 @@
 import Foundation
 import Network
 import Testing
+
 @testable import MovieFolderPosters
 
+/// Exercises poster-action state, validation, cancellation, and delegation.
 @MainActor
 struct MoviePosterActionViewModelTests {
-    @Test func creatingViewModelDoesNotSearchOrApplyAction() async {
-        let service = ActionServiceStub()
-        let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+  /// Verifies that creating the view model does not search or change a poster.
+  @Test func creatingViewModelDoesNotSearchOrApplyAction() async {
+    let service = ActionServiceStub()
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
 
-        let counts = await service.callCounts
+    let counts = await service.callCounts
 
-        #expect(counts == ActionServiceStub.CallCounts())
-        #expect(!viewModel.isBusy)
-    }
+    #expect(counts == ActionServiceStub.CallCounts())
+    #expect(!viewModel.isBusy)
+  }
 
-    @Test func posterlessResultCannotBeSelectedOrApplied() async {
-        let service = ActionServiceStub()
-        await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 1, posterPath: nil)],
-                                                        hasMorePages: false))
-        let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-        viewModel.setQuery("Dune")
+  /// Verifies that posterless result cannot be selected or applied.
+  @Test func posterlessResultCannotBeSelectedOrApplied() async {
+    let service = ActionServiceStub()
+    await service.setSearchResult(
+      MovieSearchResult(
+        movies: [Self.movie(id: 1, posterPath: nil)],
+        hasMorePages: false))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
 
-        viewModel.search()
-        await waitForIdle(viewModel)
+    viewModel.search()
+    await waitForIdle(viewModel)
 
-        #expect(!viewModel.selectMovie(id: 1))
-        viewModel.applySelectedMovie()
-        let counts = await service.callCounts
-        #expect(counts.apply == 0)
-        #expect(viewModel.errorMessage != nil)
-    }
+    #expect(!viewModel.selectMovie(id: 1))
+    viewModel.applySelectedMovie()
+    let counts = await service.callCounts
+    #expect(counts.apply == 0)
+    #expect(viewModel.errorMessage != nil)
+  }
 
-    @Test func selectedPosterRequiresExplicitApply() async {
-        let service = ActionServiceStub()
-        await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/chosen.jpg")],
-                                                        hasMorePages: true))
-        let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-        viewModel.setQuery("Dune")
+  /// Verifies that selecting a poster does not apply it until the user confirms.
+  @Test func selectedPosterRequiresExplicitApply() async {
+    let service = ActionServiceStub()
+    await service.setSearchResult(
+      MovieSearchResult(
+        movies: [Self.movie(id: 7, posterPath: "/chosen.jpg")],
+        hasMorePages: true))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
 
-        viewModel.search()
-        await waitForIdle(viewModel)
+    viewModel.search()
+    await waitForIdle(viewModel)
 
-        #expect(viewModel.hasMorePages)
-        let navigation = ActionNavigationProbe()
-        viewModel.navigationDelegate = navigation
-        viewModel.openSelectedMoviePage()
-        #expect(navigation.openedURL == nil)
+    #expect(viewModel.hasMorePages)
+    let navigation = ActionNavigationProbe()
+    viewModel.navigationDelegate = navigation
+    viewModel.openSelectedMoviePage()
+    #expect(navigation.openedURL == nil)
 
-        let countsBeforeApply = await service.callCounts
-        #expect(countsBeforeApply.apply == 0)
-        #expect(viewModel.selectMovie(id: 7))
-        viewModel.openSelectedMoviePage()
-        #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
-        #expect(navigation.sender === viewModel)
-        #expect(navigation.statusMessage == "Opening the selected movie on TMDb.")
-        let countsBeforeExplicitApply = await service.callCounts
-        #expect(countsBeforeExplicitApply.apply == 0)
+    let countsBeforeApply = await service.callCounts
+    #expect(countsBeforeApply.apply == 0)
+    #expect(viewModel.selectMovie(id: 7))
+    viewModel.openSelectedMoviePage()
+    #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
+    #expect(navigation.sender === viewModel)
+    #expect(navigation.statusMessage == "Opening the selected movie on TMDb.")
+    let countsBeforeExplicitApply = await service.callCounts
+    #expect(countsBeforeExplicitApply.apply == 0)
 
-        viewModel.applySelectedMovie()
-        await waitForIdle(viewModel)
+    viewModel.applySelectedMovie()
+    await waitForIdle(viewModel)
 
-        let counts = await service.callCounts
-        #expect(counts.apply == 1)
-        let appliedMovieID = await service.lastAppliedMovieID
-        #expect(appliedMovieID == 7)
-    }
+    let counts = await service.callCounts
+    #expect(counts.apply == 1)
+    let appliedMovieID = await service.lastAppliedMovieID
+    #expect(appliedMovieID == 7)
+  }
 
-    @Test func cancelledSearchDoesNotPublishLateResults() async {
-        let service = ActionServiceStub(searchDelay: .seconds(30))
-        let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-        viewModel.setQuery("Dune")
-        viewModel.search()
+  /// Verifies that cancelling a search prevents late results from changing state.
+  @Test func cancelledSearchDoesNotPublishLateResults() async {
+    let service = ActionServiceStub(searchDelay: .seconds(30))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
+    viewModel.search()
 
-        #expect(viewModel.isBusy)
-        viewModel.cancelCurrentOperation()
+    #expect(viewModel.isBusy)
+    viewModel.cancelCurrentOperation()
 
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(!viewModel.isBusy)
-        #expect(viewModel.movies.isEmpty)
-        #expect(viewModel.searchResult == nil)
-    }
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(!viewModel.isBusy)
+    #expect(viewModel.movies.isEmpty)
+    #expect(viewModel.searchResult == nil)
+  }
 
-    @Test func searchFailureRemainsVisibleAsRecoverableState() async {
-        let service = ActionServiceStub()
-        await service.failSearch()
-        let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-        viewModel.setQuery("Dune")
+  /// Verifies that search failures remain visible and recoverable.
+  @Test func searchFailureRemainsVisibleAsRecoverableState() async {
+    let service = ActionServiceStub()
+    await service.failSearch()
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
 
-        viewModel.search()
-        await waitForIdle(viewModel)
+    viewModel.search()
+    await waitForIdle(viewModel)
 
-        #expect(!viewModel.isBusy)
-        #expect(viewModel.errorMessage != nil)
-    }
+    #expect(!viewModel.isBusy)
+    #expect(viewModel.errorMessage != nil)
+  }
 
-    private func request(_ action: MoviePosterAction) -> MoviePosterRequest {
-        MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "identity", action: action)
-    }
+  /// Creates a test request for the sample movie folder.
+  private func request(_ action: MoviePosterAction) -> MoviePosterRequest {
+    MoviePosterRequest(
+      rootID: UUID(), childName: "Dune (2021)", identity: "identity", action: action)
+  }
 
-    private static func movie(id: Int, posterPath: String?) -> MovieMetadata {
-        MovieMetadata(id: id, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
-                      posterPath: posterPath)
-    }
+  /// Creates sample movie metadata with the supplied identifier and poster path.
+  private static func movie(id: Int, posterPath: String?) -> MovieMetadata {
+    MovieMetadata(
+      id: id, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: posterPath)
+  }
 
-    private func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
-        let probe = ActionStateProbe()
-        viewModel.delegate = probe
-        await probe.waitForIdle(viewModel)
-    }
+  /// Waits until the view model publishes completion of its current operation.
+  private func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
+    let probe = ActionStateProbe()
+    viewModel.delegate = probe
+    await probe.waitForIdle(viewModel)
+  }
 
-    @Test func stateDelegateReadsUpdatedStateFromSender() async {
-        let viewModel = MoviePosterActionViewModel(service: ActionServiceStub(), request: request(.change))
-        let state = ActionStateProbe()
-        let navigation = ActionNavigationProbe()
-        viewModel.delegate = state
-        viewModel.navigationDelegate = navigation
+  /// Verifies that the state delegate reads updated values from the sending model.
+  @Test func stateDelegateReadsUpdatedStateFromSender() async {
+    let viewModel = MoviePosterActionViewModel(
+      service: ActionServiceStub(), request: request(.change))
+    let state = ActionStateProbe()
+    let navigation = ActionNavigationProbe()
+    viewModel.delegate = state
+    viewModel.navigationDelegate = navigation
 
-        viewModel.setQuery("Updated title")
-        viewModel.setYear("invalid")
-        viewModel.search()
+    viewModel.setQuery("Updated title")
+    viewModel.setYear("invalid")
+    viewModel.search()
 
-        #expect(state.sender === viewModel)
-        #expect(state.query == "Updated title")
-        #expect(state.yearText == "invalid")
-        #expect(state.errorMessage == "Enter a release year from 1888 through 2099, or leave it blank.")
-        #expect(navigation.openedURL == nil)
-    }
+    #expect(state.sender === viewModel)
+    #expect(state.query == "Updated title")
+    #expect(state.yearText == "invalid")
+    #expect(state.errorMessage == "Enter a release year from 1888 through 2099, or leave it blank.")
+    #expect(navigation.openedURL == nil)
+  }
 
-    @Test func navigationDelegateReceivesAssignedMovieURLWithoutReplacingStateDelegate() async {
-        let viewModel = MoviePosterActionViewModel(service: ActionServiceStub(), request: request(.view))
-        let state = ActionStateProbe()
-        let navigation = ActionNavigationProbe()
-        viewModel.delegate = state
-        viewModel.navigationDelegate = navigation
+  /// Verifies that navigation uses its own delegate and preserves the state delegate.
+  @Test func navigationDelegateReceivesAssignedMovieURLWithoutReplacingStateDelegate() async {
+    let viewModel = MoviePosterActionViewModel(
+      service: ActionServiceStub(), request: request(.view))
+    let state = ActionStateProbe()
+    let navigation = ActionNavigationProbe()
+    viewModel.delegate = state
+    viewModel.navigationDelegate = navigation
 
-        viewModel.openMoviePage()
-        await state.waitForIdle(viewModel)
+    viewModel.openMoviePage()
+    await state.waitForIdle(viewModel)
 
-        #expect(navigation.sender === viewModel)
-        #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
-        #expect(navigation.statusMessage == "Opening the assigned movie on TMDb.")
-        #expect(state.statusMessage == "Opening the assigned movie on TMDb.")
-        #expect(state.isBusy == false)
-        #expect(viewModel.delegate === state)
-    }
+    #expect(navigation.sender === viewModel)
+    #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
+    #expect(navigation.statusMessage == "Opening the assigned movie on TMDb.")
+    #expect(state.statusMessage == "Opening the assigned movie on TMDb.")
+    #expect(state.isBusy == false)
+    #expect(viewModel.delegate === state)
+  }
 
-    @Test func delegatesAreWeakAndOperationsRemainSafeAfterTheirRelease() {
-        let viewModel = MoviePosterActionViewModel(service: ActionServiceStub(), request: request(.change))
-        var state: ActionStateProbe? = ActionStateProbe()
-        var navigation: ActionNavigationProbe? = ActionNavigationProbe()
-        weak var weakState = state
-        weak var weakNavigation = navigation
-        viewModel.delegate = state
-        viewModel.navigationDelegate = navigation
+  /// Verifies that delegates are weak and operations remain safe after their release.
+  @Test func delegatesAreWeakAndOperationsRemainSafeAfterTheirRelease() {
+    let viewModel = MoviePosterActionViewModel(
+      service: ActionServiceStub(), request: request(.change))
+    var state: ActionStateProbe? = ActionStateProbe()
+    var navigation: ActionNavigationProbe? = ActionNavigationProbe()
+    weak var weakState = state
+    weak var weakNavigation = navigation
+    viewModel.delegate = state
+    viewModel.navigationDelegate = navigation
 
-        state = nil
-        navigation = nil
+    state = nil
+    navigation = nil
 
-        #expect(weakState == nil)
-        #expect(weakNavigation == nil)
-        #expect(viewModel.delegate == nil)
-        #expect(viewModel.navigationDelegate == nil)
-        viewModel.setQuery("")
-        viewModel.search()
-        #expect(viewModel.errorMessage == "Enter a movie title to search.")
-    }
+    #expect(weakState == nil)
+    #expect(weakNavigation == nil)
+    #expect(viewModel.delegate == nil)
+    #expect(viewModel.navigationDelegate == nil)
+    viewModel.setQuery("")
+    viewModel.search()
+    #expect(viewModel.errorMessage == "Enter a movie title to search.")
+  }
 
 }
 
+/// Actor-isolated fake that records poster-action service calls.
 private actor ActionServiceStub: MoviePosterActionServicing {
-    struct CallCounts: Equatable, Sendable {
-        var search = 0
-        var refresh = 0
-        var apply = 0
-        var remove = 0
-        var view = 0
-    }
+  /// Counts calls made to each service operation.
+  struct CallCounts: Equatable, Sendable {
+    /// Number of searches.
+    var search = 0
+    /// Number of automatic refreshes.
+    var refresh = 0
+    /// Number of manual poster assignments.
+    var apply = 0
+    /// Number of poster removals.
+    var remove = 0
+    /// Number of existing movie lookups.
+    var view = 0
+  }
 
-    private(set) var callCounts = CallCounts()
-    private(set) var lastAppliedMovieID: Int?
-    private var searchResult = MovieSearchResult(movies: [], hasMorePages: false)
-    private let searchDelay: Duration
-    private var searchShouldFail = false
+  /// Observable counts for assertions in the test actor.
+  private(set) var callCounts = CallCounts()
+  /// Identifier of the last movie assigned by the fake service.
+  private(set) var lastAppliedMovieID: Int?
+  /// Search results returned by the fake.
+  private var searchResult = MovieSearchResult(movies: [], hasMorePages: false)
+  /// Delay used to exercise in-flight cancellation behavior.
+  private let searchDelay: Duration
+  /// Whether searches should throw an authentication failure.
+  private var searchShouldFail = false
 
-    init(searchDelay: Duration = .zero) {
-        self.searchDelay = searchDelay
-    }
+  /// Creates the fake with an optional delay for search calls.
+  init(searchDelay: Duration = .zero) {
+    self.searchDelay = searchDelay
+  }
 
-    func setSearchResult(_ result: MovieSearchResult) {
-        searchResult = result
-    }
+  /// Sets the result returned by subsequent searches.
+  func setSearchResult(_ result: MovieSearchResult) {
+    searchResult = result
+  }
 
-    func failSearch() {
-        searchShouldFail = true
-    }
+  /// Makes subsequent search calls fail with an authentication error.
+  func failSearch() {
+    searchShouldFail = true
+  }
 
-    func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws
-        -> MovieSearchResult {
-        callCounts.search += 1
-        if searchShouldFail { throw TMDbError.authentication }
-        try await Task.sleep(for: searchDelay)
-        return searchResult
-    }
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws
+    -> MovieSearchResult
+  {
+    callCounts.search += 1
+    if searchShouldFail { throw TMDbError.authentication }
+    try await Task.sleep(for: searchDelay)
 
-    func refreshPoster(for request: MoviePosterRequest) async throws -> Int {
-        callCounts.refresh += 1
-        return 7
-    }
+    return searchResult
+  }
 
-    func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
-        callCounts.apply += 1
-        lastAppliedMovieID = movie.id
-        return movie.id
-    }
+  func refreshPoster(for request: MoviePosterRequest) async throws -> Int {
+    callCounts.refresh += 1
 
-    func removePoster(for request: MoviePosterRequest) async throws -> Bool {
-        callCounts.remove += 1
-        return true
-    }
+    return 7
+  }
 
-    func matchedMovieID(for request: MoviePosterRequest) async throws -> Int? {
-        callCounts.view += 1
-        return 7
-    }
+  func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
+    callCounts.apply += 1
+    lastAppliedMovieID = movie.id
+
+    return movie.id
+  }
+
+  func removePoster(for request: MoviePosterRequest) async throws -> Bool {
+    callCounts.remove += 1
+
+    return true
+  }
+
+  func matchedMovieID(for request: MoviePosterRequest) async throws -> Int? {
+    callCounts.view += 1
+
+    return 7
+  }
 }
 
+/// Captures state notifications from a poster-action view model.
 @MainActor
 private final class ActionStateProbe: MoviePosterActionViewModelDelegate {
-    weak var sender: MoviePosterActionViewModel?
-    private(set) var query: String?
-    private(set) var yearText: String?
-    private(set) var statusMessage: String?
-    private(set) var errorMessage: String?
-    private(set) var isBusy: Bool?
-    private var idleContinuation: CheckedContinuation<Void, Never>?
+  /// The most recent model that published state.
+  weak var sender: MoviePosterActionViewModel?
+  /// Last observed search title.
+  private(set) var query: String?
+  /// Last observed release-year text.
+  private(set) var yearText: String?
+  /// Last observed progress or success message.
+  private(set) var statusMessage: String?
+  /// Last observed user-facing error.
+  private(set) var errorMessage: String?
+  /// Last observed operation-busy state.
+  private(set) var isBusy: Bool?
+  /// Suspended waiter resumed when an operation returns to idle.
+  private var idleContinuation: CheckedContinuation<Void, Never>?
 
-    func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel) {
-        sender = viewModel
-        query = viewModel.query
-        yearText = viewModel.yearText
-        statusMessage = viewModel.statusMessage
-        errorMessage = viewModel.errorMessage
-        isBusy = viewModel.isBusy
-        if !viewModel.isBusy {
-            let continuation = idleContinuation
-            idleContinuation = nil
-            continuation?.resume()
-        }
+  /// Captures the latest presentation values and resumes an idle waiter.
+  func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel) {
+    sender = viewModel
+    query = viewModel.query
+    yearText = viewModel.yearText
+    statusMessage = viewModel.statusMessage
+    errorMessage = viewModel.errorMessage
+    isBusy = viewModel.isBusy
+    if !viewModel.isBusy {
+      let continuation = idleContinuation
+      idleContinuation = nil
+      continuation?.resume()
     }
+  }
 
-    func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
-        guard viewModel.isBusy else { return }
-        await withCheckedContinuation { idleContinuation = $0 }
-    }
+  /// Waits for the supplied model's active operation to complete.
+  func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
+    guard viewModel.isBusy else { return }
+    await withCheckedContinuation { idleContinuation = $0 }
+  }
 }
 
+/// Captures browser-navigation requests from a poster-action view model.
 @MainActor
 private final class ActionNavigationProbe: MoviePosterActionViewModelNavigationDelegate {
-    weak var sender: MoviePosterActionViewModel?
-    private(set) var openedURL: URL?
-    private(set) var statusMessage: String?
+  /// Model that most recently requested navigation.
+  weak var sender: MoviePosterActionViewModel?
+  /// Last URL requested for opening.
+  private(set) var openedURL: URL?
+  /// Status message present when navigation was requested.
+  private(set) var statusMessage: String?
 
-    func moviePosterActionViewModel(
-        _ viewModel: MoviePosterActionViewModel,
-        didRequestOpeningMoviePage url: URL
-    ) {
-        sender = viewModel
-        openedURL = url
-        statusMessage = viewModel.statusMessage
-    }
+  /// Records the requested URL and the model's current status.
+  func moviePosterActionViewModel(
+    _ viewModel: MoviePosterActionViewModel,
+    didRequestOpeningMoviePage url: URL
+  ) {
+    sender = viewModel
+    openedURL = url
+    statusMessage = viewModel.statusMessage
+  }
 }

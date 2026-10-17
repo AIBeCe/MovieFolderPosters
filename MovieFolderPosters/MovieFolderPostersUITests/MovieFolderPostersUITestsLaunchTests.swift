@@ -7,29 +7,33 @@
 
 import XCTest
 
+/// Captures a launch screenshot for each configured UI test environment.
 final class MovieFolderPostersUITestsLaunchTests: XCTestCase {
 
-    override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
-    }
+  /// Runs the launch test for each target application UI configuration.
+  override class var runsForEachTargetApplicationUIConfiguration: Bool {
+    true
+  }
 
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-    }
+  /// Stops the test immediately after a failed assertion.
+  override func setUpWithError() throws {
+    continueAfterFailure = false
+  }
 
-    @MainActor
-    func testLaunch() throws {
-        let app = XCUIApplication()
-        app.launch()
+  @MainActor
+  /// Launches the app and attaches a retained screenshot to the test result.
+  func testLaunch() throws {
+    let app = XCUIApplication()
+    app.launch()
 
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+    // Insert steps here to perform after app launch but before taking a screenshot,
+    // such as logging into a test account or navigating somewhere in the app
+    // XCUIAutomation Documentation
+    // https://developer.apple.com/documentation/xcuiautomation
 
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Launch Screen"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
+    let attachment = XCTAttachment(screenshot: app.screenshot())
+    attachment.name = "Launch Screen"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
 }

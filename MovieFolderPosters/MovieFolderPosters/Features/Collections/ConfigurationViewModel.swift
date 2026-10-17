@@ -1,156 +1,242 @@
 import FileSystem
 import Foundation
 
+/// Receives changes to collection and credential presentation state.
 @MainActor
 protocol ConfigurationViewModelDelegate: AnyObject {
-    func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel)
+  /// Reports that one or more view-model properties changed.
+  /// - Parameter viewModel: The model containing the latest state.
+  func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel)
 }
 
+/// Receives activity messages produced by configuration actions.
 @MainActor
 protocol ConfigurationViewModelActivityDelegate: AnyObject {
-    func configurationViewModel(_ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String)
+  /// Reports an operation result for the host activity log.
+  /// - Parameters:
+  ///   - viewModel: The model that recorded the event.
+  ///   - text: The privacy-safe event text.
+  ///   - category: The activity category.
+  func configurationViewModel(
+    _ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String)
 }
 
+/// Holds configuration presentation state and forwards user actions to its service.
 @MainActor
 final class ConfigurationViewModel {
-    private let service: any ConfigurationServicing
+  /// Performs configuration reads and mutations outside the view layer.
+  private let service: any ConfigurationServicing
 
-    private struct WeakDelegate {
-        weak var value: (any ConfigurationViewModelDelegate)?
+  /// Weakly retains one view-model observer without extending its lifetime.
+  private struct WeakDelegate {
+    /// The observer, if it is still alive.
+    weak var value: (any ConfigurationViewModelDelegate)?
+  }
+
+  /// Receives activity messages that should appear in the host log.
+  weak var activityDelegate: (any ConfigurationViewModelActivityDelegate)?
+  /// Observers interested in presentation-state changes.
+  private var delegates: [WeakDelegate] = []
+
+  /// Registers an observer once, pruning released observers first.
+  ///
+  /// - Parameter delegate: The view controller to notify of state changes.
+  func addDelegate(_ delegate: any ConfigurationViewModelDelegate) {
+    delegates.removeAll { $0.value == nil }
+    guard !delegates.contains(where: { $0.value === delegate }) else { return }
+    delegates.append(WeakDelegate(value: delegate))
+  }
+
+  /// Removes an observer and any observers that have already been released.
+  ///
+  /// - Parameter delegate: The observer to remove.
+  func removeDelegate(_ delegate: any ConfigurationViewModelDelegate) {
+    delegates.removeAll { $0.value == nil || $0.value === delegate }
+  }
+
+  /// Current configured collection rows and their latest availability evidence.
+  private(set) var directories: [ConfiguredDirectoryStatus] = []
+  /// Whether a TMDb credential was present at the last successful load.
+  private(set) var credentialConfigured = false
+  /// The appearance used when processing posters.
+  private(set) var posterAppearance: PosterAppearance = .softFinish
+  /// Whether a configuration operation is currently running.
+  private(set) var isBusy = false
+  /// A user-facing explanation for the latest failed operation, if any.
+  private(set) var errorMessage: String?
+  /// Whether a configuration summary has been loaded successfully.
+  private(set) var hasLoadedSummary = false
+
+  /// Describes the last-loaded setup evidence without triggering another check.
+  var installationSetupDescription: String {
+    guard hasLoadedSummary else {
+      return "Setup has not been loaded. Use Refresh Status separately."
+    }
+    let accessible = directories.filter { $0.availability == .available }.count
+    let token =
+      credentialConfigured
+      ? "Configured; provider validation was not performed."
+      : "Not configured. Save a read access token in Settings."
+    return
+      "Last-loaded setup (may be stale): \(directories.count) collections; \(accessible) host access "
+      + "preflights passed. See collection rows for other states.\nTMDb token at last load: \(token)\n"
+      + "Use Refresh Status separately to recheck access; it can resume Finder processing."
+
+  }
+
+  /// Creates a model backed by the supplied configuration service.
+  ///
+  /// - Parameter service: The service used for configuration operations.
+  init(service: any ConfigurationServicing) {
+    self.service = service
+  }
+
+  /// Loads the latest configuration summary and publishes its state.
+  func load() async {
+    await perform(
+      message: "Collections refreshed.", failureMessage: "Could not load configuration."
+    ) {
+      try await self.service.configurationSummary()
+    }
+  }
+
+  /// Adds a collection root and refreshes the displayed summary.
+  ///
+  /// - Parameter directory: The folder selected by the user.
+  func addDirectory(_ directory: URL) async {
+    await perform(message: "Collection added.", failureMessage: "Could not add this folder.") {
+      try await self.service.addDirectory(directory)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Removes a configured collection and refreshes the displayed summary.
+  ///
+  /// - Parameter identifier: The stable identifier of the collection to remove.
+  func removeDirectory(_ identifier: UUID) async {
+    await perform(message: "Collection removed.", failureMessage: "Could not remove this folder.") {
+      try await self.service.removeDirectory(identifier)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Replaces a collection's folder authorization with access to a newly selected folder.
+  ///
+  /// - Parameters:
+  ///   - identifier: The stable identifier of the configured collection.
+  ///   - directory: The folder whose access should be saved for that collection.
+  func reauthorizeDirectory(_ identifier: UUID, with directory: URL) async {
+    await perform(
+      message: "Collection access restored.",
+      failureMessage: "Could not restore access to this folder."
+    ) {
+      try await self.service.reauthorizeDirectory(identifier, directory)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Saves a TMDb read access token and refreshes the displayed summary.
+  ///
+  /// - Parameter credential: The token entered in Settings.
+  func saveCredential(_ credential: String) async {
+    await perform(
+      message: "TMDb credential saved.", failureMessage: "Could not save the API credential."
+    ) {
+      try await self.service.saveCredential(credential)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Removes the saved TMDb credential and refreshes the displayed summary.
+  func removeCredential() async {
+    await perform(
+      message: "TMDb credential removed.", failureMessage: "Could not remove the API credential."
+    ) {
+      try await self.service.removeCredential()
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Saves the poster appearance, reverting the optimistic selection if saving fails.
+  ///
+  /// - Parameter appearance: The poster finish selected in Settings.
+  func setPosterAppearance(_ appearance: PosterAppearance) async {
+    guard !isBusy, appearance != posterAppearance else { return }
+    let previousAppearance = posterAppearance
+    posterAppearance = appearance
+    await perform(
+      message: "Poster appearance saved.", failureMessage: "Could not save the poster appearance.",
+      onFailure: {
+        self.posterAppearance = previousAppearance
+      }
+    ) {
+      try await self.service.setPosterAppearance(appearance)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Serializes an operation, updates presentation state, and records its outcome.
+  ///
+  /// - Parameters:
+  ///   - message: Activity text recorded after a successful operation.
+  ///   - failureMessage: Safe fallback text shown if the operation fails.
+  ///   - onFailure: Local state restoration performed after failure.
+  ///   - operation: The service request whose summary becomes the new model state.
+  private func perform(
+    message: String,
+    failureMessage: String,
+    onFailure: @MainActor () -> Void = {},
+    operation: @MainActor () async throws -> ConfigurationSummary
+  ) async {
+    guard !isBusy else { return }
+
+    isBusy = true
+    errorMessage = nil
+    publish()
+
+    do {
+      apply(try await operation())
+      activityDelegate?.configurationViewModel(
+        self, didRecordActivity: message, category: "Configuration")
+    } catch {
+      onFailure()
+      let explanation: String
+      switch error {
+      case ConfigurationError.overlappingDirectory:
+        explanation = "This folder overlaps another collection. Choose separate collection roots."
+      case ConfigurationError.duplicateDirectory:
+        explanation = "This collection is already configured."
+      default:
+        explanation = failureMessage
+      }
+      errorMessage = explanation
+      activityDelegate?.configurationViewModel(
+        self, didRecordActivity: explanation, category: "Error")
     }
 
-    weak var activityDelegate: (any ConfigurationViewModelActivityDelegate)?
-    private var delegates: [WeakDelegate] = []
+    isBusy = false
+    publish()
+  }
 
-    func addDelegate(_ delegate: any ConfigurationViewModelDelegate) {
-        delegates.removeAll { $0.value == nil }
-        guard !delegates.contains(where: { $0.value === delegate }) else { return }
-        delegates.append(WeakDelegate(value: delegate))
-    }
+  /// Replaces the view-model state with values from a successful service summary.
+  ///
+  /// - Parameter summary: The latest configuration state returned by the service.
+  private func apply(_ summary: ConfigurationSummary) {
+    hasLoadedSummary = true
+    directories = summary.directories
+    credentialConfigured = summary.credentialConfigured
+    posterAppearance = summary.posterAppearance
+  }
 
-    func removeDelegate(_ delegate: any ConfigurationViewModelDelegate) {
-        delegates.removeAll { $0.value == nil || $0.value === delegate }
-    }
-
-    private(set) var directories: [ConfiguredDirectoryStatus] = []
-    private(set) var credentialConfigured = false
-    private(set) var posterAppearance: PosterAppearance = .softFinish
-    private(set) var isBusy = false
-    private(set) var errorMessage: String?
-    private(set) var hasLoadedSummary = false
-
-    var installationSetupDescription: String {
-        guard hasLoadedSummary else { return "Setup has not been loaded. Use Refresh Status separately." }
-        let accessible = directories.filter { $0.availability == .available }.count
-        let token = credentialConfigured ? "Configured; provider validation was not performed."
-            : "Not configured. Save a read access token in Settings."
-        return "Last-loaded setup (may be stale): \(directories.count) collections; \(accessible) host access " +
-            "preflights passed. See collection rows for other states.\nTMDb token at last load: \(token)\n" +
-            "Use Refresh Status separately to recheck access; it can resume Finder processing."
-    }
-
-    init(service: any ConfigurationServicing) {
-        self.service = service
-    }
-
-    func load() async {
-        await perform(message: "Collections refreshed.", failureMessage: "Could not load configuration.") {
-            try await self.service.configurationSummary()
-        }
-    }
-
-    func addDirectory(_ directory: URL) async {
-        await perform(message: "Collection added.", failureMessage: "Could not add this folder.") {
-            try await self.service.addDirectory(directory)
-            return try await self.service.configurationSummary()
-        }
-    }
-
-    func removeDirectory(_ identifier: UUID) async {
-        await perform(message: "Collection removed.", failureMessage: "Could not remove this folder.") {
-            try await self.service.removeDirectory(identifier)
-            return try await self.service.configurationSummary()
-        }
-    }
-
-    func reauthorizeDirectory(_ identifier: UUID, with directory: URL) async {
-        await perform(message: "Collection access restored.",
-                      failureMessage: "Could not restore access to this folder.") {
-            try await self.service.reauthorizeDirectory(identifier, directory)
-            return try await self.service.configurationSummary()
-        }
-    }
-
-    func saveCredential(_ credential: String) async {
-        await perform(message: "TMDb credential saved.", failureMessage: "Could not save the API credential.") {
-            try await self.service.saveCredential(credential)
-            return try await self.service.configurationSummary()
-        }
-    }
-
-    func removeCredential() async {
-        await perform(message: "TMDb credential removed.", failureMessage: "Could not remove the API credential.") {
-            try await self.service.removeCredential()
-            return try await self.service.configurationSummary()
-        }
-    }
-
-    func setPosterAppearance(_ appearance: PosterAppearance) async {
-        guard !isBusy, appearance != posterAppearance else { return }
-        let previousAppearance = posterAppearance
-        posterAppearance = appearance
-        await perform(message: "Poster appearance saved.", failureMessage: "Could not save the poster appearance.",
-                      onFailure: {
-            self.posterAppearance = previousAppearance
-        }) {
-            try await self.service.setPosterAppearance(appearance)
-            return try await self.service.configurationSummary()
-        }
-    }
-
-    private func perform(
-        message: String,
-        failureMessage: String,
-        onFailure: @MainActor () -> Void = {},
-        operation: @MainActor () async throws -> ConfigurationSummary
-    ) async {
-        guard !isBusy else { return }
-
-        isBusy = true
-        errorMessage = nil
-        publish()
-
-        do {
-            apply(try await operation())
-            activityDelegate?.configurationViewModel(self, didRecordActivity: message, category: "Configuration")
-        } catch {
-            onFailure()
-            let explanation: String
-            switch error {
-            case ConfigurationError.overlappingDirectory:
-                explanation = "This folder overlaps another collection. Choose separate collection roots."
-            case ConfigurationError.duplicateDirectory:
-                explanation = "This collection is already configured."
-            default:
-                explanation = failureMessage
-            }
-            errorMessage = explanation
-            activityDelegate?.configurationViewModel(self, didRecordActivity: explanation, category: "Error")
-        }
-
-        isBusy = false
-        publish()
-    }
-
-    private func apply(_ summary: ConfigurationSummary) {
-        hasLoadedSummary = true
-        directories = summary.directories
-        credentialConfigured = summary.credentialConfigured
-        posterAppearance = summary.posterAppearance
-    }
-
-    private func publish() {
-        delegates.removeAll { $0.value == nil }
-        for delegate in delegates.compactMap(\.value) { delegate.configurationViewModelDidChange(self) }
-    }
+  /// Notifies all currently retained observers of the latest state.
+  private func publish() {
+    delegates.removeAll { $0.value == nil }
+    for delegate in delegates.compactMap(\.value) { delegate.configurationViewModelDidChange(self) }
+  }
 }
