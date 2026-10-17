@@ -48,6 +48,19 @@
 - Keep Finder Sync a thin integration layer.
 - Do not introduce empty layers, speculative protocols, or a separate coordinator for every view.
 
+## Delegation and callbacks
+
+- Prefer protocol-based delegates over closure properties or callback parameters for communication between objects.
+- Declare delegate methods in a focused, clearly named protocol; receiving types implement that protocol.
+- Use descriptive methods that identify the sender and express the event, request, or result explicitly.
+- For AppKit/UI delegation, use main-actor-isolated, class-bound protocols and weak delegate references to avoid
+  retain cycles. Ensure the owning coordinator or other flow owner retains the delegate for the required lifetime.
+- For non-UI delegation, define actor isolation and Sendable requirements explicitly; preserve responsive callbacks
+  and avoid crossing isolation boundaries unsafely.
+- Keep closures for local operations such as map/filter and framework APIs that require them. Prefer delegate
+  protocols when designing the application's own callback interfaces.
+- Refactor existing closure-based communication only within explicitly approved implementation scope.
+
 ## Modules and services
 
 - Prefer local Swift Package Manager modules when functionality benefits from
