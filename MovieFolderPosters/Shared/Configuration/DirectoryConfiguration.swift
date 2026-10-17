@@ -52,20 +52,20 @@ nonisolated struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equatable 
   let path: String
   /// The most recently assessed access and filesystem compatibility state.
   let availability: DirectoryAvailability
-  /// Verified collection outcomes, or no value when counts have not been established.
+  /// Verified collection processing state, or no value when counts have not been established.
   var counts: CollectionCounts? = nil
 }
 
-/// Known processing outcomes for the immediate folders in a collection.
+/// Independently known processing counts for the immediate folders in a collection.
 nonisolated struct CollectionCounts: Sendable, Equatable {
-  /// Folders with a verified successful poster outcome.
-  let done: Int
-  /// Folders for which no suitable movie was found.
-  let notFound: Int
-  /// Folders whose movie identity remains ambiguous.
-  let severalMatches: Int
-  /// The inspected count of immediate child folders.
-  let total: Int
+  /// Folders with a verified successful poster outcome, or `nil` when unknown.
+  let done: Int?
+  /// Folders for which no suitable movie was found, or `nil` when unknown.
+  let notFound: Int?
+  /// Folders whose movie identity remains ambiguous, or `nil` when unknown.
+  let severalMatches: Int?
+  /// The inspected count of immediate child folders, or `nil` when inventory is unknown.
+  let total: Int?
 }
 
 /// Configuration and access evidence used by the host interface.

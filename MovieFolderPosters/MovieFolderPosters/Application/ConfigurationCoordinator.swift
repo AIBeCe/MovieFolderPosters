@@ -9,6 +9,8 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
 {
   /// Supplies configuration state and operations to the host's views.
   private let viewModel: ConfigurationViewModel
+  /// Independently reads committed processing snapshots for main-window presentation.
+  private let summaryViewModel: CollectionSummaryViewModel
   /// Stores and publishes the app-wide appearance selection.
   private let appearance = AppAppearanceSettings()
   /// Retains recent host activity for the log window.
@@ -21,6 +23,10 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
   private var logWindow: NSWindowController?
   /// Checks installation evidence when the user requests a readiness report.
   private let installationService: any InstallationReadinessServicing
+  /// Repository used for normal startup and root-removal cleanup.
+  private let processingStore: CollectionProcessingStore?
+  /// Observer token for committed result changes from Finder or host actions.
+  private var processingObserver: NSObjectProtocol?
   /// Prevents overlapping installation checks and sheets.
   private var checkingInstallation = false
 
@@ -31,22 +37,33 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
   ///   - installationService: The provider used to inspect installation evidence.
   init(
     service: any ConfigurationServicing,
+    summaryService: any CollectionSummaryServicing = EmptyCollectionSummaryService(),
+    processingStore: CollectionProcessingStore? = nil,
     installationService: any InstallationReadinessServicing = InstallationReadinessService()
   ) {
     self.installationService = installationService
+    self.processingStore = processingStore
     viewModel = ConfigurationViewModel(service: service)
+    summaryViewModel = CollectionSummaryViewModel(service: summaryService)
     viewModel.activityDelegate = self
     appearance.delegate = self
     log.append(text: "Application opened.", category: "Application")
+    processingObserver = DistributedNotificationCenter.default().addObserver(
+      forName: SharedEnvironment.collectionProcessingChanged, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in self?.refreshCollectionProcessingState() }
+    }
   }
 
   /// Creates or presents the main configuration window.
   func start() {
     if let mainWindow {
+      refreshCollectionProcessingState()
       show(mainWindow)
       return
     }
-    let controller = ConfigurationViewController(viewModel: viewModel)
+    let controller = ConfigurationViewController(
+      viewModel: viewModel, summaryViewModel: summaryViewModel)
     controller.delegate = self
     let window = makeWindow(
       title: "Movie Folder Posters", controller: controller,
@@ -54,6 +71,12 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
     mainWindow = window
     show(window)
   }
+
+  /// Reloads processing states after the app becomes active without rereading settings.
+  func applicationDidBecomeActive() { refreshCollectionProcessingState() }
+
+  /// Requests a summary-only reload after an outcome notification or explicit app activation.
+  func refreshCollectionProcessingState() { summaryViewModel.reload() }
 
   /// Creates or presents Settings and refreshes the displayed configuration.
   func showSettings() {
@@ -133,6 +156,46 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
     }
   }
 
+  /// Shows the selected collection's read-only persisted details as a window sheet.
+  private func showProcessingDetails(rootID: UUID) {
+    guard let window = mainWindow?.window, window.attachedSheet == nil,
+      let directory = viewModel.directories.first(where: { $0.id == rootID })
+    else { return }
+    let summary = summaryViewModel.summary(for: rootID) ?? CollectionProcessingSummary(
+      processingState: nil,
+      presentation: CollectionProcessingPresentation(processingState: nil),
+      counts: CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil),
+      displayState: .unavailable
+    )
+    let controller = CollectionProcessingDetailsViewController(
+      collectionName: URL(fileURLWithPath: directory.path).lastPathComponent,
+      summary: summary)
+    let sheet = NSWindow(contentViewController: controller)
+    sheet.title = "Processing Details — \(URL(fileURLWithPath: directory.path).lastPathComponent)"
+    sheet.styleMask = [.titled, .closable, .resizable]
+    sheet.setContentSize(NSSize(width: 680, height: 520))
+    sheet.minSize = NSSize(width: 560, height: 360)
+    window.beginSheet(sheet, completionHandler: nil)
+  }
+
+  /// Prunes records made orphaned by a completed root removal.
+  func configurationViewControllerDidRemoveCollectionRoot(_ controller: ConfigurationViewController) {
+    guard let processingStore else { return }
+    Task { @MainActor [weak self] in
+      let cleanupSucceeded = await Task.detached {
+        do {
+          _ = try processingStore.pruneToConfiguredRoots()
+          return true
+        } catch {
+          return false
+        }
+      }.value
+      if !cleanupSucceeded {
+        self?.log.append(text: "Collection result cleanup could not complete.", category: "Error")
+      }
+    }
+  }
+
   /// Combines installation evidence with the last-loaded setup summary.
   ///
   /// - Returns: The report text shown by the readiness sheet.
@@ -194,6 +257,13 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
     _ controller: ConfigurationViewController
   ) {
     showInstallationReadiness()
+  }
+
+  /// Responds to a request for a collection's saved processing details.
+  func configurationViewControllerDidRequestProcessingDetails(
+    _ controller: ConfigurationViewController, rootID: UUID
+  ) {
+    showProcessingDetails(rootID: rootID)
   }
 
   /// Adds view-model activity entries to the host activity log.

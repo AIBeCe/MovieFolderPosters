@@ -120,10 +120,10 @@ struct InstallationReadinessTests {
 
     let report = await service.check()
     #expect(report.text.contains("Finder activation: Not yet observed."))
-    #expect(counts.snapshot.0 == 1)
-    #expect(counts.snapshot.1 == 1)
-    #expect(counts.snapshot.2 == 1)
-    #expect(counts.snapshot.3 == 1)
+    #expect(counts.processingState.0 == 1)
+    #expect(counts.processingState.1 == 1)
+    #expect(counts.processingState.2 == 1)
+    #expect(counts.processingState.3 == 1)
   }
 
   /// Verifies that service retains its evidence provider.
@@ -135,7 +135,7 @@ struct InstallationReadinessTests {
     provider = nil
     #expect(retainedProvider != nil)
     _ = await service.check()
-    #expect(retainedProvider?.snapshot.3 == 1)
+    #expect(retainedProvider?.processingState.3 == 1)
   }
 
   /// Verifies that underlying storage errors are not included in report.
@@ -244,7 +244,7 @@ private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unch
   /// Number of shared-storage checks.
   private var storage = 0
 
-  func inspectInstallation() -> InstallationMetadata {
+  func readInstallationMetadata() -> InstallationMetadata {
     lock.withLock { installation += 1 }
 
     return .valid
@@ -266,8 +266,8 @@ private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unch
   }
   func currentDate() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
 
-  /// A consistent snapshot of all four evidence call counters.
-  var snapshot: (Int, Int, Int, Int) {
+  /// A consistent processing state of all four evidence call counters.
+  var processingState: (Int, Int, Int, Int) {
     lock.withLock { (installation, enablement, receipt, storage) }
   }
 }
@@ -287,7 +287,7 @@ extension InstallationMetadata {
 
 /// Returns sanitized failure evidence for readiness error-handling tests.
 private struct FailingReadinessEnvironment: InstallationReadinessEnvironment {
-  func inspectInstallation() -> InstallationMetadata { .valid }
+  func readInstallationMetadata() -> InstallationMetadata { .valid }
   func extensionEnabled() async -> Bool? { nil }
   func readReceipt() -> ExtensionReceiptEvidence { .unavailable(.failed) }
   func checkSharedStorage() throws -> SharedStorageEvidence {

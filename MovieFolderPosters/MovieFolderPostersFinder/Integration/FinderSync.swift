@@ -20,6 +20,8 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   private var roots: [URL: AuthorizedRoot] = [:]
   /// The processing instance built for the currently authorized configuration.
   private var processor: MovieFolderProcessor?
+  /// Settings captured alongside the metadata provider, never refreshed independently of that provider.
+  private var processingConfiguration: DirectoryConfiguration?
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
   private let fileSystem = FileSystemService()
   /// Privacy-preserving diagnostic events for this component.
@@ -84,7 +86,9 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
             coordinationStore: try PersistenceStore(
               directory: container.appendingPathComponent("ProcessingLocks")
             ), mutationGuard: mutationGuard,
-            appearance: configuration.posterAppearance)
+            appearance: configuration.posterAppearance,
+            processingStore: try SharedEnvironment.makeCollectionProcessingStore())
+          processingConfiguration = configuration
           logger.notice("Shared Keychain credential available")
         } else {
           logger.notice("TMDb credential is not configured")
@@ -131,11 +135,16 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   /// - Throws: Configuration contention or changes, bookmark access failures, persistence failures, or a root identity
   /// mismatch.
   func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws {
-    guard let root = roots[url], let processor else { return }
+    guard let root = roots[url], let processor, let configuration = processingConfiguration else { return }
     guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
       throw DirectoryAccessError.identityChanged
     }
-    let result = try await processor.process(root: root.access.url)
+    let context = CollectionProcessingContext(
+      rootID: root.directory.id, rootIdentity: root.identity,
+      authorizationVersion: root.directory.authorizationVersion,
+      credentialRevision: configuration.credentialRevision,
+      developmentFixtures: configuration.developmentFixtures, appearance: configuration.posterAppearance)
+    let result = try await processor.process(root: root.access.url, processingContext: context)
     withExtendedLifetime(root.access) {}
     logger.notice("Processing completed: examined=\(result.examined), assigned=\(result.assigned)")
     logger.notice("Preserved=\(result.skippedExistingIcons), unresolved=\(result.unresolved)")

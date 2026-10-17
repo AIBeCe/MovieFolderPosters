@@ -6,14 +6,22 @@ import Foundation
 public struct PersistenceStore: Sendable {
   /// The pinned directory descriptor used for every store operation.
   private let directory: DirectoryDescriptor
+  /// Maximum encoded JSON envelope size accepted by the store.
+  private let maximumRecordBytes: Int?
 
   /// Opens or creates the store directory without following symlinked path components.
   ///
-  /// - Parameter directory: The directory containing lock and record files.
-  /// - Throws: An I/O error or ``PersistenceError/invalidDirectory`` for a non-file URL.
-  public init(directory: URL) throws {
+  /// - Parameters:
+  ///   - directory: The directory containing lock and record files.
+  ///   - maximumRecordBytes: An optional encoded envelope limit; omitted for unlimited behavior.
+  /// - Throws: An I/O error, an invalid-directory error, or an invalid-size error.
+  public init(directory: URL, maximumRecordBytes: Int? = nil) throws {
     guard directory.isFileURL else { throw PersistenceError.invalidDirectory }
+    if let maximumRecordBytes, maximumRecordBytes <= 0 {
+      throw PersistenceError.invalidRecordLimit
+    }
     self.directory = try DirectoryDescriptor.open(directory.standardizedFileURL.path)
+    self.maximumRecordBytes = maximumRecordBytes
   }
 
   /// Attempts to hold an exclusive lease for an opaque key.
@@ -43,13 +51,82 @@ public struct PersistenceStore: Sendable {
     return PersistenceLease(
       directory: directory,
       keyDigest: digest,
-      lockDescriptor: descriptor
+      lockDescriptor: descriptor,
+      maximumRecordBytes: maximumRecordBytes
     )
+  }
+
+  /// Removes obsolete record data while preserving all reusable lock files.
+  ///
+  /// - Parameter keepingKeys: Opaque keys whose records must remain.
+  /// - Returns: Digests whose records could not be removed because their lease was busy.
+  /// - Throws: A persistence error when directory enumeration or descriptor operations fail.
+  public func pruneRecords(keepingKeys: Set<String>) throws -> Set<String> {
+    let retainedDigests = Set(keepingKeys.filter { !$0.isEmpty }.map { Self.digest(Data($0.utf8)) })
+    let enumerationDescriptor = openat(
+      directory.fileDescriptor, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard enumerationDescriptor >= 0 else { throw PersistenceError.io(errno) }
+    guard let stream = fdopendir(enumerationDescriptor) else {
+      let code = errno
+      close(enumerationDescriptor)
+      throw PersistenceError.io(code)
+    }
+    defer { closedir(stream) }
+
+    var deferredDigests = Set<String>()
+    while let entry = readdir(stream) {
+      let filename = withUnsafePointer(to: &entry.pointee.d_name) {
+        $0.withMemoryRebound(to: CChar.self, capacity: Int(NAME_MAX) + 1) {
+          String(cString: $0)
+        }
+      }
+      guard let digest = Self.recordDigest(from: filename), !retainedDigests.contains(digest)
+      else { continue }
+
+      let lockDescriptor = openat(
+        directory.fileDescriptor, digest + ".lock",
+        O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
+      guard lockDescriptor >= 0 else { throw PersistenceError.io(errno) }
+      if flock(lockDescriptor, LOCK_EX | LOCK_NB) != 0 {
+        let code = errno
+        close(lockDescriptor)
+        if code == EWOULDBLOCK || code == EAGAIN {
+          deferredDigests.insert(digest)
+          continue
+        }
+        throw PersistenceError.io(code)
+      }
+      defer {
+        flock(lockDescriptor, LOCK_UN)
+        close(lockDescriptor)
+      }
+
+      var info = stat()
+      if fstatat(directory.fileDescriptor, filename, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+        if errno == ENOENT { continue }
+        throw PersistenceError.io(errno)
+      }
+      guard (info.st_mode & S_IFMT) == S_IFREG else { continue }
+      if unlinkat(directory.fileDescriptor, filename, 0) != 0, errno != ENOENT {
+        throw PersistenceError.io(errno)
+      }
+    }
+    return deferredDigests
   }
 
   /// Produces the stable hexadecimal SHA-256 identifier used by lock and record filenames.
   fileprivate static func digest(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// Accepts only record filenames containing a lowercase SHA-256 digest.
+  private static func recordDigest(from filename: String) -> String? {
+    guard filename.hasSuffix(".json") else { return nil }
+    let digest = String(filename.dropLast(5))
+    guard digest.utf8.count == 64,
+      digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
+    else { return nil }
+    return digest
   }
 }
 
@@ -61,17 +138,21 @@ public final class PersistenceLease: Sendable {
   private let keyDigest: String
   /// The open lock file whose advisory lock represents this lease.
   private let lockDescriptor: Int32
+  /// Maximum encoded envelope size accepted through this lease.
+  private let maximumRecordBytes: Int?
   /// Serializes file access when callers share the lease across threads.
   private let mutex = NSLock()
 
   fileprivate init(
     directory: DirectoryDescriptor,
     keyDigest: String,
-    lockDescriptor: Int32
+    lockDescriptor: Int32,
+    maximumRecordBytes: Int?
   ) {
     self.directory = directory
     self.keyDigest = keyDigest
     self.lockDescriptor = lockDescriptor
+    self.maximumRecordBytes = maximumRecordBytes
   }
 
   /// Releases the per-key advisory lock and closes its descriptor.
@@ -106,13 +187,7 @@ public final class PersistenceLease: Sendable {
       throw PersistenceError.invalidRecordFile
     }
 
-    let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
-    let data: Data
-    do {
-      data = try file.readToEnd() ?? Data()
-    } catch {
-      throw PersistenceError.io(errno)
-    }
+    let data = try readBoundedRecord(from: descriptor, initialSize: info.st_size)
 
     return try decode(data).payload
   }
@@ -143,9 +218,8 @@ public final class PersistenceLease: Sendable {
       else {
         throw PersistenceError.invalidRecordFile
       }
-      let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
       do {
-        _ = try decode(file.readToEnd() ?? Data())
+        _ = try decode(readBoundedRecord(from: descriptor, initialSize: openedInfo.st_size))
       } catch let error as PersistenceError {
         throw error
       } catch {
@@ -155,17 +229,80 @@ public final class PersistenceLease: Sendable {
       throw PersistenceError.io(errno)
     }
 
+    if let maximumRecordBytes {
+      let emptyEnvelope = Envelope(version: 1, keyDigest: keyDigest, payload: Data())
+      let emptyEncoding: Data
+      do {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        emptyEncoding = try encoder.encode(emptyEnvelope)
+      } catch {
+        throw PersistenceError.corruptRecord
+      }
+      let remainingBytes = maximumRecordBytes - emptyEncoding.count
+      guard remainingBytes >= 0, data.count <= (remainingBytes / 4) * 3 else {
+        throw PersistenceError.recordTooLarge
+      }
+    }
+
     let envelope = Envelope(version: 1, keyDigest: keyDigest, payload: data)
     let encoded: Data
     do {
       let encoder = JSONEncoder()
-      encoder.outputFormatting = [.sortedKeys]
+      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
       encoded = try encoder.encode(envelope)
     } catch {
       throw PersistenceError.corruptRecord
     }
+    if let maximumRecordBytes, encoded.count > maximumRecordBytes {
+      throw PersistenceError.recordTooLarge
+    }
 
     try atomicWrite(encoded, named: recordName)
+  }
+
+  /// Explicitly removes only the regular record file owned by this held lease.
+  ///
+  /// Corrupt envelopes may be removed deliberately. The corresponding lock file remains in place.
+  /// - Throws: A persistence error if the record is not a regular file or removal fails.
+  public func removeRecord() throws {
+    mutex.lock()
+    defer { mutex.unlock() }
+
+    var info = stat()
+    if fstatat(directory.fileDescriptor, recordName, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+      if errno == ENOENT { return }
+      throw PersistenceError.io(errno)
+    }
+    guard (info.st_mode & S_IFMT) == S_IFREG else { throw PersistenceError.invalidRecordFile }
+    if unlinkat(directory.fileDescriptor, recordName, 0) != 0, errno != ENOENT {
+      throw PersistenceError.io(errno)
+    }
+  }
+
+  /// Reads at most the configured envelope limit and detects files that grow during the read.
+  private func readBoundedRecord(from descriptor: Int32, initialSize: off_t) throws -> Data {
+    guard initialSize >= 0 else { throw PersistenceError.invalidRecordFile }
+    if let maximumRecordBytes, initialSize > maximumRecordBytes {
+      throw PersistenceError.recordTooLarge
+    }
+    var result = Data()
+    result.reserveCapacity(Int(initialSize))
+    let bufferSize = maximumRecordBytes.map { min(64 * 1024, $0) } ?? 64 * 1024
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+    while true {
+      let count = Darwin.read(descriptor, &buffer, buffer.count)
+      if count == 0 { break }
+      if count < 0 {
+        if errno == EINTR { continue }
+        throw PersistenceError.io(errno)
+      }
+      if let maximumRecordBytes, result.count + count > maximumRecordBytes {
+        throw PersistenceError.recordTooLarge
+      }
+      result.append(contentsOf: buffer[0..<count])
+    }
+    return result
   }
 
   /// The deterministic JSON filename associated with this key digest.
@@ -291,5 +428,7 @@ private enum PersistenceError: Error {
   case corruptRecord
   case unsupportedVersion
   case keyMismatch
+  case invalidRecordLimit
+  case recordTooLarge
   case io(Int32)
 }

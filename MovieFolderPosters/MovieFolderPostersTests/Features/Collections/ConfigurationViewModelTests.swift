@@ -1,6 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
+import Persistence
 import Testing
 
 @testable import MovieFolderPosters
@@ -788,4 +789,301 @@ private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, Hos
   }
   for _ in 0..<100 where model.isBusy { try await Task.sleep(for: .milliseconds(5)) }
   #expect(model.directories.isEmpty)
+}
+
+/// Coalesces invalidations during a read and keeps the newest committed projection.
+@MainActor
+@Test func collectionSummaryReloadCoalescesAndDropsSupersededResults() async {
+  let rootID = UUID()
+  let first = summaryForTesting(rootID: rootID, done: 1, total: 1)
+  let latest = summaryForTesting(rootID: rootID, done: 2, total: 2)
+  let service = DeferredCollectionSummaryService(responses: [[rootID: first], [rootID: latest]])
+  let viewModel = CollectionSummaryViewModel(service: service)
+
+  viewModel.reload()
+  await service.waitForCalls(1)
+  viewModel.reload()
+  viewModel.reload()
+  await service.openCall(0)
+  await service.waitForCalls(2)
+  await service.openCall(1)
+  for _ in 0..<100 where viewModel.summary(for: rootID) != latest {
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+
+  #expect(viewModel.summary(for: rootID) == latest)
+  #expect(await service.callCount == 2)
+}
+
+/// Shows saved folder evidence in an AppKit details sheet without exposing mutation controls.
+@MainActor
+@Test func processingDetailsSheetShowsFolderEvidenceAndNoMutationControls() throws {
+  let rootID = UUID()
+  let processingState = processingStateForTesting(rootID: rootID)
+  let summary = CollectionProcessingSummary(
+    processingState: processingState,
+    presentation: CollectionProcessingPresentation(processingState: processingState),
+    counts: processingState.calculateCounts(),
+    displayState: .current
+  )
+  let controller = CollectionProcessingDetailsViewController(
+    collectionName: "Movies", summary: summary)
+  let views = nativeViews(in: controller.view)
+  let text = try #require(views.compactMap { $0 as? NSTextView }.first)
+
+  #expect(text.string.contains("Verified Movie (2024), ID 4242"))
+  #expect(text.string.contains("Poster ownership: App-owned"))
+  #expect(text.string.contains("Movie identity evidence: Conservative folder-name match"))
+  #expect(text.string.contains("Folder identity evidence: Captured"))
+  #expect(text.string.contains("Earliest eligible; runs only on later authorized invocation:"))
+  #expect(text.string.contains("Last completed collection run:"))
+  #expect(text.string.contains("previous processing context") == false)
+  #expect(!text.string.contains("folder-identity"))
+  #expect(!views.contains { $0 is NSButton })
+}
+
+/// Labels a last completed run as historical when it belongs to a prior saved context.
+@MainActor
+@Test func processingDetailsLabelsHistoricalCompletedRun() throws {
+  let initial = processingStateForTesting(rootID: UUID())
+  let priorContext = CollectionProcessingContext(
+    rootID: initial.context.rootID,
+    rootIdentity: initial.context.rootIdentity,
+    authorizationVersion: UUID(),
+    credentialRevision: UUID(),
+    developmentFixtures: initial.context.developmentFixtures,
+    appearance: initial.context.appearance)
+  let processingState = CollectionProcessingState(
+    context: initial.context, operation: initial.operation, folders: initial.folders,
+    isInventoryComplete: initial.isInventoryComplete, inspectedAt: initial.inspectedAt,
+    lastCompletedRun: initial.lastCompletedRun, lastCompletedRunContext: priorContext)
+  let summary = CollectionProcessingSummary(
+    processingState: processingState, presentation: CollectionProcessingPresentation(processingState: processingState),
+    counts: processingState.calculateCounts(), displayState: .current)
+  let controller = CollectionProcessingDetailsViewController(collectionName: "Movies", summary: summary)
+  let text = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTextView }.first)
+
+  #expect(text.string.contains("previous processing context"))
+}
+
+/// Shows a known inventory Total while keeping unassessed outcome counts unknown.
+@MainActor
+@Test func partialCollectionCountsKeepKnownTotalIndependent() async throws {
+  let rootID = UUID()
+  let initial = processingStateForTesting(rootID: rootID)
+  let processingState = CollectionProcessingState(
+    context: initial.context,
+    operation: CollectionProcessingOperation(action: .automatic, startedAt: Date(), state: .partial),
+    folders: [FolderProcessingRecord(name: "Pending.Movie", state: .pending)],
+    isInventoryComplete: true,
+    inspectedAt: Date()
+  )
+  let summary = CollectionProcessingSummary(
+    processingState: processingState,
+    presentation: CollectionProcessingPresentation(processingState: processingState),
+    counts: processingState.calculateCounts(),
+    displayState: .partial
+  )
+  let directory = ConfiguredDirectoryStatus(
+    id: rootID, path: "/Movies", availability: .available)
+  let viewModel = ConfigurationViewModel(
+    service: ConfigurationServiceFake(
+      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false)))
+  await viewModel.load()
+  let summaryViewModel = CollectionSummaryViewModel(
+    service: FixedCollectionSummaryService(summaries: [rootID: summary]))
+  summaryViewModel.reload()
+  for _ in 0..<100 where summaryViewModel.summary(for: rootID) == nil {
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  let controller = ConfigurationViewController(
+    viewModel: viewModel, summaryViewModel: summaryViewModel)
+  let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)
+  table.reloadData()
+  let doneCell = try #require(table.view(atColumn: 1, row: 0, makeIfNecessary: true))
+  let totalCell = try #require(table.view(atColumn: 4, row: 0, makeIfNecessary: true))
+  let collectionCell = try #require(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
+
+  #expect(nativeViews(in: doneCell).compactMap { $0 as? NSTextField }.first?.stringValue == "—")
+  #expect(nativeViews(in: totalCell).compactMap { $0 as? NSTextField }.first?.stringValue == "1")
+  #expect(
+    nativeViews(in: collectionCell).compactMap { $0 as? NSTextField }.contains {
+      $0.stringValue.contains("Results: Partial")
+    })
+}
+
+/// Does not infer an interrupted operation when the coordinated processing state reread fails.
+@MainActor
+@Test(arguments: [CollectionProcessingError.busy, .unsupportedSchema])
+func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async throws {
+  let temporaryDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent(UUID().uuidString, isDirectory: true)
+  defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+  let configurationRepository = try ConfigurationRepository(
+    store: PersistenceStore(directory: temporaryDirectory.appendingPathComponent("Settings")))
+  let rootID = UUID()
+  let authorizationVersion = UUID()
+  var savedConfiguration = DirectoryConfiguration()
+  savedConfiguration.directories = [
+    MonitoredDirectory(
+      id: rootID, path: "/Movies", transferBookmark: Data([1]),
+      authorizationVersion: authorizationVersion, identity: "root-identity")
+  ]
+  try configurationRepository.update { $0 = savedConfiguration }
+  let context = CollectionProcessingContext(
+    rootID: rootID, rootIdentity: "root-identity",
+    authorizationVersion: authorizationVersion,
+    credentialRevision: savedConfiguration.credentialRevision,
+    developmentFixtures: false, appearance: .softFinish)
+  let running = CollectionProcessingState(
+    context: context,
+    operation: CollectionProcessingOperation(action: .automatic, startedAt: Date(), state: .running))
+  let reader = FailingOrphanReread(processingState: running, failure: error)
+  let service = CollectionSummaryService(
+    configuration: configurationRepository,
+    processingStore: reader,
+    coordinationStore: try PersistenceStore(
+      directory: temporaryDirectory.appendingPathComponent("ProcessingLocks")))
+
+  let summary = await service.summaries()[rootID]
+
+  let expectedState: CollectionProcessingDisplayState = error == .busy ? .busy : .unavailable
+  #expect(summary?.displayState == expectedState)
+  #expect(summary?.presentation.state == expectedState)
+  #expect(summary?.displayState != .interrupted)
+  if error != .busy { #expect(summary?.counts.total == nil) }
+  #expect(reader.calls == 2)
+  #expect(!reader.wasReadOnMainThread)
+}
+
+/// Builds a complete saved collection outcome for presentation tests.
+private func processingStateForTesting(rootID: UUID) -> CollectionProcessingState {
+  let context = CollectionProcessingContext(
+    rootID: rootID, rootIdentity: "root-identity", authorizationVersion: UUID(),
+    credentialRevision: UUID(), developmentFixtures: false, appearance: .softFinish)
+  let folder = FolderProcessingRecord(
+    name: "Verified.Movie.2024", identity: "folder-identity", state: .done,
+    movieID: 4242, movieTitle: "Verified Movie", movieYear: 2024,
+    movieIdentitySource: .conservativeMatch,
+    ownership: .owned, assessedAt: Date(), retryAt: Date().addingTimeInterval(600),
+    lastFailure: FolderProcessingFailure(reason: .timeout, stage: .search, occurredAt: Date()))
+  let completed = CollectionProcessingOperation(
+    action: .automatic, startedAt: Date().addingTimeInterval(-120),
+    endedAt: Date(), state: .completed)
+
+  return CollectionProcessingState(
+    context: context, operation: completed, folders: [folder], isInventoryComplete: true,
+    inspectedAt: Date(), lastCompletedRun: completed, lastCompletedRunContext: context)
+}
+
+/// Creates a collection summary with deterministic headline counts.
+private func summaryForTesting(rootID: UUID, done: Int, total: Int) -> CollectionProcessingSummary {
+  let processingState = processingStateForTesting(rootID: rootID)
+  let counts = CollectionProcessingCounts(done: done, notFound: 0, severalMatches: 0, total: total)
+
+  return CollectionProcessingSummary(
+    processingState: processingState,
+    presentation: CollectionProcessingPresentation(processingState: processingState),
+    counts: counts,
+    displayState: .current
+  )
+}
+
+/// Returns fixed read-only summaries to host presentation tests.
+private struct FixedCollectionSummaryService: CollectionSummaryServicing {
+  /// Results returned for configured roots.
+  let summaries: [UUID: CollectionProcessingSummary]
+
+  /// Returns the configured fixture summaries.
+  func summaries() async -> [UUID: CollectionProcessingSummary] { summaries }
+}
+
+/// Returns a running processing state once, then simulates contention during its coordinated reread.
+private final class FailingOrphanReread: CollectionProcessingStateReading, @unchecked Sendable {
+  /// Protects the call count shared by the summary reader's async executor.
+  private let lock = NSLock()
+  /// Snapshot supplied by the first read.
+  private let processingState: CollectionProcessingState
+  /// Failure supplied by the coordinated reread.
+  private let failure: CollectionProcessingError
+  /// Number of processing state reads attempted.
+  private var readCount = 0
+  /// Whether any synchronous persisted read ran on the main thread.
+  private var readOnMainThread = false
+
+  /// Creates a reader that fails after its initial persisted processing state.
+  init(processingState: CollectionProcessingState, failure: CollectionProcessingError) {
+    self.processingState = processingState
+    self.failure = failure
+  }
+
+  /// Number of processing state reads attempted.
+  var calls: Int { lock.withLock { readCount } }
+
+  /// Whether a read blocked the main thread.
+  var wasReadOnMainThread: Bool { lock.withLock { readOnMainThread } }
+
+  /// Returns the initial record and reports contention for the required reread.
+  func read(rootID: UUID) throws -> CollectionProcessingState? {
+    try lock.withLock {
+      readCount += 1
+      readOnMainThread = readOnMainThread || Thread.isMainThread
+      guard readCount == 1 else { throw failure }
+      return processingState
+    }
+  }
+}
+
+/// Holds summary reads until each test explicitly releases them.
+private actor DeferredCollectionSummaryService: CollectionSummaryServicing {
+  /// Results returned by successive reads.
+  private let responses: [[UUID: CollectionProcessingSummary]]
+  /// Gates that let the test control completion order.
+  private let gates: [SummaryReadGate]
+  /// Number of reads started by the model.
+  private(set) var callCount = 0
+
+  /// Creates a deferred service with one result and gate per expected read.
+  init(responses: [[UUID: CollectionProcessingSummary]]) {
+    self.responses = responses
+    gates = responses.map { _ in SummaryReadGate() }
+  }
+
+  /// Waits for the matching gate, then returns that read's committed result.
+  func summaries() async -> [UUID: CollectionProcessingSummary] {
+    let index = callCount
+    callCount += 1
+    await gates[index].wait()
+
+    return responses[index]
+  }
+
+  /// Yields until the requested number of summary reads have started.
+  func waitForCalls(_ count: Int) async {
+    while callCount < count { await Task.yield() }
+  }
+
+  /// Releases a specific summary read.
+  func openCall(_ index: Int) async { await gates[index].open() }
+}
+
+/// Suspends one fake summary read until the test releases it.
+private actor SummaryReadGate {
+  /// Continuation for the pending service call.
+  private var continuation: CheckedContinuation<Void, Never>?
+  /// Whether a test opened the gate before the summary read began waiting.
+  private var isOpen = false
+
+  /// Suspends until the test opens this gate.
+  func wait() async {
+    guard !isOpen else { return }
+    await withCheckedContinuation { continuation = $0 }
+  }
+
+  /// Opens this gate and resumes its pending read.
+  func open() {
+    isOpen = true
+    continuation?.resume()
+    continuation = nil
+  }
 }

@@ -8,6 +8,8 @@ trap 'rtk rm -rf "$temp_root"' EXIT
 rtk mkdir -p "$temp_root/Sources/MovieFolderPosters" "$temp_root/Tests/MovieFolderPostersTests"
 rtk cp "$repo_root/MovieFolderPosters/MovieFolderPosters/Features/Installation/InstallationReadiness.swift" \
   "$temp_root/Sources/MovieFolderPosters/"
+rtk proxy cp "$repo_root"/MovieFolderPosters/Shared/Processing/Collections/*.swift \
+  "$temp_root/Sources/MovieFolderPosters/"
 rtk cp "$repo_root/MovieFolderPosters/MovieFolderPostersTests/Features/Installation/InstallationReadinessTests.swift" \
   "$temp_root/Tests/MovieFolderPostersTests/"
 rtk cp "$repo_root/MovieFolderPosters/Shared/Configuration/DirectoryConfiguration.swift" \

@@ -11,18 +11,38 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
   /// Requests an installation readiness report.
   func configurationViewControllerDidRequestInstallationReadiness(
     _ controller: ConfigurationViewController)
+  /// Requests the read-only outcome details for one configured collection.
+  func configurationViewControllerDidRequestProcessingDetails(
+    _ controller: ConfigurationViewController, rootID: UUID)
+  /// Reports that a completed configuration mutation removed one or more collection roots.
+  func configurationViewControllerDidRemoveCollectionRoot(_ controller: ConfigurationViewController)
+}
+
+/// Provides no-op defaults for delegate actions a host may choose not to present.
+@MainActor
+extension ConfigurationViewControllerDelegate {
+  /// Ignores a details request when the host does not present outcome sheets.
+  func configurationViewControllerDidRequestProcessingDetails(
+    _ controller: ConfigurationViewController, rootID: UUID) {}
+  /// Ignores cleanup callbacks when the host does not own outcome persistence.
+  func configurationViewControllerDidRemoveCollectionRoot(_ controller: ConfigurationViewController) {}
 }
 
 /// Displays configured movie collections and their latest processing status.
 @MainActor
 final class ConfigurationViewController: NSViewController, NSTableViewDataSource,
   NSTableViewDelegate,
-  ConfigurationViewModelDelegate, CollectionTableViewActionDelegate, CollectionRowViewDelegate
+  ConfigurationViewModelDelegate, CollectionSummaryViewModelDelegate,
+  CollectionTableViewActionDelegate, CollectionRowViewDelegate
 {
   /// Supplies collection state and performs configuration operations.
   private let viewModel: ConfigurationViewModel
+  /// Supplies independently refreshed processing snapshots for collection rows.
+  private let summaryViewModel: CollectionSummaryViewModel
   /// Snapshot currently rendered by the table.
   private var presentedDirectories: [ConfiguredDirectoryStatus] = []
+  /// Most recent root membership, used to trigger targeted orphan cleanup after removal.
+  private var lastConfiguredRootIDs: Set<UUID>?
   /// Lists configured collection roots and their processing counts.
   private let tableView = CollectionTableView()
   /// Scroll container for the collection table.
@@ -38,8 +58,13 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
 
   /// Creates the collection window for the supplied view model.
   /// - Parameter viewModel: The model that provides state and configuration actions.
-  init(viewModel: ConfigurationViewModel) {
+  init(
+    viewModel: ConfigurationViewModel,
+    summaryViewModel: CollectionSummaryViewModel = CollectionSummaryViewModel(
+      service: EmptyCollectionSummaryService())
+  ) {
     self.viewModel = viewModel
+    self.summaryViewModel = summaryViewModel
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -76,12 +101,16 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       errorLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 540)
     ])
     viewModel.addDelegate(self)
+    summaryViewModel.addDelegate(self)
   }
 
   override func viewDidLoad() {
     super.viewDidLoad()
     refresh()
-    Task { await viewModel.load() }
+    Task {
+      await viewModel.load()
+      summaryViewModel.reload()
+    }
   }
 
   /// Configures table columns, accessibility, and row actions.
@@ -90,9 +119,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     tableView.intercellSpacing = .zero
     tableView.headerView = CollectionHeaderView(frame: NSRect(x: 0, y: 0, width: 780, height: 24))
     tableView.usesAlternatingRowBackgroundColors = true
-    tableView.rowHeight = 44
+    tableView.rowHeight = 50
     tableView.dataSource = self
     tableView.delegate = self
+    tableView.doubleAction = #selector(showSelectedProcessingDetails)
     tableView.columnAutoresizingStyle = .noColumnAutoresizing
     tableView.allowsColumnReordering = false
     for (id, title, width) in [
@@ -179,7 +209,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   }
 
   /// Returns the number of collection rows currently displayed.
-  /// - Returns: The count of the current directory snapshot.
+  /// - Returns: The count of the current directory processing state.
   func numberOfRows(in tableView: NSTableView) -> Int { presentedDirectories.count }
 
   /// Creates a cell for the requested collection column.
@@ -196,6 +226,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       label.stringValue =
         url.deletingLastPathComponent().lastPathComponent + " / " + url.lastPathComponent
       label.toolTip = directory.path + "\n" + availabilityDescription(directory.availability)
+        + "\n" + collectionProcessingDescription(summaryViewModel.summary(for: directory.id))
       let folder = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
       folder.translatesAutoresizingMaskIntoConstraints = false
       let state = NSImageView(
@@ -209,7 +240,17 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       status.textColor = .secondaryLabelColor
       status.lineBreakMode = .byTruncatingTail
       status.toolTip = status.stringValue
-      let description = NSStackView(views: [label, status])
+      let processingDescription = NSTextField(labelWithString: collectionProcessingDescription(
+        summaryViewModel.summary(for: directory.id)))
+      processingDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+      processingDescription.textColor = .secondaryLabelColor
+      processingDescription.lineBreakMode = .byTruncatingTail
+      processingDescription.toolTip = processingDescription.stringValue
+      let evidence = NSStackView(views: [status, processingDescription])
+      evidence.orientation = .vertical
+      evidence.alignment = .leading
+      evidence.spacing = 1
+      let description = NSStackView(views: [label, evidence])
       description.orientation = .vertical
       description.alignment = .leading
       description.spacing = 1
@@ -231,12 +272,13 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     } else if tableColumn?.identifier.rawValue == "remove" {
       return NSView()
     } else {
+      let counts = summaryViewModel.summary(for: directory.id)?.counts
       let value: Int?
       switch tableColumn?.identifier.rawValue {
-      case "done": value = directory.counts?.done
-      case "notFound": value = directory.counts?.notFound
-      case "matches": value = directory.counts?.severalMatches
-      default: value = directory.counts?.total
+      case "done": value = counts?.done
+      case "notFound": value = counts?.notFound
+      case "matches": value = counts?.severalMatches
+      default: value = counts?.total
       }
       label.stringValue = value.map(String.init) ?? "—"
       label.toolTip = value == nil ? "No processing summary is available." : nil
@@ -272,6 +314,17 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     availability.explanation
   }
 
+  /// Keeps result freshness and inspection evidence distinct from folder access evidence.
+  private func collectionProcessingDescription(_ summary: CollectionProcessingSummary?) -> String {
+    guard let summary else { return "Results: unavailable" }
+    let state = summary.displayState.displayName
+    let inspected = summary.processingState?.inspectedAt.map {
+      DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short)
+    } ?? "never"
+
+    return "Results: \(state) · Last inspected: \(inspected)"
+  }
+
   /// Builds the context menu for a collection row or empty table area.
   /// - Parameter row: The row under the pointer, if any.
   /// - Returns: Actions appropriate for the row's current state.
@@ -294,6 +347,11 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       remove.representedObject = directory.id
       remove.isEnabled = !viewModel.isBusy
       menu.addItem(remove)
+      let details = NSMenuItem(
+        title: "Processing Details…", action: #selector(showProcessingDetails(_:)), keyEquivalent: "")
+      details.target = self
+      details.representedObject = directory.id
+      menu.addItem(details)
     }
     let refresh = NSMenuItem(
       title: "Refresh Status", action: #selector(refreshStatus), keyEquivalent: "")
@@ -304,7 +362,19 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   }
 
   /// Refreshes the table after the model publishes changed state.
-  func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) { refresh() }
+  func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) {
+    refresh()
+    guard !viewModel.isBusy, viewModel.hasLoadedSummary else { return }
+    let currentRootIDs = Set(viewModel.directories.map(\.id))
+    if let lastConfiguredRootIDs, !lastConfiguredRootIDs.subtracting(currentRootIDs).isEmpty {
+      delegate?.configurationViewControllerDidRemoveCollectionRoot(self)
+    }
+    lastConfiguredRootIDs = currentRootIDs
+    summaryViewModel.reload()
+  }
+
+  /// Reloads displayed outcome counts after a committed-processing state read.
+  func collectionSummaryViewModelDidChange(_ viewModel: CollectionSummaryViewModel) { refresh() }
 
   /// Returns the context menu requested by the table.
   fileprivate func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int)
@@ -336,7 +406,26 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     delegate?.configurationViewControllerDidRequestInstallationReadiness(self)
   }
   /// Reloads directory availability and processing status.
-  @objc private func refreshStatus() { Task { await viewModel.load() } }
+  @objc private func refreshStatus() {
+    Task {
+      await viewModel.load()
+      summaryViewModel.reload()
+    }
+  }
+  /// Requests details for the collection row activated by a double click.
+  @objc private func showSelectedProcessingDetails() {
+    guard presentedDirectories.indices.contains(tableView.clickedRow) else { return }
+    requestProcessingDetails(for: presentedDirectories[tableView.clickedRow].id)
+  }
+  /// Forwards a context-menu request for read-only outcome evidence.
+  @objc private func showProcessingDetails(_ sender: NSMenuItem) {
+    guard let identifier = sender.representedObject as? UUID else { return }
+    requestProcessingDetails(for: identifier)
+  }
+  /// Requests read-only outcome evidence for the selected root.
+  private func requestProcessingDetails(for identifier: UUID) {
+    delegate?.configurationViewControllerDidRequestProcessingDetails(self, rootID: identifier)
+  }
   /// Opens the folder picker for a new collection root.
   @objc private func addDirectory() { chooseDirectory(identifier: nil) }
 
@@ -379,6 +468,23 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
           await self.viewModel.addDirectory(url)
         }
       }
+    }
+  }
+}
+
+/// Supplies concise row labels for persisted result lifecycle states.
+private extension CollectionProcessingDisplayState {
+  /// State label kept separate from the configured folder's access status.
+  var displayName: String {
+    switch self {
+    case .unavailable: "Unavailable"
+    case .stale: "Stale"
+    case .busy: "In progress or awaiting verification"
+    case .running: "Running"
+    case .partial: "Partial"
+    case .interrupted: "Interrupted"
+    case .failed: "Failed"
+    case .current: "Current"
     }
   }
 }

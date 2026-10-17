@@ -13,6 +13,8 @@ rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/Processing/MovieM
     "$processing_harness/Sources/MovieFolderPosters/MovieMatcher.swift"
 rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/Processing/MovieFolderProcessor.swift" \
     "$processing_harness/Sources/MovieFolderPosters/MovieFolderProcessor.swift"
+rtk proxy cp "$processing_repository"/MovieFolderPosters/Shared/Processing/Collections/*.swift \
+    "$processing_harness/Sources/MovieFolderPosters/"
 for source in Configuration/DirectoryConfiguration Configuration/ConfigurationRepository; do
     rtk proxy cp "$processing_repository/MovieFolderPosters/Shared/$source.swift" \
         "$processing_harness/Sources/MovieFolderPosters/"
@@ -21,6 +23,8 @@ rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/
     "$processing_harness/Tests/MovieFolderPostersTests/MovieFolderProcessorTests.swift"
 rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Processing/MoviePosterActionTests.swift" \
     "$processing_harness/Tests/MovieFolderPostersTests/MoviePosterActionTests.swift"
+rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Processing/Collections/CollectionProcessingIntegrationTests.swift" \
+    "$processing_harness/Tests/MovieFolderPostersTests/"
 rtk proxy cp "$processing_repository/MovieFolderPosters/MovieFolderPostersTests/Resources/TestPoster.png" \
     "$processing_harness/Tests/MovieFolderPostersTests/TestPoster.png"
 rtk proxy ln -s "$processing_repository/Packages/FileSystem" "$processing_harness/FileSystem"

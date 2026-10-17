@@ -132,11 +132,29 @@ struct FolderPostersTests {
 
     #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
     #expect(try service.hasAssignedPoster(toChild: "Movie", in: root))
+    let inspection = try service.inspectPoster(toChild: "Movie", in: root)
+    #expect(inspection.ownership == .owned)
+    #expect(inspection.appearance == .raw)
     #expect(
       try service.replaceAssignedPoster(makePoster(color: .blue), toChild: "Movie", in: root)
         == .assigned)
     #expect(try service.hasAssignedPoster(toChild: "Movie", in: root))
     #expect(try FileManager.default.contentsOfDirectory(atPath: movie.path) == ["Icon\r"])
+  }
+
+  /// Scenario: strict inspection detects an externally changed owned icon.
+  @Test func strictInspectionReportsChangedOwnership() throws {
+    let (root, movie) = try makeMovieDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
+    let iconFile = movie.appendingPathComponent("Icon\r")
+    let icon = try FileHandle(forWritingTo: iconFile)
+    try icon.truncate(atOffset: 0)
+    try icon.write(contentsOf: Data("changed icon bytes".utf8))
+    try icon.close()
+    #expect(try service.inspectPoster(toChild: "Movie", in: root).ownership == .changed)
+    #expect(try service.removeAssignedPoster(toChild: "Movie", in: root) == false)
   }
 
   /// Scenario: legacy assignment records raw appearance and styled replacement updates it.
@@ -291,6 +309,9 @@ struct FolderPostersTests {
     #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
     #expect(try service.removeAssignedPoster(toChild: "Movie", in: root))
     #expect(try service.isPosterSuppressed(toChild: "Movie", in: root))
+    let inspection = try service.inspectPoster(toChild: "Movie", in: root)
+    #expect(inspection.ownership == .none)
+    #expect(inspection.isSuppressed)
     #expect(
       try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .existingIconPreserved)
     #expect(

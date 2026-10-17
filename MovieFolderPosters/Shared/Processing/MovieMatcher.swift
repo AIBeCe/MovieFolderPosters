@@ -26,6 +26,17 @@ nonisolated struct MovieMatcher: Sendable {
   ///   - search: The provider response, including whether further search pages exist.
   /// - Returns: The unique match or explicit unresolved reason.
   func match(title: String, year: Int?, search: MovieSearchResult) -> MovieMatchResult {
+    let result = identify(title: title, year: year, search: search)
+    guard case .matched(let selected) = result else { return result }
+    guard let poster = selected.posterPath, !poster.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return .unresolved(.missingPoster)
+    }
+
+    return result
+  }
+
+  /// Establishes identity independently of artwork availability using unchanged conservative evidence rules.
+  func identify(title: String, year: Int?, search: MovieSearchResult) -> MovieMatchResult {
     let query = normalized(title)
     guard !query.isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else {
       return .unresolved(.invalidQuery)
@@ -40,9 +51,6 @@ nonisolated struct MovieMatcher: Sendable {
       search.movies.filter({ $0.id == selected.id }).allSatisfy({ $0 == selected })
     else {
       return .unresolved(.ambiguous)
-    }
-    guard let poster = selected.posterPath, !poster.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return .unresolved(.missingPoster)
     }
 
     return .matched(selected)

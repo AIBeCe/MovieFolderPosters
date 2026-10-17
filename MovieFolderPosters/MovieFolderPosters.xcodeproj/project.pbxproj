@@ -40,6 +40,26 @@
 		F90000000000000000000001 /* ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
 		F90000000000000000000002 /* MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
 		F90000000000000000000003 /* MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
+		FA2000000000000000000014 /* CollectionProcessingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* CollectionProcessingState.swift */; };
+		FA2000000000000000000015 /* CollectionProcessingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* CollectionProcessingState.swift */; };
+		FA2000000000000000000016 /* CollectionProcessingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* CollectionProcessingStore.swift */; };
+		FA2000000000000000000017 /* CollectionProcessingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* CollectionProcessingStore.swift */; };
+		FA4000000000000000000001 /* CollectionProcessingContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000001 /* CollectionProcessingContext.swift */; };
+		FA4000000000000000000002 /* FolderProcessingFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000002 /* FolderProcessingFailure.swift */; };
+		FA4000000000000000000003 /* FolderProcessingRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000003 /* FolderProcessingRecord.swift */; };
+		FA4000000000000000000004 /* CollectionProcessingOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000004 /* CollectionProcessingOperation.swift */; };
+		FA4000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */; };
+		FA4000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000006 /* CollectionProcessingPresentation.swift */; };
+		FA4000000000000000000007 /* CollectionProcessingCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000007 /* CollectionProcessingCounts.swift */; };
+		FA4000000000000000000008 /* CollectionProcessingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000008 /* CollectionProcessingError.swift */; };
+		FA5000000000000000000001 /* CollectionProcessingContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000001 /* CollectionProcessingContext.swift */; };
+		FA5000000000000000000002 /* FolderProcessingFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000002 /* FolderProcessingFailure.swift */; };
+		FA5000000000000000000003 /* FolderProcessingRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000003 /* FolderProcessingRecord.swift */; };
+		FA5000000000000000000004 /* CollectionProcessingOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000004 /* CollectionProcessingOperation.swift */; };
+		FA5000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */; };
+		FA5000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000006 /* CollectionProcessingPresentation.swift */; };
+		FA5000000000000000000007 /* CollectionProcessingCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000007 /* CollectionProcessingCounts.swift */; };
+		FA5000000000000000000008 /* CollectionProcessingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000008 /* CollectionProcessingError.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -99,14 +119,23 @@
 		F6000000000000000000000D /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
 		F6000000000000000000000E /* DirectoryObservationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryObservationScheduler.swift; sourceTree = "<group>"; };
 		F70000000000000000000003 /* MoviePosterRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePosterRequest.swift; sourceTree = "<group>"; };
+		FA200000000000000000000A /* CollectionProcessingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingState.swift; sourceTree = "<group>"; };
+		FA200000000000000000000B /* CollectionProcessingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingStore.swift; sourceTree = "<group>"; };
+		FA3000000000000000000001 /* CollectionProcessingContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingContext.swift; sourceTree = "<group>"; };
+		FA3000000000000000000002 /* FolderProcessingFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderProcessingFailure.swift; sourceTree = "<group>"; };
+		FA3000000000000000000003 /* FolderProcessingRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderProcessingRecord.swift; sourceTree = "<group>"; };
+		FA3000000000000000000004 /* CollectionProcessingOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingOperation.swift; sourceTree = "<group>"; };
+		FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingDisplayState.swift; sourceTree = "<group>"; };
+		FA3000000000000000000006 /* CollectionProcessingPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingPresentation.swift; sourceTree = "<group>"; };
+		FA3000000000000000000007 /* CollectionProcessingCounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingCounts.swift; sourceTree = "<group>"; };
+		FA3000000000000000000008 /* CollectionProcessingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingError.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F90000000000000000000010 /* Host configuration inputs */ = {
+		F90000000000000000000010 /* Exceptions for "MovieFolderPosters" folder in "MovieFolderPosters" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Configuration/HostInfo.plist,
-				Configuration/MovieFolderPosters.entitlements,
 			);
 			target = 4EA84238307BE08A005A22E4 /* MovieFolderPosters */;
 		};
@@ -116,7 +145,7 @@
 		4EA8423B307BE08A005A22E4 /* MovieFolderPosters */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				F90000000000000000000010 /* Host configuration inputs */,
+				F90000000000000000000010 /* Exceptions for "MovieFolderPosters" folder in "MovieFolderPosters" target */,
 			);
 			path = MovieFolderPosters;
 			sourceTree = "<group>";
@@ -219,6 +248,17 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		F80000000000000000000002 /* Processing */ = {
+			isa = PBXGroup;
+			children = (
+				FA2000000000000000000001 /* Collections */,
+				F50000000000000000000004 /* ReleaseNameParser.swift */,
+				F50000000000000000000005 /* MovieMatcher.swift */,
+				F50000000000000000000006 /* MovieFolderProcessor.swift */,
+			);
+			path = Processing;
+			sourceTree = "<group>";
+		};
 		F90000000000000000000020 /* Configuration */ = {
 			isa = PBXGroup;
 			children = (
@@ -227,16 +267,6 @@
 				F6000000000000000000000C /* SharedEnvironment.swift */,
 			);
 			path = Configuration;
-			sourceTree = "<group>";
-		};
-		F80000000000000000000002 /* Processing */ = {
-			isa = PBXGroup;
-			children = (
-				F50000000000000000000004 /* ReleaseNameParser.swift */,
-				F50000000000000000000005 /* MovieMatcher.swift */,
-				F50000000000000000000006 /* MovieFolderProcessor.swift */,
-			);
-			path = Processing;
 			sourceTree = "<group>";
 		};
 		F90000000000000000000021 /* FinderIntegration */ = {
@@ -287,6 +317,23 @@
 				F50000000000000000000002 /* TestPoster.png */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		FA2000000000000000000001 /* Collections */ = {
+			isa = PBXGroup;
+			children = (
+				FA200000000000000000000A /* CollectionProcessingState.swift */,
+				FA3000000000000000000001 /* CollectionProcessingContext.swift */,
+				FA3000000000000000000002 /* FolderProcessingFailure.swift */,
+				FA3000000000000000000003 /* FolderProcessingRecord.swift */,
+				FA3000000000000000000004 /* CollectionProcessingOperation.swift */,
+				FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */,
+				FA3000000000000000000006 /* CollectionProcessingPresentation.swift */,
+				FA3000000000000000000007 /* CollectionProcessingCounts.swift */,
+				FA3000000000000000000008 /* CollectionProcessingError.swift */,
+				FA200000000000000000000B /* CollectionProcessingStore.swift */,
+			);
+			path = Collections;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -478,6 +525,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA2000000000000000000016 /* CollectionProcessingStore.swift in Sources */,
+				FA2000000000000000000014 /* CollectionProcessingState.swift in Sources */,
+				FA4000000000000000000001 /* CollectionProcessingContext.swift in Sources */,
+				FA4000000000000000000002 /* FolderProcessingFailure.swift in Sources */,
+				FA4000000000000000000003 /* FolderProcessingRecord.swift in Sources */,
+				FA4000000000000000000004 /* CollectionProcessingOperation.swift in Sources */,
+				FA4000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */,
+				FA4000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */,
+				FA4000000000000000000007 /* CollectionProcessingCounts.swift in Sources */,
+				FA4000000000000000000008 /* CollectionProcessingError.swift in Sources */,
 				F90000000000000000000001 /* ReleaseNameParser.swift in Sources */,
 				F90000000000000000000002 /* MovieMatcher.swift in Sources */,
 				F90000000000000000000003 /* MovieFolderProcessor.swift in Sources */,
@@ -509,6 +566,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA2000000000000000000017 /* CollectionProcessingStore.swift in Sources */,
+				FA2000000000000000000015 /* CollectionProcessingState.swift in Sources */,
+				FA5000000000000000000001 /* CollectionProcessingContext.swift in Sources */,
+				FA5000000000000000000002 /* FolderProcessingFailure.swift in Sources */,
+				FA5000000000000000000003 /* FolderProcessingRecord.swift in Sources */,
+				FA5000000000000000000004 /* CollectionProcessingOperation.swift in Sources */,
+				FA5000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */,
+				FA5000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */,
+				FA5000000000000000000007 /* CollectionProcessingCounts.swift in Sources */,
+				FA5000000000000000000008 /* CollectionProcessingError.swift in Sources */,
 				F70000000000000000000002 /* MoviePosterRequest.swift in Sources */,
 				F6000000000000000000001E /* DirectoryConfiguration.swift in Sources */,
 				F6000000000000000000001F /* ConfigurationRepository.swift in Sources */,

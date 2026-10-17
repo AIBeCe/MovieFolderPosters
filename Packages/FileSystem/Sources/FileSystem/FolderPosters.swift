@@ -10,6 +10,35 @@ public enum PosterAssignmentResult: Sendable {
   case existingIconPreserved
 }
 
+/// Classifies the current relationship between a folder icon and this app's ownership marker.
+public enum PosterOwnershipStatus: Equatable, Sendable {
+  /// The folder has no custom icon.
+  case none
+  /// The current icon digest and ownership marker match this folder identity.
+  case owned
+  /// A custom icon exists, but no valid matching ownership marker proves app ownership.
+  case unowned
+  /// An app ownership marker exists, but its identity or icon digest has changed.
+  case changed
+}
+
+/// A strict, read-only observation of a folder's icon and suppression state.
+public struct PosterInspection: Sendable {
+  /// The classified ownership state for the current icon.
+  public let ownership: PosterOwnershipStatus
+  /// The saved appearance when the current icon is verified as app-owned.
+  public let appearance: PosterAppearance?
+  /// Whether automatic assignment is currently suppressed for this folder identity.
+  public let isSuppressed: Bool
+
+  /// Creates an inspection result.
+  public init(ownership: PosterOwnershipStatus, appearance: PosterAppearance?, isSuppressed: Bool) {
+    self.ownership = ownership
+    self.appearance = appearance
+    self.isSuppressed = isSuppressed
+  }
+}
+
 /// Failures encountered while validating poster data or assigning Finder icons.
 public enum FolderPosterError: Error {
   case invalidChild
@@ -145,6 +174,55 @@ extension FileSystemService {
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
       return isOwnedIcon(at: child, identity: identity)
+    }
+  }
+
+  /// Strictly inspects icon ownership and suppression without changing filesystem state.
+  ///
+  /// - Parameters:
+  ///   - name: The immediate child folder name.
+  ///   - directory: The authorized parent directory.
+  ///   - expectedIdentity: Optional identity that the child must match.
+  /// - Returns: Ownership, verified appearance, and suppression state for the current identity.
+  /// - Throws: ``DirectoryAccessError/identityChanged`` or an I/O error when inspection fails.
+  public func inspectPoster(
+    toChild name: String, in directory: URL, expectedIdentity: String? = nil
+  ) throws -> PosterInspection {
+    try validateDirectory(directory)
+    guard isValidChildName(name) else { throw FolderPosterError.invalidChild }
+    let child = directory.appendingPathComponent(name, isDirectory: true)
+    return try iconAssignmentLock.withLock { _ in
+      let identity = try fileIdentity(at: child)
+      if let expectedIdentity, expectedIdentity != identity {
+        throw DirectoryAccessError.identityChanged
+      }
+      let suppressed = try suppressionExists(at: child, identity: identity)
+      let hasIcon = try hasCustomIcon(at: child)
+      guard try fileIdentity(at: child) == identity else {
+        throw DirectoryAccessError.identityChanged
+      }
+      guard hasIcon else {
+        return PosterInspection(ownership: .none, appearance: nil, isSuppressed: suppressed)
+      }
+      guard let descriptor = try strictIconDescriptor(in: child, identity: identity) else {
+        return PosterInspection(ownership: .unowned, appearance: nil, isSuppressed: suppressed)
+      }
+      defer { _ = close(descriptor) }
+
+      guard let marker = try strictAttribute(ownershipAttribute, from: descriptor),
+        let ownership = try? JSONDecoder().decode(PosterOwnership.self, from: marker)
+      else {
+        return PosterInspection(ownership: .unowned, appearance: nil, isSuppressed: suppressed)
+      }
+      guard ownership.identity == identity else {
+        return PosterInspection(ownership: .changed, appearance: nil, isSuppressed: suppressed)
+      }
+      let digest = try strictIconDigest(descriptor: descriptor)
+      guard ownership.digest == digest else {
+        return PosterInspection(ownership: .changed, appearance: nil, isSuppressed: suppressed)
+      }
+      return PosterInspection(
+        ownership: .owned, appearance: ownership.appearance, isSuppressed: suppressed)
     }
   }
 
@@ -345,6 +423,77 @@ extension FileSystemService {
     return iconFD
   }
 
+  /// Opens a regular bounded Finder icon and confirms its containing folder identity.
+  private func strictIconDescriptor(in folder: URL, identity: String) throws -> Int32? {
+    let folderFD = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard folderFD >= 0 else { throw posterPosixError() }
+    defer { _ = close(folderFD) }
+    var folderInfo = stat()
+    guard fstat(folderFD, &folderInfo) == 0 else { throw posterPosixError() }
+    guard fileIdentity(folderInfo) == identity else { throw DirectoryAccessError.identityChanged }
+
+    let iconFD = iconFileName.withCString {
+      openat(folderFD, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+    }
+    if iconFD < 0 {
+      if errno == ENOENT { return nil }
+      throw posterPosixError()
+    }
+    var iconInfo = stat()
+    guard fstat(iconFD, &iconInfo) == 0 else {
+      let error = posterPosixError()
+      _ = close(iconFD)
+      throw error
+    }
+    guard (iconInfo.st_mode & S_IFMT) == S_IFREG,
+      iconInfo.st_size >= 0, iconInfo.st_size <= maximumIconBytes
+    else {
+      _ = close(iconFD)
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    return iconFD
+  }
+
+  /// Reads a bounded extended attribute, returning nil only when it is absent.
+  private func strictAttribute(_ name: String, from descriptor: Int32) throws -> Data? {
+    let length = fgetxattr(descriptor, name, nil, 0, 0, 0)
+    if length < 0 {
+      if errno == ENOATTR { return nil }
+      throw posterPosixError()
+    }
+    guard length <= maximumIconBytes else { throw CocoaError(.fileReadTooLarge) }
+    var value = Data(count: length)
+    let result = value.withUnsafeMutableBytes { bytes in
+      fgetxattr(descriptor, name, bytes.baseAddress, length, 0, 0)
+    }
+    guard result == length else { throw posterPosixError() }
+    return value
+  }
+
+  /// Hashes icon contents and its resource fork while propagating filesystem read failures.
+  private func strictIconDigest(descriptor: Int32) throws -> String {
+    let resourceFork = try strictAttribute("com.apple.ResourceFork", from: descriptor) ?? Data()
+    var contents = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while true {
+      let count = read(descriptor, &buffer, buffer.count)
+      if count == 0 { break }
+      if count < 0 {
+        if errno == EINTR { continue }
+        throw posterPosixError()
+      }
+      guard contents.count + count <= maximumIconBytes else {
+        throw CocoaError(.fileReadTooLarge)
+      }
+      contents.append(contentsOf: buffer[0..<count])
+    }
+    var material = Data("Icon\r\0".utf8)
+    material.append(contents)
+    material.append(0)
+    material.append(resourceFork)
+    return SHA256.hash(data: material).map { String(format: "%02x", $0) }.joined()
+  }
+
   /// Reads an extended attribute only when its size is within the icon limit.
   private func readAttribute(_ name: String, from descriptor: Int32) -> Data? {
     let length = fgetxattr(descriptor, name, nil, 0, 0, 0)
@@ -463,5 +612,10 @@ extension FileSystemService {
     guard let descriptor = folderDescriptor(folder, identity: identity) else { return }
     defer { _ = close(descriptor) }
     _ = fremovexattr(descriptor, suppressionAttribute, 0)
+  }
+
+  /// Captures the active POSIX failure as a Foundation error.
+  private func posterPosixError() -> NSError {
+    NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
   }
 }

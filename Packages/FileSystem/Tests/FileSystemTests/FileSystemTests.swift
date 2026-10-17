@@ -30,6 +30,59 @@ struct FileSystemTests {
     #expect(candidates[0].hasCustomIcon == false)
   }
 
+  /// Scenario: inventory reports visible directories and excludes files, links, and hidden entries.
+  @Test func inventoryIncludesOnlyVisibleImmediateDirectories() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let movie = root.appendingPathComponent("Movie", isDirectory: true)
+    try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
+    try FileManager.default.createDirectory(
+      at: movie.appendingPathComponent("Nested"), withIntermediateDirectories: false
+    )
+    try Data("file".utf8).write(to: root.appendingPathComponent("movie.mkv"))
+    try FileManager.default.createDirectory(
+      at: root.appendingPathComponent(".Hidden"), withIntermediateDirectories: false
+    )
+    try FileManager.default.createSymbolicLink(
+      at: root.appendingPathComponent("Linked"), withDestinationURL: movie
+    )
+
+    let inventory = try FileSystemService().inventory(in: root)
+    #expect(inventory.isComplete)
+    #expect(inventory.members.map(\.name) == ["Movie"])
+    #expect(inventory.members[0].candidate?.identity.isEmpty == false)
+    #expect(inventory.members[0].issue == nil)
+  }
+
+  /// Scenario: strict poster inspection returns the current unowned state without mutation.
+  @Test func strictPosterInspectionReportsNoIconAndSuppression() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+      at: root.appendingPathComponent("Movie"), withIntermediateDirectories: false
+    )
+
+    let inspection = try FileSystemService().inspectPoster(toChild: "Movie", in: root)
+    #expect(inspection.ownership == .none)
+    #expect(inspection.appearance == nil)
+    #expect(!inspection.isSuppressed)
+  }
+
+  /// Scenario: strict poster inspection rejects a replacement directory identity.
+  @Test func strictPosterInspectionRejectsChangedIdentity() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let movie = root.appendingPathComponent("Movie", isDirectory: true)
+    try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
+    let identity = try FileSystemService().readCurrentState(ofChild: "Movie", in: root).identity
+    try FileManager.default.removeItem(at: movie)
+    try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
+
+    #expect(throws: DirectoryAccessError.self) {
+      try FileSystemService().inspectPoster(toChild: "Movie", in: root, expectedIdentity: identity)
+    }
+  }
+
   /// Scenario: candidate fingerprint ignores directory contents and modification time.
   @Test func candidateFingerprintIgnoresDirectoryContentsAndModificationTime() throws {
     let root = try makeTemporaryDirectory()

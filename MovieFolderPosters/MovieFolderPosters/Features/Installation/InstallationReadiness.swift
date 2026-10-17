@@ -18,7 +18,7 @@ protocol InstallationReadinessServicing: Sendable {
 /// Provides independent evidence sources used by an installation readiness check.
 protocol InstallationReadinessEnvironment: Sendable {
   /// Reads metadata for the host app and embedded Finder extension.
-  nonisolated func inspectInstallation() -> InstallationMetadata
+  nonisolated func readInstallationMetadata() -> InstallationMetadata
   /// Reads Finder's current extension-enabled state when it is available.
   nonisolated func extensionEnabled() async -> Bool?
   /// Reads the latest shared receipt of Finder extension activation.
@@ -32,7 +32,7 @@ protocol InstallationReadinessEnvironment: Sendable {
 /// Reads installation evidence from the running app and shared container.
 nonisolated struct SystemInstallationReadinessEnvironment: InstallationReadinessEnvironment {
   /// Inspects the current host bundle and its embedded Finder extension.
-  func inspectInstallation() -> InstallationMetadata {
+  func readInstallationMetadata() -> InstallationMetadata {
     InstallationReadinessService.inspectMainBundle()
   }
   /// Queries FinderSync for the current extension-enabled state.
@@ -67,7 +67,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   ///
   /// - Returns: A report that labels unknown or stale evidence explicitly.
   func check() async -> InstallationReadinessReport {
-    let installation = environment.inspectInstallation()
+    let installation = environment.readInstallationMetadata()
     let enabled = await environment.extensionEnabled()
     let receipt = environment.readReceipt()
     let storage: SharedStorageEvidence

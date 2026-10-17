@@ -58,7 +58,7 @@ final class MoviePosterActionTests: XCTestCase {
       id: 7, title: "Dune", originalTitle: "Dune",
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
-    let movieID = try await processor.selectMovie(
+    let movieID = try await processor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )
 
@@ -84,7 +84,7 @@ final class MoviePosterActionTests: XCTestCase {
     let selected = MovieMetadata(
       id: 7, title: "Dune", originalTitle: "Dune",
       releaseYear: 2021, posterPath: "/chosen.jpg")
-    _ = try await processor.selectMovie(
+    _ = try await processor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )
 
@@ -110,7 +110,7 @@ final class MoviePosterActionTests: XCTestCase {
     let selected = MovieMetadata(
       id: 7, title: "Dune", originalTitle: "Dune",
       releaseYear: 2021, posterPath: "/chosen.jpg")
-    _ = try await processor.selectMovie(
+    _ = try await processor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )
 
@@ -159,7 +159,7 @@ final class MoviePosterActionTests: XCTestCase {
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
     do {
-      _ = try await processor.selectMovie(
+      _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
       XCTFail("A foreign custom icon must be preserved")
@@ -182,7 +182,7 @@ final class MoviePosterActionTests: XCTestCase {
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
     do {
-      _ = try await processor.selectMovie(
+      _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: "stale"
       )
       XCTFail("A stale folder identity must be rejected")
@@ -269,7 +269,7 @@ final class MoviePosterActionTests: XCTestCase {
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
     do {
-      _ = try await processor.selectMovie(
+      _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
       XCTFail("Corrupt processing state must fail before assigning an icon")
@@ -295,7 +295,7 @@ final class MoviePosterActionTests: XCTestCase {
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
     do {
-      _ = try await processor.selectMovie(
+      _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
       XCTFail("An invalid movie ID must be rejected")
@@ -322,7 +322,7 @@ final class MoviePosterActionTests: XCTestCase {
       id: 7, title: "Dune", originalTitle: "Dune",
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
-    _ = try await processor.selectMovie(
+    _ = try await processor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )
     let next = try await processor.process(root: fixture.movies)
@@ -345,7 +345,7 @@ final class MoviePosterActionTests: XCTestCase {
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
     do {
-      _ = try await processor.selectMovie(
+      _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
       XCTFail("A refused settings gate must stop the icon mutation")

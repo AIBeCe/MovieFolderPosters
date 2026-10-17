@@ -127,6 +127,47 @@ final class MovieFolderProcessorTests: XCTestCase {
     XCTAssertEqual(fixture.assigner.assignmentCount, 0)
   }
 
+  /// Verifies legacy cached failures survive a skipped retry and the next cache write.
+  /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
+  func testLegacyCacheFailureSurvivesSkippedRetry() async throws {
+    let fixture = try Fixture()
+    try fixture.addFolder("Dune (2021)")
+    let fileSystem = FileSystemService()
+    let candidate = try XCTUnwrap(fileSystem.candidates(in: fixture.movies).first { $0.name == "Dune (2021)" })
+    let canonicalPath = fixture.movies.resolvingSymlinksInPath().standardizedFileURL.path
+    let legacyCache = """
+    {"folders":{"Dune (2021)":{"fingerprint":"\(candidate.fingerprint)","status":"transientFailure",\
+    "retryDate":20000,"matchedMovieID":null,"posterPath":null,"latestAttempt":{"code":"timeout",\
+    "stage":"search","occurredAt":9000}},"Removed":{"fingerprint":"gone","status":"unresolved",\
+    "retryDate":null,"matchedMovieID":null,"posterPath":null}},"queries":{},"rootBackoffUntil":null}
+    """
+    let cacheKey = "movie-folder-processing:\(canonicalPath)"
+    do {
+      let lease = try XCTUnwrap(try fixture.persistence.acquireLease(for: cacheKey))
+      try lease.write(Data(legacyCache.utf8))
+    }
+
+    let provider = CountingProvider()
+    let processor = try fixture.processor(
+      provider: provider,
+      clock: { Date(timeIntervalSince1970: 10_000) }
+    )
+    let summary = try await processor.process(root: fixture.movies)
+
+    XCTAssertEqual(summary.skippedRetryWindow, 1)
+    let searchCount = await provider.searchCount
+    XCTAssertEqual(searchCount, 0)
+    let lease = try XCTUnwrap(try fixture.persistence.acquireLease(for: cacheKey))
+    let savedData = try XCTUnwrap(try lease.read())
+    let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
+    let folders = try XCTUnwrap(saved["folders"] as? [String: [String: Any]])
+    let dune = try XCTUnwrap(folders["Dune (2021)"])
+    let failure = try XCTUnwrap(dune["latestAttempt"] as? [String: Any])
+    XCTAssertEqual(failure["code"] as? String, "timeout")
+    XCTAssertEqual(failure["stage"] as? String, "search")
+    XCTAssertNil(dune["lastFailure"])
+  }
+
   /// Verifies enumeration Skips Hidden Folders Symlinks And Nested Folders.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func testEnumerationSkipsHiddenFoldersSymlinksAndNestedFolders() async throws {
@@ -560,7 +601,7 @@ final class MovieFolderProcessorTests: XCTestCase {
     let selected = MovieMetadata(
       id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/selected.jpg")
-    _ = try await rawProcessor.selectMovie(
+    _ = try await rawProcessor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)",
       expectedIdentity: identity)
     let styledProcessor = try fixture.processor(
@@ -607,7 +648,7 @@ final class MovieFolderProcessorTests: XCTestCase {
     let selected = MovieMetadata(
       id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/selected.jpg")
-    _ = try await rawProcessor.selectMovie(
+    _ = try await rawProcessor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)",
       expectedIdentity: identity)
     let removed = try await rawProcessor.removePoster(

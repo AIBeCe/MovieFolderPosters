@@ -29,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let service = try DirectoryConfigurationService(
         repository: SharedEnvironment.repository(),
         authorizations: SharedEnvironment.privateAuthorizations())
+      let processingStore = try SharedEnvironment.makeCollectionProcessingStore()
+      let summaryService = try CollectionSummaryService.shared()
+      Task.detached {
+        _ = try? processingStore.pruneToConfiguredRoots()
+      }
       #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
           Task { try? await service.setDevelopmentFixtures(true) }
@@ -36,7 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           Task { try? await service.setDevelopmentFixtures(false) }
         }
       #endif
-      coordinator = ConfigurationCoordinator(service: service)
+      coordinator = ConfigurationCoordinator(
+        service: service, summaryService: summaryService,
+        processingStore: processingStore)
       coordinator?.start()
     } catch {
       let alert = NSAlert()
@@ -50,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "The app could not open its settings. Quit and reopen it using a signed build."
       alert.runModal()
     }
+  }
+
+  /// Refreshes committed outcome projections when the host returns to the foreground.
+  func applicationDidBecomeActive(_ notification: Notification) {
+    coordinator?.applicationDidBecomeActive()
   }
 
   /// Opens a poster action for each valid action URL passed to the app.

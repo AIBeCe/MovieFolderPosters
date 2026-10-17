@@ -123,6 +123,11 @@ Completion satisfies this deliverable's documented-matrix criterion; it does not
 
 GitHub issue: [#2](https://github.com/AIBeCe/MovieFolderPosters/issues/2); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
+Implementation is complete, independently reviewed, and verified for a local commit on
+`feature/processing-outcomes`. The local commit was authorized on 2026-10-18; integration and issue closure remain deferred. See
+[Processing results](COLLECTION_PROCESSING.md) for the design, verification, and remaining native qualification.
+The state enum is named `FolderProcessingState`; the deliverable remains open pending user review/integration.
+
 - [ ] Scope: Define operation IDs, folder outcomes, collection snapshot revisions, and retention before connecting Main. Keep outcome records separate from activity events. Show actual Done, Not found, Several matches, and Total with reasons, verified identity, icon ownership, retry eligibility, and last completed run. Preserve unknown, partial, interrupted, and stale states.
 - Dependencies: R100-01; inspect existing ProcessingSummary and Persistence APIs.
 - Acceptance: Tests pin mutually exclusive folder outcomes, snapshot consistency across processes, interruption and stale revisions. Total is the count of visible immediate child directories in the inspected snapshot, excluding files, hidden entries, and symlinks; ignored/preserved/failed entries remain explainable in details. The three headline outcome counts need not sum to Total. Unavailable summaries never become fabricated zeros.

@@ -137,7 +137,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
 
       return try await processor.refreshPoster(
         root: context.root, child: request.childName,
-        expectedIdentity: request.identity)
+        expectedIdentity: request.identity, processingContext: processingContext(for: context))
     }
   }
 
@@ -162,9 +162,9 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       let processor = try makeProcessor(for: context, provider: provider)
       try ensureConfigurationIsCurrent(context)
 
-      return try await processor.selectMovie(
+      return try await processor.applyMoviePoster(
         movie, root: context.root, child: request.childName,
-        expectedIdentity: request.identity)
+        expectedIdentity: request.identity, processingContext: processingContext(for: context))
     }
   }
 
@@ -181,7 +181,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
 
       return try await processor.removePoster(
         root: context.root, child: request.childName,
-        expectedIdentity: request.identity)
+        expectedIdentity: request.identity, processingContext: processingContext(for: context))
     }
   }
 
@@ -285,7 +285,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
 
   /// Creates a TMDb provider, honoring opt-in development fixtures in Debug builds.
   ///
-  /// - Parameter configuration: The configuration snapshot that controls fixture use.
+  /// - Parameter configuration: The configuration processing state that controls fixture use.
   /// - Returns: A provider configured with the saved credential.
   /// - Throws: A credential or fixture error when no usable provider can be created.
   private func makeProvider(for configuration: DirectoryConfiguration) throws
@@ -311,10 +311,20 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     return TMDbClient(token: accessToken)
   }
 
+  /// Captures the already authorized collection generation for authoritative action results.
+  private func processingContext(for context: AuthorizedRoot) -> CollectionProcessingContext {
+    CollectionProcessingContext(
+      rootID: context.directory.id, rootIdentity: context.rootIdentity,
+      authorizationVersion: context.directory.authorizationVersion,
+      credentialRevision: context.configuration.credentialRevision,
+      developmentFixtures: context.configuration.developmentFixtures,
+      appearance: context.configuration.posterAppearance)
+  }
+
   /// Creates a processor bound to the request's persistence and mutation context.
   ///
   /// - Parameters:
-  ///   - context: The validated root and configuration snapshot.
+  ///   - context: The validated root and configuration processing state.
   ///   - provider: The metadata provider used for this operation.
   /// - Returns: A processor configured for the current poster appearance.
   /// - Throws: A storage or configuration error when processor dependencies are unavailable.
@@ -338,7 +348,8 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       cacheDirectory: container.appendingPathComponent("Posters"),
       coordinationStore: try PersistenceStore(directory: coordinationDirectory),
       mutationGuard: mutationGuard,
-      appearance: context.configuration.posterAppearance)
+      appearance: context.configuration.posterAppearance,
+      processingStore: try SharedEnvironment.makeCollectionProcessingStore())
 
   }
 }
@@ -349,7 +360,7 @@ nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
   let repository: ConfigurationRepository
   /// The monitored directory being mutated.
   let directory: MonitoredDirectory
-  /// The configuration snapshot that authorized the operation.
+  /// The configuration processing state that authorized the operation.
   let configuration: DirectoryConfiguration
   /// The authorized directory URL used for identity validation.
   let root: URL
@@ -377,13 +388,13 @@ nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
 
 /// Retains validated folder authorization and identity for one poster operation.
 private struct AuthorizedRoot: Sendable {
-  /// The configuration snapshot under which access was authorized.
+  /// The configuration processing state under which access was authorized.
   let configuration: DirectoryConfiguration
   /// The configured collection corresponding to the request.
   let directory: MonitoredDirectory
   /// The currently authorized collection URL.
   let root: URL
-  /// The validated child folder snapshot.
+  /// The validated child folder processing state.
   let child: FolderCandidate
   /// Cross-process lease protecting the stored folder authorization.
   let authorizationLease: PersistenceLease

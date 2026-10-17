@@ -9,6 +9,10 @@ for source in Configuration/DirectoryConfiguration Configuration/ConfigurationRe
     rtk proxy cp "$configuration_repository/MovieFolderPosters/Shared/$source.swift" \
         "$configuration_harness/Sources/MovieFolderPosters/"
 done
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Features/Collections/CollectionSummaryService.swift" \
+    "$configuration_harness/Sources/MovieFolderPosters/"
+rtk proxy cp -R "$configuration_repository/MovieFolderPosters/Shared/Processing/Collections" \
+    "$configuration_harness/Sources/MovieFolderPosters/Collections"
 rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/Configuration/DirectoryConfigurationTests.swift" \
     "$configuration_harness/Tests/MovieFolderPostersTests/"
 rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPostersTests/Shared/FinderIntegration/DirectoryObservationSchedulerTests.swift" \

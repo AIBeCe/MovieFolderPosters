@@ -7,6 +7,9 @@ nonisolated enum SharedEnvironment {
   static let groupIdentifier = "group.dag.fikios.MovieFolderPosters"
   /// The distributed notification announcing committed settings changes.
   static let configurationChanged = Notification.Name("dag.fikios.MovieFolderPosters.ConfigurationChanged")
+  /// The distributed notification announcing committed processing outcome changes.
+  static let collectionProcessingChanged = Notification.Name(
+    "dag.fikios.MovieFolderPosters.CollectionOutcomesChanged")
 
   /// Resolves the signed process's shared App Group container.
   /// - Returns: The resolved storage URL.
@@ -28,6 +31,17 @@ nonisolated enum SharedEnvironment {
     try ConfigurationRepository(store: PersistenceStore(directory: container().appendingPathComponent("Settings")))
   }
 
+  /// Opens the versioned collection processing state repository in its dedicated App Group namespace.
+  static func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
+    let sharedContainer = try container()
+    return CollectionProcessingStore(
+      store: try PersistenceStore(
+        directory: sharedContainer.appendingPathComponent("Outcomes"),
+        maximumRecordBytes: 8 * 1024 * 1024),
+      configuration: try repository(),
+      notifier: SharedCollectionProcessingChangeNotifier())
+  }
+
   /// Opens this process's private security-scoped authorization store.
   /// - Returns: The private bookmark store belonging to this signed process.
   /// - Throws: An unavailable App Group container or a failure creating the required persistence directory.
@@ -45,4 +59,17 @@ nonisolated enum SharedEnvironment {
       configurationChanged, object: nil,
       userInfo: nil, deliverImmediately: true)
   }
+
+  /// Announces committed outcome writes so host summary views can reload persisted snapshots.
+  static func notifyCollectionProcessingChanged() {
+    DistributedNotificationCenter.default().postNotificationName(
+      collectionProcessingChanged, object: nil,
+      userInfo: nil, deliverImmediately: true)
+  }
+}
+
+/// Sends committed outcome invalidations to host processes without carrying result data.
+nonisolated struct SharedCollectionProcessingChangeNotifier: CollectionProcessingChangeNotifying {
+  /// Posts a change hint after the repository has released its persistence leases.
+  func collectionProcessingDidChange() { SharedEnvironment.notifyCollectionProcessingChanged() }
 }

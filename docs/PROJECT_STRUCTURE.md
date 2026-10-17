@@ -85,6 +85,12 @@ Later native evidence is recorded in [Native qualification](NATIVE_READINESS_QUA
 
 ## Protocol-based communication
 
+R100-02 adds shared application models/repository in `Shared/Processing/Collections`, with explicit host and Finder
+source membership and mirrored test ownership. Host-only summary reading, presentation, and read-only details
+remain in `Features/Collections`. FileSystem owns read-only inventory and icon assessment; Persistence owns
+generic bounded record access and pruning. The test-only child-process probe is under `scripts/test-support`
+and never enters a synchronized application/test target. See [Processing results](COLLECTION_PROCESSING.md).
+
 Existing object callbacks use focused delegate protocols. UI delegates are weak and main-actor isolated;
 configuration presentation supports multiple weak subscribers. Required service collaborators and mutation guards
 remain strongly owned. See [Delegate refactor](DELEGATE_REFACTOR.md) for scope and verification.

@@ -25,6 +25,9 @@ Assigned icons must persist independently of the application and extension.
 
 ## Development approach
 
+R100-02 implementation is approved on `feature/processing-outcomes`, with a local commit authorized on 2026-10-18. The current scope and
+verification ledger live in [Processing results](COLLECTION_PROCESSING.md). This does not authorize R100-03.
+
 - Follow AGENTS.md.
 - Use SOLID principles as much as possible.
 - Start with the smallest useful behavior and add complexity only when needed.

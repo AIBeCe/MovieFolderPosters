@@ -21,6 +21,50 @@ public struct FolderCandidate: Equatable, Sendable {
   }
 }
 
+/// Explains why a known directory could not produce a complete candidate snapshot.
+public enum DirectoryInventoryIssue: Equatable, Sendable {
+  /// The directory's current identity could not be confirmed after classification.
+  case identityInspectionFailed
+  /// The directory's Finder icon state could not be read.
+  case iconInspectionFailed
+}
+
+/// One visible immediate directory and any successfully inspected candidate state.
+public struct DirectoryInventoryEntry: Equatable, Sendable {
+  /// The direct child's filesystem name.
+  public let name: String
+  /// The identity captured while confirming that the child is a real directory.
+  public let identity: String?
+  /// Complete identity and icon state, when both were inspected successfully.
+  public let candidate: FolderCandidate?
+  /// The inspection failure for a known directory, if any.
+  public let issue: DirectoryInventoryIssue?
+
+  /// Creates one inventory entry.
+  public init(
+    name: String, identity: String?, candidate: FolderCandidate?, issue: DirectoryInventoryIssue?
+  ) {
+    self.name = name
+    self.identity = identity
+    self.candidate = candidate
+    self.issue = issue
+  }
+}
+
+/// A caller-owned snapshot of visible immediate directory membership.
+public struct DirectoryInventory: Equatable, Sendable {
+  /// Known visible immediate directories, sorted by localized standard name order.
+  public let members: [DirectoryInventoryEntry]
+  /// Whether every visible immediate entry could be classified safely.
+  public let isComplete: Bool
+
+  /// Creates an inventory snapshot.
+  public init(members: [DirectoryInventoryEntry], isComplete: Bool) {
+    self.members = members
+    self.isComplete = isComplete
+  }
+}
+
 /// Failures raised while validating or accessing an authorized directory.
 public enum DirectoryAccessError: Error {
   case invalidDirectory
@@ -126,6 +170,50 @@ public struct FileSystemService: Sendable {
         fingerprint: "\(identity):\(child.lastPathComponent)",
         hasCustomIcon: try hasCustomIcon(at: child))
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+  }
+
+  /// Inventories known visible immediate directories without descending into their contents.
+  ///
+  /// - Parameter directory: The authorized parent directory.
+  /// - Returns: Known directory members and whether all visible entries were classified.
+  /// - Throws: ``DirectoryAccessError`` or a filesystem error if the parent cannot be listed.
+  public func inventory(in directory: URL) throws -> DirectoryInventory {
+    try validateDirectory(directory)
+    let children = try FileManager.default.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+    )
+    var members = [DirectoryInventoryEntry]()
+    var isComplete = true
+
+    for child in children {
+      var info = stat()
+      guard lstat(child.path, &info) == 0 else {
+        isComplete = false
+        continue
+      }
+      guard (info.st_mode & S_IFMT) == S_IFDIR else { continue }
+
+      let name = child.lastPathComponent
+      let identity =
+        "\(info.st_dev):\(info.st_ino):\(info.st_birthtimespec.tv_sec):\(info.st_birthtimespec.tv_nsec)"
+      guard (try? fileIdentity(at: child)) == identity else {
+        members.append(.init(
+          name: name, identity: identity, candidate: nil, issue: .identityInspectionFailed))
+        continue
+      }
+      do {
+        let hasCustomIcon = try self.hasCustomIcon(at: child)
+        let candidate = FolderCandidate(
+          name: name, identity: identity, fingerprint: "\(identity):\(name)",
+          hasCustomIcon: hasCustomIcon)
+        members.append(.init(name: name, identity: identity, candidate: candidate, issue: nil))
+      } catch {
+        members.append(.init(name: name, identity: identity, candidate: nil, issue: .iconInspectionFailed))
+      }
+    }
+
+    members.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    return DirectoryInventory(members: members, isComplete: isComplete)
   }
 
   /// Reads the current identity and icon state for one named child.

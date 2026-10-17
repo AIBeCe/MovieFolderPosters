@@ -163,3 +163,97 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   try lease.write(Data("replacement".utf8))
   #expect(try lease.read() == Data("replacement".utf8))
 }
+
+/// Scenario: encoded envelope limits reject oversized reads and writes before replacement.
+@Test func recordSizeLimitBoundsReadsAndWrites() throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try PersistenceStore(directory: directory, maximumRecordBytes: 128)
+  let lease = try #require(try store.acquireLease(for: "bounded"))
+  #expect(throws: (any Error).self) { try lease.write(Data(repeating: 1, count: 128)) }
+  let record = recordURL(directory, "bounded")
+  try Data(repeating: 32, count: 129).write(to: record)
+  #expect(throws: (any Error).self) { try lease.read() }
+}
+
+/// Scenario: the legacy default remains unlimited while callers can opt into an envelope bound.
+@Test func defaultStorePreservesUnlimitedRecordBehavior() throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try PersistenceStore(directory: directory)
+  let lease = try #require(try store.acquireLease(for: "large-default"))
+  let payload = Data(repeating: 7, count: 8 * 1024 * 1024 + 1)
+
+  try lease.write(payload)
+  #expect(try lease.read() == payload)
+}
+
+/// Scenario: slash-heavy base64 stays within the exact encoded envelope preflight estimate.
+@Test func boundedStoreAcceptsNearLimitSlashHeavyPayload() throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try PersistenceStore(directory: directory, maximumRecordBytes: 1_024)
+  let lease = try #require(try store.acquireLease(for: "slash-heavy"))
+  let payload = Data(repeating: 0xff, count: 675)
+
+  try lease.write(payload)
+  #expect(try lease.read() == payload)
+}
+
+/// Scenario: pruning removes recognized unlocked records while preserving locks and unknown entries.
+@Test func pruneRemovesRecordsPreservesLocksAndDefersBusyKeys() throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try PersistenceStore(directory: directory)
+  let retainedKey = "retained"
+  let staleKey = "stale"
+  let busyKey = "busy"
+  let retained = try #require(try store.acquireLease(for: retainedKey))
+  let busy = try #require(try store.acquireLease(for: busyKey))
+  try retained.write(Data("keep".utf8))
+  do {
+    let stale = try #require(try store.acquireLease(for: staleKey))
+    try stale.write(Data("remove".utf8))
+  }
+  try busy.write(Data("later".utf8))
+  let unknown = directory.appendingPathComponent("notes.txt")
+  try Data("leave".utf8).write(to: unknown)
+  let outside = directory.appendingPathComponent("outside")
+  try Data("target".utf8).write(to: outside)
+  let unknownLink = directory.appendingPathComponent("unknown-link.json")
+  try FileManager.default.createSymbolicLink(at: unknownLink, withDestinationURL: outside)
+  let symlinkRecord = directory.appendingPathComponent(
+    SHA256.hash(data: Data("linked-record".utf8)).map { String(format: "%02x", $0) }.joined()
+      + ".json")
+  try FileManager.default.createSymbolicLink(at: symlinkRecord, withDestinationURL: outside)
+
+  let deferred = try store.pruneRecords(keepingKeys: [retainedKey])
+  #expect(deferred == [SHA256.hash(data: Data(busyKey.utf8)).map { String(format: "%02x", $0) }.joined()])
+  #expect(try retained.read() == Data("keep".utf8))
+  #expect(!FileManager.default.fileExists(atPath: recordURL(directory, staleKey).path))
+  #expect(FileManager.default.fileExists(atPath: recordURL(directory, busyKey).path))
+  #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(
+    SHA256.hash(data: Data(staleKey.utf8)).map { String(format: "%02x", $0) }.joined() + ".lock"
+  ).path))
+  #expect(try Data(contentsOf: unknown) == Data("leave".utf8))
+  #expect(FileManager.default.fileExists(atPath: unknownLink.path))
+  #expect(FileManager.default.fileExists(atPath: symlinkRecord.path))
+  #expect(try Data(contentsOf: outside) == Data("target".utf8))
+  #expect(try store.pruneRecords(keepingKeys: [retainedKey]) == deferred)
+}
+
+/// Scenario: a held lease can explicitly remove corrupt regular record data without removing its lock.
+@Test func leaseRemovesCorruptRegularRecordAndKeepsLock() throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try PersistenceStore(directory: directory)
+  let key = "corrupt"
+  let lease = try #require(try store.acquireLease(for: key))
+  try Data("broken".utf8).write(to: recordURL(directory, key))
+
+  try lease.removeRecord()
+  #expect(try lease.read() == nil)
+  #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(
+    SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".lock"
+  ).path))
+}

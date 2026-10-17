@@ -16,6 +16,10 @@ if [[ -f "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Featur
 fi
 rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Features/Collections/ConfigurationViewController.swift" \
     "$configuration_harness/Sources/MovieFolderPosters/ConfigurationViewController.swift"
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Features/Collections/CollectionSummaryService.swift" \
+    "$configuration_harness/Sources/MovieFolderPosters/CollectionSummaryService.swift"
+rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Features/Collections/CollectionProcessingDetailsViewController.swift" \
+    "$configuration_harness/Sources/MovieFolderPosters/CollectionProcessingDetailsViewController.swift"
 rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Application/ConfigurationCoordinator.swift" \
     "$configuration_harness/Sources/MovieFolderPosters/ConfigurationCoordinator.swift"
 for source in Features/Settings/SettingsViewController Features/Settings/AppAppearanceSettings Features/Log/LogViewController UI/Controls/PreviewChoiceButton Features/Installation/InstallationReadiness; do
@@ -28,6 +32,8 @@ for source in Configuration/ConfigurationRepository Configuration/SharedEnvironm
     rtk proxy cp "$configuration_repository/MovieFolderPosters/Shared/$source.swift" \
         "$configuration_harness/Sources/MovieFolderPosters/"
 done
+rtk proxy cp -R "$configuration_repository/MovieFolderPosters/Shared/Processing/Collections" \
+    "$configuration_harness/Sources/MovieFolderPosters/Collections"
 rtk proxy ln -s "$configuration_repository/Packages/Persistence" "$configuration_harness/Persistence"
 rtk proxy mkdir -p "$configuration_harness/Sources/MovieFolderPosters/Resources"
 rtk proxy cp "$configuration_repository/MovieFolderPosters/MovieFolderPosters/Resources/PreviewPoster.png" \
@@ -46,10 +52,11 @@ let package = Package(
     targets: [
         .target(name: "MovieFolderPosters", dependencies: [.product(name: "FileSystem", package: "FileSystem"),
                 .product(name: "Persistence", package: "Persistence")],
-                resources: [.process("Resources")]),
+                resources: [.process("Resources")],
+                swiftSettings: [.enableUpcomingFeature("NonisolatedNonsendingByDefault")]),
         .testTarget(name: "MovieFolderPostersTests", dependencies: [
             "MovieFolderPosters", .product(name: "FileSystem", package: "FileSystem")
-        ])
+        ], swiftSettings: [.enableUpcomingFeature("NonisolatedNonsendingByDefault")])
     ],
     swiftLanguageModes: [.v6]
 )
