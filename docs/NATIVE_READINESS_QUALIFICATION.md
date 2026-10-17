@@ -1,5 +1,8 @@
 # Native installation and access checks — R100-01
 
+Publication update — 2026-10-18: the completed work was included in the push of `develop` through `b48d44d`.
+Earlier no-push statements below describe the verification date. Native qualification limits remain unchanged.
+
 Date: 2026-10-17, Europe/Stockholm. Issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1).
 The implementation and style baseline is commit `ee59871`. These checks supplement the automated evidence in
 [Installation readiness](INSTALLATION_READINESS.md). Feature completion was approved and executed on 2026-10-17: local `develop` was fast-forwarded to `55ba0a6`,

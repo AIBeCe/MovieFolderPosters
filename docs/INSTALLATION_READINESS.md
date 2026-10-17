@@ -1,5 +1,8 @@
 # Installation and access readiness — R100-01
 
+Publication update — 2026-10-18: the completed work was included in the push of `develop` through `b48d44d`.
+Earlier no-push statements below describe the verification date. Native qualification limits remain unchanged.
+
 Issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1).
 Implementation authorized as a whole on 2026-10-16. **Completed on 2026-10-17:** issue #1 is closed; the verified
 feature was fast-forwarded into local `develop` at `55ba0a6`, and `feature/installation-readiness` was deleted.

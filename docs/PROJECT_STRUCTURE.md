@@ -80,7 +80,7 @@ production Swift code, resource contents, credentials, or signing entitlements c
 Build/test results establish relocation integration, not new Finder runtime or native qualification evidence.
 Existing R100-01 native limitations in [Installation readiness](INSTALLATION_READINESS.md) remain in effect.
 The reorganization was committed in `c2cec93`. The complete readiness feature was subsequently fast-forwarded into
-local `develop` at `55ba0a6` on 2026-10-17; issue #1 is closed and its feature branch was deleted. No push was performed.
+local `develop` at `55ba0a6` on 2026-10-17; issue #1 is closed and its feature branch was deleted. The integration was included in the 2026-10-18 push of `develop`.
 Later native evidence is recorded in [Native qualification](NATIVE_READINESS_QUALIFICATION.md).
 
 ## Protocol-based communication

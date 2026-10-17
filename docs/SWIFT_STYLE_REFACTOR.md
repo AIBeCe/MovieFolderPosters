@@ -1,5 +1,8 @@
 # Swift style refactor
 
+Publication update — 2026-10-18: the completed work was included in the push of `develop` through `b48d44d`.
+Earlier no-push statements below describe the verification date. Native qualification limits remain unchanged.
+
 Apply the global `swift-style-guide` to the existing host, Finder extension, shared Swift code, local service packages,
 and their tests. The user authorized implementation and necessary API naming improvements, with no commit until approval.
 

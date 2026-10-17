@@ -1,10 +1,11 @@
 # GitHub Roadmap Tracking
 
-Updated: 2026-10-17. Tracking was initially created and verified on 2026-10-16.
-Status: R100-01 is completed and issue #1 is closed. Tracking does not authorize another implementation point.
-R100-02 is implemented, reviewed, committed as `049b74b`, and integrated locally into `develop`; issue #2 is closed as completed.
-See [Processing results](COLLECTION_PROCESSING.md) for verification and native qualification limits. The user
-authorized the local commit on 2026-10-18. Local integration follows repository GitFlow; GitHub issue closure was completed on 2026-10-18; commits remain local.
+Updated: 2026-10-18. Tracking was initially created and verified on 2026-10-16.
+Status: R100-01 and R100-02 are completed; issues #1 and #2 are closed as completed.
+R100-02 implementation commit: `049b74b`. Both features are integrated into `develop`; their feature branches
+were deleted. `develop` was pushed to GitHub through `b48d44d` on 2026-10-18. No release was published.
+See [Processing results](COLLECTION_PROCESSING.md) for verification and native qualification limits.
+The next planned deliverable is R100-03; its implementation requires a separate approved proposal.
 Repository: [AIBeCe/MovieFolderPosters](https://github.com/AIBeCe/MovieFolderPosters).
 Tracker: repository Issues. No separate Projects board is used.
 
@@ -24,7 +25,7 @@ ideas share their owning issue rather than duplicating implementation tasks.
 
 Issue #1 was closed as completed after the user approved feature completion. Final verification passed 236 tests;
 independent reviews, signed builds, and controlled native checks passed. Local `develop` was fast-forwarded to
-`55ba0a6`, and `feature/installation-readiness` was deleted. The integration has not been pushed.
+`55ba0a6`, and `feature/installation-readiness` was deleted. The integration was included in the 2026-10-18 push of `develop`.
 See [Native qualification](NATIVE_READINESS_QUALIFICATION.md) for evidence and unperformed release checks.
 
 ## Milestones
@@ -51,7 +52,7 @@ release/decision criteria; a supporting issue is not automatically an applicatio
 | Code | Issue | Milestone | Kind |
 | --- | --- | --- | --- |
 | R100-01 | [#1 — Verify installation, access, and platform readiness](https://github.com/AIBeCe/MovieFolderPosters/issues/1) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed 2026-10-17 |
-| R100-02 | [#2 — Persist authoritative processing outcomes and collection summaries](https://github.com/AIBeCe/MovieFolderPosters/issues/2) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
+| R100-02 | [#2 — Persist authoritative processing outcomes and collection summaries](https://github.com/AIBeCe/MovieFolderPosters/issues/2) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed; issue closed |
 | R100-03 | [#3 — Connect bounded Finder and host activity to Log](https://github.com/AIBeCe/MovieFolderPosters/issues/3) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-04 | [#4 — Make network failure and interruption recovery predictable](https://github.com/AIBeCe/MovieFolderPosters/issues/4) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-05 | [#5 — Resolve and retry specific failed folders](https://github.com/AIBeCe/MovieFolderPosters/issues/5) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |

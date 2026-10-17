@@ -58,8 +58,8 @@ serial/cross-process coordination, services, basic directory/Keychain configurat
 commands exist. Extend and verify them instead of rewriting them as new systems.
 
 The accepted native UI provides collection columns, separate Settings/Log, poster choices, and System/Light/Dark.
-However, the configuration service does not populate collection counts, and Log currently stores only bounded
-host-session events in memory. These gaps make R100-02 and R100-03 real implementation work, not cosmetic work.
+R100-02 now populates collection counts and read-only details from authoritative persisted processing state.
+Log still stores bounded host-session events in memory; connecting Finder and host activity remains R100-03.
 
 The UI feature recorded 17 focused tests, signed build/launch, and independent review. This is historical evidence,
 not proof of a production release. Prior phase documents have different verification dates and limitations;
@@ -107,7 +107,7 @@ Complete and verify the existing core before adding new workflows. Counts and Fi
 GitHub issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 Status: **Completed — 2026-10-17.** Issue #1 is closed. The verified feature was fast-forwarded into local `develop`
-at `55ba0a6`; its feature branch was deleted. No push or release was performed.
+at `55ba0a6`; its feature branch was deleted. The integration was included in the 2026-10-18 push of `develop`; no release was published.
 Implementation evidence: [Installation readiness](INSTALLATION_READINESS.md).
 Controlled native evidence and explicit release-qualification limits: [Native qualification](NATIVE_READINESS_QUALIFICATION.md).
 Completion satisfies this deliverable's documented-matrix criterion; it does not qualify every filesystem or authorize a release.
@@ -124,7 +124,7 @@ Completion satisfies this deliverable's documented-matrix criterion; it does not
 GitHub issue: [#2](https://github.com/AIBeCe/MovieFolderPosters/issues/2); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 Implementation is complete, independently reviewed, verified, committed as `049b74b`, and integrated locally
-into `develop` using a fast-forward merge. GitHub issue #2 is closed as completed; commits remain local. See
+into `develop` using a fast-forward merge. GitHub issue #2 is closed as completed; `develop` was pushed through `b48d44d` on 2026-10-18. See
 [Processing results](COLLECTION_PROCESSING.md) for the design, verification, and remaining native qualification.
 The state enum is named `FolderProcessingState`; the GitHub deliverable is closed as completed; the merged feature branch is retired.
 
@@ -842,9 +842,15 @@ References checked 2026-10-16. Revalidate time-sensitive provider/platform requi
 
 ## Current handoff
 
-R100-01 was completed and issue #1 closed on 2026-10-17. Integration is local in `develop` at `55ba0a6`; publication
-has not been performed. Its installation/access matrix and native qualification limits are linked above.
+R100-01 and R100-02 are complete; GitHub issues #1 and #2 are closed as completed. Both were fast-forward
+integrated into `develop`, and their feature branches were deleted. `develop` was pushed to GitHub through
+`b48d44d` on 2026-10-18. No release was published.
 
-The next planned deliverable is R100-02: persist authoritative processing outcomes and collection summaries.
-Start with a focused proposal grounded in the current implementation and acceptance criteria, then wait for approval.
-Completing R100-01 does not authorize R100-02, the rest of version 1.0.0, or release publication.
+R100-02 implementation is `049b74b`; [Processing results](COLLECTION_PROCESSING.md) records the approved
+scope, independent review, tests, builds, compatibility evidence, and unperformed native qualification.
+The subsequent extension-registration cleanup retained the active Xcode Debug copy and removed obsolete
+build copies; PluginKit and LaunchServices were verified to contain one current app/extension pair.
+
+The next planned deliverable is R100-03: connect bounded Finder and host activity to Log. Inspect its existing
+implementation and acceptance criteria, present a focused code/test proposal, and wait for approval.
+Completing R100-02 does not authorize R100-03, the rest of version 1.0.0, or release publication.

@@ -12,7 +12,7 @@ Status: Approved. Implementation requires separate approval for each point.
 
 R100-01 is complete. [Issue #1](https://github.com/AIBeCe/MovieFolderPosters/issues/1) was closed as completed on
 2026-10-17 after user approval, independent review, and 236 passing tests on merged `develop`. The feature was
-fast-forwarded into local `develop` at `55ba0a6`, and `feature/installation-readiness` was deleted. No push was performed.
+fast-forwarded into local `develop` at `55ba0a6`, and `feature/installation-readiness` was deleted. The integration was included in the 2026-10-18 push of `develop`.
 See [Installation readiness](INSTALLATION_READINESS.md) and [Native qualification](NATIVE_READINESS_QUALIFICATION.md)
 for implementation evidence and the remaining release-qualification limits. These results do not authorize the next
 deliverable or establish production release readiness.
@@ -25,8 +25,9 @@ Assigned icons must persist independently of the application and extension.
 
 ## Development approach
 
-R100-02 is implemented, reviewed, verified, committed as `049b74b`, and integrated locally into `develop`. The current scope and
-verification ledger live in [Processing results](COLLECTION_PROCESSING.md). This does not authorize R100-03.
+R100-02 is implemented, reviewed, verified, committed as `049b74b`, integrated into `develop`, and pushed to
+GitHub on 2026-10-18. Issue #2 is closed and the feature branch is deleted. The current scope and verification
+ledger live in [Processing results](COLLECTION_PROCESSING.md). This does not authorize R100-03.
 
 - Follow AGENTS.md.
 - Use SOLID principles as much as possible.

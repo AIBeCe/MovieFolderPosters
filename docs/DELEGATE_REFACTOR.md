@@ -1,5 +1,8 @@
 # Protocol-based communication
 
+Publication update — 2026-10-18: the completed work was included in the push of `develop` through `b48d44d`.
+Earlier no-push statements below describe the verification date. Native qualification limits remain unchanged.
+
 The user approved refactoring existing callbacks to delegates on 2026-10-17.
 Keep feature folders, MVVM-C, Swift 6 isolation, and existing behavior.
 
