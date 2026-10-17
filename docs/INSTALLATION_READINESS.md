@@ -1,7 +1,7 @@
 # Installation and access readiness — R100-01
 
 Issue: [#1](https://github.com/AIBeCe/MovieFolderPosters/issues/1).
-Implementation authorized as a whole on 2026-10-16. Status: implemented, automatically verified, and independently reviewed PASS; approved for commit; native qualification remains incomplete. Native qualification is separate from automated evidence. The GitHub issue remains open.
+Implementation authorized as a whole on 2026-10-16. Status: implemented, automatically verified, independently reviewed PASS, and committed. Controlled native UI, mounted-volume, and isolated signed sandbox checks are recorded in [Native qualification](NATIVE_READINESS_QUALIFICATION.md). Physical-device, reboot, and clean production-install limits remain explicit. The user authorized committing the native follow-up, verified fast-forward integration into `develop`, and issue closure on 2026-10-17.
 
 ## Design and implementation
 
@@ -131,3 +131,16 @@ behavior without the unavailable ScopedBookmarksAgent; they do not prove signed 
 No real collection contents or custom icons were changed for this work. Tests use isolated temporary fixtures.
 Hold feature integration and issue closure for user approval and required native qualification; no push or release
 is authorized. This record must not be used as production release qualification.
+
+## Native follow-up on 2026-10-17
+
+See [Native installation and access checks](NATIVE_READINESS_QUALIFICATION.md) for the later evidence. Live installation
+report/accessibility inspection, native extension-settings navigation, APFS/HFS+ image access/rename/replacement,
+read-only mounting, image disconnection/remount identity, and isolated signed bookmark handoff/process restart passed.
+The earlier matrix and automated counts above are the original 2026-10-16 record; their "unperformed" entries should
+be read with this follow-up rather than overwritten as if those observations had existed earlier.
+
+Reboot is optional durability qualification and is deferred at the user's request. Physical media and incompatible
+filesystems, a clean production installation, actual Finder-process authorization repair, and VoiceOver speech remain
+unqualified. The OS denied exFAT test-image creation; no exFAT compatibility claim is made. Integration into `develop`
+and issue closure were subsequently authorized by the user after verification on 2026-10-17.
