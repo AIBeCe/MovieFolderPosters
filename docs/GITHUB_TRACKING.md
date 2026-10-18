@@ -20,6 +20,16 @@ same consolidated deliverables. Issue bodies contain scope, acceptance, dependen
 U IDs, and verification/approval boundaries, so they remain usable independently of published documentation.
 The roadmap documentation commits are local until an explicit push; do not assume they are already on GitHub.
 
+### Recovery and manual-resolution scope clarification — 2026-10-18
+
+R100-04 / issue #4 owns explicit automatic retry eligibility, interruption recovery, one-time legacy
+reassessment, and collection labels that distinguish freshness from remaining work. A retry date cannot
+establish eligibility. Confirmed Not found and Several matches require user action and never repeat
+automatically for the same unchanged folder. R100-05 / issue #5 owns the manual search/selection interface
+and bounded user-requested retries. No additional feature issue or background scheduler is introduced.
+The [processing policy](COLLECTION_PROCESSING.md#approved-recovery-policy--r100-04-and-r100-05) defines the
+state/action mapping and acceptance criteria. These are approved requirements, not implemented behavior.
+
 There are 10 milestones and 54 coded issues. They represent 176 future-source ideas, not 54 cherry-picked ideas.
 The three delivered baseline ideas need no duplicate issue; conditional E40/C01 remains inactive. Merged source
 ideas share their owning issue rather than duplicating implementation tasks.

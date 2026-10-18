@@ -158,8 +158,11 @@ See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md).
 GitHub issue: [#4](https://github.com/AIBeCe/MovieFolderPosters/issues/4); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Expose authentication, connectivity, server failure, and provider throttling separately. Coordinate provider backoff across extension processes and persist safe progress. Resume eligible unfinished work only on a later authorized invocation. Add a bounded recovery launch path that prevents new processing in participating processes while configuration and diagnostics remain usable.
+- [ ] Recovery policy: Determine automatic eligibility from persisted state and failure reason; a retry timestamp only gates eligible work. Not found and Several matches require manual resolution and never repeat automatically for the same unchanged folder. Resume eligible temporary failures/interrupted work on a later authorized Finder visit. Reassess legacy records lacking a reason once, bypassing their obsolete retry gate and inconclusive cached decision without clearing unrelated data or repeating verified completed writes.
+- [ ] Presentation: Separate saved-state freshness from processing completion. Show Needs processing, Waiting to retry, Needs manual resolution, and Complete with relevant counts; mixed conditions remain visible together. Current alone must not imply completion. Full rules: [Processing recovery policy](COLLECTION_PROCESSING.md#approved-recovery-policy--r100-04-and-r100-05).
 - Dependencies: R100-02 and R100-03; no new background process.
 - Acceptance: Controlled tests cover 401/403, 429 with changing Retry-After, server errors, cancellation, process loss, and a later explicit resume without repeating completed writes. A next-eligible time is never presented as a scheduled execution promise. Recovery mode cannot be bypassed by another entry point or stale process.
+- Acceptance: Repeated visits, cooldown expiry, reloads, and process restarts never automatically repeat confirmed Not found/Several matches searches. Eligible retries respect failure policy and shared provider backoff. Legacy reassessment persists its classification and is not repeated after restart; interrupted reassessment resumes safely. Tests cover preserved Done evidence, legacy JSON, and mixed manual/retry/pending collection labels. Manual-resolution controls remain in R100-05; no timer or background scheduler is added.
 - Source ideas: E61, E62, E63, E64, N98.
 
 <a id="r100-05"></a>
@@ -169,8 +172,10 @@ GitHub issue: [#4](https://github.com/AIBeCe/MovieFolderPosters/issues/4); miles
 GitHub issue: [#5](https://github.com/AIBeCe/MovieFolderPosters/issues/5); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
 - [ ] Scope: Expose a focused unresolved-results sheet from Main, reuse the existing Choose Movie flow, and allow a bounded selected retry with cancellation. Keep Finder as the browser; there is no persistent movie grid.
+- [ ] Manual-resolution policy: Not found opens an explicit manual search; Several matches opens explicit movie selection. Neither state is an automatic retry candidate. Selected retries are user-initiated and use R100-04 eligibility/backoff rules; manually requested searches are explicit actions, never scheduled repeats.
 - Dependencies: R100-02 through R100-04; reuse MoviePosterActionCoordinator and service boundaries.
 - Acceptance: A real unresolved result can open selection, apply an explicit match, or retry. Cancellation prevents later unwanted writes without undoing already completed work. Selection, permissions, and folder identity are revalidated after asynchronous work.
+- Acceptance: Manual-required results remain visible until resolved by an explicit action or invalidated by changed folder identity. Opening the sheet and ordinary Finder visits issue no repeated search for those results. Successful manual resolution updates saved state and collection counts without reprocessing unrelated folders.
 - Source ideas: E2, E21, E25, E67.
 
 <a id="r100-06"></a>

@@ -62,6 +62,96 @@ movie identity, ownership, last attempt, earliest retry eligibility, and last co
 Retry/correction controls belong to R100-05. Notifications only invalidate result views; no settings reload
 or polling. Reload on open/activation and explicit refresh. Notifications are not authoritative data.
 
+## Approved recovery policy — R100-04 and R100-05
+
+Approved 2026-10-18. This section defines planned behavior for issues #4 and #5; it does not claim that
+the current processor implements these rules. It supersedes automatic cooldown-based repetition of confirmed
+manual-resolution results. The R100-02 verification records below remain historical evidence.
+
+### Folder state and next action
+
+| Assessed condition | Automatic behavior | User action |
+| --- | --- | --- |
+| Not processed | Process on a later authorized invocation | No manual resolution required |
+| Done with verified installed evidence | Preserve completed work | Explicit existing poster actions remain available |
+| Not found from a complete search | Do not search again automatically | Manual search in R100-05 |
+| Several matches | Do not search or select again automatically | Explicit movie selection in R100-05 |
+| Temporary failure | Retry only when the recorded reason permits it and its delay has elapsed | Explain the failure and earliest eligibility |
+| Interrupted or uncertain work | Resume eligible unfinished work after revalidating access, identity, and current evidence | Explain remaining work |
+| Legacy unresolved record without a reason | Needs reassessment; perform one fresh classification on a later authorized invocation | Show the unknown assessment explicitly |
+| Preserved, suppressed, or blocked by authorization/policy | Preserve the applicable safety restriction | Required explicit action or reauthorization |
+
+These are behavioral and display concepts, not an approved replacement enum or serialized schema.
+Existing states such as failed, deferred, and unresolved require their supporting reason to determine the
+next action. Missing artwork, parsing problems, incomplete searches, authentication, throttling, and
+connectivity must not be collapsed into an interchangeable retry state. R100-04's implementation proposal
+must specify their individual eligibility and recovery conditions. Missing evidence never becomes a
+fabricated Not found or Several matches decision.
+
+### Eligibility, timing, and invocation
+
+Persisted state and failure reason establish automatic retry eligibility. retryAt only establishes the
+earliest time already-eligible work may run; its presence or expiry does not authorize a retry. Confirmed
+Not found and Several matches stay in manual resolution for the same unchanged folder across visits,
+cooldown expiry, configuration reloads, and process restarts. A replaced folder must be revalidated as a
+different identity rather than inheriting an old assessment blindly.
+
+An eligible retry or resume occurs on a later authorized invocation, including a Finder visit. No timer,
+watcher, polling, daemon, or scheduled background execution is introduced. A displayed eligibility time
+does not promise execution at that time. Retry paths preserve shared provider backoff and existing
+authorization, identity, ownership, suppression, cancellation, and recovery-mode safeguards.
+
+### Legacy reassessment
+
+Older operational cache records can contain unresolved status and a future retry date without a matching
+reason. Those records cannot prove either manual resolution or a temporary failure. Display Needs
+reassessment and bypass that obsolete retry gate and inconclusive cached decision for one fresh assessment.
+Revalidate the folder and persist the resulting classification so later visits and restarts do not repeat
+the legacy reassessment. An interrupted assessment remains resumable; a newly established temporary failure
+follows its own eligibility policy rather than being treated as unclassified legacy data again.
+
+Preserve verified completed work, installed posters, unrelated cache entries, reusable locks, configuration,
+and activity. Do not clear whole stores or rewrite movie contents to force retries. The observed collection
+with 33 processed and 301 reasonless unresolved records motivates regression coverage; those counts are a
+diagnostic snapshot, not permanent application constants or a qualification of successful matching.
+
+### Collection presentation
+
+Show saved-state freshness separately from processing completion. Current means the saved assessment
+matches its context; it cannot imply all folders are Done. Derive work labels and counts from folder evidence:
+
+- Needs processing, including separately identified Needs reassessment records.
+- Waiting to retry, with eligible deferred work and its earliest retry time.
+- Needs manual resolution, including Not found and Several matches.
+- Complete only when complete inventory and verified folder evidence establish no remaining processing,
+  retry, manual-resolution, or unknown work. Preserved/suppressed folders remain explicitly accounted for
+  and do not become fabricated Done counts.
+
+Mixed conditions remain visible together; a manual-resolution count must not hide temporary failures,
+and a retry count must not hide unprocessed folders. Preserve unknown inventory, stale context, running,
+partial, interrupted, failed, and unavailable evidence rather than replacing them with a completion label.
+
+### Delivery ownership and acceptance
+
+[Issue #4](https://github.com/AIBeCe/MovieFolderPosters/issues/4) owns eligibility, safe resume, reasonless
+legacy reassessment, collection status projection, and their tests. [Issue #5](https://github.com/AIBeCe/MovieFolderPosters/issues/5)
+owns the manual search/selection interface and bounded user-requested retry. Opening that interface does
+not initiate searches; the user must request them explicitly. Successful manual resolution updates saved
+folder evidence and collection counts without reprocessing unrelated folders.
+
+Required behavioral verification includes:
+
+- No automatic repeat for confirmed Not found or Several matches across visits, expiry, reload, and restart.
+- Eligible temporary failures recover at the next authorized invocation, respect backoff, and preserve Done work.
+- Interrupted processing resumes only unfinished eligible work after safety revalidation.
+- Legacy records decode compatibly, bypass obsolete deferral once, persist classification, and resume safely
+  after interruption without repeatedly classifying the same completed assessment.
+- Collection labels distinguish freshness, manual work, retries, unknown assessment, and mixed conditions.
+- User-requested search/selection/retry revalidates identity and authorization after asynchronous work;
+  cancellation prevents subsequent unwanted writes without undoing already completed work.
+
+Implementation remains subject to the repository's code-proposal, approval, test, and review workflow.
+
 ## Implementation ledger
 
 - [x] 1. Shared state, reason, operation, snapshot, validation, and counting models with behavioral tests.
