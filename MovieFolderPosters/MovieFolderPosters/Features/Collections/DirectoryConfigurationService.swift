@@ -1,6 +1,6 @@
-import MovieFolderCommon
 import FileSystem
 import Foundation
+import MovieFolderCommon
 import Persistence
 
 /// Notifies shared components after configuration has been persisted.
@@ -45,6 +45,14 @@ nonisolated struct SecurityScopedDirectoryAuthorization: DirectoryAuthorizationP
   }
 }
 
+/// Removes outcome records no longer referenced by committed configuration.
+nonisolated protocol CollectionProcessingCleaning: Sendable {
+  /// Prunes orphaned records while retaining the store's configuration fencing.
+  func pruneToConfiguredRoots() throws -> Set<String>
+}
+
+extension CollectionProcessingStore: CollectionProcessingCleaning {}
+
 /// Coordinates persisted collection settings, folder authorization, and credential storage.
 actor DirectoryConfigurationService: ConfigurationServicing {
   /// Stores collection and poster-appearance configuration.
@@ -60,6 +68,11 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// Resolves and creates security bookmarks for user-selected directories.
   private let authorization: any DirectoryAuthorizationProviding
 
+  /// Outcome cleanup retained independently of presentation and summary reads.
+  private let processingCleanup: (any CollectionProcessingCleaning)?
+  /// Records cleanup failures without changing committed configuration results.
+  private let activity: any MovieFolderActivityServicing
+
   /// Creates the service from its configuration, authorization, and credential stores.
   ///
   /// - Parameters:
@@ -68,17 +81,23 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - credentials: Secure provider for the TMDb token.
   ///   - notifier: Notifier invoked after persisted changes.
   ///   - authorization: Provider for resolving and creating security bookmarks.
+  ///   - processingCleanup: Retained outcome cleaner; omit only when the caller owns no outcome storage.
+  ///   - activity: Recorder for cleanup failures independent of committed configuration changes.
   init(
     repository: ConfigurationRepository, authorizations: PersistenceStore,
     credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
     notifier: any ConfigurationChangeNotifying = SharedConfigurationChangeNotifier(),
-    authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization()
+    authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization(),
+    processingCleanup: (any CollectionProcessingCleaning)? = nil,
+    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder()
   ) {
     self.repository = repository
     self.authorizations = authorizations
     self.credentials = credentials
     self.notifier = notifier
     self.authorization = authorization
+    self.processingCleanup = processingCleanup
+    self.activity = activity
   }
 
   /// Reads configuration and assesses the current availability of each collection.
@@ -212,11 +231,16 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///
   /// - Parameter identifier: The stable identifier of the collection to remove.
   /// - Throws: A persistence error if the configuration update cannot be committed.
-  func removeDirectory(_ identifier: UUID) throws {
+  func removeDirectory(_ identifier: UUID) async throws {
     try repository.update { configuration in
       configuration.directories.removeAll { $0.id == identifier }
     }
     notifier.configurationDidChange()
+    do {
+      _ = try processingCleanup?.pruneToConfiguredRoots()
+    } catch {
+      await activity.record(MovieFolderActivityEvent(action: .collectionCleanup, status: .failed))
+    }
   }
 
   /// Replaces authorization for an existing collection with a newly selected folder.

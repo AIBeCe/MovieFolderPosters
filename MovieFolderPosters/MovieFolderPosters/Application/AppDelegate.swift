@@ -1,18 +1,13 @@
-import MovieFolderCommon
 import AppKit
+import MovieFolderCommon
 import OSLog
 
 @main
 /// Creates the host app's configuration flow and routes Finder poster actions.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-  /// Owns the configuration windows for the lifetime of the app delegate.
-  private var coordinator: ConfigurationCoordinator?
-  /// Best-effort shared activity recorder retained independently of configuration startup.
-  private let activity = MovieFolderEnvironment.makeActivityRecorder()
-  /// Presents poster actions opened through the app's URL handler.
-  private lazy var posterActions = MoviePosterActionCoordinator(
-    service: MoviePosterActionService(activity: activity))
+  /// Owns the application root independently of configuration startup success.
+  private let coordinator = AppCoordinator()
 
   /// Starts the AppKit application with this delegate retained through the run loop.
   static func main() {
@@ -29,51 +24,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// - Parameter notification: The launch notification supplied by AppKit.
   func applicationDidFinishLaunching(_ notification: Notification) {
     installMenu()
-    Task { await activity.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded)) }
     do {
-      let service = try DirectoryConfigurationService(
-        repository: MovieFolderEnvironment.makeConfigurationRepository(),
-        authorizations: MovieFolderEnvironment.makePrivateAuthorizationStore())
-      let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
-      let summaryService = try CollectionSummaryService.shared()
-      Task.detached {
-        _ = try? processingStore.pruneToConfiguredRoots()
-      }
-      #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
-          Task { try? await service.setStubTMDbResponsesEnabled(true) }
-        } else if ProcessInfo.processInfo.arguments.contains("--disable-development-fixtures") {
-          Task { try? await service.setStubTMDbResponsesEnabled(false) }
-        }
-      #endif
-      coordinator = ConfigurationCoordinator(
-        service: service, activity: activity, summaryService: summaryService,
-        processingStore: processingStore)
-      coordinator?.start()
+      try coordinator.start()
     } catch {
-      let alert = NSAlert()
-      alert.messageText = "Configuration storage is unavailable"
-      let failure = error as NSError
-      let logger = Logger(
-        subsystem: "dag.fikios.MovieFolderPosters", category: "ConfigurationStartup")
-      logger.error(
-        "Storage startup failed: \(failure.domain, privacy: .public), code=\(failure.code)")
-      alert.informativeText =
-        "The app could not open its settings. Quit and reopen it using a signed build."
-      if let storageError = error as? CollectionProcessingStorageNamespaceError,
-        storageError == .legacyMigrationRequired {
-        alert.messageText = "Processing storage needs migration"
-        alert.informativeText =
-          "Quit older app copies and disable older Finder extension copies. "
-          + "Complete the documented offline storage migration, then reopen the app."
-      }
-      alert.runModal()
+      presentConfigurationFailure(error)
     }
   }
 
+  /// Presents a configuration-specific failure without removing independent feature routes.
+  /// - Parameter error: Startup failure sanitized before display or logging.
+  private func presentConfigurationFailure(_ error: Error) {
+    let alert = NSAlert()
+    alert.messageText = "Configuration storage is unavailable"
+    let failure = error as NSError
+    let logger = Logger(
+      subsystem: "dag.fikios.MovieFolderPosters", category: "ConfigurationStartup")
+    logger.error(
+      "Storage startup failed: \(failure.domain, privacy: .public), code=\(failure.code)")
+    alert.informativeText =
+      "The app could not open its settings. Quit and reopen it using a signed build."
+    if let storageError = error as? CollectionProcessingStorageNamespaceError,
+      storageError == .legacyMigrationRequired {
+      alert.messageText = "Processing storage needs migration"
+      alert.informativeText =
+        "Quit older app copies and disable older Finder extension copies. "
+        + "Complete the documented offline storage migration, then reopen the app."
+    }
+    alert.runModal()
+  }
+
+  /// Reopens configuration from an app event or the Window menu.
+  @objc private func showConfiguration() {
+    do { try coordinator.showConfiguration() } catch { presentConfigurationFailure(error) }
+  }
+
+  /// Opens Settings through the root's configuration route.
+  @objc private func showSettings() {
+    do { try coordinator.showSettings() } catch { presentConfigurationFailure(error) }
+  }
+
+  /// Opens Log even if configuration storage could not initialize.
+  @objc private func showLog() { coordinator.showLog() }
+
   /// Refreshes committed outcome projections when the host returns to the foreground.
   func applicationDidBecomeActive(_ notification: Notification) {
-    coordinator?.applicationDidBecomeActive()
+    coordinator.applicationDidBecomeActive()
   }
 
   /// Opens a poster action for each valid action URL passed to the app.
@@ -84,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
       guard let request = try? MoviePosterRequest(url: url) else { continue }
-      posterActions.start(request)
+      coordinator.openPosterAction(request)
     }
   }
 
@@ -95,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ///   - flag: Whether any app windows are currently visible.
   /// - Returns: `true` to allow the app to handle the reopen event.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    coordinator?.start()
+    showConfiguration()
 
     return true
   }
@@ -127,8 +122,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
     editMenu.addItem(
       withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    applicationMenu.insertItem(
+      withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", at: 1).target = self
+    let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+    let windowMenu = NSMenu(title: "Window")
+    windowMenu.addItem(withTitle: "Movie Folder Posters", action: #selector(showConfiguration), keyEquivalent: "")
+      .target = self
+    windowMenu.addItem(withTitle: "Log", action: #selector(showLog), keyEquivalent: "").target = self
+    windowItem.submenu = windowMenu
     editItem.submenu = editMenu
     menu.addItem(editItem)
+    menu.addItem(windowItem)
     NSApplication.shared.mainMenu = menu
   }
 }

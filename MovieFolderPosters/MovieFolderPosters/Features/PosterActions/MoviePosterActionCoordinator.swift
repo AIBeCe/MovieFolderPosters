@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import AppKit
+import MovieFolderCommon
 import Network
 
 /// Owns the lifetime of a Finder-requested poster action window.
@@ -10,9 +10,9 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   /// Service used by the action model to search or change a poster.
   private let service: any MoviePosterActionServicing
   /// Window controller retained while the action window is open.
-  private var windowController: NSWindowController?
+  private(set) var windowController: NSWindowController?
   /// Model for the currently displayed request.
-  private var viewModel: MoviePosterActionViewModel?
+  private(set) var viewModel: MoviePosterActionViewModel?
   /// Request associated with the current window.
   private var activeRequest: MoviePosterRequest?
 

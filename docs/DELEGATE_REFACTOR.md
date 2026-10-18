@@ -6,6 +6,11 @@ Earlier no-push statements below describe the verification date. Native qualific
 The user approved refactoring existing callbacks to delegates on 2026-10-17.
 Keep feature folders, MVVM-C, Swift 6 isolation, and existing behavior.
 
+The subsequently approved [host coordinator refactor](COORDINATOR_ARCHITECTURE.md) adds AppCoordinator as
+the application root. Configuration and Log are independent child flows; sibling presentation requests and
+local activity-write results route through the root. Collection-removal cleanup no longer uses a view delegate.
+The original verification records below remain historical evidence for the delegate migration.
+
 ## Decisions
 
 - UI event delegates are class-bound, main-actor isolated, and weakly referenced. Coordinators own flow lifetime.

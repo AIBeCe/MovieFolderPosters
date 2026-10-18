@@ -9,6 +9,8 @@ MovieFolderPosters/
 ├── MovieFolderPosters.xcodeproj/
 ├── MovieFolderPosters/                 # Host target
 │   ├── Application/                    # App lifecycle and app-wide window coordination
+│   │   ├── AppDelegate.swift
+│   │   └── AppCoordinator.swift        # Root routing and app-wide policies
 │   ├── Features/
 │   │   ├── Collections/
 │   │   ├── Settings/
@@ -23,7 +25,8 @@ MovieFolderPosters/
 │   ├── Configuration/
 │   └── Resources/
 ├── MovieFolderPostersTests/
-│   ├── Features/                       # Collections, Installation, PosterActions
+│   ├── Application/                    # Root routing and cross-feature lifecycle
+│   ├── Features/                       # Collections, Installation, Log, PosterActions
 │   └── Resources/
 └── MovieFolderPostersUITests/
 
@@ -50,6 +53,13 @@ Packages/
 Keep each feature's views, view models, coordinators, and application services together. App-wide coordination
 belongs in Application; a feature coordinator remains with its feature. MVVM-C describes responsibilities within
 these folders. No global Views/ViewModels/Services hierarchy or additional module is needed for navigation alone.
+
+AppDelegate retains AppCoordinator, which owns ConfigurationCoordinator, LogCoordinator, and
+MoviePosterActionCoordinator as sibling flows. The configuration coordinator lives under Features/Collections
+and owns Main, Settings, and their related sheets. Log owns its own window, activity view model, and
+invalidation subscription independently of configuration startup. Root-owned appearance applies to all host
+windows. Required collection cleanup belongs to the configuration service after a committed removal, not to
+view rendering. See [Host coordinator architecture](COORDINATOR_ARCHITECTURE.md) for decisions and verification.
 
 MovieFolderCommon contains application logic consumed by both executables through a public module API. It owns
 parsing, matching, processing, collection state, configuration records, reusable security/request support,

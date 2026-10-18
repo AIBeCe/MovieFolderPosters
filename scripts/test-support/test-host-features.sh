@@ -12,6 +12,10 @@ done
 rtk proxy rm "$host_harness/Sources/MovieFolderPosters/Application/AppDelegate.swift"
 rtk proxy cp -R "$common_repository/MovieFolderPosters/MovieFolderPostersTests/Features" \
   "$host_harness/Tests/MovieFolderPostersTests/"
+if [[ -d "$common_repository/MovieFolderPosters/MovieFolderPostersTests/Application" ]]; then
+  rtk proxy cp -R "$common_repository/MovieFolderPosters/MovieFolderPostersTests/Application" \
+    "$host_harness/Tests/MovieFolderPostersTests/"
+fi
 for package in MovieFolderCommon Network FileSystem Persistence Log; do
   rtk proxy ln -s "$common_repository/Packages/$package" "$host_harness/$package"
 done
@@ -45,4 +49,4 @@ SWIFTPM_MODULECACHE_OVERRIDE="$common_cache/module-cache" \
 CLANG_MODULE_CACHE_PATH="$common_cache/clang-cache" \
   rtk proxy swift test --package-path "$host_harness" --disable-sandbox \
     --cache-path "$common_cache/cache" --config-path "$common_cache/config" \
-    --security-path "$common_cache/security" --filter "$1"
+    --security-path "$common_cache/security" --no-parallel --filter "${1:-MovieFolderPostersTests}"

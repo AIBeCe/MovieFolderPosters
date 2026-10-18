@@ -9,6 +9,53 @@ import Testing
 
 /// Covers persistence, folder-access, overlap, and credential behavior in the host service.
 struct DirectoryConfigurationServiceTests {
+  /// Catches cleanup tied to UI state or a later summary read instead of the committed mutation.
+  @Test func committedRemovalPrunesOutcomesWithoutCreatingAView() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let directory = MonitoredDirectory(
+      id: UUID(), path: "/Movies", transferBookmark: Data([1]), authorizationVersion: UUID())
+    try fixture.repository.update { $0.directories = [directory] }
+    let outcomes = try PersistenceStore(directory: fixture.root.appendingPathComponent("Outcomes"))
+    let processing = CollectionProcessingStore(store: outcomes, configuration: fixture.repository)
+    let key = CollectionProcessingStore.processingStateKey(for: directory.id)
+    do {
+      let lease = try #require(try outcomes.acquireLease(for: key))
+      try lease.write(Data([1]))
+    }
+    let service = DirectoryConfigurationService(
+      repository: fixture.repository, authorizations: fixture.authorizations,
+      credentials: FailingSummaryCredentials(), notifier: SilentConfigurationNotifier(),
+      processingCleanup: processing)
+    try await service.removeDirectory(directory.id)
+    #expect(try fixture.repository.read().directories.isEmpty)
+    do {
+      _ = try await service.configurationSummary()
+      Issue.record("The summary fixture must fail")
+    } catch {}
+    let lease = try #require(try outcomes.acquireLease(for: key))
+    #expect(try lease.read() == nil)
+  }
+
+  /// Catches cleanup failure replacing a committed removal or silently losing its failure event.
+  @Test func cleanupFailurePreservesRemovalAndRecordsIndependentFailure() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let directory = MonitoredDirectory(
+      id: UUID(), path: "/Movies", transferBookmark: Data([1]), authorizationVersion: UUID())
+    try fixture.repository.update { $0.directories = [directory] }
+    let activity = ActivityServiceFake()
+    let service = DirectoryConfigurationService(
+      repository: fixture.repository, authorizations: fixture.authorizations,
+      credentials: fixture.credentials, notifier: SilentConfigurationNotifier(),
+      processingCleanup: FailingProcessingCleanup(), activity: activity)
+    try await service.removeDirectory(directory.id)
+    #expect(try fixture.repository.read().directories.isEmpty)
+    #expect(try await activity.entries().map(\.event) == [
+      MovieFolderActivityEvent(action: .collectionCleanup, status: .failed)
+    ])
+  }
+
   /// Verifies that configuration changes reach retained notifier after persistence.
   @Test func configurationChangesReachRetainedNotifierAfterPersistence() async throws {
     let fixture = try ConfigurationServiceFixture()
@@ -317,4 +364,20 @@ private final class ConfigurationNotifierProbe: ConfigurationChangeNotifying, Se
   }
   /// The last appearance observed by the notification callback.
   var observedAppearance: PosterAppearance? { appearance.withLock { $0 } }
+}
+
+/// Forces the post-mutation summary to fail at the credential boundary.
+private struct FailingSummaryCredentials: CredentialStoring {
+  /// Rejects summary credential lookup independently of configuration mutation.
+  func read() throws -> String? { throw CocoaError(.fileReadUnknown) }
+  /// No credential writes are needed by these removal tests.
+  func save(_ value: String) {}
+  /// No credential removals are needed by these removal tests.
+  func remove() {}
+}
+
+/// Represents unavailable outcome storage after configuration has committed.
+private struct FailingProcessingCleanup: CollectionProcessingCleaning {
+  /// Rejects cleanup so removal's independent failure handling is observable.
+  func pruneToConfiguredRoots() throws -> Set<String> { throw CocoaError(.fileWriteUnknown) }
 }

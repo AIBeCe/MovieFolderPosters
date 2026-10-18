@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import AppKit
+import MovieFolderCommon
 import UniformTypeIdentifiers
 
 /// Receives navigation requests from the collection configuration window.
@@ -15,8 +15,9 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
   /// Requests the read-only outcome details for one configured collection.
   func configurationViewControllerDidRequestProcessingDetails(
     _ controller: ConfigurationViewController, rootID: UUID)
-  /// Reports that a completed configuration mutation removed one or more collection roots.
-  func configurationViewControllerDidRemoveCollectionRoot(_ controller: ConfigurationViewController)
+  /// Requests folder selection for a new root or authorization replacement.
+  func configurationViewController(
+    _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?)
 }
 
 /// Provides no-op defaults for delegate actions a host may choose not to present.
@@ -25,8 +26,9 @@ extension ConfigurationViewControllerDelegate {
   /// Ignores a details request when the host does not present outcome sheets.
   func configurationViewControllerDidRequestProcessingDetails(
     _ controller: ConfigurationViewController, rootID: UUID) {}
-  /// Ignores cleanup callbacks when the host does not own outcome persistence.
-  func configurationViewControllerDidRemoveCollectionRoot(_ controller: ConfigurationViewController) {}
+  /// Ignores folder selection when the host does not present configuration navigation.
+  func configurationViewController(
+    _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?) {}
 }
 
 /// Displays configured movie collections and their latest processing status.
@@ -42,8 +44,6 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   private let summaryViewModel: CollectionSummaryViewModel
   /// Snapshot currently rendered by the table.
   private var presentedDirectories: [ConfiguredDirectoryStatus] = []
-  /// Most recent root membership, used to trigger targeted orphan cleanup after removal.
-  private var lastConfiguredRootIDs: Set<UUID>?
   /// Lists configured collection roots and their processing counts.
   private let tableView = CollectionTableView()
   /// Scroll container for the collection table.
@@ -366,11 +366,6 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) {
     refresh()
     guard !viewModel.isBusy, viewModel.hasLoadedSummary else { return }
-    let currentRootIDs = Set(viewModel.directories.map(\.id))
-    if let lastConfiguredRootIDs, !lastConfiguredRootIDs.subtracting(currentRootIDs).isEmpty {
-      delegate?.configurationViewControllerDidRemoveCollectionRoot(self)
-    }
-    lastConfiguredRootIDs = currentRootIDs
     summaryViewModel.reload()
   }
 
@@ -454,22 +449,8 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// Presents the folder picker to add a root or reauthorize an existing one.
   /// - Parameter identifier: Existing collection identifier, or `nil` to add a root.
   private func chooseDirectory(identifier: UUID?) {
-    guard !viewModel.isBusy, let window = view.window else { return }
-    let panel = NSOpenPanel()
-    panel.title = identifier == nil ? "Choose Movie Folder" : "Restore Folder Access"
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.beginSheetModal(for: window) { [weak self] response in
-      guard response == .OK, let url = panel.url, let self else { return }
-      Task {
-        if let identifier {
-          await self.viewModel.reauthorizeDirectory(identifier, with: url)
-        } else {
-          await self.viewModel.addDirectory(url)
-        }
-      }
-    }
+    guard !viewModel.isBusy else { return }
+    delegate?.configurationViewController(self, didRequestDirectorySelection: identifier)
   }
 }
 

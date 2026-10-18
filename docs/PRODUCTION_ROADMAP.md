@@ -819,7 +819,7 @@ is authorized by this roadmap.
 
 | Responsibility | Existing owner / starting locations |
 | --- | --- |
-| Native windows, navigation, presentation | ConfigurationCoordinator, ConfigurationViewController, SettingsViewController, LogViewController, ConfigurationViewModel |
+| Native windows, navigation, presentation | AppCoordinator; feature-owned ConfigurationCoordinator, LogCoordinator, MoviePosterActionCoordinator; their view controllers and view models |
 | Folder policy, outcomes, matching, retries | MovieFolderProcessor, ReleaseNameParser, MovieMatcher, MoviePosterActionService and shared application source |
 | Finder integration and invocation | MovieFolderPostersFinder/Integration/FinderSync.swift, shared configuration/request code |
 | HTTP, provider decoding, bounded downloads | Packages/Network; no filesystem writes or movie-match decisions |
