@@ -91,6 +91,16 @@
 - Distinguish builds, test passes, and runtime observations. Never infer one from another.
 - Record blocked and unperformed checks explicitly.
 
+### SwiftLint
+
+This repository uses SwiftLint 0.65.1 with `.swiftlint.yml`.
+
+Run from the repository root during final validation:
+
+    swiftlint lint --config .swiftlint.yml
+
+Follow the global static analysis policy defined in `~/.codex/AGENTS.md`.
+
 ## GitFlow
 
 - Inspect Git status before changes and preserve user edits.

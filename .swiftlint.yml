@@ -1,0 +1,293 @@
+# =============================================================================
+# SwiftLint Configuration
+# =============================================================================
+#
+# SwiftLint version: 0.65.1
+# Coding conventions: swift-style-guide (Codex skill)
+#
+# IMPORTANT FOR AI CODING AGENTS
+#
+# This configuration is aligned with the swift-style-guide skill.
+#
+# SwiftLint enforces mechanically verifiable coding conventions.
+# The swift-style-guide remains authoritative for conventions that
+# SwiftLint cannot reliably enforce.
+#
+# Do not enable additional opt-in rules without evaluating their
+# compatibility with the project's established coding conventions.
+#
+# Rules listed under "Intentionally Disabled Opt-in Rules" represent
+# deliberate design decisions, not missing configuration.
+#
+# Do not modify this configuration merely to silence lint violations.
+# Fix the underlying code when appropriate, or report the conflict.
+#
+# Lint violations in existing code must not trigger unrelated refactoring.
+# Preserve observable behavior and existing concurrency contracts.
+#
+# =============================================================================
+
+
+# MARK: - General
+
+strict: false
+
+
+# MARK: - Disabled Rules
+
+disabled_rules:
+  # TODO/FIXME comments are permitted for explicitly planned work.
+  # Do not introduce new TODO/FIXME comments without an explicit reason.
+  - todo
+
+
+# MARK: - Intentionally Disabled Opt-in Rules
+#
+# The following rules are intentionally not enabled because they conflict
+# with the swift-style-guide or impose unnecessary stylistic restrictions.
+#
+# Preserve these decisions when updating SwiftLint.
+
+# explicit_type_interface
+# Prefer type inference when the inferred type is clear and unambiguous.
+# Use explicit annotations when they improve readability or correctness.
+
+# implicit_return
+# Do not enforce implicit returns.
+# Both explicit and implicit returns are acceptable when appropriate.
+
+# multiline_arguments
+# Prefer using the available 120-column width rather than forcing
+# function arguments onto separate lines unnecessarily.
+
+# multiline_parameters
+# Keep function parameters on one line when the declaration fits
+# within 120 columns and remains readable.
+
+# one_declaration_per_file
+# Prefer one principal type per file, but allow small, closely related
+# helper types when keeping them together improves cohesion.
+
+# type_contents_order
+# Organize declarations logically and group methods by functionality
+# rather than enforcing a rigid declaration order.
+
+# no_magic_numbers
+# Numeric literals are acceptable when meaningful in context.
+# Extract named constants when they improve clarity.
+
+# explicit_acl
+# Prefer the least permissive access level required by the API.
+# Omit redundant access modifiers, particularly `internal`.
+
+# missing_docs
+# SwiftLint cannot fully enforce the project's DocC requirements.
+# Document all properties, including private ones, and relevant
+# declarations according to the swift-style-guide.
+# Documentation depth should reflect API visibility and complexity.
+
+# prefer_zero_over_explicit_init
+# Follow the swift-style-guide's contextual zero-initialization rules:
+# - Use `.zero` when the type is already known from context.
+# - Prefer `Int.zero` over `let count: Int = .zero` when declaring
+#   a variable that would otherwise require a type annotation.
+# - Do not enforce a universal zero-initialization syntax.
+
+# incompatible_concurrency_annotation
+# Do not introduce @preconcurrency solely to silence lint warnings.
+# Prefer Swift 6 strict concurrency checking and compiler diagnostics.
+# Preserve existing concurrency contracts and actor isolation.
+
+
+# MARK: - Opt-in Rules
+
+opt_in_rules:
+
+  # ---------------------------------------------------------------------------
+  # Swift Concurrency
+  # ---------------------------------------------------------------------------
+
+  # Detect async functions that do not contain await expressions.
+  # Do not remove async from protocol requirements, conformances, or
+  # implementations where it is necessary for the concurrency contract.
+  - async_without_await
+
+  # Detect throwing tasks whose errors are not handled.
+  - unhandled_throwing_task
+
+
+  # ---------------------------------------------------------------------------
+  # Safety
+  # ---------------------------------------------------------------------------
+
+  # Discourage force unwrapping.
+  # Prefer optional binding, guard statements, or explicit error handling.
+  - force_unwrapping
+
+  # Detect comparisons where both operands are identical.
+  - identical_operands
+
+
+  # ---------------------------------------------------------------------------
+  # Code Quality and Performance
+  # ---------------------------------------------------------------------------
+
+  - empty_count
+  - empty_string
+  - first_where
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - contains_over_range_nil_comparison
+
+
+  # ---------------------------------------------------------------------------
+  # Swift Idioms
+  # ---------------------------------------------------------------------------
+
+  - direct_return
+  - redundant_type_annotation
+  - redundant_nil_coalescing
+  - shorthand_optional_binding
+  - toggle_bool
+
+
+  # ---------------------------------------------------------------------------
+  # Formatting
+  # ---------------------------------------------------------------------------
+
+  - closure_spacing
+  - closure_end_indentation
+  - modifier_order
+  - operator_usage_whitespace
+  - sorted_imports
+
+
+  # ---------------------------------------------------------------------------
+  # Tests
+  # ---------------------------------------------------------------------------
+
+  - balanced_xctest_lifecycle
+  - empty_xctest_method
+  - final_test_case
+
+
+# MARK: - Formatting
+
+# Prefer lines of at most 120 columns.
+# Comments and URLs are excluded from line-length checks.
+line_length:
+  warning: 120
+  error: 160
+  ignores_comments: true
+  ignores_urls: true
+
+# Trailing whitespace is prohibited.
+trailing_whitespace:
+  ignores_empty_lines: false
+  ignores_comments: false
+
+# Do not use trailing commas in multiline collection literals.
+trailing_comma:
+  mandatory_comma: false
+
+# Allow at most one consecutive empty line.
+vertical_whitespace:
+  max_empty_lines: 1
+
+
+# MARK: - Naming
+
+# Use descriptive lowerCamelCase identifiers.
+#
+# Single-character identifiers are only permitted for conventional
+# mathematical coordinates (x, y, z).
+#
+# Avoid generic loop indices such as i, j, and k.
+# Prefer meaningful names such as index, rowIndex, or columnIndex.
+#
+# The swift-style-guide remains authoritative for semantic naming.
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 50
+    error: 60
+  excluded:
+    - x
+    - y
+    - z
+  allowed_symbols:
+    - _
+  validates_start_with_lowercase: true
+
+# Use UpperCamelCase for types.
+type_name:
+  min_length: 3
+  max_length:
+    warning: 50
+    error: 60
+
+
+# MARK: - Tuples
+
+# Tuples with up to three elements are acceptable.
+# Prefer named types for larger structures when they improve clarity.
+large_tuple:
+  warning: 4
+  error: 6
+
+
+# MARK: - Complexity
+
+# Complexity metrics are indicators, not automatic refactoring mandates.
+#
+# Do not split functions or types solely to satisfy numerical thresholds.
+# Evaluate cohesion, readability, and responsibilities before refactoring.
+# Existing violations should be handled separately from unrelated tasks.
+
+cyclomatic_complexity:
+  warning: 10
+  error: 20
+  ignores_case_statements: true
+
+function_body_length:
+  warning: 50
+  error: 100
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 500
+  error: 1000
+  ignore_comment_only_lines: true
+
+function_parameter_count:
+  warning: 5
+  error: 8
+
+nesting:
+  type_level: 2
+  function_level: 3
+
+
+# MARK: - Exclusions
+
+# Exclude generated files, dependency directories, and build artifacts.
+#
+# Swift Package Manager creates .build directories inside individual
+# packages, so exclusions must also match nested directories.
+#
+# Application, framework, package, and test source files remain linted.
+
+excluded:
+  - "**/.build"
+  - "**/.build/**"
+  - "**/DerivedData/**"
+  - "**/.swiftpm/**"
+  - "**/Pods/**"
+  - "**/Carthage/**"
