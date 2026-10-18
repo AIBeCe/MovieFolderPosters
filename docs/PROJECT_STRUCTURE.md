@@ -1,7 +1,8 @@
 # Project structure
 
-The user approved this organization on 2026-10-17. These are real filesystem folders reflected in Xcode.
-The reorganization preserves existing behavior and service boundaries, including the completed R100-01 implementation.
+The user approved the original feature organization on 2026-10-17 and the Common/Log package extraction on
+2026-10-18. These are real filesystem folders and local package modules. The extraction is implemented and reviewed;
+see [Common and Log migration](COMMON_AND_LOG_MIGRATION.md) for current scope and verification.
 
 ```text
 MovieFolderPosters/
@@ -17,26 +18,31 @@ MovieFolderPosters/
 │   ├── UI/Controls/                    # Reusable AppKit controls
 │   ├── Resources/                      # Assets, localized nib, and preview artwork
 │   └── Configuration/                  # Host plist and entitlements
-├── Shared/                             # Application source compiled by host and Finder
-│   ├── Configuration/
-│   ├── Processing/
-│   ├── FinderIntegration/
-│   ├── Security/
-│   └── Development/
 ├── MovieFolderPostersFinder/
 │   ├── Integration/
 │   ├── Configuration/
 │   └── Resources/
 ├── MovieFolderPostersTests/
 │   ├── Features/                       # Collections, Installation, PosterActions
-│   ├── Shared/                         # Configuration, FinderIntegration, Processing
 │   └── Resources/
 └── MovieFolderPostersUITests/
 
 Packages/
 ├── Network/
 ├── FileSystem/
-└── Persistence/
+├── Persistence/
+├── Log/
+│   ├── Sources/Log/Activity/
+│   └── Tests/LogTests/Activity/
+└── MovieFolderCommon/
+    ├── Sources/MovieFolderCommon/
+    │   ├── Activity/
+    │   ├── Configuration/
+    │   ├── Development/               # Debug-only deterministic TMDb transport
+    │   ├── Processing/Collections/
+    │   ├── FinderIntegration/
+    │   └── Security/
+    └── Tests/MovieFolderCommonTests/    # Mirrors source responsibility folders
 ```
 
 ## Ownership and dependencies
@@ -45,27 +51,31 @@ Keep each feature's views, view models, coordinators, and application services t
 belongs in Application; a feature coordinator remains with its feature. MVVM-C describes responsibilities within
 these folders. No global Views/ViewModels/Services hierarchy or additional module is needed for navigation alone.
 
-Shared contains movie-specific application logic needed by both executables. It remains shared target source,
-not a new package. In particular, Processing now physically owns the parser, matcher, and processor; the old
-top-level virtual Movie Processing group has been removed. Development owns the shared, explicitly opt-in fixture
-transport; Release transport behavior is unchanged. Finder remains the thin integration layer.
+MovieFolderCommon contains application logic consumed by both executables through a public module API. It owns
+parsing, matching, processing, collection state, configuration records, reusable security/request support,
+typed movie activity, shared environment setup, and the Debug-only stub transport. MovieFolderEnvironment runs
+in its caller's process; moving it into a package does not change App Group or process-private storage lookup.
+The former Shared source folder/group is removed. Entitlements and explicit fixture selection remain on the
+executable targets. Finder remains the thin integration layer.
 
-Network, FileSystem, and Persistence remain independent local SPM service modules with their existing public APIs
-and tests. Folders express ownership; modules enforce dependency boundaries. Services must not depend on the app.
+Development contains StubTMDbTransport; the usesStubTMDbResponses setting explicitly selects its predefined
+responses in Debug. Configuration owns the shared environment and explicit processing-state namespace migration.
+The former HostActivityLog presentation model is ActivityLogViewModel under the host Log feature.
+
+Log owns generic bounded activity storage and depends on Persistence. MovieFolderCommon depends on Log,
+Network, FileSystem, and Persistence; those services do not depend on MovieFolderCommon or either executable.
+Folders express ownership within one module per package; modules enforce dependency boundaries.
 
 ## Xcode and verification scripts
 
-The host and test directories retain Xcode's folder-synchronized groups. Shared and Finder use explicit groups
-with paths matching the physical subfolders. Shared processing sources have explicit membership in both executable
-targets, replacing host compilation through the former flat synchronized directory. Other source memberships and
-resource memberships are preserved. Host plist/entitlements are excluded from automatic resource membership and
-referenced through the updated configuration paths.
+The host and test directories retain Xcode's folder-synchronized groups. Both executable targets link
+MovieFolderCommon instead of compiling its sources directly. Finder integration sources retain explicit
+membership. Host plist/entitlements remain excluded from automatic resource membership.
 
-The existing scripts/test-*.sh harnesses copy production sources from the new locations while keeping their temporary
-SwiftPM modules flat. The parser test filename now matches its actual ReleaseNameParserTests type. No test assertions,
-production Swift code, resource contents, credentials, or signing entitlements changed during the moves.
+Verification scripts consume the Common package. Package-owned tests exercise the actual
+module; host-only harnesses retain the AppKit/configuration composition required for presentation tests.
 
-## Verification record
+## Historical verification record — 2026-10-17 organization
 
 - All 46 moved files retain their pre-move SHA256 content hashes.
 - Both executable source sets match their pre-move membership: 23 host sources, 11 Finder sources, no duplicates.
@@ -85,8 +95,8 @@ Later native evidence is recorded in [Native qualification](NATIVE_READINESS_QUA
 
 ## Protocol-based communication
 
-R100-02 adds shared application models/repository in `Shared/Processing/Collections`, with explicit host and Finder
-source membership and mirrored test ownership. Host-only summary reading, presentation, and read-only details
+R100-02 introduced application models/repository in `Shared/Processing/Collections`; the package extraction moves
+them into MovieFolderCommon/Processing/Collections with mirrored test ownership. Host-only summary reading, presentation, and read-only details
 remain in `Features/Collections`. FileSystem owns read-only inventory and icon assessment; Persistence owns
 generic bounded record access and pruning. The test-only child-process probe is under `scripts/test-support`
 and never enters a synchronized application/test target. See [Processing results](COLLECTION_PROCESSING.md).

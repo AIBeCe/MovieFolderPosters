@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderPosters
+import MovieFolderCommon
 import Persistence
 
 private enum ProbeError: Error {
@@ -51,7 +51,8 @@ private func runProbe() throws {
 }
 
 private func readProcessingState(store: PersistenceStore, rootID: UUID) throws -> CollectionProcessingState? {
-  guard let lease = try store.acquireLease(for: CollectionProcessingStore.rootKey(rootID)) else { return nil }
+  guard let lease = try store.acquireLease(
+    for: CollectionProcessingStore.processingStateKey(for: rootID)) else { return nil }
   guard let data = try lease.read() else { throw ProbeError.missingProcessingState }
   let processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: data)
   try processingState.validate()

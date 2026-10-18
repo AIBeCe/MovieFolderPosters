@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import AppKit
 import FinderSync
 
@@ -14,7 +15,9 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
   /// Stores and publishes the app-wide appearance selection.
   private let appearance = AppAppearanceSettings()
   /// Retains recent host activity for the log window.
-  private let log = HostActivityLog()
+  private let log: ActivityLogViewModel
+  /// Payload-free committed activity invalidation observer.
+  private var activityObserver: NSObjectProtocol?
   /// The main configuration window, when it has been created.
   private var mainWindow: NSWindowController?
   /// The settings window, when it has been created.
@@ -37,19 +40,25 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
   ///   - installationService: The provider used to inspect installation evidence.
   init(
     service: any ConfigurationServicing,
+    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     summaryService: any CollectionSummaryServicing = EmptyCollectionSummaryService(),
     processingStore: CollectionProcessingStore? = nil,
     installationService: any InstallationReadinessServicing = InstallationReadinessService()
   ) {
     self.installationService = installationService
     self.processingStore = processingStore
-    viewModel = ConfigurationViewModel(service: service)
+    log = ActivityLogViewModel(service: activity)
+    viewModel = ConfigurationViewModel(service: service, activity: activity)
     summaryViewModel = CollectionSummaryViewModel(service: summaryService)
     viewModel.activityDelegate = self
     appearance.delegate = self
-    log.append(text: "Application opened.", category: "Application")
+    activityObserver = DistributedNotificationCenter.default().addObserver(
+      forName: MovieFolderEnvironment.activityChanged, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in self?.log.requestReload() }
+    }
     processingObserver = DistributedNotificationCenter.default().addObserver(
-      forName: SharedEnvironment.collectionProcessingChanged, object: nil, queue: .main
+      forName: MovieFolderEnvironment.collectionProcessingStateChanged, object: nil, queue: .main
     ) { [weak self] _ in
       Task { @MainActor [weak self] in self?.refreshCollectionProcessingState() }
     }
@@ -73,7 +82,10 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
   }
 
   /// Reloads processing states after the app becomes active without rereading settings.
-  func applicationDidBecomeActive() { refreshCollectionProcessingState() }
+  func applicationDidBecomeActive() {
+    refreshCollectionProcessingState()
+    log.requestReload()
+  }
 
   /// Requests a summary-only reload after an outcome notification or explicit app activation.
   func refreshCollectionProcessingState() { summaryViewModel.reload() }
@@ -96,6 +108,7 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
 
   /// Creates or presents the activity log window.
   func showLog() {
+    log.requestReload()
     if let logWindow {
       show(logWindow)
       return
@@ -191,7 +204,7 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
         }
       }.value
       if !cleanupSucceeded {
-        self?.log.append(text: "Collection result cleanup could not complete.", category: "Error")
+        await self?.log.record(MovieFolderActivityEvent(action: .collectionCleanup, status: .failed))
       }
     }
   }
@@ -270,12 +283,12 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
   ///
   /// - Parameters:
   ///   - viewModel: The model that recorded the activity.
-  ///   - text: A privacy-safe activity description.
-  ///   - category: The activity category displayed in the log.
+  ///   - event: Typed product outcome.
+  ///   - saved: Whether the independent logging write succeeded.
   func configurationViewModel(
-    _ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String
+    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityEvent, saved: Bool
   ) {
-    log.append(text: text, category: category)
+    log.producerDidRecord(saved: saved)
   }
 
   /// Applies an updated app appearance to all windows.
@@ -288,6 +301,6 @@ final class ConfigurationCoordinator: ConfigurationViewControllerDelegate,
     for controller in [mainWindow, settingsWindow, logWindow] {
       controller?.window?.appearance = AppAppearanceSettings.appearance(for: appearance.choice)
     }
-    log.append(text: "Application appearance changed.", category: "Appearance")
+    Task { await log.record(MovieFolderActivityEvent(action: .applicationAppearanceChanged, status: .succeeded)) }
   }
 }

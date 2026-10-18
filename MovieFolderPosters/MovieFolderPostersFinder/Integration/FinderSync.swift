@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import FileSystem
 import FinderSync
 import Network
@@ -24,6 +25,10 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   private var processingConfiguration: DirectoryConfiguration?
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
   private let fileSystem = FileSystemService()
+  /// Retained best-effort recorder; logging never controls processing authorization.
+  private let activity = MovieFolderEnvironment.makeActivityRecorder()
+  /// Last configuration availability, suppressing repeated reload floods.
+  private var lastConfigurationStatus: MovieFolderActivityEvent.Status?
   /// Privacy-preserving diagnostic events for this component.
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
 
@@ -34,8 +39,8 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL> {
     recordActivation()
     do {
-      let configuration = try await SharedEnvironment.repository().readWhenAvailable()
-      let authorizations = try SharedEnvironment.privateAuthorizations()
+      let configuration = try await MovieFolderEnvironment.makeConfigurationRepository().readWhenAvailable()
+      let authorizations = try MovieFolderEnvironment.makePrivateAuthorizationStore()
       var updated: [URL: AuthorizedRoot] = [:]
       let overlapping = configuration.findOverlappingDirectoryIDs()
       for directory in configuration.directories where !overlapping.contains(directory.id) {
@@ -58,14 +63,14 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
       roots = updated
       processor = nil
       do {
-        if let token = try KeychainCredentialStore().read() {
+        if let token = try KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier).read() {
           let client: TMDbClient
           #if DEBUG
-            if configuration.developmentFixtures {
+            if configuration.usesStubTMDbResponses {
               guard let image = Bundle.main.url(forResource: "TestPoster", withExtension: "png") else {
                 throw FolderPosterError.invalidImage
               }
-              let transport = DevelopmentTMDbTransport(posterData: try Data(contentsOf: image))
+              let transport = StubTMDbTransport(posterData: try Data(contentsOf: image))
               client = TMDbClient(token: try TMDbAccessToken(token), transport: transport)
             } else {
               client = TMDbClient(token: try TMDbAccessToken(token))
@@ -73,9 +78,9 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
           #else
             client = TMDbClient(token: try TMDbAccessToken(token))
           #endif
-          let container = try SharedEnvironment.container()
+          let container = try MovieFolderEnvironment.appGroupContainerURL()
           let records = container.appendingPathComponent("Processing/\(configuration.credentialRevision)")
-          let repository = try SharedEnvironment.repository()
+          let repository = try MovieFolderEnvironment.makeConfigurationRepository()
           let mutationGuard = FinderMutationGuard(
             repository: repository, configuration: configuration,
             roots: updated)
@@ -87,7 +92,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
               directory: container.appendingPathComponent("ProcessingLocks")
             ), mutationGuard: mutationGuard,
             appearance: configuration.posterAppearance,
-            processingStore: try SharedEnvironment.makeCollectionProcessingStore())
+            processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore())
           processingConfiguration = configuration
           logger.notice("Shared Keychain credential available")
         } else {
@@ -99,6 +104,8 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
       let registered = Set(updated.keys)
       await MainActor.run { FIFinderSyncController.default().directoryURLs = registered }
       logger.notice("Configuration loaded; registered=\(registered.count)")
+      await recordConfigurationStatus(processor == nil || updated.count != configuration.directories.count
+        ? .unavailable : .succeeded)
 
       return registered
     } catch {
@@ -106,6 +113,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
       processor = nil
       await MainActor.run { FIFinderSyncController.default().directoryURLs = [] }
       logger.error("Shared directory configuration unavailable")
+      await recordConfigurationStatus(.unavailable)
 
       return []
     }
@@ -118,7 +126,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
       else { return }
       let store = try PersistenceStore(
-        directory: SharedEnvironment.container().appendingPathComponent("Readiness"))
+        directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent("Readiness"))
       guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else { return }
       let receipt = ExtensionReadinessReceipt(version: version, build: build, observedAt: Date())
       try lease.write(JSONEncoder().encode(receipt))
@@ -136,18 +144,38 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   /// mismatch.
   func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws {
     guard let root = roots[url], let processor, let configuration = processingConfiguration else { return }
-    guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
-      throw DirectoryAccessError.identityChanged
+    let operationID = UUID()
+    await activity.record(MovieFolderActivityEvent(
+      action: .automaticProcessing, status: .started,
+      operationID: operationID, collectionID: root.directory.id))
+    do {
+      guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
+        throw DirectoryAccessError.identityChanged
+      }
+      let context = CollectionProcessingContext(
+        rootID: root.directory.id, rootIdentity: root.identity,
+        authorizationVersion: root.directory.authorizationVersion,
+        credentialRevision: configuration.credentialRevision,
+        usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance)
+      let result = try await processor.process(root: root.access.url, processingContext: context)
+      withExtendedLifetime(root.access) {}
+      await activity.record(MovieFolderActivityEvent(
+        action: .automaticProcessing, status: MovieFolderActivityEvent.automaticProcessingStatus(for: result),
+        operationID: operationID, collectionID: root.directory.id))
+      logger.notice("Processing returned: examined=\(result.examined), assigned=\(result.assigned)")
+    } catch {
+      await activity.record(MovieFolderActivityEvent(
+        action: .automaticProcessing, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
+        operationID: operationID, collectionID: root.directory.id))
+      throw error
     }
-    let context = CollectionProcessingContext(
-      rootID: root.directory.id, rootIdentity: root.identity,
-      authorizationVersion: root.directory.authorizationVersion,
-      credentialRevision: configuration.credentialRevision,
-      developmentFixtures: configuration.developmentFixtures, appearance: configuration.posterAppearance)
-    let result = try await processor.process(root: root.access.url, processingContext: context)
-    withExtendedLifetime(root.access) {}
-    logger.notice("Processing completed: examined=\(result.examined), assigned=\(result.assigned)")
-    logger.notice("Preserved=\(result.skippedExistingIcons), unresolved=\(result.unresolved)")
+  }
+
+  /// Records availability transitions once per configuration state, without per-folder events.
+  private func recordConfigurationStatus(_ status: MovieFolderActivityEvent.Status) async {
+    guard status != lastConfigurationStatus else { return }
+    lastConfigurationStatus = status
+    await activity.record(MovieFolderActivityEvent(action: .finderConfiguration, status: status))
   }
 
   /// Resolves retained extension access or establishes an extension-owned bookmark from transferred evidence.
@@ -233,7 +261,7 @@ final class FinderSync: FIFinderSync {
     scheduler = DirectoryObservationScheduler(delegate: runtime)
     super.init()
     DistributedNotificationCenter.default().addObserver(
-      self, selector: #selector(configurationChanged), name: SharedEnvironment.configurationChanged, object: nil
+      self, selector: #selector(configurationChanged), name: MovieFolderEnvironment.configurationChanged, object: nil
     )
     let scheduler = scheduler
     Task { await scheduler.reload() }
@@ -312,7 +340,7 @@ final class FinderSync: FIFinderSync {
   private func selectedMovieFolder() -> MoviePosterRequest? {
     guard let selected = FIFinderSyncController.default().selectedItemURLs(), selected.count == 1,
       let url = selected.first, !url.lastPathComponent.hasPrefix("."),
-      let configuration = try? SharedEnvironment.repository().read()
+      let configuration = try? MovieFolderEnvironment.makeConfigurationRepository().read()
     else { return nil }
     let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
     for directory in configuration.directories {

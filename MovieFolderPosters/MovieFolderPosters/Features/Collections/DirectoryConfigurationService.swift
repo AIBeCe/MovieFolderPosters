@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import FileSystem
 import Foundation
 import Persistence
@@ -11,7 +12,7 @@ nonisolated protocol ConfigurationChangeNotifying: Sendable {
 /// Sends configuration-change notifications through the shared environment.
 nonisolated struct SharedConfigurationChangeNotifier: ConfigurationChangeNotifying {
   /// Publishes a process-wide configuration change notification.
-  func configurationDidChange() { SharedEnvironment.notifyConfigurationChanged() }
+  func configurationDidChange() { MovieFolderEnvironment.notifyConfigurationChanged() }
 }
 
 /// Creates and resolves security-scoped bookmarks for configured directories.
@@ -69,7 +70,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - authorization: Provider for resolving and creating security bookmarks.
   init(
     repository: ConfigurationRepository, authorizations: PersistenceStore,
-    credentials: any CredentialStoring = KeychainCredentialStore(),
+    credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
     notifier: any ConfigurationChangeNotifying = SharedConfigurationChangeNotifier(),
     authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization()
   ) {
@@ -272,9 +273,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     ///
     /// - Parameter enabled: Whether fixture responses should be used.
     /// - Throws: A persistence error if the setting cannot be committed.
-    func setDevelopmentFixtures(_ enabled: Bool) throws {
+    func setStubTMDbResponsesEnabled(_ enabled: Bool) throws {
       try repository.update {
-        $0.developmentFixtures = enabled
+        $0.usesStubTMDbResponses = enabled
         $0.credentialRevision = UUID()
       }
       notifier.configurationDidChange()

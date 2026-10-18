@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import AppKit
 import OSLog
 
@@ -7,8 +8,11 @@ import OSLog
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Owns the configuration windows for the lifetime of the app delegate.
   private var coordinator: ConfigurationCoordinator?
+  /// Best-effort shared activity recorder retained independently of configuration startup.
+  private let activity = MovieFolderEnvironment.makeActivityRecorder()
   /// Presents poster actions opened through the app's URL handler.
-  private let posterActions = MoviePosterActionCoordinator()
+  private lazy var posterActions = MoviePosterActionCoordinator(
+    service: MoviePosterActionService(activity: activity))
 
   /// Starts the AppKit application with this delegate retained through the run loop.
   static func main() {
@@ -25,24 +29,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// - Parameter notification: The launch notification supplied by AppKit.
   func applicationDidFinishLaunching(_ notification: Notification) {
     installMenu()
+    Task { await activity.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded)) }
     do {
       let service = try DirectoryConfigurationService(
-        repository: SharedEnvironment.repository(),
-        authorizations: SharedEnvironment.privateAuthorizations())
-      let processingStore = try SharedEnvironment.makeCollectionProcessingStore()
+        repository: MovieFolderEnvironment.makeConfigurationRepository(),
+        authorizations: MovieFolderEnvironment.makePrivateAuthorizationStore())
+      let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
       let summaryService = try CollectionSummaryService.shared()
       Task.detached {
         _ = try? processingStore.pruneToConfiguredRoots()
       }
       #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--development-fixtures") {
-          Task { try? await service.setDevelopmentFixtures(true) }
+          Task { try? await service.setStubTMDbResponsesEnabled(true) }
         } else if ProcessInfo.processInfo.arguments.contains("--disable-development-fixtures") {
-          Task { try? await service.setDevelopmentFixtures(false) }
+          Task { try? await service.setStubTMDbResponsesEnabled(false) }
         }
       #endif
       coordinator = ConfigurationCoordinator(
-        service: service, summaryService: summaryService,
+        service: service, activity: activity, summaryService: summaryService,
         processingStore: processingStore)
       coordinator?.start()
     } catch {
@@ -55,6 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "Storage startup failed: \(failure.domain, privacy: .public), code=\(failure.code)")
       alert.informativeText =
         "The app could not open its settings. Quit and reopen it using a signed build."
+      if let storageError = error as? CollectionProcessingStorageNamespaceError,
+        storageError == .legacyMigrationRequired {
+        alert.messageText = "Processing storage needs migration"
+        alert.informativeText =
+          "Quit older app copies and disable older Finder extension copies. "
+          + "Complete the documented offline storage migration, then reopen the app."
+      }
       alert.runModal()
     }
   }

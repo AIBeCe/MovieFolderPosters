@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import AppKit
 import FileSystem
 import Foundation
@@ -424,15 +425,15 @@ private final class ConfigurationDelegateProbe: ConfigurationViewModelDelegate,
   /// Number of model-state updates received.
   var updates = 0
   /// Activity log used to inspect messages sent by the view model.
-  let log = HostActivityLog()
+  var events: [MovieFolderActivityEvent] = []
 
   /// Counts a state update from the configuration model.
   func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) { updates += 1 }
   /// Records activity in the probe's host log.
   func configurationViewModel(
-    _ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String
+    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityEvent, saved: Bool
   ) {
-    log.append(text: text, category: category)
+    events.append(event)
   }
 }
 
@@ -477,11 +478,11 @@ private struct InstallationServiceFake: InstallationReadinessServicing {
 @Test func logIsBoundedAndClearDoesNotChangeConfiguration() async {
   let model = ConfigurationViewModel(service: ConfigurationServiceFake())
   await model.saveCredential("fake-secret")
-  let log = HostActivityLog()
-  for index in 0..<510 { log.append(text: "Event \(index)", category: "Configuration") }
+  let log = ActivityLogViewModel(service: ActivityServiceFake())
+  for _ in 0..<510 { await log.record(MovieFolderActivityEvent(action: .configurationLoaded, status: .succeeded)) }
   #expect(log.entries.count == 500)
-  #expect(log.entries.first?.text == "Event 10")
-  log.clear()
+  #expect(log.entries.first?.sequence == 11)
+  await log.clear()
   #expect(log.entries.isEmpty)
   #expect(model.credentialConfigured)
 }
@@ -493,13 +494,12 @@ private struct InstallationServiceFake: InstallationReadinessServicing {
   let model = ConfigurationViewModel(service: service)
   let probe = ConfigurationDelegateProbe()
   model.activityDelegate = probe
-  let log = probe.log
   let secret = "fake-sensitive-token"
   service.failNextOperation(with: TestServiceError(message: secret))
   await model.saveCredential(secret)
-  #expect(!log.entries.isEmpty)
-  #expect(log.entries.allSatisfy { !$0.text.contains(secret) })
-  #expect(log.entries.last?.category == "Error")
+  #expect(!probe.events.isEmpty)
+  #expect(probe.events.allSatisfy { !$0.text.contains(secret) })
+  #expect(probe.events.last?.category == "Error")
 }
 
 /// Verifies that removing another collection preserves the selected identity.
@@ -540,7 +540,7 @@ private struct InstallationServiceFake: InstallationReadinessServicing {
     let table = try #require(scroll.documentView as? NSTableView)
     #expect(table.rect(ofColumn: 5).maxX <= scroll.contentView.bounds.width + 0.5)
   }
-  let controller = LogViewController(log: HostActivityLog())
+  let controller = LogViewController(log: ActivityLogViewModel(service: ActivityServiceFake()))
   let window = NSWindow(contentViewController: controller)
   window.setContentSize(NSSize(width: 650, height: 280))
   let scroll = try #require(
@@ -647,21 +647,22 @@ private final class NavigationDelegateProbe: ConfigurationViewControllerDelegate
 
 /// Verifies that appearance and log delegates notify and release.
 @MainActor
-@Test func appearanceAndLogDelegatesNotifyAndRelease() throws {
+@Test func appearanceAndLogDelegatesNotifyAndRelease() async throws {
   let suite = "DelegateAppearanceTests.\(UUID())"
   let defaults = try #require(UserDefaults(suiteName: suite))
   defer { defaults.removePersistentDomain(forName: suite) }
   let settings = AppAppearanceSettings(defaults: defaults)
-  let log = HostActivityLog()
+  let log = ActivityLogViewModel(service: ActivityServiceFake())
   var probe: SettingsLogDelegateProbe? = SettingsLogDelegateProbe()
   settings.delegate = probe
   log.delegate = probe
   settings.select(.dark)
   settings.select(.dark)
-  log.append(text: "Event", category: "Test")
-  log.clear()
+  await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+  await log.clear()
   #expect(probe?.appearanceUpdates == 1)
-  #expect(probe?.logEntryCounts == [1, 0])
+  #expect(probe?.logEntryCounts.contains(1) == true)
+  #expect(probe?.logEntryCounts.last == 0)
   #expect(probe?.lastAppearance === settings)
   #expect(probe?.lastLog === log)
   weak var released = probe
@@ -673,7 +674,7 @@ private final class NavigationDelegateProbe: ConfigurationViewControllerDelegate
 
 /// Records appearance and log delegate callbacks for lifetime tests.
 @MainActor
-private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, HostActivityLogDelegate {
+private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, ActivityLogViewModelDelegate {
   /// Number of appearance changes received.
   var appearanceUpdates = 0
   /// Entry counts observed after each log update.
@@ -681,14 +682,14 @@ private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, Hos
   /// Settings object that sent the latest appearance update.
   weak var lastAppearance: AppAppearanceSettings?
   /// Log object that sent the latest update.
-  weak var lastLog: HostActivityLog?
+  weak var lastLog: ActivityLogViewModel?
   /// Records an appearance change from the settings store.
   func appAppearanceSettingsDidChange(_ settings: AppAppearanceSettings) {
     appearanceUpdates += 1
     lastAppearance = settings
   }
   /// Records the log size after an append or clear operation.
-  func hostActivityLogDidChange(_ log: HostActivityLog) {
+  func activityLogViewModelDidChange(_ log: ActivityLogViewModel) {
     logEntryCounts.append(log.entries.count)
     lastLog = log
   }
@@ -724,18 +725,20 @@ private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, Hos
 
 /// Verifies that log controller refreshes for append and clear.
 @MainActor
-@Test func logControllerRefreshesForAppendAndClear() throws {
-  let log = HostActivityLog()
+@Test func logControllerRefreshesForAppendAndClear() async throws {
+  let log = ActivityLogViewModel(service: ActivityServiceFake())
   let controller = LogViewController(log: log)
   let views = nativeViews(in: controller.view)
   let table = try #require(views.compactMap { $0 as? NSTableView }.first)
   let clear = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Clear" })
   #expect(table.numberOfRows == 0)
   #expect(!clear.isEnabled)
-  log.append(text: "Test event", category: "Test")
+  await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
   #expect(table.numberOfRows == 1)
   #expect(clear.isEnabled)
   clear.performClick(nil)
+  while log.canClear { await Task.yield() }
+  while log.isClearing || log.isLoading { await Task.yield() }
   #expect(log.entries.isEmpty)
   #expect(table.numberOfRows == 0)
   #expect(!clear.isEnabled)
@@ -851,7 +854,7 @@ private final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, Hos
     rootIdentity: initial.context.rootIdentity,
     authorizationVersion: UUID(),
     credentialRevision: UUID(),
-    developmentFixtures: initial.context.developmentFixtures,
+    usesStubTMDbResponses: initial.context.usesStubTMDbResponses,
     appearance: initial.context.appearance)
   let processingState = CollectionProcessingState(
     context: initial.context, operation: initial.operation, folders: initial.folders,
@@ -934,7 +937,7 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
     rootID: rootID, rootIdentity: "root-identity",
     authorizationVersion: authorizationVersion,
     credentialRevision: savedConfiguration.credentialRevision,
-    developmentFixtures: false, appearance: .softFinish)
+    usesStubTMDbResponses: false, appearance: .softFinish)
   let running = CollectionProcessingState(
     context: context,
     operation: CollectionProcessingOperation(action: .automatic, startedAt: Date(), state: .running))
@@ -960,7 +963,7 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
 private func processingStateForTesting(rootID: UUID) -> CollectionProcessingState {
   let context = CollectionProcessingContext(
     rootID: rootID, rootIdentity: "root-identity", authorizationVersion: UUID(),
-    credentialRevision: UUID(), developmentFixtures: false, appearance: .softFinish)
+    credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish)
   let folder = FolderProcessingRecord(
     name: "Verified.Movie.2024", identity: "folder-identity", state: .done,
     movieID: 4242, movieTitle: "Verified Movie", movieYear: 2024,
@@ -1086,4 +1089,15 @@ private actor SummaryReadGate {
     continuation?.resume()
     continuation = nil
   }
+}
+
+/// Logging failure never replaces a successful configuration result.
+@MainActor
+@Test func configurationResultSurvivesLoggingFailure() async {
+  let activity = ActivityServiceFake()
+  await activity.setFailures(write: true)
+  let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: activity)
+  await model.saveCredential("private-test-token")
+  #expect(model.credentialConfigured)
+  #expect(model.errorMessage == nil)
 }

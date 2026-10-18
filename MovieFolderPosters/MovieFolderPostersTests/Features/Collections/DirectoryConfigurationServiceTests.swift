@@ -1,3 +1,4 @@
+@testable import MovieFolderCommon
 import FileSystem
 import Foundation
 import Persistence

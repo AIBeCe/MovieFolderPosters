@@ -12,10 +12,6 @@
 		F40000000000000000000001 /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F40000000000000000000003 /* Network */; };
 		F40000000000000000000002 /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F40000000000000000000004 /* Network */; };
 		F5000000000000000000000C /* TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
-		F5000000000000000000000D /* DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
-		F5000000000000000000000E /* ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
-		F5000000000000000000000F /* MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
-		F50000000000000000000010 /* MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
 		F50000000000000000000046 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000028 /* FileSystem */; };
 		F50000000000000000000047 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000029 /* FileSystem */; };
 		F50000000000000000000048 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000002A /* FileSystem */; };
@@ -23,43 +19,10 @@
 		F50000000000000000000051 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000033 /* Persistence */; };
 		F50000000000000000000052 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000034 /* Persistence */; };
 		F5000000000000000000005B /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000005A /* Network */; };
-		F60000000000000000000014 /* DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
-		F60000000000000000000015 /* ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
-		F60000000000000000000016 /* SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
-		F60000000000000000000017 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
-		F60000000000000000000018 /* DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
-		F6000000000000000000001E /* DirectoryConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000A /* DirectoryConfiguration.swift */; };
-		F6000000000000000000001F /* ConfigurationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000B /* ConfigurationRepository.swift */; };
-		F60000000000000000000020 /* SharedEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000C /* SharedEnvironment.swift */; };
-		F60000000000000000000021 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000D /* KeychainCredentialStore.swift */; };
-		F60000000000000000000022 /* DirectoryObservationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000000000000000000000E /* DirectoryObservationScheduler.swift */; };
-		F70000000000000000000001 /* MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
-		F70000000000000000000002 /* MoviePosterRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000003 /* MoviePosterRequest.swift */; };
-		F70000000000000000000004 /* DevelopmentTMDbTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* DevelopmentTMDbTransport.swift */; };
 		F70000000000000000000005 /* TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
-		F90000000000000000000001 /* ReleaseNameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* ReleaseNameParser.swift */; };
-		F90000000000000000000002 /* MovieMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* MovieMatcher.swift */; };
-		F90000000000000000000003 /* MovieFolderProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000006 /* MovieFolderProcessor.swift */; };
-		FA2000000000000000000014 /* CollectionProcessingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* CollectionProcessingState.swift */; };
-		FA2000000000000000000015 /* CollectionProcessingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* CollectionProcessingState.swift */; };
-		FA2000000000000000000016 /* CollectionProcessingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* CollectionProcessingStore.swift */; };
-		FA2000000000000000000017 /* CollectionProcessingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* CollectionProcessingStore.swift */; };
-		FA4000000000000000000001 /* CollectionProcessingContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000001 /* CollectionProcessingContext.swift */; };
-		FA4000000000000000000002 /* FolderProcessingFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000002 /* FolderProcessingFailure.swift */; };
-		FA4000000000000000000003 /* FolderProcessingRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000003 /* FolderProcessingRecord.swift */; };
-		FA4000000000000000000004 /* CollectionProcessingOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000004 /* CollectionProcessingOperation.swift */; };
-		FA4000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */; };
-		FA4000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000006 /* CollectionProcessingPresentation.swift */; };
-		FA4000000000000000000007 /* CollectionProcessingCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000007 /* CollectionProcessingCounts.swift */; };
-		FA4000000000000000000008 /* CollectionProcessingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000008 /* CollectionProcessingError.swift */; };
-		FA5000000000000000000001 /* CollectionProcessingContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000001 /* CollectionProcessingContext.swift */; };
-		FA5000000000000000000002 /* FolderProcessingFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000002 /* FolderProcessingFailure.swift */; };
-		FA5000000000000000000003 /* FolderProcessingRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000003 /* FolderProcessingRecord.swift */; };
-		FA5000000000000000000004 /* CollectionProcessingOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000004 /* CollectionProcessingOperation.swift */; };
-		FA5000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */; };
-		FA5000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000006 /* CollectionProcessingPresentation.swift */; };
-		FA5000000000000000000007 /* CollectionProcessingCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000007 /* CollectionProcessingCounts.swift */; };
-		FA5000000000000000000008 /* CollectionProcessingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3000000000000000000008 /* CollectionProcessingError.swift */; };
+		FC0000000000000000000001 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000011 /* MovieFolderCommon */; };
+		FC0000000000000000000002 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000012 /* MovieFolderCommon */; };
+		FC0000000000000000000003 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000013 /* MovieFolderCommon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -109,26 +72,6 @@
 		F10000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MovieFolderPostersFinder.entitlements; sourceTree = "<group>"; };
 		F50000000000000000000002 /* TestPoster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = TestPoster.png; sourceTree = "<group>"; };
-		F50000000000000000000003 /* DevelopmentTMDbTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentTMDbTransport.swift; sourceTree = "<group>"; };
-		F50000000000000000000004 /* ReleaseNameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNameParser.swift; sourceTree = "<group>"; };
-		F50000000000000000000005 /* MovieMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieMatcher.swift; sourceTree = "<group>"; };
-		F50000000000000000000006 /* MovieFolderProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderProcessor.swift; sourceTree = "<group>"; };
-		F6000000000000000000000A /* DirectoryConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryConfiguration.swift; sourceTree = "<group>"; };
-		F6000000000000000000000B /* ConfigurationRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationRepository.swift; sourceTree = "<group>"; };
-		F6000000000000000000000C /* SharedEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedEnvironment.swift; sourceTree = "<group>"; };
-		F6000000000000000000000D /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
-		F6000000000000000000000E /* DirectoryObservationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryObservationScheduler.swift; sourceTree = "<group>"; };
-		F70000000000000000000003 /* MoviePosterRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePosterRequest.swift; sourceTree = "<group>"; };
-		FA200000000000000000000A /* CollectionProcessingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingState.swift; sourceTree = "<group>"; };
-		FA200000000000000000000B /* CollectionProcessingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingStore.swift; sourceTree = "<group>"; };
-		FA3000000000000000000001 /* CollectionProcessingContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingContext.swift; sourceTree = "<group>"; };
-		FA3000000000000000000002 /* FolderProcessingFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderProcessingFailure.swift; sourceTree = "<group>"; };
-		FA3000000000000000000003 /* FolderProcessingRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderProcessingRecord.swift; sourceTree = "<group>"; };
-		FA3000000000000000000004 /* CollectionProcessingOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingOperation.swift; sourceTree = "<group>"; };
-		FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingDisplayState.swift; sourceTree = "<group>"; };
-		FA3000000000000000000006 /* CollectionProcessingPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingPresentation.swift; sourceTree = "<group>"; };
-		FA3000000000000000000007 /* CollectionProcessingCounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingCounts.swift; sourceTree = "<group>"; };
-		FA3000000000000000000008 /* CollectionProcessingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionProcessingError.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -167,6 +110,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC0000000000000000000001 /* MovieFolderCommon in Frameworks */,
 				F50000000000000000000050 /* Persistence in Frameworks */,
 				F50000000000000000000046 /* FileSystem in Frameworks */,
 				F40000000000000000000001 /* Network in Frameworks */,
@@ -177,6 +121,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC0000000000000000000002 /* MovieFolderCommon in Frameworks */,
 				F50000000000000000000051 /* Persistence in Frameworks */,
 				F50000000000000000000047 /* FileSystem in Frameworks */,
 				F40000000000000000000002 /* Network in Frameworks */,
@@ -194,6 +139,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC0000000000000000000003 /* MovieFolderCommon in Frameworks */,
 				F5000000000000000000005B /* Network in Frameworks */,
 				F50000000000000000000052 /* Persistence in Frameworks */,
 				F50000000000000000000048 /* FileSystem in Frameworks */,
@@ -206,7 +152,6 @@
 		4EA84230307BE08A005A22E4 = {
 			isa = PBXGroup;
 			children = (
-				F80000000000000000000001 /* Shared */,
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
 				F10000000000000000000003 /* MovieFolderPostersFinder */,
 				4EA8424A307BE08B005A22E4 /* MovieFolderPostersTests */,
@@ -236,64 +181,6 @@
 			path = MovieFolderPostersFinder;
 			sourceTree = "<group>";
 		};
-		F80000000000000000000001 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				F90000000000000000000020 /* Configuration */,
-				F80000000000000000000002 /* Processing */,
-				F90000000000000000000021 /* FinderIntegration */,
-				F90000000000000000000022 /* Security */,
-				F90000000000000000000023 /* Development */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
-		F80000000000000000000002 /* Processing */ = {
-			isa = PBXGroup;
-			children = (
-				FA2000000000000000000001 /* Collections */,
-				F50000000000000000000004 /* ReleaseNameParser.swift */,
-				F50000000000000000000005 /* MovieMatcher.swift */,
-				F50000000000000000000006 /* MovieFolderProcessor.swift */,
-			);
-			path = Processing;
-			sourceTree = "<group>";
-		};
-		F90000000000000000000020 /* Configuration */ = {
-			isa = PBXGroup;
-			children = (
-				F6000000000000000000000A /* DirectoryConfiguration.swift */,
-				F6000000000000000000000B /* ConfigurationRepository.swift */,
-				F6000000000000000000000C /* SharedEnvironment.swift */,
-			);
-			path = Configuration;
-			sourceTree = "<group>";
-		};
-		F90000000000000000000021 /* FinderIntegration */ = {
-			isa = PBXGroup;
-			children = (
-				F6000000000000000000000E /* DirectoryObservationScheduler.swift */,
-				F70000000000000000000003 /* MoviePosterRequest.swift */,
-			);
-			path = FinderIntegration;
-			sourceTree = "<group>";
-		};
-		F90000000000000000000022 /* Security */ = {
-			isa = PBXGroup;
-			children = (
-				F6000000000000000000000D /* KeychainCredentialStore.swift */,
-			);
-			path = Security;
-			sourceTree = "<group>";
-		};
-		F90000000000000000000023 /* Development */ = {
-			isa = PBXGroup;
-			children = (
-				F50000000000000000000003 /* DevelopmentTMDbTransport.swift */,
-			);
-			path = Development;
-			sourceTree = "<group>";
-		};
 		F90000000000000000000024 /* Integration */ = {
 			isa = PBXGroup;
 			children = (
@@ -319,23 +206,6 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
-		FA2000000000000000000001 /* Collections */ = {
-			isa = PBXGroup;
-			children = (
-				FA200000000000000000000A /* CollectionProcessingState.swift */,
-				FA3000000000000000000001 /* CollectionProcessingContext.swift */,
-				FA3000000000000000000002 /* FolderProcessingFailure.swift */,
-				FA3000000000000000000003 /* FolderProcessingRecord.swift */,
-				FA3000000000000000000004 /* CollectionProcessingOperation.swift */,
-				FA3000000000000000000005 /* CollectionProcessingDisplayState.swift */,
-				FA3000000000000000000006 /* CollectionProcessingPresentation.swift */,
-				FA3000000000000000000007 /* CollectionProcessingCounts.swift */,
-				FA3000000000000000000008 /* CollectionProcessingError.swift */,
-				FA200000000000000000000B /* CollectionProcessingStore.swift */,
-			);
-			path = Collections;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -358,6 +228,7 @@
 			);
 			name = MovieFolderPosters;
 			packageProductDependencies = (
+				FC0000000000000000000011 /* MovieFolderCommon */,
 				F50000000000000000000032 /* Persistence */,
 				F50000000000000000000028 /* FileSystem */,
 				F40000000000000000000003 /* Network */,
@@ -384,6 +255,7 @@
 			);
 			name = MovieFolderPostersTests;
 			packageProductDependencies = (
+				FC0000000000000000000012 /* MovieFolderCommon */,
 				F50000000000000000000033 /* Persistence */,
 				F50000000000000000000029 /* FileSystem */,
 				F40000000000000000000004 /* Network */,
@@ -429,6 +301,7 @@
 			);
 			name = MovieFolderPostersFinder;
 			packageProductDependencies = (
+				FC0000000000000000000013 /* MovieFolderCommon */,
 				F5000000000000000000005A /* Network */,
 				F50000000000000000000034 /* Persistence */,
 				F5000000000000000000002A /* FileSystem */,
@@ -470,6 +343,7 @@
 			mainGroup = 4EA84230307BE08A005A22E4;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */,
 				F5000000000000000000001F /* XCLocalSwiftPackageReference "../Packages/Persistence" */,
 				F5000000000000000000001E /* XCLocalSwiftPackageReference "../Packages/FileSystem" */,
 				F40000000000000000000005 /* XCLocalSwiftPackageReference "../Packages/Network" */,
@@ -525,26 +399,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FA2000000000000000000016 /* CollectionProcessingStore.swift in Sources */,
-				FA2000000000000000000014 /* CollectionProcessingState.swift in Sources */,
-				FA4000000000000000000001 /* CollectionProcessingContext.swift in Sources */,
-				FA4000000000000000000002 /* FolderProcessingFailure.swift in Sources */,
-				FA4000000000000000000003 /* FolderProcessingRecord.swift in Sources */,
-				FA4000000000000000000004 /* CollectionProcessingOperation.swift in Sources */,
-				FA4000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */,
-				FA4000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */,
-				FA4000000000000000000007 /* CollectionProcessingCounts.swift in Sources */,
-				FA4000000000000000000008 /* CollectionProcessingError.swift in Sources */,
-				F90000000000000000000001 /* ReleaseNameParser.swift in Sources */,
-				F90000000000000000000002 /* MovieMatcher.swift in Sources */,
-				F90000000000000000000003 /* MovieFolderProcessor.swift in Sources */,
-				F70000000000000000000001 /* MoviePosterRequest.swift in Sources */,
-				F70000000000000000000004 /* DevelopmentTMDbTransport.swift in Sources */,
-				F60000000000000000000014 /* DirectoryConfiguration.swift in Sources */,
-				F60000000000000000000015 /* ConfigurationRepository.swift in Sources */,
-				F60000000000000000000016 /* SharedEnvironment.swift in Sources */,
-				F60000000000000000000017 /* KeychainCredentialStore.swift in Sources */,
-				F60000000000000000000018 /* DirectoryObservationScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -566,26 +420,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FA2000000000000000000017 /* CollectionProcessingStore.swift in Sources */,
-				FA2000000000000000000015 /* CollectionProcessingState.swift in Sources */,
-				FA5000000000000000000001 /* CollectionProcessingContext.swift in Sources */,
-				FA5000000000000000000002 /* FolderProcessingFailure.swift in Sources */,
-				FA5000000000000000000003 /* FolderProcessingRecord.swift in Sources */,
-				FA5000000000000000000004 /* CollectionProcessingOperation.swift in Sources */,
-				FA5000000000000000000005 /* CollectionProcessingDisplayState.swift in Sources */,
-				FA5000000000000000000006 /* CollectionProcessingPresentation.swift in Sources */,
-				FA5000000000000000000007 /* CollectionProcessingCounts.swift in Sources */,
-				FA5000000000000000000008 /* CollectionProcessingError.swift in Sources */,
-				F70000000000000000000002 /* MoviePosterRequest.swift in Sources */,
-				F6000000000000000000001E /* DirectoryConfiguration.swift in Sources */,
-				F6000000000000000000001F /* ConfigurationRepository.swift in Sources */,
-				F60000000000000000000020 /* SharedEnvironment.swift in Sources */,
-				F60000000000000000000021 /* KeychainCredentialStore.swift in Sources */,
-				F60000000000000000000022 /* DirectoryObservationScheduler.swift in Sources */,
-				F5000000000000000000000D /* DevelopmentTMDbTransport.swift in Sources */,
-				F5000000000000000000000E /* ReleaseNameParser.swift in Sources */,
-				F5000000000000000000000F /* MovieMatcher.swift in Sources */,
-				F50000000000000000000010 /* MovieFolderProcessor.swift in Sources */,
 				F10000000000000000000007 /* FinderSync.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1004,6 +838,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/Persistence;
 		};
+		FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/MovieFolderCommon;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1051,6 +889,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F40000000000000000000005 /* XCLocalSwiftPackageReference "../Packages/Network" */;
 			productName = Network;
+		};
+		FC0000000000000000000011 /* MovieFolderCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */;
+			productName = MovieFolderCommon;
+		};
+		FC0000000000000000000012 /* MovieFolderCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */;
+			productName = MovieFolderCommon;
+		};
+		FC0000000000000000000013 /* MovieFolderCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */;
+			productName = MovieFolderCommon;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

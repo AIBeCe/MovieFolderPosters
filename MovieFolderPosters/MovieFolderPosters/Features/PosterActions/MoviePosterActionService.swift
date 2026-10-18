@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import FileSystem
 import Foundation
 import Network
@@ -84,11 +85,55 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// Reads the TMDb token without retaining its value in configuration state.
   private let credentials: any CredentialStoring
 
+  /// Retained best-effort recorder whose failure never changes a poster result.
+  private let activity: any MovieFolderActivityServicing
+
   /// Creates the service with a credential provider.
   ///
   /// - Parameter credentials: The secure credential store used for TMDb access.
-  init(credentials: any CredentialStoring = KeychainCredentialStore()) {
+  init(
+    credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
+    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder()
+  ) {
     self.credentials = credentials
+    self.activity = activity
+  }
+
+  /// Refreshes a poster and records an independent typed operation outcome.
+  func refreshPoster(for request: MoviePosterRequest) async throws -> Int {
+    try await recordAction(.posterRefresh, request: request) { try await performRefreshPoster(for: request) }
+  }
+
+  /// Applies a selected poster and records an independent typed operation outcome.
+  func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
+    try await recordAction(.posterSelection, request: request) { try await performApplyPoster(movie, for: request) }
+  }
+
+  /// Removes a poster and records an independent typed operation outcome.
+  func removePoster(for request: MoviePosterRequest) async throws -> Bool {
+    try await recordAction(.posterRemoval, request: request) { try await performRemovePoster(for: request) }
+  }
+
+  /// Keeps logging failures separate from the original authorized operation result or thrown error.
+  private func recordAction<Value: Sendable>(
+    _ action: MovieFolderActivityEvent.Action, request: MoviePosterRequest,
+    operation: () async throws -> Value
+  ) async throws -> Value {
+    let operationID = UUID()
+    await activity.record(MovieFolderActivityEvent(
+      action: action, status: .started, operationID: operationID, collectionID: request.rootID))
+    do {
+      let result = try await operation()
+      await activity.record(MovieFolderActivityEvent(
+        action: action, status: .succeeded, operationID: operationID, collectionID: request.rootID))
+
+      return result
+    } catch {
+      await activity.record(MovieFolderActivityEvent(
+        action: action, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
+        operationID: operationID, collectionID: request.rootID))
+      throw error
+    }
   }
 
   /// Validates the query and searches TMDb under the folder's current authorization.
@@ -128,7 +173,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Parameter request: The folder identity and collection authorization scope.
   /// - Returns: The identifier of the matched movie.
   /// - Throws: Folder validation, provider, processing, persistence, or cancellation errors.
-  func refreshPoster(for request: MoviePosterRequest) async throws -> Int {
+  private func performRefreshPoster(for request: MoviePosterRequest) async throws -> Int {
     try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
       let provider = try makeProvider(for: context.configuration)
@@ -148,7 +193,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   ///   - request: The folder identity and collection authorization scope.
   /// - Returns: The identifier of the assigned movie.
   /// - Throws: An action or processing error if the selection cannot be applied safely.
-  func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
+  private func performApplyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
     guard movie.id > 0,
       let posterPath = movie.posterPath,
       !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -173,7 +218,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Parameter request: The folder identity and collection authorization scope.
   /// - Returns: Whether a custom poster was present and removed.
   /// - Throws: An action or processing error if the folder cannot be accessed safely.
-  func removePoster(for request: MoviePosterRequest) async throws -> Bool {
+  private func performRemovePoster(for request: MoviePosterRequest) async throws -> Bool {
     try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
       let processor = try makeProcessor(for: context, provider: MissingTokenProvider())
@@ -212,7 +257,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     _ request: MoviePosterRequest,
     operation: (AuthorizedRoot) async throws -> Value
   ) async throws -> Value {
-    let repository = try SharedEnvironment.repository()
+    let repository = try MovieFolderEnvironment.makeConfigurationRepository()
     let configuration = try await repository.readWhenAvailable()
     guard let directory = configuration.directories.first(where: { $0.id == request.rootID }) else {
       throw MoviePosterActionServiceError.directoryNotConfigured
@@ -221,7 +266,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       throw MoviePosterActionServiceError.directoryUnavailable
     }
 
-    let authorizationStore = try SharedEnvironment.privateAuthorizations()
+    let authorizationStore = try MovieFolderEnvironment.makePrivateAuthorizationStore()
     let authorizationKey = "host-\(directory.id)-\(directory.authorizationVersion)"
     guard let authorizationLease = try authorizationStore.acquireLease(for: authorizationKey) else {
       throw ConfigurationError.busy
@@ -273,7 +318,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Parameter context: The authorization context captured for this action.
   /// - Throws: An action error if the root identity has changed.
   private func ensureConfigurationIsCurrent(_ context: AuthorizedRoot) throws {
-    let lease = try SharedEnvironment.repository().mutationLease(
+    let lease = try MovieFolderEnvironment.makeConfigurationRepository().mutationLease(
       for: context.directory,
       expectedConfiguration: context.configuration)
     defer { withExtendedLifetime(lease) {} }
@@ -297,12 +342,12 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     let accessToken = try TMDbAccessToken(token)
 
     #if DEBUG
-      if configuration.developmentFixtures {
+      if configuration.usesStubTMDbResponses {
         guard let posterURL = Bundle.main.url(forResource: "TestPoster", withExtension: "png")
         else {
           throw TMDbError.invalidImage
         }
-        let transport = DevelopmentTMDbTransport(posterData: try Data(contentsOf: posterURL))
+        let transport = StubTMDbTransport(posterData: try Data(contentsOf: posterURL))
 
         return TMDbClient(token: accessToken, transport: transport)
       }
@@ -317,7 +362,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       rootID: context.directory.id, rootIdentity: context.rootIdentity,
       authorizationVersion: context.directory.authorizationVersion,
       credentialRevision: context.configuration.credentialRevision,
-      developmentFixtures: context.configuration.developmentFixtures,
+      usesStubTMDbResponses: context.configuration.usesStubTMDbResponses,
       appearance: context.configuration.posterAppearance)
   }
 
@@ -332,12 +377,12 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     for context: AuthorizedRoot,
     provider: any MovieMetadataProvider
   ) throws -> MovieFolderProcessor {
-    let container = try SharedEnvironment.container()
+    let container = try MovieFolderEnvironment.appGroupContainerURL()
     let recordDirectory = container.appendingPathComponent(
       "Processing/\(context.configuration.credentialRevision)")
     let coordinationDirectory = container.appendingPathComponent("ProcessingLocks")
     let mutationGuard = PosterActionMutationGuard(
-      repository: try SharedEnvironment.repository(),
+      repository: try MovieFolderEnvironment.makeConfigurationRepository(),
       directory: context.directory,
       configuration: context.configuration,
       root: context.root, rootIdentity: context.rootIdentity)
@@ -349,7 +394,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       coordinationStore: try PersistenceStore(directory: coordinationDirectory),
       mutationGuard: mutationGuard,
       appearance: context.configuration.posterAppearance,
-      processingStore: try SharedEnvironment.makeCollectionProcessingStore())
+      processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore())
 
   }
 }

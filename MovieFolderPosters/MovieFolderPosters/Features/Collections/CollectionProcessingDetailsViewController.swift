@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import AppKit
 
 /// Displays committed collection outcome evidence without offering retry or correction actions.

@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import Foundation
 import Persistence
 
@@ -49,10 +50,10 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
 
   /// Opens shared host read dependencies without exposing UI services to the Finder target.
   static func shared() throws -> CollectionSummaryService {
-    let sharedContainer = try SharedEnvironment.container()
+    let sharedContainer = try MovieFolderEnvironment.appGroupContainerURL()
     return CollectionSummaryService(
-      configuration: try SharedEnvironment.repository(),
-      processingStore: try SharedEnvironment.makeCollectionProcessingStore(),
+      configuration: try MovieFolderEnvironment.makeConfigurationRepository(),
+      processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore(),
       coordinationStore: try PersistenceStore(
         directory: sharedContainer.appendingPathComponent("ProcessingLocks")))
   }
@@ -208,7 +209,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       && context.rootIdentity == root.identity
       && context.authorizationVersion == root.authorizationVersion
       && context.credentialRevision == configuration.credentialRevision
-      && context.developmentFixtures == configuration.developmentFixtures
+      && context.usesStubTMDbResponses == configuration.usesStubTMDbResponses
       && context.appearance == configuration.posterAppearance
       && !configuration.findOverlappingDirectoryIDs().contains(root.id)
   }

@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import FinderSync
 import Foundation
 import Persistence
@@ -147,7 +148,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   nonisolated fileprivate static func readExtensionReceipt() -> ExtensionReceiptEvidence {
     do {
       let store = try PersistenceStore(
-        directory: SharedEnvironment.container().appendingPathComponent(
+        directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent(
           "Readiness", isDirectory: true)
       )
       guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else {
@@ -169,7 +170,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   nonisolated fileprivate static func performSharedStorageCheck() -> SharedStorageEvidence {
     do {
       let store = try PersistenceStore(
-        directory: SharedEnvironment.container().appendingPathComponent(
+        directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent(
           "Readiness", isDirectory: true)
       )
 

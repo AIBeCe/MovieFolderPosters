@@ -70,12 +70,19 @@ Light appearance references:
 ## Log
 
 Log is a separate, reusable window with native Time, Text, and Category columns and Clear at bottom right.
-The current host-session journal records application/configuration events using generic messages without tokens
-or user paths. It retains at most 500 entries. Clear affects only this session journal.
+R100-03 replaces the session journal with shared persisted host/Finder activity, retaining at most 500 entries.
+Typed events render fixed safe messages without credentials, user paths, URLs, or raw error descriptions.
+Loading, empty, write failure, load failure, and Clear failure remain distinct presentation states. Clear affects
+only activity history, preserving processing outcomes, matches, configuration, caches, and icons.
+See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md) for current implementation/verification status.
 
 ![Native Log window](images/native-appkit/log-window.png)
 
-## Data-feed limitations after the rollback
+## Historical data-feed limitations after the rollback
+
+These limitations describe the UI baseline before R100-02/R100-03. R100-02 subsequently restored authoritative
+collection summaries; R100-03 implements persistent activity under the approved Common/Log package design and
+awaits user review before commit/integration.
 
 The rollback removed the previous processing-summary and shared Finder-journal wiring as well as the discarded
 UI. This draft restores the window organization; it does not silently restore the removed processing integration.

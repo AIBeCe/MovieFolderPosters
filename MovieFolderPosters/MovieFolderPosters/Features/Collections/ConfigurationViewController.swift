@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import AppKit
 import UniformTypeIdentifiers
 

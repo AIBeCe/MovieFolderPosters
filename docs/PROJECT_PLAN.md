@@ -27,7 +27,9 @@ Assigned icons must persist independently of the application and extension.
 
 R100-02 is implemented, reviewed, verified, committed as `049b74b`, integrated into `develop`, and pushed to
 GitHub on 2026-10-18. Issue #2 is closed and the feature branch is deleted. The current scope and verification
-ledger live in [Processing results](COLLECTION_PROCESSING.md). This does not authorize R100-03.
+ledger live in [Processing results](COLLECTION_PROCESSING.md). R100-03 was separately approved on 2026-10-18,
+including the MovieFolderCommon migration and Log service package. See
+[Common and Log migration](COMMON_AND_LOG_MIGRATION.md); user review precedes commit/integration.
 
 - Follow AGENTS.md.
 - Use SOLID principles as much as possible.

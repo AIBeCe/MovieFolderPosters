@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import AppKit
 import Network
 
@@ -23,7 +24,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     DistributedNotificationCenter.default().addObserver(
       self,
       selector: #selector(configurationChanged(_:)),
-      name: SharedEnvironment.configurationChanged,
+      name: MovieFolderEnvironment.configurationChanged,
       object: nil
     )
   }

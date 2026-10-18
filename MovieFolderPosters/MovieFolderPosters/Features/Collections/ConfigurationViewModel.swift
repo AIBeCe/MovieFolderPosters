@@ -1,3 +1,4 @@
+import MovieFolderCommon
 import FileSystem
 import Foundation
 
@@ -12,13 +13,9 @@ protocol ConfigurationViewModelDelegate: AnyObject {
 /// Receives activity messages produced by configuration actions.
 @MainActor
 protocol ConfigurationViewModelActivityDelegate: AnyObject {
-  /// Reports an operation result for the host activity log.
-  /// - Parameters:
-  ///   - viewModel: The model that recorded the event.
-  ///   - text: The privacy-safe event text.
-  ///   - category: The activity category.
+  /// Reports a typed operation outcome and independent logging success.
   func configurationViewModel(
-    _ viewModel: ConfigurationViewModel, didRecordActivity text: String, category: String)
+    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityEvent, saved: Bool)
 }
 
 /// Holds configuration presentation state and forwards user actions to its service.
@@ -26,6 +23,9 @@ protocol ConfigurationViewModelActivityDelegate: AnyObject {
 final class ConfigurationViewModel {
   /// Performs configuration reads and mutations outside the view layer.
   private let service: any ConfigurationServicing
+
+  /// Required retained best-effort recorder; weak observers never control persistence.
+  private let activity: any MovieFolderActivityServicing
 
   /// Weakly retains one view-model observer without extending its lifetime.
   private struct WeakDelegate {
@@ -87,14 +87,18 @@ final class ConfigurationViewModel {
   /// Creates a model backed by the supplied configuration service.
   ///
   /// - Parameter service: The service used for configuration operations.
-  init(service: any ConfigurationServicing) {
+  init(
+    service: any ConfigurationServicing,
+    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder()
+  ) {
     self.service = service
+    self.activity = activity
   }
 
   /// Loads the latest configuration summary and publishes its state.
   func load() async {
     await perform(
-      message: "Collections refreshed.", failureMessage: "Could not load configuration."
+      action: .configurationLoaded, failureMessage: "Could not load configuration."
     ) {
       try await self.service.configurationSummary()
     }
@@ -104,7 +108,7 @@ final class ConfigurationViewModel {
   ///
   /// - Parameter directory: The folder selected by the user.
   func addDirectory(_ directory: URL) async {
-    await perform(message: "Collection added.", failureMessage: "Could not add this folder.") {
+    await perform(action: .collectionAdded, failureMessage: "Could not add this folder.") {
       try await self.service.addDirectory(directory)
 
       return try await self.service.configurationSummary()
@@ -115,7 +119,7 @@ final class ConfigurationViewModel {
   ///
   /// - Parameter identifier: The stable identifier of the collection to remove.
   func removeDirectory(_ identifier: UUID) async {
-    await perform(message: "Collection removed.", failureMessage: "Could not remove this folder.") {
+    await perform(action: .collectionRemoved, collectionID: identifier, failureMessage: "Could not remove this folder.") {
       try await self.service.removeDirectory(identifier)
 
       return try await self.service.configurationSummary()
@@ -129,7 +133,7 @@ final class ConfigurationViewModel {
   ///   - directory: The folder whose access should be saved for that collection.
   func reauthorizeDirectory(_ identifier: UUID, with directory: URL) async {
     await perform(
-      message: "Collection access restored.",
+      action: .collectionAccessRestored, collectionID: identifier,
       failureMessage: "Could not restore access to this folder."
     ) {
       try await self.service.reauthorizeDirectory(identifier, directory)
@@ -143,7 +147,7 @@ final class ConfigurationViewModel {
   /// - Parameter credential: The token entered in Settings.
   func saveCredential(_ credential: String) async {
     await perform(
-      message: "TMDb credential saved.", failureMessage: "Could not save the API credential."
+      action: .credentialSaved, failureMessage: "Could not save the API credential."
     ) {
       try await self.service.saveCredential(credential)
 
@@ -154,7 +158,7 @@ final class ConfigurationViewModel {
   /// Removes the saved TMDb credential and refreshes the displayed summary.
   func removeCredential() async {
     await perform(
-      message: "TMDb credential removed.", failureMessage: "Could not remove the API credential."
+      action: .credentialRemoved, failureMessage: "Could not remove the API credential."
     ) {
       try await self.service.removeCredential()
 
@@ -170,7 +174,7 @@ final class ConfigurationViewModel {
     let previousAppearance = posterAppearance
     posterAppearance = appearance
     await perform(
-      message: "Poster appearance saved.", failureMessage: "Could not save the poster appearance.",
+      action: .posterAppearanceSaved, failureMessage: "Could not save the poster appearance.",
       onFailure: {
         self.posterAppearance = previousAppearance
       }
@@ -184,12 +188,14 @@ final class ConfigurationViewModel {
   /// Serializes an operation, updates presentation state, and records its outcome.
   ///
   /// - Parameters:
-  ///   - message: Activity text recorded after a successful operation.
+  ///   - action: Typed operation recorded after success or failure.
+  ///   - collectionID: Optional collection correlation, never a path.
   ///   - failureMessage: Safe fallback text shown if the operation fails.
   ///   - onFailure: Local state restoration performed after failure.
   ///   - operation: The service request whose summary becomes the new model state.
   private func perform(
-    message: String,
+    action: MovieFolderActivityEvent.Action,
+    collectionID: UUID? = nil,
     failureMessage: String,
     onFailure: @MainActor () -> Void = {},
     operation: @MainActor () async throws -> ConfigurationSummary
@@ -202,8 +208,7 @@ final class ConfigurationViewModel {
 
     do {
       apply(try await operation())
-      activityDelegate?.configurationViewModel(
-        self, didRecordActivity: message, category: "Configuration")
+      await recordActivity(action: action, status: .succeeded, collectionID: collectionID)
     } catch {
       onFailure()
       let explanation: String
@@ -216,12 +221,20 @@ final class ConfigurationViewModel {
         explanation = failureMessage
       }
       errorMessage = explanation
-      activityDelegate?.configurationViewModel(
-        self, didRecordActivity: explanation, category: "Error")
+      await recordActivity(action: action, status: .failed, collectionID: collectionID)
     }
 
     isBusy = false
     publish()
+  }
+
+  /// Persists only typed evidence and reports logging failure separately from configuration results.
+  private func recordActivity(
+    action: MovieFolderActivityEvent.Action, status: MovieFolderActivityEvent.Status, collectionID: UUID?
+  ) async {
+    let event = MovieFolderActivityEvent(action: action, status: status, collectionID: collectionID)
+    let saved = await activity.record(event)
+    activityDelegate?.configurationViewModel(self, didRecordActivity: event, saved: saved)
   }
 
   /// Replaces the view-model state with values from a successful service summary.

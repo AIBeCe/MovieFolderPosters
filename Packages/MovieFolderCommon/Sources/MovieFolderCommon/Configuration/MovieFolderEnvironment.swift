@@ -1,0 +1,124 @@
+import Foundation
+import Persistence
+import OSLog
+
+/// Resolves storage and notifications in the calling host or Finder extension process.
+///
+/// App Group and private authorization locations use the calling process's identity and entitlements.
+/// Importing this module grants no filesystem authorization or cross-process runtime ownership.
+nonisolated public enum MovieFolderEnvironment {
+  /// The App Group shared by the signed host and Finder extension.
+  public static let groupIdentifier = "group.dag.fikios.MovieFolderPosters"
+  /// The distributed notification announcing committed settings changes.
+  public static let configurationChanged = Notification.Name("dag.fikios.MovieFolderPosters.ConfigurationChanged")
+  /// The distributed notification announcing committed collection processing state changes.
+  public static let collectionProcessingStateChanged = Notification.Name(
+    "dag.fikios.MovieFolderPosters.CollectionProcessingStateChanged")
+
+  /// Payload-free invalidation announcing a committed activity append or Clear.
+  public static let activityChanged = Notification.Name("dag.fikios.MovieFolderPosters.ActivityChanged")
+
+  /// Creates a best-effort activity service without making logging a startup requirement.
+  /// - Returns: A shared-container recorder, or an unavailable service when the caller cannot resolve its container.
+  public static func makeActivityRecorder() -> any MovieFolderActivityServicing {
+    do {
+      return MovieFolderActivityRecorder(
+        directory: try appGroupContainerURL().appendingPathComponent("Activity"),
+        notifier: SharedActivityChangeNotifier())
+    } catch {
+      return UnavailableActivityService()
+    }
+  }
+
+  /// Resolves the signed process's shared App Group container.
+  ///
+  /// Returning a URL does not verify filesystem access; callers must handle access failures when using it.
+  /// - Returns: The App Group URL resolved using the calling process's entitlements.
+  /// - Throws: ConfigurationError.unavailableContainer when that process cannot resolve the App Group.
+  public static func appGroupContainerURL() throws -> URL {
+    guard
+      let url = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: groupIdentifier
+      )
+    else { throw ConfigurationError.unavailableContainer }
+
+    return url
+  }
+
+  /// Opens the settings repository in the shared container.
+  /// - Returns: The shared configuration repository backed by its settings persistence store.
+  /// - Throws: An unavailable App Group container or a failure creating the required persistence directory.
+  public static func makeConfigurationRepository() throws -> ConfigurationRepository {
+    try ConfigurationRepository(
+      store: PersistenceStore(directory: appGroupContainerURL().appendingPathComponent("Settings")))
+  }
+
+  /// Opens the versioned collection processing state repository in its dedicated App Group namespace.
+  /// - Returns: A state repository using the current shared directory and payload-free change notifier.
+  /// - Throws: An unavailable container, required offline migration, or a persistence directory failure.
+  public static func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
+    // Opening settings first preserves initial creation of the authorized App Group directory.
+    let configurationRepository = try makeConfigurationRepository()
+    let sharedContainer = try appGroupContainerURL()
+    return CollectionProcessingStore(
+      store: try CollectionProcessingStorageNamespace.open(in: sharedContainer),
+      configuration: configurationRepository,
+      notifier: SharedCollectionProcessingStateChangeNotifier())
+  }
+
+  /// Opens this process's private security-scoped authorization store.
+  /// - Returns: The private bookmark store belonging to this signed process.
+  /// - Throws: A failure resolving Application Support or creating the private persistence directory.
+  public static func makePrivateAuthorizationStore() throws -> PersistenceStore {
+    let support = try FileManager.default.url(
+      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+    )
+
+    return try PersistenceStore(directory: support.appendingPathComponent("MovieFolderPosters/Authorization"))
+  }
+
+  /// Announces a committed configuration change to other signed processes.
+  public static func notifyConfigurationChanged() {
+    DistributedNotificationCenter.default().postNotificationName(
+      configurationChanged, object: nil,
+      userInfo: nil, deliverImmediately: true)
+  }
+
+  /// Announces committed collection processing state writes so host summary views can reload persisted state.
+  static func notifyCollectionProcessingStateChanged() {
+    DistributedNotificationCenter.default().postNotificationName(
+      collectionProcessingStateChanged, object: nil,
+      userInfo: nil, deliverImmediately: true)
+  }
+}
+
+/// Sends committed collection processing state invalidations without carrying persisted state.
+nonisolated private struct SharedCollectionProcessingStateChangeNotifier: CollectionProcessingStateChangeNotifying {
+  /// Posts a change hint after the repository has released its persistence leases.
+  func collectionProcessingStateDidChange() { MovieFolderEnvironment.notifyCollectionProcessingStateChanged() }
+}
+
+/// Announces committed activity changes without event data or storage paths.
+nonisolated private struct SharedActivityChangeNotifier: MovieFolderActivityChangeNotifying {
+  func movieFolderActivityDidChange() {
+    DistributedNotificationCenter.default().postNotificationName(
+      MovieFolderEnvironment.activityChanged, object: nil, userInfo: nil, deliverImmediately: true)
+  }
+}
+
+/// Keeps unavailable logging separate from all authorized product operations.
+nonisolated private struct UnavailableActivityService: MovieFolderActivityServicing {
+  /// Explicit history availability failure, with no sensitive error detail.
+  private enum Failure: Error { case unavailable }
+
+  func record(_ event: MovieFolderActivityEvent) async -> Bool {
+    Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Activity")
+      .error("Activity storage unavailable; the product operation result is unchanged")
+
+    return false
+  }
+
+  var hasObservedWriteFailure: Bool { get async { true } }
+  func entries() async throws -> [MovieFolderActivityEntry] { throw Failure.unavailable }
+  func clear() async throws { throw Failure.unavailable }
+}

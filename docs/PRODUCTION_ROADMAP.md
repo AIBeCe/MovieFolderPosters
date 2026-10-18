@@ -1,7 +1,8 @@
 # Movie Folder Posters — Versioned Production Roadmap
 
 Date: 2026-10-16
-Status: Versioned product direction approved for documentation. No product implementation is authorized.
+Status: Versioned product direction approved for documentation; individual implementation approvals are recorded
+under their deliverables. Roadmap inclusion alone does not authorize implementation.
 Baseline: `develop` at `f07813c` (accepted native AppKit UI). Verify current source before future implementation.
 
 ## Purpose and document authority
@@ -138,6 +139,12 @@ The state enum is named `FolderProcessingState`; the GitHub deliverable is close
 ### R100-03 — Connect bounded Finder and host activity to Log
 
 GitHub issue: [#3](https://github.com/AIBeCe/MovieFolderPosters/issues/3); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
+
+Implementation approved on 2026-10-18: extract shared application code into the local MovieFolderCommon package
+and introduce a local Log service package with an Activity folder. Full host/Finder integration is included.
+Implementation and independent review passed on `feature/common-and-log-services`; user review precedes
+commit/integration. Native Finder/window qualification limits remain explicit in the verification record.
+See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md).
 
 - [ ] Scope: Add a bounded sanitized activity stream across actual host/extension operations, using existing Persistence capabilities where sufficient. Retain the separate native Log window. Notifications may invalidate views, but persisted records remain authoritative; no timer, watcher, or log-scraping dependency.
 - Dependencies: R100-02; event/outcome schemas and privacy rules agreed before storage changes.
@@ -851,6 +858,6 @@ scope, independent review, tests, builds, compatibility evidence, and unperforme
 The subsequent extension-registration cleanup retained the active Xcode Debug copy and removed obsolete
 build copies; PluginKit and LaunchServices were verified to contain one current app/extension pair.
 
-The next planned deliverable is R100-03: connect bounded Finder and host activity to Log. Inspect its existing
-implementation and acceptance criteria, present a focused code/test proposal, and wait for approval.
-Completing R100-02 does not authorize R100-03, the rest of version 1.0.0, or release publication.
+R100-03 is implemented and independently reviewed with the MovieFolderCommon and Log package extraction
+described in [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). Wait for user approval before
+commit/integration. This does not authorize the rest of version 1.0.0 or publication.
