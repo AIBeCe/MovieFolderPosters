@@ -64,9 +64,11 @@ or polling. Reload on open/activation and explicit refresh. Notifications are no
 
 ## Approved recovery policy — R100-04 and R100-05
 
-Approved 2026-10-18. This section defines planned behavior for issues #4 and #5; it does not claim that
-the current processor implements these rules. It supersedes automatic cooldown-based repetition of confirmed
-manual-resolution results. The R100-02 verification records below remain historical evidence.
+Approved 2026-10-18. These are the accepted recovery requirements for issues #4 and #5. Issue #4 point 1 is
+implemented locally: complete-search Not found and Several matches results remain in manual resolution across
+visits, retry-date expiry, and processor restart. The remaining issue #4 behavior and issue #5 interface are
+not implemented. This policy supersedes automatic cooldown-based repetition of confirmed manual-resolution
+results. The R100-02 verification records below remain historical evidence.
 
 ### Folder state and next action
 
@@ -139,9 +141,16 @@ owns the manual search/selection interface and bounded user-requested retry. Ope
 not initiate searches; the user must request them explicitly. Successful manual resolution updates saved
 folder evidence and collection counts without reprocessing unrelated folders.
 
-Required behavioral verification includes:
+Point 1 behavioral verification passed in MovieFolderCommon tests for both complete empty searches and
+ambiguous results, including a legacy future retry date, an absent retry date, a new folder, and a processor
+restart. The authoritative snapshot records the expected state and reason with no retryAt after fresh
+classification, legacy-date revisit, and restart. Independent review passed. The full MovieFolderCommon suite
+passed 44 XCTest tests and 102 Swift Testing tests in 12 suites. Native Finder and manual-resolution UI
+behavior are outside this point and remain unverified.
 
-- No automatic repeat for confirmed Not found or Several matches across visits, expiry, reload, and restart.
+Remaining recovery verification includes:
+
+- Configuration reload preserves confirmed Not found and Several matches as manual-resolution outcomes.
 - Eligible temporary failures recover at the next authorized invocation, respect backoff, and preserve Done work.
 - Interrupted processing resumes only unfinished eligible work after safety revalidation.
 - Legacy records decode compatibly, bypass obsolete deferral once, persist classification, and resume safely
@@ -161,6 +170,10 @@ Implementation remains subject to the repository's code-proposal, approval, test
 - [x] 5. Manual refresh/selection/removal integration with the same snapshots.
 - [x] 6. Main counts/state, read-only details, notification invalidation, and presentation tests.
 - [x] Final independent review, focused/regression verification, signed builds, and explicit native limits.
+- [x] Issue #4 point 1: confirmed Not found and Several matches remain manual-resolution outcomes across visits,
+  retry expiry, and processor restart. Implemented, verified, and independently reviewed; commit approved
+  on 2026-10-18. Keep work on `feature/processing-recovery`; integration into `develop` awaits the user's
+  explicit instruction to finish the feature.
 
 ## Implementation evidence
 

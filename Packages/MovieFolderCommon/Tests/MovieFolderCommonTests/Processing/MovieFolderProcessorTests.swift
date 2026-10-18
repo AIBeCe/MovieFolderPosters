@@ -4,6 +4,7 @@ import FileSystem
 import Foundation
 import Network
 import Persistence
+import Testing
 import XCTest
 
 @testable import MovieFolderCommon
@@ -121,7 +122,8 @@ final class MovieFolderProcessorTests: XCTestCase {
     let second = try await processor.process(root: fixture.movies)
 
     XCTAssertEqual(first.unresolved, 1)
-    XCTAssertEqual(second.skippedRetryWindow, 1)
+    XCTAssertEqual(second.unresolved, 1)
+    XCTAssertEqual(second.skippedRetryWindow, 0)
     let searchCount = await provider.searchCount
     XCTAssertEqual(searchCount, 1)
     XCTAssertEqual(fixture.assigner.assignmentCount, 0)
@@ -279,9 +281,9 @@ final class MovieFolderProcessorTests: XCTestCase {
     XCTAssertEqual(searchCount, 1)
   }
 
-  /// Verifies retry Window Uses Injected Clock And New Folders Still Process.
+  /// Verifies confirmed manual-resolution results remain stable while new folders process.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRetryWindowUsesInjectedClockAndNewFoldersStillProcess() async throws {
+  func testConfirmedManualResultsStayUnresolvedAndNewFoldersStillProcess() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
@@ -296,11 +298,12 @@ final class MovieFolderProcessorTests: XCTestCase {
     let fourth = try await processor.process(root: fixture.movies)
 
     XCTAssertEqual(first.unresolved, 1)
-    XCTAssertEqual(second.skippedRetryWindow, 1)
-    XCTAssertEqual(third.unresolved, 1)
+    XCTAssertEqual(second.unresolved, 1)
+    XCTAssertEqual(second.skippedRetryWindow, 0)
+    XCTAssertEqual(third.unresolved, 2)
     XCTAssertEqual(fourth.unresolved, 2)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 4)
+    XCTAssertEqual(searchCount, 2)
   }
 
   /// Verifies only Two New Folders Are Processed After498 Persisted Folders.
@@ -749,6 +752,93 @@ final class MovieFolderProcessorTests: XCTestCase {
   }
 }
 
+/// Confirms completed negative matches remain eligible only for explicit manual resolution.
+@Test(arguments: [false, true])
+func confirmedManualResolutionDoesNotRepeatAfterRetryExpiryAndProcessorRestart(isAmbiguous: Bool) async throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  try fixture.addFolder("Dune (2021)")
+  let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+  let search: MovieSearchResult
+  if isAmbiguous {
+    search = MovieSearchResult(movies: [
+      MovieMetadata(id: 1, title: "Dune", originalTitle: "Dune", releaseYear: 2021, posterPath: "/one.jpg"),
+      MovieMetadata(id: 2, title: "Dune", originalTitle: "Dune", releaseYear: 2021, posterPath: "/two.jpg")
+    ], hasMorePages: false)
+  } else {
+    search = MovieSearchResult(movies: [], hasMorePages: false)
+  }
+  let provider = CountingProvider(search: search)
+  let rootID = UUID()
+  let authorizationVersion = UUID()
+  let rootIdentity = try FileSystemService().persistentDirectoryIdentity(at: fixture.movies)
+  let configuration = ConfigurationRepository(
+    store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Settings")))
+  let monitoredDirectory = MonitoredDirectory(
+    id: rootID, path: fixture.movies.path, transferBookmark: Data([1]),
+    authorizationVersion: authorizationVersion, identity: rootIdentity)
+  try configuration.update { $0.directories = [monitoredDirectory] }
+  let settings = try configuration.read()
+  let processingContext = CollectionProcessingContext(
+    rootID: rootID, rootIdentity: rootIdentity, authorizationVersion: authorizationVersion,
+    credentialRevision: settings.credentialRevision, usesStubTMDbResponses: false, appearance: .softFinish)
+  let collectionStore = CollectionProcessingStore(
+    store: try PersistenceStore(
+      directory: fixture.base.appendingPathComponent("Outcomes"), maximumRecordBytes: 8 * 1024 * 1024),
+    configuration: configuration)
+  let processor = try fixture.processor(
+    provider: provider, clock: { clock.now }, processingStore: collectionStore)
+
+  let first = try await processor.process(root: fixture.movies, processingContext: processingContext)
+  let expectedState: FolderProcessingState = isAmbiguous ? .severalMatches : .notFound
+  let expectedReason: FolderProcessingReason = isAmbiguous ? .ambiguousMovie : .noSuitableMovie
+  let firstState = try #require(try collectionStore.read(rootID: rootID))
+  let firstAssessment = try #require(firstState.folders.first)
+  #expect(firstAssessment.state == expectedState)
+  #expect(firstAssessment.reason == expectedReason)
+  #expect(firstAssessment.retryAt == nil)
+  let canonicalPath = fixture.movies.resolvingSymlinksInPath().standardizedFileURL.path
+  let cacheKey = "movie-folder-processing:\(canonicalPath)"
+  do {
+    let lease = try #require(try fixture.persistence.acquireLease(for: cacheKey))
+    let data = try #require(try lease.read())
+    let saved = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var folders = try #require(saved["folders"] as? [String: [String: Any]])
+    var dune = try #require(folders["Dune (2021)"])
+    #expect(dune["retryDate"] == nil)
+    dune["retryDate"] = clock.now.addingTimeInterval(86_400).timeIntervalSinceReferenceDate
+    folders["Dune (2021)"] = dune
+    var legacyState = saved
+    legacyState["folders"] = folders
+    try lease.write(JSONSerialization.data(withJSONObject: legacyState))
+  }
+  let second = try await processor.process(root: fixture.movies, processingContext: processingContext)
+  let secondState = try #require(try collectionStore.read(rootID: rootID))
+  let secondAssessment = try #require(secondState.folders.first)
+  #expect(secondAssessment.state == expectedState)
+  #expect(secondAssessment.reason == expectedReason)
+  #expect(secondAssessment.retryAt == nil)
+  clock.advance(by: 86_401)
+  let restartedProcessor = try fixture.processor(
+    provider: provider, clock: { clock.now }, processingStore: collectionStore)
+  let afterExpiry = try await restartedProcessor.process(
+    root: fixture.movies, processingContext: processingContext)
+  let restartedState = try #require(try collectionStore.read(rootID: rootID))
+  let restartedAssessment = try #require(restartedState.folders.first)
+  #expect(restartedAssessment.state == expectedState)
+  #expect(restartedAssessment.reason == expectedReason)
+  #expect(restartedAssessment.retryAt == nil)
+
+  #expect(first.unresolved == 1)
+  #expect(second.unresolved == 1)
+  #expect(second.skippedRetryWindow == 0)
+  #expect(afterExpiry.examined == 0)
+  #expect(afterExpiry.unresolved == 1)
+  #expect(afterExpiry.skippedRetryWindow == 0)
+  #expect(await provider.searchCount == 1)
+  #expect(fixture.assigner.assignmentCount == 0)
+}
+
 /// Temporary collection, cache, and recording icon adapter used by processing tests.
 private struct Fixture {
   /// Temporary fixture directory removed when the test finishes.
@@ -815,12 +905,13 @@ private struct Fixture {
     clock: @escaping @Sendable () -> Date = Date.init,
     appearance: PosterAppearance = .softFinish,
     posterAssigner: (any PosterAssigner)? = nil,
-    mutationGuard: (any MovieFolderMutationGuard)? = nil
+    mutationGuard: (any MovieFolderMutationGuard)? = nil,
+    processingStore: CollectionProcessingStore? = nil
   ) throws -> MovieFolderProcessor {
     MovieFolderProcessor(
       fileSystem: FileSystemService(), persistence: persistence, provider: provider,
       cacheDirectory: cache, posterAssigner: posterAssigner ?? assigner, now: clock,
-      mutationGuard: mutationGuard, appearance: appearance)
+      mutationGuard: mutationGuard, appearance: appearance, processingStore: processingStore)
   }
 }
 

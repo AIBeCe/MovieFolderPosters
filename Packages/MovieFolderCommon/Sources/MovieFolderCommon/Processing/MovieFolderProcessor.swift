@@ -397,6 +397,11 @@ public actor MovieFolderProcessor {
       let priorRecord = state.folders[candidate.name]
       let sameFingerprint = priorRecord?.fingerprint == candidate.fingerprint
       if sameFingerprint, let record = priorRecord {
+        if record.requiresManualResolution {
+          summary.unresolved += 1
+          try recordFolderProcessing(cachedFolderAssessment(candidate, saved: record), in: &processingState)
+          continue
+        }
         if record.status == .processed,
           let movieID = record.matchedMovieID,
           let posterPath = record.posterPath,
@@ -1048,7 +1053,8 @@ public actor MovieFolderProcessor {
       name: candidate.name, identity: candidate.identity, state: state, reason: reason,
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
       movieIdentitySource: movie == nil ? nil : .conservativeMatch,
-      ownership: .none, assessedAt: now(), retryAt: now().addingTimeInterval(Self.unresolvedRetryInterval),
+      ownership: .none, assessedAt: now(),
+      retryAt: state == .unresolved ? now().addingTimeInterval(Self.unresolvedRetryInterval) : nil,
       fingerprint: candidate.fingerprint)
   }
 
@@ -1062,7 +1068,7 @@ public actor MovieFolderProcessor {
     } else if saved.processingReason == nil {
       record.state = .deferred
     }
-    record.retryAt = saved.retryDate
+    record.retryAt = saved.requiresManualResolution ? nil : saved.retryDate
     record.movieID = saved.matchedMovieID
     record.movieTitle = saved.movieTitle
     record.movieYear = saved.movieYear
@@ -1203,7 +1209,8 @@ public actor MovieFolderProcessor {
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .unresolved,
-      retryDate: now().addingTimeInterval(Self.unresolvedRetryInterval),
+      retryDate: reason == .noSuitableMovie || reason == .ambiguousMovie
+        ? nil : now().addingTimeInterval(Self.unresolvedRetryInterval),
       matchedMovieID: movie?.id,
       posterPath: movie?.posterPath,
       processingReason: reason,
@@ -1428,6 +1435,11 @@ nonisolated private struct FolderRecord: Codable {
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource? = nil
+
+  /// Whether this unchanged folder has a confirmed result that needs user resolution.
+  var requiresManualResolution: Bool {
+    status == .unresolved && (processingReason == .noSuitableMovie || processingReason == .ambiguousMovie)
+  }
 }
 
 /// Per-root folder decisions, cached searches, and provider backoff persisted together.

@@ -24,11 +24,12 @@ from performing the same work. Callbacks cancel retained work when observation e
 not a filesystem change notification, and opening another window for an already-observed directory may not
 produce another begin callback. A newly added folder can therefore wait until observation begins again.
 
-Query results and unresolved folders expire after 24 hours. Transient folder errors wait ten minutes;
-authentication failures defer the root for 24 hours. Rate limits use Retry-After with a one-minute to
-24-hour bound. Removed folder records and expired queries are pruned during observation. Poster files remain
-cached; no periodic eviction is introduced. Cache validation uses bounded thumbnails. A missing icon can be
-restored from its cached poster while failures remain isolated to that folder.
+Query results and unresolved outcomes eligible for automatic reassessment expire after 24 hours. Confirmed
+Not found and Several matches outcomes remain in manual resolution regardless of retry-date expiry. Transient
+folder errors wait ten minutes; authentication failures defer the root for 24 hours. Rate limits use
+Retry-After with a one-minute to 24-hour bound. Removed folder records and expired queries are pruned during
+observation. Poster files remain cached; no periodic eviction is introduced. Cache validation uses bounded
+thumbnails. A missing icon can be restored from its cached poster while failures remain isolated to that folder.
 
 ## Development integration
 
