@@ -108,6 +108,42 @@ struct DirectoryReadinessTests {
     let result = FileSystemService().inspectDirectory(at: directory, expectedIdentity: expected)
     #expect(result.state == .identityChanged)
   }
+  /// An absent child of the current mount is missing rather than disconnected.
+  @Test func missingChildOnMountedVolumeRemainsMissing() throws {
+    let root = try makeReadinessDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let mount = try #require(FileSystemService().inspectDirectory(at: root).volumePath)
+    let missing = root.appendingPathComponent("Absent")
+    #expect(FileSystemService().inspectDirectory(at: missing, expectedVolumePath: mount).state == .missing)
+  }
+
+  /// Identity failures must reject non-file, missing, unreadable, and symbolic-link paths.
+  @Test func persistentIdentityRejectsUnsafePaths() throws {
+    let root = try makeReadinessDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let service = FileSystemService()
+    let remote = try #require(URL(string: "https://example.com/movies"))
+    #expect(throws: DirectoryAccessError.self) { try service.persistentDirectoryIdentity(at: remote) }
+    #expect(service.inspectDirectory(at: remote).state == .unsupported)
+    let missing = root.appendingPathComponent("Missing")
+    #expect(throws: NSError.self) { try service.persistentDirectoryIdentity(at: missing) }
+    let link = root.appendingPathComponent("Alias")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: root)
+    #expect(throws: (any Error).self) { try service.persistentDirectoryIdentity(at: link) }
+  }
+
+  /// POSIX read denial must be mapped to the authorization error without changing permissions.
+  @Test(.enabled(if: geteuid() != 0, "permission checks require a non-root effective UID"))
+  func persistentIdentityMapsAccessDenial() throws {
+    let root = try makeReadinessDirectory()
+    defer {
+      _ = chmod(root.path, mode_t(0o700))
+      try? FileManager.default.removeItem(at: root)
+    }
+    #expect(chmod(root.path, mode_t(0o000)) == 0)
+    #expect(throws: DirectoryAccessError.self) { try FileSystemService().persistentDirectoryIdentity(at: root) }
+  }
+
 }
 
 private func makeReadinessDirectory() throws -> URL {

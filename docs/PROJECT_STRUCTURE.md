@@ -28,6 +28,7 @@ MovieFolderPosters/
 │   ├── Application/                    # Root routing and cross-feature lifecycle
 │   ├── Features/                       # Collections, Installation, Log, PosterActions
 │   └── Resources/
+├── MovieFolderPostersFinderTests/      # Isolated Finder runtime/menu integration tests
 └── MovieFolderPostersUITests/
 
 Packages/
@@ -82,8 +83,13 @@ The host and test directories retain Xcode's folder-synchronized groups. Both ex
 MovieFolderCommon instead of compiling its sources directly. Finder integration sources retain explicit
 membership. Host plist/entitlements remain excluded from automatic resource membership.
 
-Verification scripts consume the Common package. Package-owned tests exercise the actual
-module; host-only harnesses retain the AppKit/configuration composition required for presentation tests.
+Verification scripts consume the Common package. Package-owned tests exercise the actual module.
+`scripts/test-coverage.sh` collects fresh coverage for every local package and both application targets;
+`scripts/test-support/prepare-application-harness.py` supplies isolated AppKit host and Finder library targets.
+Only the copied AppDelegate's `@main` attribute is blanked, preserving executable source and line positions.
+The harness tests do not launch the host or Finder, and they use temporary storage rather than user data.
+Finder's native Xcode source membership remains explicit; its integration tests run in this standalone harness.
+See [Coverage validation](COVERAGE_VALIDATION.md) for the source-accounting rules, gate, and verification limits.
 
 ## Historical verification record — 2026-10-17 organization
 

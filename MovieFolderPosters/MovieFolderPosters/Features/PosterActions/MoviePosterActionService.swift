@@ -78,6 +78,37 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
   }
 }
 
+/// Resolves host action storage without changing the authorization policy.
+nonisolated protocol MoviePosterActionEnvironment: Sendable {
+  /// Creates the host bookmark after a transferred grant has been validated.
+  func makeDirectoryBookmark(for directory: URL) throws -> Data
+  /// Resolves the shared cache container.
+  func appGroupContainerURL() throws -> URL
+  /// Opens configuration used for every current-context check.
+  func makeConfigurationRepository() throws -> ConfigurationRepository
+  /// Opens the host's private bookmark store.
+  func makePrivateAuthorizationStore() throws -> PersistenceStore
+  /// Opens authoritative operation outcomes.
+  func makeCollectionProcessingStore() throws -> CollectionProcessingStore
+}
+
+/// Uses signed application storage for normal host actions.
+nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironment {
+  func makeDirectoryBookmark(for directory: URL) throws -> Data {
+    try FileSystemService().makeDirectoryBookmark(for: directory)
+  }
+  func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
+  func makeConfigurationRepository() throws -> ConfigurationRepository {
+    try MovieFolderEnvironment.makeConfigurationRepository()
+  }
+  func makePrivateAuthorizationStore() throws -> PersistenceStore {
+    try MovieFolderEnvironment.makePrivateAuthorizationStore()
+  }
+  func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
+    try MovieFolderEnvironment.makeCollectionProcessingStore()
+  }
+}
+
 /// Validates folder identity and configuration before performing a manual poster action.
 actor MoviePosterActionService: MoviePosterActionServicing {
   /// Performs identity checks and reads the current folder state.
@@ -85,18 +116,31 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// Reads the TMDb token without retaining its value in configuration state.
   private let credentials: any CredentialStoring
 
+  /// Storage boundaries retain the same live authorization checks for isolated consumers.
+  private let environment: any MoviePosterActionEnvironment
+  /// Optional metadata boundary supplied by an isolated consumer after token validation.
+  private let provider: (any MovieMetadataProvider)?
+
   /// Retained best-effort recorder whose failure never changes a poster result.
   private let activity: any MovieFolderActivityServicing
 
   /// Creates the service with a credential provider.
   ///
-  /// - Parameter credentials: The secure credential store used for TMDb access.
+  /// - Parameters:
+  ///   - credentials: The secure credential store used for TMDb access.
+  ///   - activity: Best-effort operation recorder independent of action success.
+  ///   - environment: Storage locations preserving the host authorization policy.
+  ///   - provider: Optional metadata provider used after credential validation.
   init(
     credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
-    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder()
+    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
+    environment: any MoviePosterActionEnvironment = LiveMoviePosterActionEnvironment(),
+    provider: (any MovieMetadataProvider)? = nil
   ) {
     self.credentials = credentials
     self.activity = activity
+    self.environment = environment
+    self.provider = provider
   }
 
   /// Refreshes a poster and records an independent typed operation outcome.
@@ -257,7 +301,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     _ request: MoviePosterRequest,
     operation: (AuthorizedRoot) async throws -> Value
   ) async throws -> Value {
-    let repository = try MovieFolderEnvironment.makeConfigurationRepository()
+    let repository = try environment.makeConfigurationRepository()
     let configuration = try await repository.readWhenAvailable()
     guard let directory = configuration.directories.first(where: { $0.id == request.rootID }) else {
       throw MoviePosterActionServiceError.directoryNotConfigured
@@ -266,7 +310,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       throw MoviePosterActionServiceError.directoryUnavailable
     }
 
-    let authorizationStore = try MovieFolderEnvironment.makePrivateAuthorizationStore()
+    let authorizationStore = try environment.makePrivateAuthorizationStore()
     let authorizationKey = "host-\(directory.id)-\(directory.authorizationVersion)"
     guard let authorizationLease = try authorizationStore.acquireLease(for: authorizationKey) else {
       throw ConfigurationError.busy
@@ -283,7 +327,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         bookmark: directory.transferBookmark,
         securityScoped: false, expectedIdentity: directory.identity)
       try Task.checkCancellation()
-      try authorizationLease.write(fileSystem.makeDirectoryBookmark(for: rootAccess.url))
+      try authorizationLease.write(environment.makeDirectoryBookmark(for: rootAccess.url))
     }
 
     guard rootAccess.url.standardizedFileURL.path == directory.path else {
@@ -318,7 +362,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Parameter context: The authorization context captured for this action.
   /// - Throws: An action error if the root identity has changed.
   private func ensureConfigurationIsCurrent(_ context: AuthorizedRoot) throws {
-    let lease = try MovieFolderEnvironment.makeConfigurationRepository().mutationLease(
+    let lease = try environment.makeConfigurationRepository().mutationLease(
       for: context.directory,
       expectedConfiguration: context.configuration)
     defer { withExtendedLifetime(lease) {} }
@@ -340,6 +384,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       throw MoviePosterActionServiceError.credentialUnavailable
     }
     let accessToken = try TMDbAccessToken(token)
+    if let provider { return provider }
 
     #if DEBUG
       if configuration.usesStubTMDbResponses {
@@ -377,12 +422,12 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     for context: AuthorizedRoot,
     provider: any MovieMetadataProvider
   ) throws -> MovieFolderProcessor {
-    let container = try MovieFolderEnvironment.appGroupContainerURL()
+    let container = try environment.appGroupContainerURL()
     let recordDirectory = container.appendingPathComponent(
       "Processing/\(context.configuration.credentialRevision)")
     let coordinationDirectory = container.appendingPathComponent("ProcessingLocks")
     let mutationGuard = PosterActionMutationGuard(
-      repository: try MovieFolderEnvironment.makeConfigurationRepository(),
+      repository: try environment.makeConfigurationRepository(),
       directory: context.directory,
       configuration: context.configuration,
       root: context.root, rootIdentity: context.rootIdentity)
@@ -394,7 +439,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       coordinationStore: try PersistenceStore(directory: coordinationDirectory),
       mutationGuard: mutationGuard,
       appearance: context.configuration.posterAppearance,
-      processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore())
+      processingStore: try environment.makeCollectionProcessingStore())
 
   }
 }

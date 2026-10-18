@@ -2,12 +2,41 @@ import AppKit
 import MovieFolderCommon
 import OSLog
 
+/// Presents startup failures without coupling their safe content to a modal run loop.
+@MainActor
+protocol AppDelegateAlertPresenting {
+  /// Presents the already configured failure alert.
+  /// - Parameter alert: Sanitized startup explanation owned by the caller.
+  func present(_ alert: NSAlert)
+}
+
+/// Uses AppKit's standard modal presentation for normal application launches.
+@MainActor
+struct ModalAppDelegateAlertPresenter: AppDelegateAlertPresenting {
+  func present(_ alert: NSAlert) { alert.runModal() }
+}
+
 @main
 /// Creates the host app's configuration flow and routes Finder poster actions.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Owns the application root independently of configuration startup success.
-  private let coordinator = AppCoordinator()
+  private let coordinator: AppCoordinator
+  /// Platform presentation boundary, independent of failure content and routing.
+  private let alerts: any AppDelegateAlertPresenting
+
+  /// Builds the live root for AppKit's normal launch path.
+  override convenience init() { self.init(coordinator: AppCoordinator()) }
+
+  /// Retains the application root before any lifecycle event is delivered.
+  /// - Parameters:
+  ///   - coordinator: Root owning the configured host flows.
+  ///   - alerts: Platform presenter for sanitized startup failures.
+  init(coordinator: AppCoordinator, alerts: any AppDelegateAlertPresenting = ModalAppDelegateAlertPresenter()) {
+    self.coordinator = coordinator
+    self.alerts = alerts
+    super.init()
+  }
 
   /// Starts the AppKit application with this delegate retained through the run loop.
   static func main() {
@@ -50,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "Quit older app copies and disable older Finder extension copies. "
         + "Complete the documented offline storage migration, then reopen the app."
     }
-    alert.runModal()
+    alerts.present(alert)
   }
 
   /// Reopens configuration from an app event or the Window menu.

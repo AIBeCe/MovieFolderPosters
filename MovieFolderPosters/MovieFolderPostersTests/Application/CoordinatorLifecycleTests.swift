@@ -17,7 +17,7 @@ struct CoordinatorLifecycleTests {
     defer { application.appearance = previousAppearance }
     let root = AppCoordinator(
       activity: ActivityServiceFake(), configurationBuilder: UnavailableConfigurationBuilder(),
-      posterService: CoordinatorPosterService())
+      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     #expect(throws: CocoaError.self) { try root.start() }
     root.showLog()
     let firstWindow = try #require(root.logCoordinator.windowController?.window)
@@ -28,6 +28,55 @@ struct CoordinatorLifecycleTests {
     #expect(root.logCoordinator.windowController?.window === firstWindow)
     #expect(firstWindow.isVisible)
     #expect(root.configurationCoordinator == nil)
+  }
+
+  /// A cold Settings route starts configuration once, and activation never creates another feature window.
+  @Test func settingsCanStartBeforeMainAndActivationPreservesIndependentFlows() throws {
+    let root = AppCoordinator(
+      activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
+      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+    root.applicationDidBecomeActive()
+    #expect(root.configurationCoordinator == nil)
+    #expect(root.logCoordinator.windowController == nil)
+    #expect(root.posterActionCoordinator.windowController == nil)
+    try root.showSettings()
+    let configuration = try #require(root.configurationCoordinator)
+    let mainWindow = try #require(configuration.mainWindow?.window)
+    let settingsWindow = try #require(configuration.settingsWindow?.window)
+    defer { mainWindow.close(); settingsWindow.close() }
+    #expect(mainWindow.isVisible)
+    #expect(settingsWindow.isVisible)
+    root.applicationDidBecomeActive()
+    try root.showSettings()
+    #expect(root.configurationCoordinator === configuration)
+    #expect(configuration.settingsWindow?.window === settingsWindow)
+    #expect(root.logCoordinator.windowController == nil)
+    #expect(root.posterActionCoordinator.windowController == nil)
+  }
+
+  /// A configuration failure remains retryable and local producer failures reach the independent Log.
+  @Test func retriesConfigurationAndRoutesProducerFailures() async throws {
+    let builder = RetryingConfigurationBuilder()
+    let root = AppCoordinator(
+      activity: ActivityServiceFake(), configurationBuilder: builder,
+      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+    #expect(throws: CocoaError.self) { try root.showSettings() }
+    #expect(root.configurationCoordinator == nil)
+    try root.showSettings()
+    let configuration = try #require(root.configurationCoordinator)
+    defer { configuration.mainWindow?.close(); configuration.settingsWindow?.close() }
+    root.configurationCoordinatorDidRequestLog(configuration)
+    let logWindow = try #require(root.logCoordinator.windowController?.window)
+    defer { logWindow.close() }
+    root.configurationCoordinator(configuration, didRecordActivitySaved: false)
+    let content = try #require(logWindow.contentView)
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(2))
+    while !containsWriteFailure(in: content), clock.now < deadline { await Task.yield() }
+    #expect(containsWriteFailure(in: content))
+    root.applicationDidBecomeActive()
+    #expect(root.logCoordinator.windowController?.window === logWindow)
+    #expect(builder.attemptCount == 2)
   }
 
   /// Application appearance applies to windows created before and after a preference change.
@@ -149,7 +198,7 @@ struct CoordinatorLifecycleTests {
     log = nil
     #expect(logIsReleased())
     var configuration: ConfigurationCoordinator? = ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: ActivityServiceFake())
+      service: CoordinatorConfigurationService(), activity: ActivityServiceFake(), appearance: try isolatedAppearance())
     let configurationIsReleased = { [weak configuration] in configuration == nil }
     configuration?.start()
     configuration?.mainWindow?.close()
@@ -164,6 +213,22 @@ struct CoordinatorLifecycleTests {
     defaults.removePersistentDomain(forName: name)
 
     return AppAppearanceSettings(defaults: defaults)
+  }
+}
+
+/// Fails the first construction without poisoning subsequent explicit configuration requests.
+@MainActor
+private final class RetryingConfigurationBuilder: ConfigurationCoordinatorBuilding {
+  /// Number of actual construction attempts rather than window presentations.
+  private(set) var attemptCount = Int.zero
+
+  func makeCoordinator(activity: any MovieFolderActivityServicing,
+                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+    attemptCount += 1
+    if attemptCount == 1 { throw CocoaError(.fileReadUnknown) }
+
+    return ConfigurationCoordinator(
+      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance)
   }
 }
 

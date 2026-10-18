@@ -6,9 +6,9 @@ import OSLog
 import Persistence
 
 /// Retains extension-owned authorizations and creates a processor for the loaded configuration.
-private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
+actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// A configured root together with the access and identity retained for its processing lifetime.
-  fileprivate struct AuthorizedRoot: Sendable {
+  struct AuthorizedRoot: Sendable {
     /// The saved root and authorization generation associated with this grant.
     let directory: MonitoredDirectory
     /// Security-scoped access retained for the configured processing lifetime.
@@ -26,11 +26,20 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
   private let fileSystem = FileSystemService()
   /// Retained best-effort recorder; logging never controls processing authorization.
-  private let activity = MovieFolderEnvironment.makeActivityRecorder()
+  private let activity: any MovieFolderActivityServicing
+  /// Signed-process services replaced together by an isolated integration environment.
+  private let environment: any FinderRuntimeEnvironment
+
   /// Last configuration availability, suppressing repeated reload floods.
   private var lastConfigurationStatus: MovieFolderActivityEvent.Status?
   /// Privacy-preserving diagnostic events for this component.
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
+
+  /// Retains the required environment and best-effort activity service.
+  init(environment: any FinderRuntimeEnvironment = SystemFinderRuntimeEnvironment()) {
+    self.environment = environment
+    activity = environment.activity
+  }
 
   /// Loads authorized roots while retaining the access needed by subsequent visits.
   ///
@@ -39,8 +48,8 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL> {
     recordActivation()
     do {
-      let configuration = try await MovieFolderEnvironment.makeConfigurationRepository().readWhenAvailable()
-      let authorizations = try MovieFolderEnvironment.makePrivateAuthorizationStore()
+      let configuration = try await environment.configurationRepository().readWhenAvailable()
+      let authorizations = try environment.authorizationStore()
       var updated: [URL: AuthorizedRoot] = [:]
       let overlapping = configuration.findOverlappingDirectoryIDs()
       for directory in configuration.directories where !overlapping.contains(directory.id) {
@@ -63,24 +72,11 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
       roots = updated
       processor = nil
       do {
-        if let token = try KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier).read() {
-          let client: TMDbClient
-          #if DEBUG
-            if configuration.usesStubTMDbResponses {
-              guard let image = Bundle.main.url(forResource: "TestPoster", withExtension: "png") else {
-                throw FolderPosterError.invalidImage
-              }
-              let transport = StubTMDbTransport(posterData: try Data(contentsOf: image))
-              client = TMDbClient(token: try TMDbAccessToken(token), transport: transport)
-            } else {
-              client = TMDbClient(token: try TMDbAccessToken(token))
-            }
-          #else
-            client = TMDbClient(token: try TMDbAccessToken(token))
-          #endif
-          let container = try MovieFolderEnvironment.appGroupContainerURL()
+        if let token = try environment.credential() {
+          let client = try environment.provider(token: token, configuration: configuration)
+          let container = try environment.containerURL()
           let records = container.appendingPathComponent("Processing/\(configuration.credentialRevision)")
-          let repository = try MovieFolderEnvironment.makeConfigurationRepository()
+          let repository = try environment.configurationRepository()
           let mutationGuard = FinderMutationGuard(
             repository: repository, configuration: configuration,
             roots: updated)
@@ -92,7 +88,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
               directory: container.appendingPathComponent("ProcessingLocks")
             ), mutationGuard: mutationGuard,
             appearance: configuration.posterAppearance,
-            processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore())
+            processingStore: try environment.processingStore())
           processingConfiguration = configuration
           logger.notice("Shared Keychain credential available")
         } else {
@@ -102,7 +98,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
         logger.error("Secure credential or processing storage unavailable")
       }
       let registered = Set(updated.keys)
-      await MainActor.run { FIFinderSyncController.default().directoryURLs = registered }
+      await environment.register(registered)
       logger.notice("Configuration loaded; registered=\(registered.count)")
       await recordConfigurationStatus(processor == nil || updated.count != configuration.directories.count
         ? .unavailable : .succeeded)
@@ -111,7 +107,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
     } catch {
       roots = [:]
       processor = nil
-      await MainActor.run { FIFinderSyncController.default().directoryURLs = [] }
+      await environment.register([])
       logger.error("Shared directory configuration unavailable")
       await recordConfigurationStatus(.unavailable)
 
@@ -122,11 +118,9 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
   /// Writes bounded extension-build evidence without exposing container paths.
   private func recordActivation() {
     do {
-      guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-      else { return }
+      guard let (version, build) = environment.buildVersion else { return }
       let store = try PersistenceStore(
-        directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent("Readiness"))
+        directory: environment.containerURL().appendingPathComponent("Readiness"))
       guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else { return }
       let receipt = ExtensionReadinessReceipt(version: version, build: build, observedAt: Date())
       try lease.write(JSONEncoder().encode(receipt))
@@ -190,16 +184,16 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
     let key = "extension-\(directory.id)-\(directory.authorizationVersion)"
     guard let lease = try store.acquireLease(for: key) else { throw ConfigurationError.busy }
     if let bookmark = try lease.read(),
-      let access = try? fileSystem.acquireDirectoryAccess(
+      let access = try? environment.acquireDirectoryAccess(
         bookmark: bookmark, securityScoped: true,
         expectedIdentity: directory.identity)
     {
       return access
     }
-    let access = try fileSystem.acquireDirectoryAccess(
+    let access = try environment.acquireDirectoryAccess(
       bookmark: directory.transferBookmark, securityScoped: false,
       expectedIdentity: directory.identity)
-    try lease.write(fileSystem.makeDirectoryBookmark(for: access.url))
+    try lease.write(environment.makeDirectoryBookmark(for: access.url))
     logger.notice("Created extension-owned persistent authorization; id=\(directory.id)")
 
     return access
@@ -208,7 +202,7 @@ private actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate 
 }
 
 /// Checks the live settings and root identity before automatic icon mutation.
-nonisolated private struct FinderMutationGuard: MovieFolderMutationGuard {
+nonisolated struct FinderMutationGuard: MovieFolderMutationGuard {
   /// The shared settings source used to validate current mutation authorization.
   let repository: ConfigurationRepository
   /// The settings generation captured when the operation was authorized.
@@ -244,121 +238,44 @@ nonisolated private struct FinderMutationGuard: MovieFolderMutationGuard {
   { nil }
 }
 
-/// Bridges Finder lifecycle and context menus to shared processing and host actions.
+/// Bridges Finder lifecycle callbacks to retained, independently testable orchestration.
 final class FinderSync: FIFinderSync {
   /// Privacy-preserving diagnostic events for this component.
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderLifecycle")
-  /// The actor serializing Finder observation work.
+  /// Serializes observation and configuration work for the extension lifetime.
   private let scheduler: DirectoryObservationScheduler
-  /// Validated folder requests retained until a context-menu item is selected.
-  private var menuRequests: [Int: MoviePosterRequest] = [:]
-  /// The next menu-item key used to retrieve its validated folder request.
-  private var nextMenuTag = 1
+  /// Retains captured, validated menu requests until an action is selected.
+  private let menuController = FinderMenuController(platform: SystemFinderMenuPlatform())
 
-  /// Connects configuration notifications and Finder visits to a retained processing scheduler.
   override init() {
-    let runtime = FinderConfigurationRuntime()
-    scheduler = DirectoryObservationScheduler(delegate: runtime)
+    scheduler = DirectoryObservationScheduler(delegate: FinderConfigurationRuntime())
     super.init()
     DistributedNotificationCenter.default().addObserver(
-      self, selector: #selector(configurationChanged), name: MovieFolderEnvironment.configurationChanged, object: nil
-    )
+      self, selector: #selector(configurationChanged), name: MovieFolderEnvironment.configurationChanged, object: nil)
     let scheduler = scheduler
     Task { await scheduler.reload() }
     logger.notice("Initialized; pid=\(ProcessInfo.processInfo.processIdentifier)")
   }
 
-  /// Requests a configuration reload after the distributed settings notification.
-  ///
-  /// - Parameter notification: The distributed notification announcing a committed settings change.
+  /// Reloads committed settings without blocking the notification callback.
   @objc private func configurationChanged(_ notification: Notification) {
     let scheduler = scheduler
     Task { await scheduler.reload() }
   }
 
-  /// Queues the observed root on the scheduler without blocking the Finder callback.
   override func beginObservingDirectory(at url: URL) {
     logger.notice("Begin observing: \(url.path, privacy: .private)")
     let scheduler = scheduler
     Task { await scheduler.begin(url) }
   }
 
-  /// Cancels queued or active work when Finder releases observation of the root.
   override func endObservingDirectory(at url: URL) {
     logger.notice("End observing: \(url.path, privacy: .private)")
     let scheduler = scheduler
     Task { await scheduler.end(url) }
   }
 
-  /// Offers explicit poster actions for one validated immediate movie folder.
-  override func menu(for menuKind: FIMenuKind) -> NSMenu? {
-    menuRequests.removeAll()
-    guard menuKind == .contextualMenuForItems, let selection = selectedMovieFolder(),
-      nextMenuTag <= Int.max - MoviePosterAction.allCases.count
-    else { return nil }
-    let menu = NSMenu(title: "Movie Poster")
-    for action in MoviePosterAction.allCases {
-      let item = NSMenuItem(
-        title: "Movie Poster: \(action.title)",
-        action: #selector(openPosterAction(_:)), keyEquivalent: "")
-      item.target = self
-      item.tag = nextMenuTag
-      nextMenuTag += 1
-      menuRequests[item.tag] = MoviePosterRequest(
-        rootID: selection.rootID, childName: selection.childName,
-        identity: selection.identity, action: action)
-      menu.addItem(item)
-    }
-
-    return menu
-  }
-
-  /// Hands the validated Finder menu request to the installed host application.
-  ///
-  /// - Parameter sender: The context-menu item carrying a previously validated request tag.
-  @objc private func openPosterAction(_ sender: NSMenuItem) {
-    logger.notice("Poster action requested; tag=\(sender.tag), payload=\(sender.representedObject != nil)")
-    guard let request = menuRequests[sender.tag] else {
-      logger.error("Poster menu request expired")
-      return
-    }
-    // The host revalidates this captured folder identity before every action, including the final write.
-    let host = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent()
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = true
-    NSWorkspace.shared.open([request.url], withApplicationAt: host, configuration: configuration) { _, error in
-      if error != nil {
-        Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderActions")
-          .error("Could not open the poster action window")
-      }
-    }
-  }
-
-  /// Builds a request only for one visible immediate child of a configured collection.
-  /// - Returns: A validated request for the selected immediate folder, or no request for unsupported selections.
-  private func selectedMovieFolder() -> MoviePosterRequest? {
-    guard let selected = FIFinderSyncController.default().selectedItemURLs(), selected.count == 1,
-      let url = selected.first, !url.lastPathComponent.hasPrefix("."),
-      let configuration = try? MovieFolderEnvironment.makeConfigurationRepository().read()
-    else { return nil }
-    let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
-    for directory in configuration.directories {
-      let root = URL(fileURLWithPath: directory.path, isDirectory: true)
-        .resolvingSymlinksInPath().standardizedFileURL
-      guard root == parent,
-        let candidate = try? FileSystemService().readCurrentState(ofChild: url.lastPathComponent, in: root)
-      else {
-        continue
-      }
-
-      return MoviePosterRequest(
-        rootID: directory.id, childName: candidate.name,
-        identity: candidate.identity, action: .change)
-    }
-
-    return nil
-  }
+  override func menu(for menuKind: FIMenuKind) -> NSMenu? { menuController.menu(for: menuKind) }
 
   deinit {
     DistributedNotificationCenter.default().removeObserver(self)

@@ -89,7 +89,13 @@ actor InstallationReadinessService: InstallationReadinessServicing {
 
   /// Inspects bundle versions, extension point, and static code signatures.
   nonisolated fileprivate static func inspectMainBundle() -> InstallationMetadata {
-    let hostBundle = Bundle.main
+    inspectBundle(Bundle.main)
+  }
+
+  /// Inspects metadata and static signatures without launching the supplied bundle.
+  /// - Parameter hostBundle: Host whose embedded extension is inspected.
+  /// - Returns: Independent metadata and signature evidence.
+  nonisolated static func inspectBundle(_ hostBundle: Bundle) -> InstallationMetadata {
     let extensionURL = hostBundle.builtInPlugInsURL?
       .appendingPathComponent("MovieFolderPostersFinder.appex", isDirectory: true)
     let host = BundleMetadata(
@@ -151,6 +157,18 @@ actor InstallationReadinessService: InstallationReadinessServicing {
         directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent(
           "Readiness", isDirectory: true)
       )
+
+      return readExtensionReceipt(in: store)
+    } catch {
+      return .unavailable(.failed)
+    }
+  }
+
+  /// Reads activation evidence under the supplied persistence store's cross-process lease.
+  /// - Parameter store: Store holding the extension's dated activation receipt.
+  /// - Returns: Observed, missing, busy, or sanitized failed evidence.
+  nonisolated static func readExtensionReceipt(in store: PersistenceStore) -> ExtensionReceiptEvidence {
+    do {
       guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else {
         return .unavailable(.busy)
       }

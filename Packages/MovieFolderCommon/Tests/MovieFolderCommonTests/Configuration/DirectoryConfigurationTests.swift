@@ -7,6 +7,24 @@ import Testing
 
 /// Regression coverage for shared settings validation, persistence, and lease ordering.
 struct DirectoryConfigurationTests {
+  /// Access failures must describe a recovery action consistent with the assessed evidence.
+  @Test(arguments: [
+    (DirectoryAvailability.available, "not verified"),
+    (.unavailable, "Refresh Status"),
+    (.reauthorizationRequired, "Locate Folder"),
+    (.checkUnavailable, "busy"),
+    (.disconnected, "Reconnect"),
+    (.missing, "not found"),
+    (.readOnly, "write access"),
+    (.unsupported, "unsupported"),
+    (.identityChanged, "identity has changed"),
+    (.compatibilityUnknown, "unverified"),
+    (.overlapping, "Remove one")
+  ])
+  func accessEvidenceExplainsRecovery(availability: DirectoryAvailability, guidance: String) {
+    #expect(availability.explanation.contains(guidance))
+  }
+
   /// Verifies mutation Lease Rejects New Overlap Even When Target Root Is Unchanged.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   @Test func mutationLeaseRejectsNewOverlapEvenWhenTargetRootIsUnchanged() throws {

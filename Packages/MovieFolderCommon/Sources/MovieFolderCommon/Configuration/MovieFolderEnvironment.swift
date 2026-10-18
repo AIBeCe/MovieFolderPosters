@@ -21,9 +21,14 @@ nonisolated public enum MovieFolderEnvironment {
   /// Creates a best-effort activity service without making logging a startup requirement.
   /// - Returns: A shared-container recorder, or an unavailable service when the caller cannot resolve its container.
   public static func makeActivityRecorder() -> any MovieFolderActivityServicing {
+    makeActivityRecorder(locations: SystemMovieFolderStorageLocations())
+  }
+
+  /// Creates best-effort history using explicitly supplied process storage locations.
+  static func makeActivityRecorder(locations: any MovieFolderStorageLocations) -> any MovieFolderActivityServicing {
     do {
       return MovieFolderActivityRecorder(
-        directory: try appGroupContainerURL().appendingPathComponent("Activity"),
+        directory: try locations.appGroupContainerURL().appendingPathComponent("Activity"),
         notifier: SharedActivityChangeNotifier())
     } catch {
       return UnavailableActivityService()
@@ -49,17 +54,31 @@ nonisolated public enum MovieFolderEnvironment {
   /// - Returns: The shared configuration repository backed by its settings persistence store.
   /// - Throws: An unavailable App Group container or a failure creating the required persistence directory.
   public static func makeConfigurationRepository() throws -> ConfigurationRepository {
+    try makeConfigurationRepository(locations: SystemMovieFolderStorageLocations())
+  }
+
+  /// Opens settings at the supplied process container location.
+  static func makeConfigurationRepository(
+    locations: any MovieFolderStorageLocations
+  ) throws -> ConfigurationRepository {
     try ConfigurationRepository(
-      store: PersistenceStore(directory: appGroupContainerURL().appendingPathComponent("Settings")))
+      store: PersistenceStore(directory: locations.appGroupContainerURL().appendingPathComponent("Settings")))
   }
 
   /// Opens the versioned collection processing state repository in its dedicated App Group namespace.
   /// - Returns: A state repository using the current shared directory and payload-free change notifier.
   /// - Throws: An unavailable container, required offline migration, or a persistence directory failure.
   public static func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
+    try makeCollectionProcessingStore(locations: SystemMovieFolderStorageLocations())
+  }
+
+  /// Opens versioned outcomes after opening settings in the same supplied container.
+  static func makeCollectionProcessingStore(
+    locations: any MovieFolderStorageLocations
+  ) throws -> CollectionProcessingStore {
     // Opening settings first preserves initial creation of the authorized App Group directory.
-    let configurationRepository = try makeConfigurationRepository()
-    let sharedContainer = try appGroupContainerURL()
+    let configurationRepository = try makeConfigurationRepository(locations: locations)
+    let sharedContainer = try locations.appGroupContainerURL()
     return CollectionProcessingStore(
       store: try CollectionProcessingStorageNamespace.open(in: sharedContainer),
       configuration: configurationRepository,
@@ -70,9 +89,12 @@ nonisolated public enum MovieFolderEnvironment {
   /// - Returns: The private bookmark store belonging to this signed process.
   /// - Throws: A failure resolving Application Support or creating the private persistence directory.
   public static func makePrivateAuthorizationStore() throws -> PersistenceStore {
-    let support = try FileManager.default.url(
-      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-    )
+    try makePrivateAuthorizationStore(locations: SystemMovieFolderStorageLocations())
+  }
+
+  /// Opens private bookmarks beneath the supplied process Application Support directory.
+  static func makePrivateAuthorizationStore(locations: any MovieFolderStorageLocations) throws -> PersistenceStore {
+    let support = try locations.applicationSupportURL()
 
     return try PersistenceStore(directory: support.appendingPathComponent("MovieFolderPosters/Authorization"))
   }
@@ -121,4 +143,21 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
   var hasObservedWriteFailure: Bool { get async { true } }
   func entries() async throws -> [MovieFolderActivityEntry] { throw Failure.unavailable }
   func clear() async throws { throw Failure.unavailable }
+}
+
+/// Resolves process-specific storage locations without granting access to their contents.
+nonisolated protocol MovieFolderStorageLocations: Sendable {
+  /// Resolves the signed process's shared container or throws when unavailable.
+  func appGroupContainerURL() throws -> URL
+  /// Resolves this process's private Application Support location.
+  func applicationSupportURL() throws -> URL
+}
+
+/// Uses the calling process's existing entitlements and user-domain storage defaults.
+nonisolated private struct SystemMovieFolderStorageLocations: MovieFolderStorageLocations {
+  func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
+  func applicationSupportURL() throws -> URL {
+    try FileManager.default.url(
+      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+  }
 }

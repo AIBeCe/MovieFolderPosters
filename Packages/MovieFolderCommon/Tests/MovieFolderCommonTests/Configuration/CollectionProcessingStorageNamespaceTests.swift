@@ -160,6 +160,76 @@ struct CollectionProcessingStorageNamespaceTests {
     #expect(try Data(contentsOf: file) == Data("preserve".utf8))
   }
 
+  /// A shared hard-linked lock cannot provide exclusive ownership of one container.
+  @Test func rejectsHardLinkedNamespaceLockWithoutCreatingStores() throws {
+    let container = try temporaryContainer()
+    defer { try? FileManager.default.removeItem(at: container) }
+    let original = container.appendingPathComponent("original-lock")
+    try Data("preserved".utf8).write(to: original)
+    try FileManager.default.linkItem(
+      at: original, to: container.appendingPathComponent(".collection-processing-namespace.lock"))
+    #expect(throws: CollectionProcessingStorageNamespaceError.invalidStorageEntry) {
+      try CollectionProcessingStorageNamespace.open(in: container)
+    }
+    #expect(try Data(contentsOf: original) == Data("preserved".utf8))
+    #expect(!FileManager.default.fileExists(atPath: container.appendingPathComponent("Outcomes").path))
+  }
+
+  /// A linked lease path must not redirect namespace synchronization outside the container.
+  @Test func rejectsSymlinkedNamespaceLock() throws {
+    let container = try temporaryContainer()
+    defer { try? FileManager.default.removeItem(at: container) }
+    let original = container.appendingPathComponent("original-lock")
+    try Data("preserved".utf8).write(to: original)
+    try FileManager.default.createSymbolicLink(
+      at: container.appendingPathComponent(".collection-processing-namespace.lock"), withDestinationURL: original)
+    #expect(throws: (any Error).self) { try CollectionProcessingStorageNamespace.open(in: container) }
+    #expect(try Data(contentsOf: original) == Data("preserved".utf8))
+    #expect(!FileManager.default.fileExists(atPath: container.appendingPathComponent("Outcomes").path))
+  }
+
+  /// Matching marker size alone never authorizes overwriting an unrelated file.
+  @Test func rejectsForeignMarkerWithCorrectLength() throws {
+    let container = try temporaryContainer()
+    defer { try? FileManager.default.removeItem(at: container) }
+    let foreign = Data(repeating: 120, count: markerBytes.count)
+    let legacy = container.appendingPathComponent("Outcomes")
+    try foreign.write(to: legacy)
+    #expect(throws: CollectionProcessingStorageNamespaceError.invalidStorageEntry) {
+      try CollectionProcessingStorageNamespace.open(in: container)
+    }
+    #expect(try Data(contentsOf: legacy) == foreign)
+  }
+
+  /// An unblocked current namespace cannot be adopted because older processes could create a split store.
+  @Test func currentDirectoryWithoutLegacyBlockerIsPreservedAsConflict() throws {
+    let container = try temporaryContainer()
+    defer { try? FileManager.default.removeItem(at: container) }
+    let current = container.appendingPathComponent("CollectionProcessingState")
+    _ = try PersistenceStore(directory: current)
+    let before = try snapshot(current)
+    #expect(throws: CollectionProcessingStorageNamespaceError.conflictingStorage) {
+      try CollectionProcessingStorageNamespace.open(in: container)
+    }
+    #expect(try snapshot(current) == before)
+    #expect(!FileManager.default.fileExists(atPath: container.appendingPathComponent("Outcomes").path))
+  }
+
+  /// Two markers cannot identify an authoritative writable directory and must remain untouched.
+  @Test func twoOwnedMarkersArePreservedAsConflict() throws {
+    let container = try temporaryContainer()
+    defer { try? FileManager.default.removeItem(at: container) }
+    for name in ["Outcomes", "CollectionProcessingState"] {
+      try markerBytes.write(to: container.appendingPathComponent(name))
+    }
+    #expect(throws: CollectionProcessingStorageNamespaceError.conflictingStorage) {
+      try CollectionProcessingStorageNamespace.migrateStoppedInstallation(in: container)
+    }
+    for name in ["Outcomes", "CollectionProcessingState"] {
+      #expect(try Data(contentsOf: container.appendingPathComponent(name)) == markerBytes)
+    }
+  }
+
   /// Exact versioned marker payload used to model an interrupted preparation.
   private var markerBytes: Data { Data("MovieFolderPosters.CollectionProcessingState.namespace.v1\n".utf8) }
 
