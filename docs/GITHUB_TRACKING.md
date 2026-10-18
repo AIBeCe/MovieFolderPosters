@@ -5,9 +5,10 @@ Status: R100-01 and R100-02 are completed; issues #1 and #2 are closed as comple
 R100-02 implementation commit: `049b74b`. Both features are integrated into `develop`; their feature branches
 were deleted. `develop` was pushed to GitHub through `b48d44d` on 2026-10-18. No release was published.
 See [Processing results](COLLECTION_PROCESSING.md) for verification and native qualification limits.
-R100-03 is implemented and independently reviewed on `feature/common-and-log-services` following approval of
-the Common/Log package structure and full activity integration on 2026-10-18. It awaits user review and is not
-yet committed, integrated, or closed.
+R100-03 is implemented, independently reviewed, and committed as `e7d404b` on 2026-10-18. The commit is
+present in `develop` and the locally recorded `origin/develop` at `fd9eb83`. GitHub issue #3 remains open
+at live read-back on 2026-10-18; implementation integration and tracker closure are separate facts.
+R100-04 / issue #4 is the next proposal. Product implementation awaits approval of its bounded code proposal.
 See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md).
 Repository: [AIBeCe/MovieFolderPosters](https://github.com/AIBeCe/MovieFolderPosters).
 Tracker: repository Issues. No separate Projects board is used.
@@ -66,7 +67,7 @@ release/decision criteria; a supporting issue is not automatically an applicatio
 | --- | --- | --- | --- |
 | R100-01 | [#1 — Verify installation, access, and platform readiness](https://github.com/AIBeCe/MovieFolderPosters/issues/1) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed 2026-10-17 |
 | R100-02 | [#2 — Persist authoritative processing outcomes and collection summaries](https://github.com/AIBeCe/MovieFolderPosters/issues/2) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed; issue closed |
-| R100-03 | [#3 — Connect bounded Finder and host activity to Log](https://github.com/AIBeCe/MovieFolderPosters/issues/3) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Implemented; awaiting user review |
+| R100-03 | [#3 — Connect bounded Finder and host activity to Log](https://github.com/AIBeCe/MovieFolderPosters/issues/3) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Committed/integrated; issue remains open |
 | R100-04 | [#4 — Make network failure and interruption recovery predictable](https://github.com/AIBeCe/MovieFolderPosters/issues/4) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-05 | [#5 — Resolve and retry specific failed folders](https://github.com/AIBeCe/MovieFolderPosters/issues/5) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-06 | [#6 — Make credential setup and replacement understandable](https://github.com/AIBeCe/MovieFolderPosters/issues/6) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |

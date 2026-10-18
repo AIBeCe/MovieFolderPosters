@@ -29,7 +29,9 @@ R100-02 is implemented, reviewed, verified, committed as `049b74b`, integrated i
 GitHub on 2026-10-18. Issue #2 is closed and the feature branch is deleted. The current scope and verification
 ledger live in [Processing results](COLLECTION_PROCESSING.md). R100-03 was separately approved on 2026-10-18,
 including the MovieFolderCommon migration and Log service package. See
-[Common and Log migration](COMMON_AND_LOG_MIGRATION.md); user review precedes commit/integration.
+[Common and Log migration](COMMON_AND_LOG_MIGRATION.md). Its implementation commit `e7d404b` is now in
+`develop`; GitHub issue #3 remains open. R100-04 / issue #4 is next for a bounded code proposal, with
+product implementation awaiting explicit approval.
 
 - Follow AGENTS.md.
 - Use SOLID principles as much as possible.

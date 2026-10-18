@@ -60,7 +60,8 @@ commands exist. Extend and verify them instead of rewriting them as new systems.
 
 The accepted native UI provides collection columns, separate Settings/Log, poster choices, and System/Light/Dark.
 R100-02 now populates collection counts and read-only details from authoritative persisted processing state.
-Log still stores bounded host-session events in memory; connecting Finder and host activity remains R100-03.
+R100-03 connects host and Finder activity to the bounded persistent Log service through MovieFolderCommon.
+Its implementation is committed as `e7d404b` and present in `develop`; GitHub issue #3 remains open.
 
 The UI feature recorded 17 focused tests, signed build/launch, and independent review. This is historical evidence,
 not proof of a production release. Prior phase documents have different verification dates and limitations;
@@ -142,11 +143,12 @@ GitHub issue: [#3](https://github.com/AIBeCe/MovieFolderPosters/issues/3); miles
 
 Implementation approved on 2026-10-18: extract shared application code into the local MovieFolderCommon package
 and introduce a local Log service package with an Activity folder. Full host/Finder integration is included.
-Implementation and independent review passed on `feature/common-and-log-services`; user review precedes
-commit/integration. Native Finder/window qualification limits remain explicit in the verification record.
+Implementation and independent review passed on `feature/common-and-log-services`. Commit `e7d404b` is
+present in `develop` and the locally recorded `origin/develop` at `fd9eb83`. GitHub issue #3 remains open
+at live read-back on 2026-10-18. Native Finder/window qualification limits remain explicit in the verification record.
 See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md).
 
-- [ ] Scope: Add a bounded sanitized activity stream across actual host/extension operations, using existing Persistence capabilities where sufficient. Retain the separate native Log window. Notifications may invalidate views, but persisted records remain authoritative; no timer, watcher, or log-scraping dependency.
+- [x] Scope: Add a bounded sanitized activity stream across actual host/extension operations, using existing Persistence capabilities where sufficient. Retain the separate native Log window. Notifications may invalidate views, but persisted records remain authoritative; no timer, watcher, or log-scraping dependency.
 - Dependencies: R100-02; event/outcome schemas and privacy rules agreed before storage changes.
 - Acceptance: Tests cover concurrent writers, ordering, retention, secret/path redaction, and process restart. Opening Log loads actual recorded activity. Clearing Log never deletes outcome records, matches, configuration, or icons.
 - Source ideas: E9.
@@ -863,6 +865,8 @@ scope, independent review, tests, builds, compatibility evidence, and unperforme
 The subsequent extension-registration cleanup retained the active Xcode Debug copy and removed obsolete
 build copies; PluginKit and LaunchServices were verified to contain one current app/extension pair.
 
-R100-03 is implemented and independently reviewed with the MovieFolderCommon and Log package extraction
-described in [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). Wait for user approval before
-commit/integration. This does not authorize the rest of version 1.0.0 or publication.
+R100-03 is committed as `e7d404b` and integrated into `develop`, with the MovieFolderCommon and Log package
+extraction described in [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). GitHub issue #3 remains open.
+On 2026-10-18 the user requested starting R100-04 / issue #4 with documentation reconciliation and a code
+proposal. Its approved recovery requirements are in [Processing results](COLLECTION_PROCESSING.md).
+Product implementation still requires approval of each bounded code proposal; no later issue or publication is authorized.

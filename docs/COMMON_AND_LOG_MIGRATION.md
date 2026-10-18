@@ -1,8 +1,16 @@
 # Common and Log package implementation
 
 Date: 2026-10-18
-Status: Implemented and independently reviewed on `feature/common-and-log-services`; awaiting user approval.
-Changes remain uncommitted and unmerged. GitHub issue #3 remains open.
+Status: Implemented, independently reviewed, and committed as `e7d404b` on 2026-10-18.
+The commit is present in `develop` and the locally recorded `origin/develop` at `fd9eb83`.
+GitHub issue #3 remains open at live read-back on 2026-10-18.
+
+## Current delivery handoff — 2026-10-18
+
+The current Git evidence supersedes the uncommitted/unmerged review boundaries recorded below, which
+describe earlier checkpoints. The implementation is integrated; tracker closure remains outstanding.
+No additional native qualification is inferred from integration. Existing verification limitations remain.
+The user requested moving to the R100-04 / issue #4 proposal; product changes still await code approval.
 
 ## Approved design
 
@@ -30,7 +38,7 @@ The user confirmed that approval includes both packages, migration, and the full
 - [x] Connect typed movie-specific host/Finder events and persistent Log presentation for issue #3.
 - [x] Run package, harness, and native build/test verification appropriate to the final scope.
 - [x] Complete independent review, fix blocking findings, and record remaining platform checks.
-- [x] Present changes for user review and wait; commit/integration are pending that approval.
+- [x] Present changes for user review; implementation is now committed as `e7d404b` and integrated into `develop`.
 
 ## Verification and boundaries
 
