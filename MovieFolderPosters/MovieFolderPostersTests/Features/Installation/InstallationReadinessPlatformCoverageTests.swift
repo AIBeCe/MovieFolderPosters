@@ -17,7 +17,7 @@ struct InstallationReadinessPlatformCoverageTests {
     #expect(evidence.host.bundleIdentifier == "test.movie-folder-posters.host")
     #expect(evidence.host.version == "2.3")
     #expect(evidence.host.build == "42")
-    #expect(evidence.host.extensionPoint == nil)
+    #expect(evidence.host.extensionPoint == .none)
     #expect(evidence.hostSignature != .valid)
     if embedsExtension {
       let embedded = try #require(evidence.embeddedExtension)
@@ -26,12 +26,12 @@ struct InstallationReadinessPlatformCoverageTests {
       #expect(embedded.build == "43")
       #expect(embedded.extensionPoint == "com.apple.FinderSync")
       #expect(evidence.embeddedExtensionSignature != .valid)
-      let report = InstallationReadinessReportBuilder.build(installation: evidence, extensionEnabled: nil,
+      let report = InstallationReadinessReportBuilder.build(installation: evidence, extensionEnabled: .none,
         receipt: .missing, storage: .failed, now: Date(timeIntervalSince1970: 1_000))
       #expect(report.text.contains("Version mismatch"))
       #expect(report.text.contains("Finder activation: Not yet observed."))
     } else {
-      #expect(evidence.embeddedExtension == nil)
+      #expect(evidence.embeddedExtension == .none)
       #expect(evidence.embeddedExtensionSignature == .unknown)
     }
   }
@@ -79,7 +79,7 @@ private struct InstallationBundleFixture {
   init(embedsExtension: Bool) throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     host = root.appendingPathComponent("Fixture.app")
-    try Self.writeBundle(at: host, identifier: "test.movie-folder-posters.host", build: "42", extensionPoint: nil)
+    try Self.writeBundle(at: host, identifier: "test.movie-folder-posters.host", build: "42", extensionPoint: .none)
     if embedsExtension {
       try Self.writeBundle(at: host.appendingPathComponent("Contents/PlugIns/MovieFolderPostersFinder.appex"),
         identifier: "test.movie-folder-posters.finder", build: "43", extensionPoint: "com.apple.FinderSync")
@@ -87,14 +87,13 @@ private struct InstallationBundleFixture {
   }
 
   /// Writes a minimal macOS bundle layout without executing or registering any bundle.
-  private static func writeBundle(at url: URL, identifier: String, build: String,
-                                  extensionPoint: String?) throws {
+  private static func writeBundle(at url: URL, identifier: String, build: String, extensionPoint: String?) throws {
     let contents = url.appendingPathComponent("Contents")
     try FileManager.default.createDirectory(at: contents.appendingPathComponent("MacOS"),
       withIntermediateDirectories: true)
     var properties: [String: Any] = [
       "CFBundleIdentifier": identifier, "CFBundleShortVersionString": "2.3", "CFBundleVersion": build,
-      "CFBundlePackageType": extensionPoint == nil ? "APPL" : "XPC!", "CFBundleExecutable": "Fixture"
+      "CFBundlePackageType": extensionPoint == .none ? "APPL" : "XPC!", "CFBundleExecutable": "Fixture"
     ]
     if let extensionPoint { properties["NSExtension"] = ["NSExtensionPointIdentifier": extensionPoint] }
     try PropertyListSerialization.data(fromPropertyList: properties, format: .xml, options: .zero)

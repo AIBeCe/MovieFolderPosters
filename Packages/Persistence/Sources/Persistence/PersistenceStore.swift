@@ -15,7 +15,7 @@ public struct PersistenceStore: Sendable {
   ///   - directory: The directory containing lock and record files.
   ///   - maximumRecordBytes: An optional encoded envelope limit; omitted for unlimited behavior.
   /// - Throws: An I/O error, an invalid-directory error, or an invalid-size error.
-  public init(directory: URL, maximumRecordBytes: Int? = nil) throws {
+  public init(directory: URL, maximumRecordBytes: Int? = .none) throws {
     guard directory.isFileURL else { throw PersistenceError.invalidDirectory }
     if let maximumRecordBytes, maximumRecordBytes <= 0 {
       throw PersistenceError.invalidRecordLimit
@@ -44,7 +44,7 @@ public struct PersistenceStore: Sendable {
     guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
       let code = errno
       close(descriptor)
-      if code == EWOULDBLOCK || code == EAGAIN { return nil }
+      if code == EWOULDBLOCK || code == EAGAIN { return .none }
       throw PersistenceError.io(code)
     }
 
@@ -76,9 +76,7 @@ public struct PersistenceStore: Sendable {
     var deferredDigests = Set<String>()
     while let entry = readdir(stream) {
       let filename = withUnsafePointer(to: &entry.pointee.d_name) {
-        $0.withMemoryRebound(to: CChar.self, capacity: Int(NAME_MAX) + 1) {
-          String(cString: $0)
-        }
+        $0.withMemoryRebound(to: CChar.self, capacity: Int(NAME_MAX) + 1) { String(cString: $0) }
       }
       guard let digest = Self.recordDigest(from: filename), !retainedDigests.contains(digest)
       else { continue }
@@ -133,11 +131,12 @@ public struct PersistenceStore: Sendable {
 
   /// Accepts only record filenames containing a lowercase SHA-256 digest.
   private static func recordDigest(from filename: String) -> String? {
-    guard filename.hasSuffix(".json") else { return nil }
+    guard filename.hasSuffix(".json") else { return .none }
     let digest = String(filename.dropLast(5))
     guard digest.utf8.count == 64,
       digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
-    else { return nil }
+    else { return .none }
+
     return digest
   }
 }
@@ -155,6 +154,12 @@ public final class PersistenceLease: Sendable {
   /// Serializes file access when callers share the lease across threads.
   private let mutex = NSLock()
 
+  /// Retains the pinned directory and takes ownership of an already locked descriptor.
+  /// - Parameters:
+  ///   - directory: The shared directory owner retained for the lease's lifetime.
+  ///   - keyDigest: The digest used to select this lease's record and lock files.
+  ///   - lockDescriptor: An exclusively locked descriptor unlocked and closed when this lease is released.
+  ///   - maximumRecordBytes: The encoded envelope size limit, or `.none` for no configured limit.
   fileprivate init(
     directory: DirectoryDescriptor,
     keyDigest: String,
@@ -187,7 +192,7 @@ public final class PersistenceLease: Sendable {
       O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC
     )
     guard descriptor >= 0 else {
-      if errno == ENOENT { return nil }
+      if errno == ENOENT { return .none }
       throw PersistenceError.io(errno)
     }
     defer { close(descriptor) }
@@ -326,13 +331,12 @@ public final class PersistenceLease: Sendable {
       }
       result.append(contentsOf: buffer[0..<count])
     }
+
     return result
   }
 
   /// The deterministic JSON filename associated with this key digest.
-  private var recordName: String {
-    keyDigest + ".json"
-  }
+  private var recordName: String { keyDigest + ".json" }
 
   /// Writes a complete temporary record, synchronizes it, and renames it into place.
   private func atomicWrite(_ data: Data, named name: String) throws {
@@ -349,7 +353,7 @@ public final class PersistenceLease: Sendable {
       unlinkat(directory.fileDescriptor, temporaryName, 0)
     }
 
-    var offset = 0
+    var offset = Int.zero
     try data.withUnsafeBytes { bytes in
       guard let baseAddress = bytes.baseAddress else { return }
       while offset < bytes.count {
@@ -383,6 +387,7 @@ public final class PersistenceLease: Sendable {
     }
     guard envelope.version == 1 else { throw PersistenceError.unsupportedVersion }
     guard envelope.keyDigest == keyDigest else { throw PersistenceError.keyMismatch }
+
     return envelope
   }
 }
@@ -392,6 +397,8 @@ private final class DirectoryDescriptor: Sendable {
   /// The open descriptor pinned to the validated directory object.
   let fileDescriptor: Int32
 
+  /// Takes ownership of a validated open directory descriptor.
+  /// - Parameter fileDescriptor: The descriptor closed when this owner is released.
   private init(fileDescriptor: Int32) {
     self.fileDescriptor = fileDescriptor
   }

@@ -5,8 +5,8 @@ import Testing
 
 @testable import FileSystem
 
-@Suite(.serialized)
 /// Exercises safe icon assignment, ownership tracking, suppression, and user-icon preservation.
+@Suite(.serialized)
 struct FolderPostersTests {
   /// Service instance shared by the tests in this suite.
   private let service = FileSystemService()
@@ -39,9 +39,7 @@ struct FolderPostersTests {
     let root = try makeDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     for name in ["..", "Movie/Subfolder", ".Hidden", ""] {
-      #expect(throws: FolderPosterError.self) {
-        try service.assignPoster(Data(), toChild: name, in: root)
-      }
+      #expect(throws: FolderPosterError.self) { try service.assignPoster(Data(), toChild: name, in: root) }
     }
   }
 
@@ -49,9 +47,7 @@ struct FolderPostersTests {
   @Test func missingChildIsRejected() throws {
     let root = try makeDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    #expect(throws: FolderPosterError.self) {
-      try service.assignPoster(Data(), toChild: "Missing", in: root)
-    }
+    #expect(throws: FolderPosterError.self) { try service.assignPoster(Data(), toChild: "Missing", in: root) }
   }
 
   /// Scenario: stale candidate cannot assign to replacement directory.
@@ -77,9 +73,7 @@ struct FolderPostersTests {
     let movie = root.appendingPathComponent("Movie.mkv")
     let original = Data("Untouched movie".utf8)
     try original.write(to: movie)
-    #expect(throws: FolderPosterError.self) {
-      try service.assignPoster(Data(), toChild: "Movie.mkv", in: root)
-    }
+    #expect(throws: FolderPosterError.self) { try service.assignPoster(Data(), toChild: "Movie.mkv", in: root) }
     #expect(try Data(contentsOf: movie) == original)
   }
 
@@ -91,9 +85,7 @@ struct FolderPostersTests {
     try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
     try FileManager.default.createSymbolicLink(
       at: root.appendingPathComponent("Link"), withDestinationURL: target)
-    #expect(throws: FolderPosterError.self) {
-      try service.assignPoster(Data(), toChild: "Link", in: root)
-    }
+    #expect(throws: FolderPosterError.self) { try service.assignPoster(Data(), toChild: "Link", in: root) }
     #expect(try FileManager.default.contentsOfDirectory(atPath: target.path).isEmpty)
   }
 
@@ -103,9 +95,7 @@ struct FolderPostersTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let movie = root.appendingPathComponent("Movie", isDirectory: true)
     try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
-    #expect(throws: FolderPosterError.self) {
-      try service.assignPoster(Data([0, 1, 2]), toChild: "Movie", in: root)
-    }
+    #expect(throws: FolderPosterError.self) { try service.assignPoster(Data([0, 1, 2]), toChild: "Movie", in: root) }
     #expect(try FileManager.default.contentsOfDirectory(atPath: movie.path).isEmpty)
   }
 
@@ -177,7 +167,7 @@ struct FolderPostersTests {
 
     #expect(
       NSWorkspace.shared.setIcon(makeNSImage(color: .green), forFile: movie.path, options: []))
-    #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == nil)
+    #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == .none)
   }
 
 }
@@ -212,7 +202,7 @@ extension FolderPostersTests {
     let (missingRoot, missingMovie) = try makeMovieDirectory()
     defer { try? FileManager.default.removeItem(at: missingRoot) }
     #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: missingRoot) == .assigned)
-    #expect(NSWorkspace.shared.setIcon(nil, forFile: missingMovie.path, options: []))
+    #expect(NSWorkspace.shared.setIcon(.none, forFile: missingMovie.path, options: []))
     #expect(
       try service.restyleAssignedPoster(
         makePoster(), toChild: "Movie", in: missingRoot,
@@ -300,7 +290,7 @@ extension FolderPostersTests {
     let (root, movie) = try makeMovieDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     #expect(try service.assignPoster(makePoster(), toChild: "Movie", in: root) == .assigned)
-    #expect(NSWorkspace.shared.setIcon(nil, forFile: movie.path, options: []))
+    #expect(NSWorkspace.shared.setIcon(.none, forFile: movie.path, options: []))
 
     #expect(try !service.hasAssignedPoster(toChild: "Movie", in: root))
     #expect(try !service.removeAssignedPoster(toChild: "Movie", in: root))
@@ -360,13 +350,21 @@ extension FolderPostersTests {
     #expect(try FileManager.default.contentsOfDirectory(atPath: movie.path) == ["Icon\r"])
   }
 
+  /// Creates an isolated directory for icon metadata tests.
+  /// - Returns: The new directory URL.
+  /// - Throws: A filesystem error when creation fails.
   private func makeDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+
     return root
   }
 
+  /// Encodes a solid-color PNG for icon assignment tests.
+  /// - Parameter color: The fill color of the poster.
+  /// - Returns: The encoded poster image.
+  /// - Throws: A test requirement failure when image creation fails.
   private func makePoster(color: NSColor = .red) throws -> Data {
     let context = try #require(
       CGContext(
@@ -380,22 +378,31 @@ extension FolderPostersTests {
       CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
     #expect(CGImageDestinationFinalize(destination))
+
     return data as Data
   }
 
+  /// Creates a solid-color image used to simulate a user-provided icon.
+  /// - Parameter color: The fill color of the icon.
+  /// - Returns: The image ready for Finder icon assignment.
   private func makeNSImage(color: NSColor) -> NSImage {
     let image = NSImage(size: NSSize(width: 64, height: 64))
     image.lockFocus()
     color.setFill()
     NSBezierPath(rect: NSRect(x: 0, y: 0, width: 64, height: 64)).fill()
     image.unlockFocus()
+
     return image
   }
 
+  /// Creates a configured root containing one immediate movie directory.
+  /// - Returns: The root and movie directory URLs, in that order.
+  /// - Throws: A filesystem error when either directory cannot be created.
   private func makeMovieDirectory() throws -> (URL, URL) {
     let root = try makeDirectory()
     let movie = root.appendingPathComponent("Movie", isDirectory: true)
     try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
+
     return (root, movie)
   }
 }

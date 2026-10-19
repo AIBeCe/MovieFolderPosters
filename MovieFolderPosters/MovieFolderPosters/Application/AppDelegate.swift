@@ -96,9 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @objc private func showLog() { coordinator.showLog() }
 
   /// Refreshes committed outcome projections when the host returns to the foreground.
-  func applicationDidBecomeActive(_ notification: Notification) {
-    coordinator.applicationDidBecomeActive()
-  }
+  func applicationDidBecomeActive(_ notification: Notification) { coordinator.applicationDidBecomeActive() }
 
   /// Opens a poster action for each valid action URL passed to the app.
   ///
@@ -144,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       withTitle: "Quit Movie Folder Posters", action: #selector(NSApplication.terminate(_:)),
       keyEquivalent: "q")
     applicationItem.submenu = applicationMenu
-    let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+    let editItem = NSMenuItem(title: "Edit", action: .none, keyEquivalent: "")
     let editMenu = NSMenu(title: "Edit")
     editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
     editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
@@ -153,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     applicationMenu.insertItem(
       withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", at: 1).target = self
-    let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+    let windowItem = NSMenuItem(title: "Window", action: .none, keyEquivalent: "")
     let windowMenu = NSMenu(title: "Window")
     windowMenu.addItem(withTitle: "Movie Folder Posters", action: #selector(showConfiguration), keyEquivalent: "")
       .target = self

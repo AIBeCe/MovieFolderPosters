@@ -60,7 +60,7 @@ nonisolated public struct KeychainCredentialStore: CredentialStoring {
     context.interactionNotAllowed = true
     attributes[kSecUseAuthenticationContext as String] = context
     let (status, result) = backend.copyMatching(attributes)
-    if status == errSecItemNotFound { return nil }
+    if status == errSecItemNotFound { return .none }
     guard status == errSecSuccess, let data = result as? Data,
       let value = String(data: data, encoding: .utf8)
     else {

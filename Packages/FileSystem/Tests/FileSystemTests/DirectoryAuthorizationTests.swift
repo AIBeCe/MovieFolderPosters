@@ -30,12 +30,8 @@ struct DirectoryAuthorizationTests {
     try Data().write(to: file)
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: directory)
 
-    #expect(throws: DirectoryAccessError.self) {
-      try FileSystemService().makeTransferBookmark(for: file)
-    }
-    #expect(throws: DirectoryAccessError.self) {
-      try FileSystemService().makeTransferBookmark(for: link)
-    }
+    #expect(throws: DirectoryAccessError.self) { try FileSystemService().makeTransferBookmark(for: file) }
+    #expect(throws: DirectoryAccessError.self) { try FileSystemService().makeTransferBookmark(for: link) }
   }
 
   /// Scenario: malformed bookmark is rejected.
@@ -147,16 +143,21 @@ struct DirectoryAuthorizationTests {
 
     let names = await Task.detached {
       await Task.yield()
+
       return try? FileManager.default.contentsOfDirectory(atPath: lease.url.path)
     }.value
 
-    #expect(names != nil)
+    #expect(names != .none)
   }
 }
 
+/// Creates an isolated directory for bookmark and authorization checks.
+/// - Returns: The newly created directory URL.
+/// - Throws: A filesystem error when the directory cannot be created.
 private func makeTemporaryDirectory() throws -> URL {
   let directory = FileManager.default.temporaryDirectory
     .appendingPathComponent("FileSystemAuthorization-\(UUID().uuidString)", isDirectory: true)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+
   return directory
 }

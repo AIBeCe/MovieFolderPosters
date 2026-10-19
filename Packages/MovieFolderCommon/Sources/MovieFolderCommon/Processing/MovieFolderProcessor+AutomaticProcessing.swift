@@ -13,7 +13,7 @@ extension MovieFolderProcessor {
   /// - Throws: Cancellation, root-access, authorization, or persistence errors; recoverable folder failures are
   /// counted.
   public func process(
-    root: URL, processingContext: CollectionProcessingContext? = nil
+    root: URL, processingContext: CollectionProcessingContext? = .none
   ) async throws -> ProcessingSummary {
     try Task.checkCancellation()
     let rootKey = Self.rootLeaseKey(for: root)
@@ -49,8 +49,8 @@ extension MovieFolderProcessor {
 
       return visit.summary
     }
-    if visit.cache.rootBackoffUntil != nil { stateChanged = true }
-    visit.cache.rootBackoffUntil = nil
+    if visit.cache.rootBackoffUntil != .none { stateChanged = true }
+    visit.cache.rootBackoffUntil = .none
     if stateChanged { try saveState(visit.cache, to: lease) }
     for candidate in candidates {
       try Task.checkCancellation()
@@ -59,7 +59,7 @@ extension MovieFolderProcessor {
       if try await processCandidate(candidate, root: root, lease: lease, visit: &visit) { break }
     }
     try finishProcessingOperation(
-      &visit.recording, state: visit.summary.rootBackoffUntil == nil ? .completed : .partial)
+      &visit.recording, state: visit.summary.rootBackoffUntil == .none ? .completed : .partial)
 
     return visit.summary
   }
@@ -69,7 +69,7 @@ extension MovieFolderProcessor {
     in root: URL, recording: inout CollectionProcessingState?
   ) throws -> [FolderCandidate] {
     do {
-      if recording != nil {
+      if recording != .none {
         let inventory = try fileSystem.inventory(in: root)
         guard inventory.members.count <= 10_000 else {
           recording?.inventoryIssue = .capacityExceeded
@@ -78,14 +78,14 @@ extension MovieFolderProcessor {
         recording?.folders = inventory.members.map {
           FolderProcessingRecord(
             name: $0.name, identity: $0.identity,
-            state: $0.candidate == nil ? .failed : .pending,
-            reason: $0.candidate == nil ? .inspectionFailure : .inventoryPending,
-            assessedAt: $0.candidate == nil ? now() : nil,
+            state: $0.candidate == .none ? .failed : .pending,
+            reason: $0.candidate == .none ? .inspectionFailure : .inventoryPending,
+            assessedAt: $0.candidate == .none ? now() : .none,
             fingerprint: $0.candidate?.fingerprint)
         }
         recording?.isInventoryComplete = inventory.isComplete
         recording?.inspectedAt = now()
-        recording?.inventoryIssue = inventory.isComplete ? nil : .inspectionFailure
+        recording?.inventoryIssue = inventory.isComplete ? .none : .inspectionFailure
         try commitProcessingState(&recording)
         // An incomplete type inventory cannot authorize a fabricated population or new writes.
         guard inventory.isComplete else { throw ProcessingError.unavailableRoot }
@@ -101,9 +101,7 @@ extension MovieFolderProcessor {
   }
 
   /// Prunes disappeared folder decisions and expired query responses.
-  private func pruneCache(
-    _ state: inout ProcessingState, candidates: [FolderCandidate], currentTime: Date
-  ) -> Bool {
+  private func pruneCache(_ state: inout ProcessingState, candidates: [FolderCandidate], currentTime: Date) -> Bool {
     var stateChanged = false
     let currentNames = Set(candidates.map(\.name))
     for name in Array(state.folders.keys) where !currentNames.contains(name) {
@@ -143,7 +141,7 @@ extension MovieFolderProcessor {
       } catch {
         if Task.isCancelled { throw CancellationError() }
         visit.summary.transientFailures += 1
-        if visit.recording != nil {
+        if visit.recording != .none {
           var record = (try? assessFolderProcessing(candidate, root: root, saved: visit.cache.folders[candidate.name]))
             ?? failedFolderAssessment(candidate, stage: .validateIdentity)
           record.lastFailure = FolderProcessingFailure(reason: .filesystem, stage: .assignPoster, occurredAt: now())
@@ -223,7 +221,7 @@ extension MovieFolderProcessor {
       visit.cache.folders[candidate.name] = FolderRecord(
         fingerprint: candidate.fingerprint,
         status: .processed,
-        retryDate: nil,
+        retryDate: .none,
         matchedMovieID: assignment.movieID,
         posterPath: assignment.posterPath,
         movieTitle: assignment.record.movieTitle,
@@ -326,7 +324,7 @@ extension MovieFolderProcessor {
     visit.cache.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .processed,
-      retryDate: nil,
+      retryDate: .none,
       matchedMovieID: movie.id,
       posterPath: posterPath,
       movieTitle: movie.title,
@@ -338,9 +336,7 @@ extension MovieFolderProcessor {
   }
 
   /// Retains the conservative unresolved reason and any identified movie.
-  private func unresolvedIdentity(
-    _ identityResult: MovieMatchResult
-  ) -> (FolderProcessingReason, MovieMetadata?) {
+  private func unresolvedIdentity(_ identityResult: MovieMatchResult) -> (FolderProcessingReason, MovieMetadata?) {
     let reason: FolderProcessingReason
     let identifiedMovie: MovieMetadata?
     switch identityResult {
@@ -348,7 +344,7 @@ extension MovieFolderProcessor {
       reason = .missingArtwork
       identifiedMovie = movie
     case .unresolved(let issue):
-      identifiedMovie = nil
+      identifiedMovie = .none
       switch issue {
       case .ambiguous: reason = .ambiguousMovie
       case .noSuitableMatch: reason = .noSuitableMovie

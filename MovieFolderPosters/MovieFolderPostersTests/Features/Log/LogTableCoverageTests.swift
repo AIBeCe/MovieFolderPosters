@@ -27,6 +27,6 @@ struct LogTableCoverageTests {
     #expect(labels["time"]?.stringValue.isEmpty == false)
     await model.clear()
     #expect(controller.numberOfRows(in: table) == 0)
-    #expect(controller.tableView(table, viewFor: table.tableColumns.first, row: 0) == nil)
+    #expect(controller.tableView(table, viewFor: table.tableColumns.first, row: 0) == .none)
   }
 }

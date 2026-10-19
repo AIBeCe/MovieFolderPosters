@@ -44,7 +44,7 @@ nonisolated struct MovieMatcher: Sendable {
     guard !search.hasMorePages else { return .unresolved(.incompleteSearch) }
     let plausible = search.movies.filter {
       (normalized($0.title) == query || normalized($0.originalTitle) == query)
-        && (year == nil || $0.releaseYear == year)
+        && (year == .none || $0.releaseYear == year)
     }
     guard let selected = plausible.first else { return .unresolved(.noSuitableMatch) }
     guard plausible.allSatisfy({ $0.id == selected.id }),

@@ -21,12 +21,12 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
   ///   - isBusy: Whether the caller has positive evidence of active root coordination.
   ///   - stateOverride: Lifecycle state established by an authoritative caller check.
   public init(processingState: CollectionProcessingState?, isStale: Bool = false, isBusy: Bool = false,
-              stateOverride: CollectionProcessingDisplayState? = nil) {
+              stateOverride: CollectionProcessingDisplayState? = .none) {
     guard let processingState else {
       state = .unavailable
-      counts = CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil)
-      inspectedAt = nil
-      lastCompletedRun = nil
+      counts = CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)
+      inspectedAt = .none
+      lastCompletedRun = .none
       lastCompletedRunIsCurrentContext = false
       return
     }

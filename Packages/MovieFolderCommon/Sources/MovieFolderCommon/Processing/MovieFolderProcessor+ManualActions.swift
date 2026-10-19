@@ -14,7 +14,7 @@ extension MovieFolderProcessor {
   /// - Returns: The TMDb identifier associated with the applied poster.
   /// - Throws: Cancellation, provider, persistence, ownership, authorization, or changed-identity errors.
   public func refreshPoster(
-    root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = nil
+    root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = .none
   ) async throws -> Int {
     try Task.checkCancellation()
     let coordinationLease = try acquireCoordinationLease(for: root)
@@ -48,7 +48,7 @@ extension MovieFolderProcessor {
     refreshedRecord.movieYear = selection.movieYear
     refreshedRecord.movieIdentitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
     state.folders[child] = refreshedRecord
-    state.rootBackoffUntil = nil
+    state.rootBackoffUntil = .none
     try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
     try finishProcessingOperation(&processingState, state: .completed)
 
@@ -67,7 +67,7 @@ extension MovieFolderProcessor {
   /// - Throws: Cancellation, provider, persistence, ownership, authorization, or changed-identity errors.
   public func applyMoviePoster(
     _ movie: MovieMetadata, root: URL, child: String, expectedIdentity: String,
-    processingContext: CollectionProcessingContext? = nil
+    processingContext: CollectionProcessingContext? = .none
   ) async throws -> Int {
     try Task.checkCancellation()
     let coordinationLease = try acquireCoordinationLease(for: root)
@@ -101,7 +101,7 @@ extension MovieFolderProcessor {
     selectedRecord.movieYear = movie.releaseYear
     selectedRecord.movieIdentitySource = .explicitSelection
     state.folders[child] = selectedRecord
-    state.rootBackoffUntil = nil
+    state.rootBackoffUntil = .none
     try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
     try finishProcessingOperation(&processingState, state: .completed)
 
@@ -118,7 +118,7 @@ extension MovieFolderProcessor {
   /// - Returns: Whether an owned poster was actually removed.
   /// - Throws: Contention, persistence, authorization, ownership, or changed-identity errors.
   public func removePoster(
-    root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = nil
+    root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = .none
   ) throws -> Bool {
     let coordinationLease = try acquireCoordinationLease(for: root)
     defer { withExtendedLifetime(coordinationLease) {} }
@@ -140,7 +140,7 @@ extension MovieFolderProcessor {
     guard isOwned else {
       if candidate.hasCustomIcon { throw PosterActionError.foreignIcon }
 
-      if processingState != nil {
+      if processingState != .none {
         let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[child])
         try recordFolderProcessing(record, in: &processingState)
         try finishProcessingOperation(&processingState, state: .completed)
@@ -183,7 +183,7 @@ extension MovieFolderProcessor {
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     guard let record = try loadState(from: lease).folders[child],
       record.fingerprint == candidate.fingerprint, record.status == .processed
-    else { return nil }
+    else { return .none }
 
     return record.matchedMovieID
   }
@@ -207,7 +207,7 @@ extension MovieFolderProcessor {
   /// - Returns: The held lease when coordination is configured.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func acquireCoordinationLease(for root: URL) throws -> PersistenceLease? {
-    guard let coordinationStore else { return nil }
+    guard let coordinationStore else { return .none }
     guard let lease = try coordinationStore.acquireLease(for: Self.rootCoordinationKey(for: root)) else {
       throw PosterActionError.busy
     }
@@ -285,7 +285,7 @@ extension MovieFolderProcessor {
   /// - Returns: A completed decision recording this folder fingerprint and selected movie/poster.
   private func processedRecord(for candidate: FolderCandidate, movieID: Int, posterPath: String) -> FolderRecord {
     FolderRecord(
-      fingerprint: candidate.fingerprint, status: .processed, retryDate: nil,
+      fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
       matchedMovieID: movieID, posterPath: posterPath)
   }
 

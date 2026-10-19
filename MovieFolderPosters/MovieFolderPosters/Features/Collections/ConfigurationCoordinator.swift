@@ -67,7 +67,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       isObservingProcessing = true
       DistributedNotificationCenter.default().addObserver(
         self, selector: #selector(processingChanged(_:)),
-        name: MovieFolderEnvironment.collectionProcessingStateChanged, object: nil)
+        name: MovieFolderEnvironment.collectionProcessingStateChanged, object: .none)
     }
     if let mainWindow {
       refreshCollectionProcessingState()
@@ -85,9 +85,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   }
 
   /// Reloads processing states after the app becomes active without rereading settings.
-  func applicationDidBecomeActive() {
-    refreshCollectionProcessingState()
-  }
+  func applicationDidBecomeActive() { refreshCollectionProcessingState() }
 
   /// Requests a summary-only reload after an outcome notification or explicit app activation.
   func refreshCollectionProcessingState() { summaryViewModel.reload() }
@@ -111,7 +109,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Checks installation evidence and presents the report in a sheet.
   private func showInstallationReadiness() {
     guard !checkingInstallation, !viewModel.isBusy, let window = mainWindow?.window,
-      window.attachedSheet == nil
+      window.attachedSheet == .none
     else { return }
     checkingInstallation = true
     Task { [weak self] in
@@ -122,7 +120,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       }
       let report = await installationReport()
       checkingInstallation = false
-      guard window.isVisible, window.attachedSheet == nil else { return }
+      guard window.isVisible, window.attachedSheet == .none else { return }
       let reportController = InstallationReadinessViewController(report: report)
       let alert = NSAlert()
       alert.messageText = "Installation Readiness"
@@ -138,13 +136,13 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 
   /// Shows the selected collection's read-only persisted details as a window sheet.
   private func showProcessingDetails(rootID: UUID) {
-    guard let window = mainWindow?.window, window.attachedSheet == nil,
+    guard let window = mainWindow?.window, window.attachedSheet == .none,
       let directory = viewModel.directories.first(where: { $0.id == rootID })
     else { return }
     let summary = summaryViewModel.summary(for: rootID) ?? CollectionProcessingSummary(
-      processingState: nil,
-      presentation: CollectionProcessingPresentation(processingState: nil),
-      counts: CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil),
+      processingState: .none,
+      presentation: CollectionProcessingPresentation(processingState: .none),
+      counts: CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none),
       displayState: .unavailable
     )
     let controller = CollectionProcessingDetailsViewController(
@@ -155,7 +153,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     sheet.styleMask = [.titled, .closable, .resizable]
     sheet.setContentSize(NSSize(width: 680, height: 520))
     sheet.minSize = NSSize(width: 560, height: 360)
-    window.beginSheet(sheet, completionHandler: nil)
+    window.beginSheet(sheet, completionHandler: .none)
   }
 
   /// Combines installation evidence with the last-loaded setup summary.
@@ -195,16 +193,14 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   ///
   /// - Parameter controller: The window controller to display.
   private func show(_ controller: NSWindowController) {
-    controller.showWindow(nil)
-    controller.window?.makeKeyAndOrderFront(nil)
+    controller.showWindow(.none)
+    controller.window?.makeKeyAndOrderFront(.none)
   }
 
   /// Responds to the configuration view's request to open Settings.
   ///
   /// - Parameter controller: The view controller that sent the request.
-  func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController) {
-    showSettings()
-  }
+  func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController) { showSettings() }
   /// Responds to the configuration view's request to open the activity log.
   ///
   /// - Parameter controller: The view controller that sent the request.
@@ -221,16 +217,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Responds to a request to show installation evidence.
   ///
   /// - Parameter controller: The view controller that sent the request.
-  func configurationViewControllerDidRequestInstallationReadiness(
-    _ controller: ConfigurationViewController
-  ) {
+  func configurationViewControllerDidRequestInstallationReadiness(_ controller: ConfigurationViewController) {
     showInstallationReadiness()
   }
 
   /// Responds to a request for a collection's saved processing details.
-  func configurationViewControllerDidRequestProcessingDetails(
-    _ controller: ConfigurationViewController, rootID: UUID
-  ) {
+  func configurationViewControllerDidRequestProcessingDetails(_ controller: ConfigurationViewController, rootID: UUID) {
     showProcessingDetails(rootID: rootID)
   }
 
@@ -243,9 +235,9 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   func configurationViewController(
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?
   ) {
-    guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == nil else { return }
+    guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none else { return }
     let panel = NSOpenPanel()
-    panel.title = identifier == nil ? "Choose Movie Folder" : "Restore Folder Access"
+    panel.title = identifier == .none ? "Choose Movie Folder" : "Restore Folder Access"
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false

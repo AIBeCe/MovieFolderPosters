@@ -33,10 +33,12 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
 
 /// Adapts the signed extension's system services without adding processing policy.
 nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
+  /// Shared recorder used by Finder configuration and processing events.
   var activity: any MovieFolderActivityServicing { MovieFolderEnvironment.makeActivityRecorder() }
+  /// Host version and build recorded with activation evidence when both are available.
   var buildVersion: (String, String)? {
     guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-      let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return nil }
+      let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return .none }
 
     return (version, build)
   }

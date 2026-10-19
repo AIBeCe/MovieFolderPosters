@@ -37,7 +37,7 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
   /// Suspends the next read after snapshot capture.
   func holdNextRead() { shouldHoldRead = true }
   /// Releases the captured read.
-  func releaseRead() { heldRead?.resume(); heldRead = nil }
+  func releaseRead() { heldRead?.resume(); heldRead = .none }
   /// Whether a read is currently suspended.
   var isReadHeld: Bool { heldRead != nil }
 
@@ -71,6 +71,7 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
 /// Verifies opening loads persisted history, Clear scope, and independent failures.
 @MainActor
 struct ActivityLogViewModelTests {
+  /// Verifies opening the log reloads committed service history.
   @Test func openingAndReopeningLoadsActualServiceHistory() async {
     let service = ActivityServiceFake()
     await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
@@ -83,6 +84,7 @@ struct ActivityLogViewModelTests {
     #expect(log.entries.count == 2)
   }
 
+  /// Preserves displayed history and reports a distinct clear failure.
   @Test func clearFailureKeepsEntriesAndShowsDistinctMessage() async {
     let service = ActivityServiceFake()
     let log = ActivityLogViewModel(service: service)
@@ -95,6 +97,7 @@ struct ActivityLogViewModelTests {
     #expect(log.statusText.contains("Could not clear"))
   }
 
+  /// Verifies recording failures and history-loading failures have independent presentation state.
   @Test func failedWritesAndLoadsRemainSeparate() async {
     let service = ActivityServiceFake()
     let log = ActivityLogViewModel(service: service)
@@ -108,6 +111,7 @@ struct ActivityLogViewModelTests {
     #expect(!log.hasClearFailure)
   }
 
+  /// Prevents an older read from restoring cleared history and coalesces reload notifications.
   @Test func clearFencesAnOlderCapturedReadAndCoalescesHints() async {
     let service = ActivityServiceFake()
     await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
@@ -124,6 +128,7 @@ struct ActivityLogViewModelTests {
     #expect(await service.readCount == 2)
   }
 
+  /// Rejects stale reads after failed clearing while preserving its failure message.
   @Test func failedClearFencesCapturedReadAndReloadsHistoryWithoutLosingFailure() async {
     let service = ActivityServiceFake()
     await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
@@ -144,6 +149,7 @@ struct ActivityLogViewModelTests {
     #expect(await service.readCount == 3)
   }
 
+  /// Reloads another recorder's committed history after missed notifications.
   @Test func reopeningLoadsOtherRecorderCommitsAfterMissedChangeHints() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -161,6 +167,7 @@ struct ActivityLogViewModelTests {
     #expect(!log.hasLoadFailure)
   }
 
+  /// Verifies manual-action events retain safe failure and correlation data without user text.
   @Test func actualManualProducerRetainsFailureAndCorrelationWithoutUserText() async throws {
     let activity = ActivityServiceFake()
     let service = MoviePosterActionService(activity: activity)
@@ -168,14 +175,14 @@ struct ActivityLogViewModelTests {
     let request = MoviePosterRequest(
       rootID: rootID, childName: "private-title", identity: "private-identity", action: .change)
     let invalid = MovieMetadata(id: 0, title: "private-title", originalTitle: "private-original",
-                                releaseYear: nil, posterPath: nil)
+                                releaseYear: .none, posterPath: .none)
     await #expect(throws: MoviePosterActionServiceError.invalidSelection) {
       try await service.applyPoster(invalid, for: request)
     }
     let events = try await activity.entries().map(\.event)
     #expect(events.map(\.action) == [.posterSelection, .posterSelection])
     #expect(events.map(\.status) == [.started, .failed])
-    #expect(events.first?.operationID != nil)
+    #expect(events.first?.operationID != .none)
     #expect(events.first?.operationID == events.last?.operationID)
     #expect(events.allSatisfy { $0.collectionID == rootID })
     #expect(events.allSatisfy { !$0.text.contains("private") })

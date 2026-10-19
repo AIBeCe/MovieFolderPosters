@@ -135,7 +135,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     environment: any MoviePosterActionEnvironment = LiveMoviePosterActionEnvironment(),
-    provider: (any MovieMetadataProvider)? = nil
+    provider: (any MovieMetadataProvider)? = .none
   ) {
     self.credentials = credentials
     self.activity = activity
@@ -188,8 +188,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   ///   - year: The optional release year.
   /// - Returns: Matching movie metadata and pagination state.
   /// - Throws: An action, configuration, or TMDb error if validation or search fails.
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws
-    -> MovieSearchResult {
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws -> MovieSearchResult {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanQuery.isEmpty, !cleanQuery.contains("\r"), !cleanQuery.contains("\n"),
       year.map({ (1888...2099).contains($0) }) ?? true
@@ -375,8 +374,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Parameter configuration: The configuration processing state that controls fixture use.
   /// - Returns: A provider configured with the saved credential.
   /// - Throws: A credential or fixture error when no usable provider can be created.
-  private func makeProvider(for configuration: DirectoryConfiguration) throws
-    -> any MovieMetadataProvider {
+  private func makeProvider(for configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
     guard let token = try credentials.read() else {
       throw MoviePosterActionServiceError.credentialUnavailable
     }
@@ -454,13 +452,17 @@ nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
   /// The persistent identity captured before processing begins.
   let rootIdentity: String
 
+  /// Supplies no automatic-mutation lease because this guard belongs to the manual-action flow.
   func movieFolderProcessor(
     _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
   )
-    throws -> PersistenceLease? { nil }
+    throws -> PersistenceLease? { .none }
 
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? {
+  /// Holds configuration stable and rejects root replacement before a manual filesystem mutation.
+  /// - Parameter processor: Processor requesting permission to mutate the captured root.
+  /// - Returns: The configuration lease retained through mutation.
+  /// - Throws: Configuration lease failures or an action error if the root identity changed.
+  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
     let lease = try repository.mutationLease(for: directory, expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == rootIdentity else {
       withExtendedLifetime(lease) {}
@@ -497,15 +499,11 @@ private struct MissingTokenProvider: MovieMetadataProvider {
   ///   - title: The requested movie title.
   ///   - year: The optional release year.
   /// - Throws: `TMDbError.missingToken` for every search request.
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
-    throw TMDbError.missingToken
-  }
+  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult { throw TMDbError.missingToken }
 
   /// Rejects poster downloads because this provider intentionally has no token.
   ///
   /// - Parameter path: The remote poster path requested by the processor.
   /// - Throws: `TMDbError.missingToken` for every download request.
-  func downloadPoster(path: String) throws -> Data {
-    throw TMDbError.missingToken
-  }
+  func downloadPoster(path: String) throws -> Data { throw TMDbError.missingToken }
 }

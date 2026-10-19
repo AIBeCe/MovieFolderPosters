@@ -48,7 +48,7 @@ final class AppAppearanceSettings {
   /// - Returns: An explicit light or dark appearance, or `nil` for system behavior.
   static func appearance(for choice: AppColorAppearance) -> NSAppearance? {
     switch choice {
-    case .system: nil
+    case .system: .none
     case .light: NSAppearance(named: .aqua)
     case .dark: NSAppearance(named: .darkAqua)
     }

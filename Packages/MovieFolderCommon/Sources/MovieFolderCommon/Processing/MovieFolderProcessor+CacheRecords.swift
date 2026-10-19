@@ -36,6 +36,7 @@ nonisolated struct FolderRecord: Codable {
   var movieYear: Int?
   /// Safe latest failure evidence retained through retry deferral.
   var lastFailure: FolderProcessingFailure?
+  /// Preserves the cache record field names used by existing saved state.
   private enum CodingKeys: String, CodingKey {
     case fingerprint, status, retryDate, matchedMovieID, posterPath, processingReason, movieTitle, movieYear
     case lastFailure = "latestAttempt"

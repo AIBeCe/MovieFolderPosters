@@ -12,7 +12,7 @@ struct ReleaseNameParserTests {
 
   /// Verifies preserves Title Without Year.
   @Test func preservesTitleWithoutYear() {
-    let expected = ParsedReleaseName(title: "Ride The Eagle", year: nil)
+    let expected = ParsedReleaseName(title: "Ride The Eagle", year: .none)
     #expect(ReleaseNameParser().parse("Ride.The.Eagle") == .parsed(expected))
   }
 
@@ -25,6 +25,9 @@ struct ReleaseNameParserTests {
   /// Verifies rejects Empty Name.
   @Test func rejectsEmptyName() { #expect(ReleaseNameParser().parse("   ") == .unresolved(.emptyName)) }
 
+  /// Checks that release annotations are removed without losing the movie title or year.
+  ///
+  /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   @Test(arguments: [
     ReleaseFixture("The.Drama.2026.2160p.WEB-DL.DDP5.1.Atmos.H265-GROUP", "The Drama", 2026),
     ReleaseFixture("North.Star.2023.1080p.BluRay.x264-GROUP", "North Star", 2023),
@@ -34,8 +37,8 @@ struct ReleaseNameParserTests {
       "Whisper.Of.The.Heart.1995.NORDiC.1080p.WEB-DL.H.264.DDP5.1-NoTrace",
       "Whisper Of The Heart", 1995),
     ReleaseFixture("The.Drama.2026.REMASTERED.2160p.WEB-DL", "The Drama", 2026),
-    ReleaseFixture("North.Star.WEB-DL.x264-GROUP", "North Star", nil),
-    ReleaseFixture("Ride.The.Eagle.1080p.WEB-DL-GROUP", "Ride The Eagle", nil),
+    ReleaseFixture("North.Star.WEB-DL.x264-GROUP", "North Star", .none),
+    ReleaseFixture("Ride.The.Eagle.1080p.WEB-DL-GROUP", "Ride The Eagle", .none),
     ReleaseFixture("Movie.2020.x265-GROUP", "Movie", 2020),
     ReleaseFixture("Movie.[2020].HDR10+.HEVC.DDP5.1-GROUP", "Movie", 2020),
     ReleaseFixture(
@@ -45,9 +48,6 @@ struct ReleaseNameParserTests {
       "Batman Knightfall Part 1 2026 2160p UHD BluRay REMUX DV HDR HEVC DTS-HD MA 5.1-d3g",
       "Batman Knightfall Part 1", 2026)
   ])
-  /// Checks that release annotations are removed without losing the movie title or year.
-  ///
-  /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   func extractsFullReleaseNames(_ fixture: ReleaseFixture) {
     #expect(
       ReleaseNameParser().parse(fixture.name)
@@ -57,6 +57,9 @@ struct ReleaseNameParserTests {
             year: fixture.year)))
   }
 
+  /// Checks that technical-looking tokens remain when they belong to the movie title.
+  ///
+  /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   @Test(arguments: [
     ReleaseFixture("1917.2019.1080p.BluRay", "1917", 2019),
     ReleaseFixture("2001.A.Space.Odyssey.1968.1080p.BluRay", "2001 A Space Odyssey", 1968),
@@ -68,16 +71,13 @@ struct ReleaseNameParserTests {
     ReleaseFixture("The.Dolby.Vision.2020", "The Dolby Vision", 2020),
     ReleaseFixture("The.H265.Movie.2020", "The H265 Movie", 2020),
     ReleaseFixture("The.4K.Movie.2020", "The 4K Movie", 2020),
-    ReleaseFixture("The.1080p.Movie", "The 1080p Movie", nil),
-    ReleaseFixture("The.1984.Experiment", "The 1984 Experiment", nil),
-    ReleaseFixture("1984", "1984", nil),
-    ReleaseFixture("Movie.BluRay", "Movie BluRay", nil),
+    ReleaseFixture("The.1080p.Movie", "The 1080p Movie", .none),
+    ReleaseFixture("The.1984.Experiment", "The 1984 Experiment", .none),
+    ReleaseFixture("1984", "1984", .none),
+    ReleaseFixture("Movie.BluRay", "Movie BluRay", .none),
     ReleaseFixture("Amélie.(2001).1080p.BluRay", "Amélie", 2001),
     ReleaseFixture("Schindler's.List.1993.1080p.BluRay", "Schindler's List", 1993)
   ])
-  /// Checks that technical-looking tokens remain when they belong to the movie title.
-  ///
-  /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   func preservesLegitimateTitleTokens(_ fixture: ReleaseFixture) {
     #expect(
       ReleaseNameParser().parse(fixture.name)
@@ -87,6 +87,9 @@ struct ReleaseNameParserTests {
             year: fixture.year)))
   }
 
+  /// Checks that uncertain release evidence remains explicitly unresolved.
+  ///
+  /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   @Test(arguments: [
     UnresolvedFixture("Movie.1999.2000", .ambiguousYear),
     UnresolvedFixture("Movie.1999.2000.1080p.WEB-DL", .ambiguousYear),
@@ -104,9 +107,6 @@ struct ReleaseNameParserTests {
     UnresolvedFixture("The.Drama…GROUP", .truncatedName),
     UnresolvedFixture("/Users/me/Movies", .invalidName)
   ])
-  /// Checks that uncertain release evidence remains explicitly unresolved.
-  ///
-  /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   func reportsUncertainNames(_ fixture: UnresolvedFixture) {
     #expect(ReleaseNameParser().parse(fixture.name) == .unresolved(fixture.issue))
   }

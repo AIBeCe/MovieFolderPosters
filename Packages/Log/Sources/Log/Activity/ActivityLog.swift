@@ -27,9 +27,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   public init(directory: URL, namespace: String, maximumEntries: Int = 500) async throws {
     guard !namespace.isEmpty else { throw ActivityLogError.invalidNamespace }
     guard (1...500).contains(maximumEntries) else { throw ActivityLogError.invalidRetentionLimit }
-    store = try await Self.offActor {
-      try PersistenceStore(directory: directory, maximumRecordBytes: 2 * 1024 * 1024)
-    }
+    store = try await Self.offActor { try PersistenceStore(directory: directory, maximumRecordBytes: 2 * 1024 * 1024) }
     key = "Log.Activity.v1." + namespace
     self.maximumEntries = maximumEntries
   }
@@ -152,9 +150,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
       try Task.checkCancellation()
 
       return try await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    } onCancel: { task.cancel() }
   }
 }
 

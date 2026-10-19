@@ -79,7 +79,7 @@ private actor SuspendedFinderProvider: MovieMetadataProvider {
   func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
     hasStarted = true
     started?.resume()
-    started = nil
+    started = .none
 
     return await withCheckedContinuation { response = $0 }
   }
@@ -95,7 +95,7 @@ private actor SuspendedFinderProvider: MovieMetadataProvider {
   /// Delivers a late successful response, intentionally ignoring task cancellation like an external boundary may.
   func finish() {
     response?.resume(returning: MovieSearchResult(movies: [], hasMorePages: false))
-    response = nil
+    response = .none
   }
 }
 
@@ -116,6 +116,8 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   /// Injects a controlled metadata source while the production processor remains real.
   var metadataProvider: any MovieMetadataProvider = NoMatchesProvider()
 
+  /// Creates isolated runtime dependencies and a recorder rooted in the fixture container.
+  /// - Parameter fixture: Test-owned stores and authorized root.
   @MainActor init(_ fixture: FinderFixture) {
     self.fixture = fixture
     registrations = FinderRegistrations()
@@ -147,9 +149,7 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
       bookmark: bookmark, securityScoped: false, expectedIdentity: expectedIdentity)
   }
   func makeDirectoryBookmark(for url: URL) throws -> Data { try FileSystemService().makeTransferBookmark(for: url) }
-  @MainActor func register(_ roots: Set<URL>) {
-    registrations.append(roots)
-  }
+  @MainActor func register(_ roots: Set<URL>) { registrations.append(roots) }
 }
 
 /// Test-owned menu boundary records requests rather than launching the host application.
@@ -160,6 +160,10 @@ private final class IsolatedMenuPlatform: FinderMenuPlatform {
   let repository: ConfigurationRepository
   /// Captured host requests, proving menu generation isolation.
   var opened: [MoviePosterRequest] = []
+  /// Captures the isolated configuration and Finder selection used by menu tests.
+  /// - Parameters:
+  ///   - repository: Configuration against which selections are validated.
+  ///   - selection: Selected URLs, or `.none` when Finder supplies no selection.
   init(repository: ConfigurationRepository, selection: [URL]?) {
     self.repository = repository
     self.selection = selection
@@ -169,8 +173,10 @@ private final class IsolatedMenuPlatform: FinderMenuPlatform {
   func open(_ request: MoviePosterRequest) { opened.append(request) }
 }
 
+/// Exercises Finder menu capture, runtime authorization, and persisted processing boundaries.
 @Suite("Finder integration")
 struct FinderIntegrationTests {
+  /// Verifies menu requests capture folder identity and reject tags from an older menu.
   @Test @MainActor func menuCapturesIdentityAndExpiresOlderTags() throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -197,11 +203,12 @@ struct FinderIntegrationTests {
     controller.openPosterAction(try #require(second.items.first))
     #expect(platform.opened.last?.childName == "Dune (2021)")
     platform.selection = []
-    #expect(controller.menu(for: .contextualMenuForItems) == nil)
+    #expect(controller.menu(for: .contextualMenuForItems) == .none)
     controller.openPosterAction(try #require(second.items.first))
     #expect(platform.opened.count == MoviePosterAction.allCases.count + 1)
   }
 
+  /// Rejects mixed, hidden, nested, and unsupported Finder selections.
   @Test @MainActor func selectionRejectsUnsupportedBoundaries() throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -211,23 +218,24 @@ struct FinderIntegrationTests {
     try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
     let file = fixture.root.appendingPathComponent("Movie.mkv")
     try Data().write(to: file)
-    let platform = IsolatedMenuPlatform(repository: fixture.repository, selection: nil)
+    let platform = IsolatedMenuPlatform(repository: fixture.repository, selection: .none)
     let controller = FinderMenuController(platform: platform)
-    for selection in [nil, [], [movie, hidden], [hidden], [fixture.root], [nested], [file]] as [[URL]?] {
+    for selection in [.none, [], [movie, hidden], [hidden], [fixture.root], [nested], [file]] as [[URL]?] {
       platform.selection = selection
-      #expect(controller.menu(for: .contextualMenuForItems) == nil)
+      #expect(controller.menu(for: .contextualMenuForItems) == .none)
     }
     platform.selection = [movie]
-    #expect(controller.menu(for: .contextualMenuForContainer) == nil)
-    #expect(FinderMenuController(platform: platform, firstMenuTag: Int.max).menu(for: .contextualMenuForItems) == nil)
+    #expect(controller.menu(for: .contextualMenuForContainer) == .none)
+    #expect(FinderMenuController(platform: platform, firstMenuTag: Int.max).menu(for: .contextualMenuForItems) == .none)
     try fixture.repository.update { $0.directories = [] }
-    #expect(controller.menu(for: .contextualMenuForItems) == nil)
+    #expect(controller.menu(for: .contextualMenuForItems) == .none)
   }
 
 }
 
 // MARK: - Configuration and processing
 extension FinderIntegrationTests {
+  /// Verifies authorized processing saves activation evidence and a complete not-found outcome.
   @Test @MainActor func authorizedRootWritesActivationAndAuthoritativeNotFoundOutcome() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -249,24 +257,26 @@ extension FinderIntegrationTests {
     #expect(receipt.version == "1.2.3" && receipt.build == "45")
     let activity = try await environment.activity.entries()
     #expect(activity.map(\.event.status) == [.succeeded, .started, .succeeded])
-    #expect(activity.allSatisfy { $0.event.operationID == nil || $0.event.collectionID == fixture.directory.id })
+    #expect(activity.allSatisfy { $0.event.operationID == .none || $0.event.collectionID == fixture.directory.id })
   }
+  /// Keeps authorized roots registered while coalescing missing-credential diagnostics.
   @Test @MainActor func missingCredentialRetainsRootsAndSuppressesRepeatedUnavailableEvents() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
     var environment = IsolatedFinderEnvironment(fixture)
-    environment.token = nil
-    environment.buildVersion = nil
+    environment.token = .none
+    environment.buildVersion = .none
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
-    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == nil)
+    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
     #expect(try await environment.activity.entries().map(\.event.status) == [.unavailable])
     #expect(environment.registrations.roots == [[fixture.root], [fixture.root]])
   }
 
+  /// Keeps root authorization after metadata-provider creation fails.
   @Test @MainActor func providerCreationFailureDoesNotRevokeAuthorizedRoot() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -277,9 +287,10 @@ extension FinderIntegrationTests {
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(try await environment.activity.entries().map(\.event.status) == [.unavailable])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
-    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == nil)
+    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
   }
 
+  /// Rejects captured work after saved processing settings change.
   @Test @MainActor func changedSettingsInvalidateCapturedMutationAndProcessingContext() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -292,7 +303,7 @@ extension FinderIntegrationTests {
       try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     }
     #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .failed])
-    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == nil)
+    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     let current = try fixture.repository.read()
@@ -300,6 +311,7 @@ extension FinderIntegrationTests {
     #expect(saved.context.credentialRevision == current.credentialRevision)
   }
 
+  /// Clears Finder registration and invalidates the prior processor after configuration corruption.
   @Test @MainActor func corruptSettingsClearRegistrationAndDisablePriorProcessor() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -318,6 +330,7 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .unavailable])
   }
 
+  /// Rejects roots whose authorization or overlap violates registration boundaries.
   @Test @MainActor func invalidAuthorizationAndOverlappingRootsAreNeverRegistered() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -335,6 +348,7 @@ extension FinderIntegrationTests {
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
   }
 
+  /// Rejects a replaced folder before starting metadata requests.
   @Test @MainActor func identityReplacementFailsBeforeProviderWork() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -350,6 +364,7 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .failed])
   }
 
+  /// Records cancellation without converting it into a processing failure.
   @Test @MainActor func cancelledVisitRecordsCancelledAndPreservesCancellation() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -369,6 +384,7 @@ extension FinderIntegrationTests {
 
 // MARK: - Authorization and system boundaries
 extension FinderIntegrationTests {
+  /// Keeps the configuration lease alive and rejects root-identity changes before mutation.
   @Test @MainActor func mutationGuardRetainsConfigurationLeaseAndRejectsChangedRoot() throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -405,6 +421,7 @@ extension FinderIntegrationTests {
     }
   }
 
+  /// Keeps configuration responsive while activation storage is leased by another operation.
   @Test @MainActor func activationLeaseContentionDoesNotBlockConfiguration() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -414,10 +431,11 @@ extension FinderIntegrationTests {
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
-    #expect(try held.read() == nil)
+    #expect(try held.read() == .none)
     withExtendedLifetime(held) {}
   }
 
+  /// Rejects contended authorization records and bookmark paths that differ from the saved root.
   @Test @MainActor func authorizationLeaseContentionAndMismatchedPathAreRejected() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -437,6 +455,7 @@ extension FinderIntegrationTests {
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
   }
 
+  /// Prevents a late metadata response from completing a cancelled visit.
   @Test @MainActor func lateProviderResponseCannotCompleteCancelledVisit() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -458,6 +477,7 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().last?.event.status == .cancelled)
   }
 
+  /// Prevents an older metadata request from committing after credential replacement.
   @Test @MainActor func lateProviderResponseCannotCommitUnderNewCredentialGeneration() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -479,6 +499,7 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().last?.event.status == .failed)
   }
 
+  /// Checks live provider credential validation without contacting the metadata service.
   @Test func systemProviderCompositionValidatesCredentialsWithoutSendingNetworkRequests() throws {
     let system = SystemFinderRuntimeEnvironment()
     let settings = DirectoryConfiguration()
@@ -492,6 +513,7 @@ extension FinderIntegrationTests {
     }
   }
 
+  /// Allows authorized processing to finish when activation evidence cannot be saved.
   @Test @MainActor func activationStorageFailureDoesNotBlockAuthorizedProcessing() async throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
@@ -505,6 +527,7 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .succeeded])
   }
 
+  /// Verifies the live authorization adapter retains a temporary root identity.
   @Test func systemAuthorizationAdapterPreservesTemporaryRootIdentity() throws {
     let fixture = try FinderFixture()
     defer { fixture.remove() }

@@ -9,6 +9,7 @@ import Testing
 
 /// Covers configuration state updates, error handling, and AppKit presentation behavior.
 struct ConfigurationViewModelTests {
+  /// Keeps installation diagnostics independent of collection refresh and mutation.
   @Test @MainActor
   func installationDiagnosticDoesNotRefreshOrMutateCollectionConfiguration() async {
     let service = ConfigurationServiceFake()
@@ -20,6 +21,7 @@ struct ConfigurationViewModelTests {
     #expect(report.text.contains("Setup has not been loaded"))
   }
 
+  /// Verifies unavailable authorization evidence has both visible and accessible explanations.
   @Test @MainActor
   func readinessHasVisibleTextAndAccessibleExplanation() async throws {
     let model = ConfigurationViewModel(
@@ -30,6 +32,9 @@ struct ConfigurationViewModelTests {
         )))
     await model.load()
     let controller = ConfigurationViewController(viewModel: model)
+    /// Collects the view and all descendants for native control assertions.
+    /// - Parameter view: Root of the view hierarchy to inspect.
+    /// - Returns: The root followed by its descendants in traversal order.
     func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
     let table = try #require(descendants(controller.view).compactMap { $0 as? NSTableView }.first)
     table.reloadData()
@@ -44,6 +49,7 @@ struct ConfigurationViewModelTests {
       })
   }
 
+  /// Verifies the configuration view constructs its native layout.
   @Test @MainActor
   func configurationViewLoadsWithoutLayoutExceptions() {
     let viewModel = ConfigurationViewModel(service: ConfigurationServiceFake())
@@ -52,6 +58,7 @@ struct ConfigurationViewModelTests {
     #expect(!controller.view.subviews.isEmpty)
   }
 
+  /// Verifies loading publishes configured roots, credential status, and poster appearance.
   @Test @MainActor
   func loadPublishesConfiguredDirectoriesAndCredentialState() async {
     let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
@@ -67,9 +74,10 @@ struct ConfigurationViewModelTests {
     #expect(viewModel.credentialConfigured)
     #expect(viewModel.posterAppearance == .matteFrame)
     #expect(!viewModel.isBusy)
-    #expect(viewModel.errorMessage == nil)
+    #expect(viewModel.errorMessage == .none)
   }
 
+  /// Verifies an appearance change saves its selection and reloads presentation state.
   @Test @MainActor
   func changingAppearancePersistsAndRefreshesTheVisibleSummary() async {
     let service = ConfigurationServiceFake()
@@ -82,9 +90,10 @@ struct ConfigurationViewModelTests {
     #expect(viewModel.posterAppearance == .matteFrame)
     #expect(service.calls.contains(.setPosterAppearance(.matteFrame)))
     #expect(!viewModel.isBusy)
-    #expect(viewModel.errorMessage == nil)
+    #expect(viewModel.errorMessage == .none)
   }
 
+  /// Restores the persisted appearance when saving the requested choice fails.
   @Test @MainActor
   func failedAppearanceChangeRevertsToLastSavedChoice() async {
     let service = ConfigurationServiceFake(
@@ -102,6 +111,7 @@ struct ConfigurationViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
+  /// Rejects overlapping appearance mutations while the first change is pending.
   @Test @MainActor
   func appearanceChangeIsSerializedWithOtherConfigurationMutations() async {
     let gate = AsyncOperationGate()
@@ -121,6 +131,7 @@ struct ConfigurationViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
+  /// Verifies successful root and credential changes refresh the displayed configuration.
   @Test @MainActor
   func successfulDirectoryAndCredentialActionsRefreshTheVisibleSummary() async {
     let service = ConfigurationServiceFake()
@@ -138,6 +149,7 @@ struct ConfigurationViewModelTests {
     #expect(service.calls.contains(.removeCredential))
   }
 
+  /// Verifies reauthorization restores access and removal clears the configured row.
   @Test @MainActor
   func reauthorizationRestoresStatusAndRemovalDropsTheDirectory() async {
     let directoryID = UUID()
@@ -174,6 +186,7 @@ struct ConfigurationViewModelTests {
       ])
   }
 
+  /// Verifies operation failures expose a safe message without repeating credential text.
   @Test @MainActor
   func failedOperationShowsSafeMessageWithoutEchoingCredential() async {
     let service = ConfigurationServiceFake()
@@ -188,6 +201,7 @@ struct ConfigurationViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
+  /// Prevents a second mutation while the current configuration operation is suspended.
   @Test @MainActor
   func busyOperationRejectsAnotherMutationUntilTheFirstCompletes() async {
     let gate = AsyncOperationGate()

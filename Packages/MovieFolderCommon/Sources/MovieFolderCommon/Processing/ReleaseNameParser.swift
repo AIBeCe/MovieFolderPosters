@@ -62,12 +62,12 @@ nonisolated public struct ReleaseNameParser: Sendable {
     guard !words.isEmpty else { return .unresolved(.emptyName) }
 
     // Check explicit years before discarding metadata; a suffix must not hide contradictory evidence.
-    let explicitYears = words.indices.filter { isBracketed(words[$0]) && year(in: words[$0]) != nil }
+    let explicitYears = words.indices.filter { isBracketed(words[$0]) && year(in: words[$0]) != .none }
     guard explicitYears.count < 2 else { return .unresolved(.ambiguousYear) }
     guard explicitYears.first != 0 else { return .unresolved(.missingTitle) }
 
     let boundary = words.indices.first(where: { isMetadataBoundary(at: $0, in: words) }) ?? words.count
-    guard !words[boundary...].contains(where: { year(in: $0) != nil }) else {
+    guard !words[boundary...].contains(where: { year(in: $0) != .none }) else {
       return .unresolved(.ambiguousMetadata)
     }
     let titleWords = Array(words[..<boundary])
@@ -83,13 +83,13 @@ nonisolated public struct ReleaseNameParser: Sendable {
   /// - Returns: A conservative title/year parse or its unresolved reason.
   private func parseTitleWords(_ titleWords: [String], hasTechnicalSuffix: Bool) -> ReleaseNameParseResult {
     // A leading year-shaped number can be a movie title (1917, 1984, 2001), never its release year.
-    let years = titleWords.indices.dropFirst().filter { year(in: titleWords[$0]) != nil }
+    let years = titleWords.indices.dropFirst().filter { year(in: titleWords[$0]) != .none }
     let bracketedYears = years.filter { isBracketed(titleWords[$0]) }
     guard bracketedYears.count < 2 else { return .unresolved(.ambiguousYear) }
 
     if let selected = bracketedYears.first {
       let suffix = titleWords[(selected + 1)...]
-      if suffix.contains(where: { year(in: $0) != nil }) { return .unresolved(.ambiguousYear) }
+      if suffix.contains(where: { year(in: $0) != .none }) { return .unresolved(.ambiguousYear) }
       guard suffix.allSatisfy(isTechnical) else { return .unresolved(.ambiguousMetadata) }
 
       return parsed(Array(titleWords[..<selected]), year: year(in: titleWords[selected]))
@@ -106,7 +106,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
       if hasTechnicalSuffix { return .unresolved(.ambiguousMetadata) }
     }
 
-    return parsed(titleWords, year: nil)
+    return parsed(titleWords, year: .none)
   }
 
   /// Builds the successful parse result from the retained title words.
@@ -127,7 +127,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
     let digits = isBracketed(token) ? String(token.dropFirst().dropLast()) : token
     guard digits.count == 4, digits.allSatisfy({ $0.isASCII && $0.isNumber }),
       let value = Int(digits), (1888...2099).contains(value)
-    else { return nil }
+    else { return .none }
 
     return value
   }
@@ -148,7 +148,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
   /// - Returns: Whether the surrounding tokens establish a supported technical release suffix.
   private func isMetadataBoundary(at index: Int, in words: [String]) -> Bool {
     let token = words[index].lowercased()
-    let followsYear = index > 0 && year(in: words[index - 1]) != nil
+    let followsYear = index > 0 && year(in: words[index - 1]) != .none
     let followedByTechnical = index + 1 < words.count && isTechnical(words[index + 1])
     if Self.resolutions.contains(token) {
       return followsYear || followedByTechnical || index == words.count - 1
@@ -174,7 +174,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
 
     return lower.range(
       of: "^(?:ddp|dd|aac|ac3|eac3|dts|truehd|flac|mp3|pcm)[0-9]*(?:-.*)?$",
-      options: .regularExpression) != nil
+      options: .regularExpression) != .none
   }
 
   /// Accepts a known tag alone or followed by a hyphenated release suffix.

@@ -79,6 +79,7 @@ nonisolated public enum MovieFolderEnvironment {
     // Opening settings first preserves initial creation of the authorized App Group directory.
     let configurationRepository = try makeConfigurationRepository(locations: locations)
     let sharedContainer = try locations.appGroupContainerURL()
+
     return CollectionProcessingStore(
       store: try CollectionProcessingStorageNamespace.open(in: sharedContainer),
       configuration: configurationRepository,
@@ -102,15 +103,15 @@ nonisolated public enum MovieFolderEnvironment {
   /// Announces a committed configuration change to other signed processes.
   public static func notifyConfigurationChanged() {
     DistributedNotificationCenter.default().postNotificationName(
-      configurationChanged, object: nil,
-      userInfo: nil, deliverImmediately: true)
+      configurationChanged, object: .none,
+      userInfo: .none, deliverImmediately: true)
   }
 
   /// Announces committed collection processing state writes so host summary views can reload persisted state.
   static func notifyCollectionProcessingStateChanged() {
     DistributedNotificationCenter.default().postNotificationName(
-      collectionProcessingStateChanged, object: nil,
-      userInfo: nil, deliverImmediately: true)
+      collectionProcessingStateChanged, object: .none,
+      userInfo: .none, deliverImmediately: true)
   }
 }
 
@@ -124,7 +125,7 @@ nonisolated private struct SharedCollectionProcessingStateChangeNotifier: Collec
 nonisolated private struct SharedActivityChangeNotifier: MovieFolderActivityChangeNotifying {
   func movieFolderActivityDidChange() {
     DistributedNotificationCenter.default().postNotificationName(
-      MovieFolderEnvironment.activityChanged, object: nil, userInfo: nil, deliverImmediately: true)
+      MovieFolderEnvironment.activityChanged, object: .none, userInfo: .none, deliverImmediately: true)
   }
 }
 
@@ -133,6 +134,9 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
   /// Explicit history availability failure, with no sensitive error detail.
   private enum Failure: Error { case unavailable }
 
+  /// Records only an operational diagnostic when history storage is unavailable.
+  /// - Parameter event: Product event that cannot be written to history.
+  /// - Returns: False because no history entry was committed.
   func record(_ event: MovieFolderActivityEvent) -> Bool {
     Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Activity")
       .error("Activity storage unavailable; the product operation result is unchanged")
@@ -140,8 +144,13 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
     return false
   }
 
+  /// Always reports unavailable history as a write failure.
   var hasObservedWriteFailure: Bool { true }
+  /// Always throws the explicit unavailable-history failure.
+  /// - Throws: `Failure.unavailable` for every request.
   func entries() throws -> [MovieFolderActivityEntry] { throw Failure.unavailable }
+  /// Always throws because there is no available history store to clear.
+  /// - Throws: `Failure.unavailable` for every request.
   func clear() throws { throw Failure.unavailable }
 }
 
@@ -158,6 +167,6 @@ nonisolated private struct SystemMovieFolderStorageLocations: MovieFolderStorage
   func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
   func applicationSupportURL() throws -> URL {
     try FileManager.default.url(
-      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: .none, create: true)
   }
 }

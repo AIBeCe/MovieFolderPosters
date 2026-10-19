@@ -18,9 +18,10 @@ final class CollectionProcessingDetailsViewController: NSViewController {
   init(collectionName: String, summary: CollectionProcessingSummary) {
     self.collectionName = collectionName
     self.summary = summary
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -80,7 +81,7 @@ final class CollectionProcessingDetailsViewController: NSViewController {
       lines.append("  Movie identity evidence: \(identitySourceDescription(folder.movieIdentitySource))")
       lines.append("  Poster ownership: \(folder.ownership.displayDescription)")
       lines.append(
-        "  Folder identity evidence: \(folder.identity == nil ? "Unavailable" : "Captured")")
+        "  Folder identity evidence: \(folder.identity == .none ? "Unavailable" : "Captured")")
       lines.append("  Last failure: \(failureDescription(folder.lastFailure))")
       lines.append(
         "  Earliest eligible; runs only on later authorized invocation: \(date(folder.retryAt))")
@@ -93,7 +94,7 @@ final class CollectionProcessingDetailsViewController: NSViewController {
 
   /// Identifies a completed run that belongs to a prior processing context.
   private var historicalRunNote: String {
-    guard summary.presentation.lastCompletedRun != nil,
+    guard summary.presentation.lastCompletedRun != .none,
       !summary.presentation.lastCompletedRunIsCurrentContext
     else { return "" }
 
@@ -115,7 +116,7 @@ final class CollectionProcessingDetailsViewController: NSViewController {
     case .conservativeMatch: "Conservative folder-name match"
     case .explicitSelection: "Explicitly selected"
     case .savedDecision: "Saved decision"
-    case nil: "Not recorded"
+    case .none: "Not recorded"
     }
   }
 
@@ -139,6 +140,7 @@ final class CollectionProcessingDetailsViewController: NSViewController {
   /// Formats an optional timestamp without inventing a value.
   private func date(_ value: Date?) -> String {
     guard let value else { return "Not recorded" }
+
     return DateFormatter.localizedString(from: value, dateStyle: .medium, timeStyle: .short)
   }
 }

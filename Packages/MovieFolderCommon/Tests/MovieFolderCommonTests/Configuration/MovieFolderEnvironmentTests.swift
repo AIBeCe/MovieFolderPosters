@@ -23,7 +23,7 @@ struct MovieFolderEnvironmentTests {
 
   /// Activity startup failure stays best effort while explicit settings access reports failure.
   @Test func missingContainerIsExplicitForSettingsAndUnavailableForActivity() async throws {
-    let locations = TestStorageLocations(root: nil)
+    let locations = TestStorageLocations(root: .none)
     #expect(throws: ConfigurationError.self) {
       try MovieFolderEnvironment.makeConfigurationRepository(locations: locations)
     }

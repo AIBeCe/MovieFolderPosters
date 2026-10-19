@@ -38,9 +38,9 @@ struct ConfigurationCoordinatorCoverageTests {
     let directory = ConfiguredDirectoryStatus(
       id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
     let summary = CollectionProcessingSummary(
-      processingState: nil,
-      presentation: CollectionProcessingPresentation(processingState: nil),
-      counts: CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil),
+      processingState: .none,
+      presentation: CollectionProcessingPresentation(processingState: .none),
+      counts: CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none),
       displayState: .unavailable)
     let summaryService = ConfigurationCoverageSummary(summaries: [rootID: summary])
     let service = ConfigurationCoverageService(
@@ -106,10 +106,10 @@ struct ConfigurationCoordinatorCoverageTests {
 
   /// Creates the coordinator with collaborators that cannot reach user stores or credentials.
   private func makeCoordinator(
-    service: ConfigurationCoverageService? = nil,
-    activity: ConfigurationCoverageActivity? = nil,
-    installation: ConfigurationCoverageInstallation? = nil,
-    summary: ConfigurationCoverageSummary? = nil
+    service: ConfigurationCoverageService? = .none,
+    activity: ConfigurationCoverageActivity? = .none,
+    installation: ConfigurationCoverageInstallation? = .none,
+    summary: ConfigurationCoverageSummary? = .none
   ) throws -> ConfigurationCoordinator {
     _ = NSApplication.shared
 
@@ -138,9 +138,7 @@ struct ConfigurationCoordinatorCoverageTests {
     await service.waitForSummaryReads(1)
     await activity.waitForRecords(1)
     let addButton = try #require(
-      descendants(controller.view).compactMap { $0 as? NSButton }.first {
-        $0.accessibilityLabel() == "Add collection"
-      })
+      descendants(controller.view).compactMap { $0 as? NSButton }.first { $0.accessibilityLabel() == "Add collection" })
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: .seconds(2))
     while !addButton.isEnabled, clock.now < deadline { await Task.yield() }
@@ -162,9 +160,9 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   /// Summary returned to the configuration view model.
   private let summary: ConfigurationSummary
   /// Number of summary reads completed by this service.
-  private(set) var summaryReadCount = 0
+  private(set) var summaryReadCount = Int.zero
   /// Number of configuration mutations requested through this service.
-  private(set) var mutationCount = 0
+  private(set) var mutationCount = Int.zero
 
   /// Creates a service with the fixed state shown by the coordinator.
   init(summary: ConfigurationSummary = ConfigurationSummary(directories: [], credentialConfigured: false)) {
@@ -174,6 +172,7 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   /// Returns the configured fixture and records completion of the read.
   func configurationSummary() throws -> ConfigurationSummary {
     summaryReadCount += 1
+
     return summary
   }
 
@@ -195,11 +194,12 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
 /// Records activity locally without opening shared persistence.
 private actor ConfigurationCoverageActivity: MovieFolderActivityServicing {
   /// Number of best-effort writes requested by the view model.
-  private(set) var recordCount = 0
+  private(set) var recordCount = Int.zero
 
   /// Counts the event and reports successful local recording.
   func record(_ event: MovieFolderActivityEvent) -> Bool {
     recordCount += 1
+
     return true
   }
 
@@ -217,9 +217,9 @@ private actor ConfigurationCoverageActivity: MovieFolderActivityServicing {
 /// Supplies controlled installation evidence and exposes read completion to the test.
 private actor ConfigurationCoverageInstallation: InstallationReadinessServicing {
   /// Number of readiness reports requested by the coordinator.
-  private(set) var checkCount = 0
+  private(set) var checkCount = Int.zero
   /// Number of held report calls that returned to the coordinator.
-  private(set) var completedCheckCount = 0
+  private(set) var completedCheckCount = Int.zero
   /// Holds the active report until the test exercises the coordinator's overlap guard.
   private var checkContinuation: CheckedContinuation<Void, Never>?
 
@@ -228,13 +228,14 @@ private actor ConfigurationCoverageInstallation: InstallationReadinessServicing 
     checkCount += 1
     await withCheckedContinuation { checkContinuation = $0 }
     completedCheckCount += 1
+
     return InstallationReadinessReport(text: "Isolated installation fixture")
   }
 
   /// Completes the report currently held by the deterministic test gate.
   func completeCheck() {
     checkContinuation?.resume()
-    checkContinuation = nil
+    checkContinuation = .none
   }
 
   /// Yields until the requested number of held reports has returned.
@@ -256,7 +257,7 @@ private actor ConfigurationCoverageSummary: CollectionSummaryServicing {
   /// Projections returned for configured roots.
   private let result: [UUID: CollectionProcessingSummary]
   /// Number of read-only summary requests received.
-  private(set) var callCount = 0
+  private(set) var callCount = Int.zero
 
   /// Creates a summary service with the fixture result.
   init(summaries: [UUID: CollectionProcessingSummary] = [:]) { result = summaries }
@@ -264,6 +265,7 @@ private actor ConfigurationCoverageSummary: CollectionSummaryServicing {
   /// Records the read and returns the fixed result without accessing shared storage.
   func summaries() -> [UUID: CollectionProcessingSummary] {
     callCount += 1
+
     return result
   }
 
@@ -279,7 +281,7 @@ private actor ConfigurationCoverageSummary: CollectionSummaryServicing {
 @MainActor
 private final class CoordinatorRouteProbe: ConfigurationCoordinatorDelegate {
   /// Number of log presentations requested by configuration.
-  private(set) var logRequestCount = 0
+  private(set) var logRequestCount = Int.zero
   /// Most recent configuration flow requesting the log.
   private(set) weak var lastLogCoordinator: ConfigurationCoordinator?
   /// Activity write results forwarded in call order.

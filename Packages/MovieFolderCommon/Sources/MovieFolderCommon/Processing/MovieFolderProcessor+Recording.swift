@@ -7,9 +7,9 @@ extension MovieFolderProcessor {
   // MARK: - Authoritative result recording
   /// Starts a recorded operation only when production supplied both its store and current context.
   func recordProcessingStart(
-    context: CollectionProcessingContext?, action: CollectionProcessingAction, child: String? = nil
+    context: CollectionProcessingContext?, action: CollectionProcessingAction, child: String? = .none
   ) throws -> CollectionProcessingState? {
-    guard let processingStore else { return nil }
+    guard let processingStore else { return .none }
     guard let context else { throw CollectionProcessingError.configurationChanged }
 
     return try processingStore.recordProcessingStart(context: context, action: action, child: child, now: now())
@@ -66,7 +66,7 @@ extension MovieFolderProcessor {
   func finishProcessingOperation(
     _ processingState: inout CollectionProcessingState?, state: CollectionProcessingOperationState
   ) throws {
-    guard processingState != nil else { return }
+    guard processingState != .none else { return }
     processingState?.operation?.state = state
     processingState?.operation?.endedAt = now()
     if state == .completed,
@@ -83,7 +83,7 @@ extension MovieFolderProcessor {
     _ record: FolderProcessingRecord,
     in processingState: inout CollectionProcessingState?
   ) throws {
-    guard processingState != nil else { return }
+    guard processingState != .none else { return }
     guard let index = processingState?.folders.firstIndex(where: { $0.name == record.name }) else {
       throw CollectionProcessingError.invalidState
     }
@@ -109,7 +109,7 @@ extension MovieFolderProcessor {
 
   /// Converts conservative matching evidence to its exclusive persisted state.
   func unresolvedFolderAssessment(
-    _ candidate: FolderCandidate, reason: FolderProcessingReason, movie: MovieMetadata? = nil
+    _ candidate: FolderCandidate, reason: FolderProcessingReason, movie: MovieMetadata? = .none
   ) -> FolderProcessingRecord {
     let state: FolderProcessingState
     switch reason {
@@ -121,9 +121,9 @@ extension MovieFolderProcessor {
     return FolderProcessingRecord(
       name: candidate.name, identity: candidate.identity, state: state, reason: reason,
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
-      movieIdentitySource: movie == nil ? nil : .conservativeMatch,
+      movieIdentitySource: movie == .none ? .none : .conservativeMatch,
       ownership: .none, assessedAt: now(),
-      retryAt: state == .unresolved ? now().addingTimeInterval(Self.unresolvedRetryInterval) : nil,
+      retryAt: state == .unresolved ? now().addingTimeInterval(Self.unresolvedRetryInterval) : .none,
       fingerprint: candidate.fingerprint)
   }
 
@@ -134,27 +134,27 @@ extension MovieFolderProcessor {
       record.state = .failed
       record.reason = saved.processingReason ?? .processingFailure
       record.lastFailure = saved.lastFailure
-    } else if saved.processingReason == nil {
+    } else if saved.processingReason == .none {
       record.state = .deferred
     }
-    record.retryAt = saved.requiresManualResolution ? nil : saved.retryDate
+    record.retryAt = saved.requiresManualResolution ? .none : saved.retryDate
     record.movieID = saved.matchedMovieID
     record.movieTitle = saved.movieTitle
     record.movieYear = saved.movieYear
-    record.movieIdentitySource = saved.movieIdentitySource ?? (saved.matchedMovieID == nil ? nil : .savedDecision)
+    record.movieIdentitySource = saved.movieIdentitySource ?? (saved.matchedMovieID == .none ? .none : .savedDecision)
 
     return record
   }
 
   /// Records a failure without embedding provider messages or private paths.
   func failedFolderAssessment(
-    _ candidate: FolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = nil
+    _ candidate: FolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = .none
   ) -> FolderProcessingRecord {
     FolderProcessingRecord(
       name: candidate.name, identity: candidate.identity, state: .failed,
       reason: stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .filesystemFailure),
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
-      movieIdentitySource: movie == nil ? nil : .conservativeMatch,
+      movieIdentitySource: movie == .none ? .none : .conservativeMatch,
       assessedAt: now(), retryAt: now().addingTimeInterval(Self.transientRetryInterval),
       lastFailure: FolderProcessingFailure(reason: .unavailable, stage: stage, occurredAt: now()),
       fingerprint: candidate.fingerprint)
@@ -179,7 +179,7 @@ extension MovieFolderProcessor {
       record.movieID = saved.matchedMovieID
       record.movieTitle = saved.movieTitle
       record.movieYear = saved.movieYear
-      record.movieIdentitySource = saved.movieIdentitySource ?? (saved.matchedMovieID == nil ? nil : .savedDecision)
+      record.movieIdentitySource = saved.movieIdentitySource ?? (saved.matchedMovieID == .none ? .none : .savedDecision)
     }
     if inspection.isSuppressed {
       record.state = .suppressed

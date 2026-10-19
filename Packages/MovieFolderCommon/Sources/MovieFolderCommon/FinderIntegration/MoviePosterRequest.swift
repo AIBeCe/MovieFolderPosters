@@ -55,8 +55,8 @@ nonisolated public struct MoviePosterRequest: Sendable, Equatable {
     guard url.absoluteString.utf8.count <= 4_096,
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
       components.scheme == "moviefolderposters", components.host == "poster",
-      components.path.isEmpty, components.user == nil, components.password == nil,
-      components.port == nil, components.fragment == nil,
+      components.path.isEmpty, components.user == .none, components.password == .none,
+      components.port == .none, components.fragment == .none,
       let items = components.queryItems, items.count == 4,
       Set(items.map(\.name)) == ["action", "root", "child", "identity"]
     else {

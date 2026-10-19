@@ -20,6 +20,8 @@ struct SystemFinderMenuPlatform: FinderMenuPlatform {
     try MovieFolderEnvironment.makeConfigurationRepository()
   }
 
+  /// Opens the captured action in the containing host app and logs a sanitized launch failure.
+  /// - Parameter request: Validated folder action to pass to the host.
   func open(_ request: MoviePosterRequest) {
     let host = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent()
@@ -57,7 +59,7 @@ final class FinderMenuController: NSObject {
     menuRequests.removeAll()
     guard menuKind == .contextualMenuForItems, let selection = selectedMovieFolder(),
       nextMenuTag <= Int.max - MoviePosterAction.allCases.count
-    else { return nil }
+    else { return .none }
     let menu = NSMenu(title: "Movie Poster")
     for action in MoviePosterAction.allCases {
       let item = NSMenuItem(
@@ -94,7 +96,7 @@ final class FinderMenuController: NSObject {
     guard let selected = platform.selectedItemURLs(), selected.count == 1,
       let url = selected.first, !url.lastPathComponent.hasPrefix("."),
       let configuration = try? platform.configurationRepository().read()
-    else { return nil }
+    else { return .none }
     let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
     for directory in configuration.directories {
       let root = URL(fileURLWithPath: directory.path, isDirectory: true)
@@ -110,7 +112,7 @@ final class FinderMenuController: NSObject {
         identity: candidate.identity, action: .change)
     }
 
-    return nil
+    return .none
   }
 
 }

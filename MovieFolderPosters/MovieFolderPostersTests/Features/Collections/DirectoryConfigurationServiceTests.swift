@@ -34,7 +34,7 @@ struct DirectoryConfigurationServiceTests {
       Issue.record("The summary fixture must fail")
     } catch {}
     let lease = try #require(try outcomes.acquireLease(for: key))
-    #expect(try lease.read() == nil)
+    #expect(try lease.read() == .none)
   }
 
   /// Catches cleanup failure replacing a committed removal or silently losing its failure event.
@@ -67,7 +67,7 @@ struct DirectoryConfigurationServiceTests {
     let service = DirectoryConfigurationService(
       repository: fixture.repository,
       authorizations: fixture.authorizations, credentials: fixture.credentials, notifier: retained)
-    notifier = nil
+    notifier = .none
     try await service.setPosterAppearance(.raw)
     #expect(retainedNotifier?.observedAppearance == .raw)
   }
@@ -309,13 +309,13 @@ private struct ConfigurationServiceFixture {
 /// Thread-safe in-memory credential store for service tests.
 private final class ConfigurationCredentialProbe: CredentialStoring {
   /// Stores the token while supporting the service's Sendable contract.
-  private let value = Mutex<String?>(nil)
+  private let value = Mutex<String?>(.none)
   /// Returns the currently saved test token.
   func read() -> String? { value.withLock { $0 } }
   /// Replaces the currently saved test token.
   func save(_ value: String) { self.value.withLock { $0 = value } }
   /// Clears the saved test token.
-  func remove() { value.withLock { $0 = nil } }
+  func remove() { value.withLock { $0 = .none } }
 }
 
 /// No-op notifier for tests that do not inspect notifications.
@@ -343,9 +343,7 @@ private struct TestDirectoryAuthorization: DirectoryAuthorizationProviding {
     }
   }
   /// Creates a transfer bookmark for the selected test directory.
-  func makeBookmark(for directory: URL) throws -> Data {
-    try FileSystemService().makeTransferBookmark(for: directory)
-  }
+  func makeBookmark(for directory: URL) throws -> Data { try FileSystemService().makeTransferBookmark(for: directory) }
 }
 
 /// Records configuration notifications and reads the committed appearance.
@@ -353,7 +351,7 @@ private final class ConfigurationNotifierProbe: ConfigurationChangeNotifying, Se
   /// Repository read after a notification to verify commit ordering.
   private let repository: ConfigurationRepository
   /// Last persisted appearance observed after notification.
-  private let appearance = Mutex<PosterAppearance?>(nil)
+  private let appearance = Mutex<PosterAppearance?>(.none)
 
   /// Creates the probe with the repository whose committed state it observes.
   init(repository: ConfigurationRepository) { self.repository = repository }

@@ -52,7 +52,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       let authorizations = try environment.authorizationStore()
       let updated = loadAuthorizedRoots(configuration, store: authorizations)
       roots = updated
-      processor = nil
+      processor = .none
       do {
         if let token = try environment.credential() {
           let client = try environment.provider(token: token, configuration: configuration)
@@ -88,7 +88,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       return registered
     } catch {
       roots = [:]
-      processor = nil
+      processor = .none
       await environment.register([])
       logger.error("Shared directory configuration unavailable")
       await recordConfigurationStatus(.unavailable)
@@ -245,7 +245,7 @@ nonisolated struct FinderMutationGuard: MovieFolderMutationGuard {
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
   func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? { nil }
+    throws -> PersistenceLease? { .none }
 }
 
 /// Bridges Finder lifecycle callbacks to retained, independently testable orchestration.
@@ -257,11 +257,12 @@ final class FinderSync: FIFinderSync {
   /// Retains captured, validated menu requests until an action is selected.
   private let menuController = FinderMenuController(platform: SystemFinderMenuPlatform())
 
+  /// Creates Finder scheduling and observes configuration changes for this extension process.
   override init() {
     scheduler = DirectoryObservationScheduler(delegate: FinderConfigurationRuntime())
     super.init()
     DistributedNotificationCenter.default().addObserver(
-      self, selector: #selector(configurationChanged), name: MovieFolderEnvironment.configurationChanged, object: nil)
+      self, selector: #selector(configurationChanged), name: MovieFolderEnvironment.configurationChanged, object: .none)
     let scheduler = scheduler
     Task { await scheduler.reload() }
     logger.notice("Initialized; pid=\(ProcessInfo.processInfo.processIdentifier)")

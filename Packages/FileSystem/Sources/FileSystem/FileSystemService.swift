@@ -88,8 +88,8 @@ public struct FileSystemService: Sendable {
 
     return try directory.bookmarkData(
       options: [.withSecurityScope],
-      includingResourceValuesForKeys: nil,
-      relativeTo: nil
+      includingResourceValuesForKeys: .none,
+      relativeTo: .none
     )
   }
 
@@ -100,15 +100,12 @@ public struct FileSystemService: Sendable {
   ///   - operation: Synchronous work to perform with the resolved directory URL.
   /// - Returns: The operation's result.
   /// - Throws: ``DirectoryAccessError`` or an error thrown by the operation.
-  public func withDirectoryAccess<Result>(
-    bookmark: Data,
-    operation: (URL) throws -> Result
-  ) throws -> Result {
+  public func withDirectoryAccess<Result>(bookmark: Data, operation: (URL) throws -> Result) throws -> Result {
     var isStale = false
     let directory = try URL(
       resolvingBookmarkData: bookmark,
       options: [.withSecurityScope, .withoutUI],
-      relativeTo: nil,
+      relativeTo: .none,
       bookmarkDataIsStale: &isStale
     )
 
@@ -122,6 +119,7 @@ public struct FileSystemService: Sendable {
     defer { directory.stopAccessingSecurityScopedResource() }
 
     try validateDirectory(directory)
+
     return try operation(directory)
   }
 
@@ -135,7 +133,7 @@ public struct FileSystemService: Sendable {
     do {
       try Task.checkCancellation()
       _ = try FileManager.default.contentsOfDirectory(
-        at: directory, includingPropertiesForKeys: nil)
+        at: directory, includingPropertiesForKeys: .none)
       let probe = directory.appendingPathComponent(".MovieFolderPostersAccess-\(UUID().uuidString)")
       let expected = Data("MovieFolderPosters access check".utf8)
       try Task.checkCancellation()
@@ -161,10 +159,12 @@ public struct FileSystemService: Sendable {
   public func candidates(in directory: URL) throws -> [FolderCandidate] {
     try validateDirectory(directory)
     let children = try FileManager.default.contentsOfDirectory(
-      at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+      at: directory, includingPropertiesForKeys: .none, options: [.skipsHiddenFiles]
     )
+
     return try children.compactMap { child in
-      guard let identity = try? fileIdentity(at: child) else { return nil }
+      guard let identity = try? fileIdentity(at: child) else { return .none }
+
       return FolderCandidate(
         name: child.lastPathComponent, identity: identity,
         fingerprint: "\(identity):\(child.lastPathComponent)",
@@ -180,7 +180,7 @@ public struct FileSystemService: Sendable {
   public func inventory(in directory: URL) throws -> DirectoryInventory {
     try validateDirectory(directory)
     let children = try FileManager.default.contentsOfDirectory(
-      at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+      at: directory, includingPropertiesForKeys: .none, options: [.skipsHiddenFiles]
     )
     var members = [DirectoryInventoryEntry]()
     var isComplete = true
@@ -198,7 +198,7 @@ public struct FileSystemService: Sendable {
         "\(info.st_dev):\(info.st_ino):\(info.st_birthtimespec.tv_sec):\(info.st_birthtimespec.tv_nsec)"
       guard (try? fileIdentity(at: child)) == identity else {
         members.append(.init(
-          name: name, identity: identity, candidate: nil, issue: .identityInspectionFailed))
+          name: name, identity: identity, candidate: .none, issue: .identityInspectionFailed))
         continue
       }
       do {
@@ -206,13 +206,14 @@ public struct FileSystemService: Sendable {
         let candidate = FolderCandidate(
           name: name, identity: identity, fingerprint: "\(identity):\(name)",
           hasCustomIcon: hasCustomIcon)
-        members.append(.init(name: name, identity: identity, candidate: candidate, issue: nil))
+        members.append(.init(name: name, identity: identity, candidate: candidate, issue: .none))
       } catch {
-        members.append(.init(name: name, identity: identity, candidate: nil, issue: .iconInspectionFailed))
+        members.append(.init(name: name, identity: identity, candidate: .none, issue: .iconInspectionFailed))
       }
     }
 
     members.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
     return DirectoryInventory(members: members, isComplete: isComplete)
   }
 
@@ -228,6 +229,7 @@ public struct FileSystemService: Sendable {
     guard isValidChildName(name) else { throw DirectoryAccessError.invalidDirectory }
     let child = directory.appendingPathComponent(name, isDirectory: true)
     let identity = try fileIdentity(at: child)
+
     return FolderCandidate(
       name: name, identity: identity, fingerprint: "\(identity):\(name)",
       hasCustomIcon: try hasCustomIcon(at: child))
@@ -247,13 +249,11 @@ public struct FileSystemService: Sendable {
       directoryDescriptor = try openCacheDirectory(directory, create: false)
     } catch let error as NSError
       where error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT) {
-      return nil
+      return .none
     }
     defer { _ = close(directoryDescriptor) }
-    let descriptor = name.withCString {
-      openat(directoryDescriptor, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
-    }
-    if descriptor < 0, errno == ENOENT { return nil }
+    let descriptor = name.withCString { openat(directoryDescriptor, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK) }
+    if descriptor < 0, errno == ENOENT { return .none }
     guard descriptor >= 0 else { throw posixError() }
     defer { _ = close(descriptor) }
     var info = stat()
@@ -270,6 +270,7 @@ public struct FileSystemService: Sendable {
       }
       result.append(contentsOf: buffer[0..<count])
     }
+
     return result
   }
 
@@ -300,7 +301,7 @@ public struct FileSystemService: Sendable {
     }
     try data.withUnsafeBytes { bytes in
       guard let base = bytes.baseAddress else { return }
-      var offset = 0
+      var offset = Int.zero
       while offset < bytes.count {
         let count = Darwin.write(
           temporaryDescriptor, base.advanced(by: offset), bytes.count - offset)
@@ -314,9 +315,7 @@ public struct FileSystemService: Sendable {
     }
     guard fsync(temporaryDescriptor) == 0 else { throw posixError() }
     let result = temporaryName.withCString { temporary in
-      name.withCString { destination in
-        renameat(directoryDescriptor, temporary, directoryDescriptor, destination)
-      }
+      name.withCString { destination in renameat(directoryDescriptor, temporary, directoryDescriptor, destination) }
     }
     guard result == 0 else { throw posixError() }
     shouldRemoveTemporary = false
@@ -328,7 +327,7 @@ public struct FileSystemService: Sendable {
       throw DirectoryAccessError.invalidDirectory
     }
 
-    guard (try? fileIdentity(at: directory)) != nil else {
+    guard (try? fileIdentity(at: directory)) != .none else {
       throw DirectoryAccessError.invalidDirectory
     }
   }
@@ -340,6 +339,7 @@ public struct FileSystemService: Sendable {
     guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else {
       throw DirectoryAccessError.invalidDirectory
     }
+
     return
       "\(info.st_dev):\(info.st_ino):\(info.st_birthtimespec.tv_sec):\(info.st_birthtimespec.tv_nsec)"
   }
@@ -353,9 +353,7 @@ public struct FileSystemService: Sendable {
   /// Restricts cache names to visible ASCII-safe components supported by the cache format.
   private func validateCacheName(_ name: String) throws {
     guard !name.isEmpty, !name.hasPrefix("."),
-      name.unicodeScalars.allSatisfy({
-        CharacterSet.alphanumerics.contains($0) || "_-".unicodeScalars.contains($0)
-      })
+      name.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || "_-".unicodeScalars.contains($0) })
     else { throw DirectoryAccessError.invalidDirectory }
   }
 
@@ -382,9 +380,7 @@ public struct FileSystemService: Sendable {
           isFinalDirectory
           ? O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
           : O_SEARCH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
-        var child = name.withCString {
-          openat(descriptor, $0, directoryFlags)
-        }
+        var child = name.withCString { openat(descriptor, $0, directoryFlags) }
         if child < 0, create, errno == ENOENT {
           let made = name.withCString { mkdirat(descriptor, $0, mode_t(0o700)) }
           if made != 0, errno != EEXIST {
@@ -392,9 +388,7 @@ public struct FileSystemService: Sendable {
             _ = close(descriptor)
             throw error
           }
-          child = name.withCString {
-            openat(descriptor, $0, directoryFlags)
-          }
+          child = name.withCString { openat(descriptor, $0, directoryFlags) }
         }
         guard child >= 0 else {
           let error = cachePathError(for: posixError())
@@ -405,6 +399,7 @@ public struct FileSystemService: Sendable {
         descriptor = child
       }
     }
+
     return descriptor
   }
 
@@ -417,14 +412,13 @@ public struct FileSystemService: Sendable {
     let resolved = String(cString: resolvedPath)
     free(resolvedPath)
     guard resolved == "/private/var" else { throw DirectoryAccessError.invalidDirectory }
+
     return ["private", "var"]
   }
 
   /// Rejects an existing cache destination unless it is a regular file.
   private func validateCacheFile(_ name: String, in directoryDescriptor: Int32) throws {
-    let descriptor = name.withCString {
-      openat(directoryDescriptor, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
-    }
+    let descriptor = name.withCString { openat(directoryDescriptor, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK) }
     if descriptor < 0 {
       if errno == ENOENT { return }
       throw posixError()
@@ -444,6 +438,7 @@ public struct FileSystemService: Sendable {
     guard error.domain == NSPOSIXErrorDomain,
       error.code == Int(ENOTDIR) || error.code == Int(ELOOP)
     else { return error }
+
     return DirectoryAccessError.invalidDirectory
   }
 }

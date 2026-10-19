@@ -27,6 +27,7 @@ final class PreviewChoiceButton: NSButton {
     setAccessibilityLabel(title)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) is unavailable")
@@ -63,7 +64,7 @@ enum SettingsPreviewArtwork {
       let data = try? Data(contentsOf: url),
       let rendered = try? FileSystemService().renderPoster(data, appearance: appearance),
       let image = NSImage(data: rendered)
-    else { return nil }
+    else { return .none }
     image.size = NSSize(width: 164, height: 164)
 
     return image
@@ -86,6 +87,7 @@ enum SettingsPreviewArtwork {
       case .light: drawDesktop(in: bounds, dark: false)
       case .dark: drawDesktop(in: bounds, dark: true)
       }
+
       return true
     }
   }

@@ -24,7 +24,7 @@ struct MovieMatcherTests {
   /// Verifies identical Titles Without Year Remain Ambiguous.
   @Test func identicalTitlesWithoutYearRemainAmbiguous() {
     let search = results([candidate(1, "The Drama", 1995), candidate(2, "The Drama", 2026)])
-    #expect(MovieMatcher().match(title: "The Drama", year: nil, search: search) == .unresolved(.ambiguous))
+    #expect(MovieMatcher().match(title: "The Drama", year: .none, search: search) == .unresolved(.ambiguous))
   }
 
   /// Verifies unrelated Search Results Stay Unresolved.
@@ -68,14 +68,14 @@ struct MovieMatcherTests {
 
   /// Verifies unknown Candidate Year Cannot Satisfy Supplied Year.
   @Test func unknownCandidateYearCannotSatisfySuppliedYear() {
-    let search = results([candidate(1, "The Drama", nil)])
+    let search = results([candidate(1, "The Drama", .none)])
     #expect(MovieMatcher().match(title: "The Drama", year: 2026, search: search) == .unresolved(.noSuitableMatch))
   }
 
   /// Verifies unknown Query Year Still Allows Unique Exact Title.
   @Test func unknownQueryYearStillAllowsUniqueExactTitle() {
-    let movie = candidate(1, "The Drama", nil)
-    #expect(MovieMatcher().match(title: "The Drama", year: nil, search: results([movie])) == .matched(movie))
+    let movie = candidate(1, "The Drama", .none)
+    #expect(MovieMatcher().match(title: "The Drama", year: .none, search: results([movie])) == .matched(movie))
   }
 
   /// Verifies different IDs With Same Title And Year Remain Ambiguous.
@@ -86,14 +86,14 @@ struct MovieMatcherTests {
 
   /// Verifies poster Availability Cannot Resolve Identity Tie.
   @Test func posterAvailabilityCannotResolveIdentityTie() {
-    let search = results([candidate(1, "The Drama", 2026), candidate(2, "The Drama", 2026, poster: nil)])
+    let search = results([candidate(1, "The Drama", 2026), candidate(2, "The Drama", 2026, poster: .none)])
     #expect(MovieMatcher().match(title: "The Drama", year: 2026, search: search) == .unresolved(.ambiguous))
   }
 
   /// Verifies unique Movie Without Poster Remains Unresolved.
   ///
   /// - Parameter poster: The optional source poster path supplied by a matching test.
-  @Test(arguments: [nil, "", "  "] as [String?])
+  @Test(arguments: [.none, "", "  "] as [String?])
   func uniqueMovieWithoutPosterRemainsUnresolved(_ poster: String?) {
     let search = results([candidate(1, "The Drama", 2026, poster: poster)])
     #expect(MovieMatcher().match(title: "The Drama", year: 2026, search: search) == .unresolved(.missingPoster))
@@ -133,7 +133,7 @@ struct MovieMatcherTests {
   /// - Parameter title: The movie title used for search or exact normalized comparison.
   @Test(arguments: ["", "   ", "---"])
   func rejectsTitleWithoutLettersOrNumbers(_ title: String) {
-    #expect(MovieMatcher().match(title: title, year: nil, search: results([])) == .unresolved(.invalidQuery))
+    #expect(MovieMatcher().match(title: title, year: .none, search: results([])) == .unresolved(.invalidQuery))
   }
 
   /// Verifies rejects Unsupported Years.
@@ -157,7 +157,7 @@ struct MovieMatcherTests {
   ///   - poster: The optional source poster path supplied by a matching test.
   /// - Returns: The constructed MovieMetadata result.
   private func candidate(
-    _ id: Int, _ title: String, _ year: Int?, original: String? = nil,
+    _ id: Int, _ title: String, _ year: Int?, original: String? = .none,
     poster: String? = "/poster.jpg"
   ) -> MovieMetadata {
     MovieMetadata(id: id, title: title, originalTitle: original ?? title, releaseYear: year, posterPath: poster)

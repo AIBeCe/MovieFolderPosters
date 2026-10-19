@@ -61,10 +61,10 @@ public actor MovieFolderProcessor {
     cacheDirectory: URL,
     posterAssigner: any PosterAssigner = FileSystemService(),
     now: @escaping @Sendable () -> Date = Date.init,
-    coordinationStore: PersistenceStore? = nil,
-    mutationGuard: (any MovieFolderMutationGuard)? = nil,
+    coordinationStore: PersistenceStore? = .none,
+    mutationGuard: (any MovieFolderMutationGuard)? = .none,
     appearance: PosterAppearance = .softFinish,
-    processingStore: CollectionProcessingStore? = nil
+    processingStore: CollectionProcessingStore? = .none
   ) {
     self.fileSystem = fileSystem
     self.persistence = persistence

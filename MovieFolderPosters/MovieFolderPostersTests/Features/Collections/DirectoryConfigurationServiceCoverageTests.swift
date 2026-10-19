@@ -154,9 +154,7 @@ struct CoverageAuthorization: DirectoryAuthorizationProviding {
     case .invalid: throw CocoaError(.fileReadUnknown)
     }
   }
-  func makeBookmark(for directory: URL) throws -> Data {
-    try FileSystemService().makeTransferBookmark(for: directory)
-  }
+  func makeBookmark(for directory: URL) throws -> Data { try FileSystemService().makeTransferBookmark(for: directory) }
 }
 
 /// Keeps test configuration changes in process without notifying a user's running app copies.
@@ -166,7 +164,7 @@ private struct CoverageConfigurationNotifier: ConfigurationChangeNotifying {
 
 /// Supplies no credential without consulting Keychain.
 private struct CoverageCredentials: CredentialStoring {
-  func read() throws -> String? { nil }
+  func read() throws -> String? { .none }
   func save(_ value: String) throws {}
   func remove() throws {}
 }

@@ -93,8 +93,7 @@ extension FileSystemService {
   ///   - canvas: The destination dimensions; both values must be finite and positive.
   /// - Returns: Centered bounds fully contained by the canvas.
   /// - Throws: ``FolderPosterError/invalidImage`` when either size is invalid.
-  public func posterBounds(for size: CGSize, in canvas: CGSize = CGSize(width: 512, height: 512))
-    throws -> CGRect {
+  public func posterBounds(for size: CGSize, in canvas: CGSize = CGSize(width: 512, height: 512)) throws -> CGRect {
     guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
       canvas.width.isFinite, canvas.height.isFinite, canvas.width > 0, canvas.height > 0
     else {
@@ -103,6 +102,7 @@ extension FileSystemService {
     let scale = min(canvas.width / size.width, canvas.height / size.height)
     let width = size.width * scale
     let height = size.height * scale
+
     return CGRect(
       x: (canvas.width - width) / 2, y: (canvas.height - height) / 2, width: width, height: height)
   }
@@ -117,7 +117,7 @@ extension FileSystemService {
   /// - Returns: Whether the poster was assigned or an existing icon was preserved.
   /// - Throws: ``FolderPosterError`` for invalid children, images, or Finder icon assignment failures.
   public func assignPoster(
-    _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = .none
   ) throws -> PosterAssignmentResult {
     try assignPoster(
       imageData, toChild: name, in: directory, appearance: .raw,
@@ -136,11 +136,12 @@ extension FileSystemService {
   /// - Throws: ``FolderPosterError`` for invalid children, images, or Finder icon assignment failures.
   public func assignPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
-    appearance: PosterAppearance, expectedIdentity: String? = nil
+    appearance: PosterAppearance, expectedIdentity: String? = .none
   ) throws -> PosterAssignmentResult {
     try Task.checkCancellation()
     try validatePosterTarget(name, in: directory)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
       if try suppressionExists(at: child, identity: identity) || hasCustomIcon(at: child) {
@@ -153,6 +154,7 @@ extension FileSystemService {
       }
       recordOwnership(of: child, identity: identity, appearance: appearance)
       clearSuppression(at: child, identity: identity)
+
       return .assigned
     }
   }
@@ -166,12 +168,14 @@ extension FileSystemService {
   /// - Returns: `true` only when ownership metadata and the current icon digest agree.
   /// - Throws: ``FolderPosterError`` when the child cannot be safely inspected.
   public func hasAssignedPoster(
-    toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    toChild name: String, in directory: URL, expectedIdentity: String? = .none
   ) throws -> Bool {
     try validatePosterTarget(name, in: directory)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
+
       return isOwnedIcon(at: child, identity: identity)
     }
   }
@@ -185,11 +189,12 @@ extension FileSystemService {
   /// - Returns: Ownership, verified appearance, and suppression state for the current identity.
   /// - Throws: ``DirectoryAccessError/identityChanged`` or an I/O error when inspection fails.
   public func inspectPoster(
-    toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    toChild name: String, in directory: URL, expectedIdentity: String? = .none
   ) throws -> PosterInspection {
     try validateDirectory(directory)
     guard isValidChildName(name) else { throw FolderPosterError.invalidChild }
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try fileIdentity(at: child)
       if let expectedIdentity, expectedIdentity != identity {
@@ -201,25 +206,26 @@ extension FileSystemService {
         throw DirectoryAccessError.identityChanged
       }
       guard hasIcon else {
-        return PosterInspection(ownership: .none, appearance: nil, isSuppressed: suppressed)
+        return PosterInspection(ownership: .none, appearance: .none, isSuppressed: suppressed)
       }
       guard let descriptor = try strictIconDescriptor(in: child, identity: identity) else {
-        return PosterInspection(ownership: .unowned, appearance: nil, isSuppressed: suppressed)
+        return PosterInspection(ownership: .unowned, appearance: .none, isSuppressed: suppressed)
       }
       defer { _ = close(descriptor) }
 
       guard let marker = try strictAttribute(ownershipAttribute, from: descriptor),
         let ownership = try? JSONDecoder().decode(PosterOwnership.self, from: marker)
       else {
-        return PosterInspection(ownership: .unowned, appearance: nil, isSuppressed: suppressed)
+        return PosterInspection(ownership: .unowned, appearance: .none, isSuppressed: suppressed)
       }
       guard ownership.identity == identity else {
-        return PosterInspection(ownership: .changed, appearance: nil, isSuppressed: suppressed)
+        return PosterInspection(ownership: .changed, appearance: .none, isSuppressed: suppressed)
       }
       let digest = try strictIconDigest(descriptor: descriptor)
       guard ownership.digest == digest else {
-        return PosterInspection(ownership: .changed, appearance: nil, isSuppressed: suppressed)
+        return PosterInspection(ownership: .changed, appearance: .none, isSuppressed: suppressed)
       }
+
       return PosterInspection(
         ownership: .owned, appearance: ownership.appearance, isSuppressed: suppressed)
     }
@@ -234,12 +240,14 @@ extension FileSystemService {
   /// - Returns: The recorded appearance, or `nil` when the icon is not app-owned.
   /// - Throws: ``FolderPosterError`` when the child cannot be safely inspected.
   public func assignedPosterAppearance(
-    toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    toChild name: String, in directory: URL, expectedIdentity: String? = .none
   ) throws -> PosterAppearance? {
     try validatePosterTarget(name, in: directory)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
+
       return assignedAppearance(at: child, identity: identity)
     }
   }
@@ -254,7 +262,7 @@ extension FileSystemService {
   /// - Returns: Whether the poster was assigned or an existing icon was preserved.
   /// - Throws: ``FolderPosterError`` when validation or icon assignment fails.
   public func replaceAssignedPoster(
-    _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = .none
   ) throws -> PosterAssignmentResult {
     try replaceAssignedPoster(
       imageData, toChild: name, in: directory, appearance: .raw,
@@ -273,11 +281,12 @@ extension FileSystemService {
   /// - Throws: ``FolderPosterError`` when validation or icon assignment fails.
   public func replaceAssignedPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
-    appearance: PosterAppearance, expectedIdentity: String? = nil
+    appearance: PosterAppearance, expectedIdentity: String? = .none
   ) throws -> PosterAssignmentResult {
     try validatePosterTarget(name, in: directory)
     let image = try makePosterImage(from: imageData, appearance: appearance)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
       let ownsCurrentIcon = isOwnedIcon(at: child, identity: identity)
@@ -288,6 +297,7 @@ extension FileSystemService {
       }
       recordOwnership(of: child, identity: identity, appearance: appearance)
       clearSuppression(at: child, identity: identity)
+
       return .assigned
     }
   }
@@ -304,11 +314,12 @@ extension FileSystemService {
   /// - Throws: ``FolderPosterError`` when validation or icon assignment fails.
   public func restyleAssignedPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
-    appearance: PosterAppearance, expectedIdentity: String? = nil
+    appearance: PosterAppearance, expectedIdentity: String? = .none
   ) throws -> PosterAssignmentResult {
     try validatePosterTarget(name, in: directory)
     let image = try makePosterImage(from: imageData, appearance: appearance)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
       if try suppressionExists(at: child, identity: identity)
@@ -320,6 +331,7 @@ extension FileSystemService {
         throw FolderPosterError.iconAssignmentFailed
       }
       recordOwnership(of: child, identity: identity, appearance: appearance)
+
       return .assigned
     }
   }
@@ -333,18 +345,20 @@ extension FileSystemService {
   /// - Returns: `true` if an owned icon was removed, otherwise `false`.
   /// - Throws: ``FolderPosterError`` when validation or icon removal fails.
   public func removeAssignedPoster(
-    toChild name: String, in directory: URL, expectedIdentity: String? = nil
+    toChild name: String, in directory: URL, expectedIdentity: String? = .none
   ) throws -> Bool {
     try validatePosterTarget(name, in: directory)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
       guard isOwnedIcon(at: child, identity: identity) else { return false }
       try Task.checkCancellation()
       try markSuppressed(at: child, identity: identity)
-      guard NSWorkspace.shared.setIcon(nil, forFile: child.path, options: []) else {
+      guard NSWorkspace.shared.setIcon(.none, forFile: child.path, options: []) else {
         throw FolderPosterError.iconAssignmentFailed
       }
+
       return true
     }
   }
@@ -359,8 +373,10 @@ extension FileSystemService {
   public func isPosterSuppressed(toChild name: String, in directory: URL) throws -> Bool {
     try validatePosterTarget(name, in: directory)
     let child = directory.appendingPathComponent(name, isDirectory: true)
+
     return try iconAssignmentLock.withLock { _ in
-      let identity = try lockedIdentity(of: child, expected: nil)
+      let identity = try lockedIdentity(of: child, expected: .none)
+
       return try suppressionExists(at: child, identity: identity)
     }
   }
@@ -376,6 +392,7 @@ extension FileSystemService {
     let identity: String
     do { identity = try fileIdentity(at: child) } catch { throw FolderPosterError.invalidChild }
     if let expected, expected != identity { throw FolderPosterError.invalidChild }
+
     return identity
   }
 
@@ -391,6 +408,7 @@ extension FileSystemService {
     var finderInfo = [UInt8](repeating: 0, count: 32)
     let count = directory.withUnsafeFileSystemRepresentation { path in
       guard let path else { return -1 }
+
       return getxattr(
         path, "com.apple.FinderInfo", &finderInfo, finderInfo.count, 0, XATTR_NOFOLLOW)
     }
@@ -400,24 +418,24 @@ extension FileSystemService {
       throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
     }
     guard count == 32 else { throw CocoaError(.fileReadCorruptFile) }
+
     return finderInfo[8] & 0x04 != 0
   }
 
   /// Opens a bounded regular `Icon` file beneath the validated folder descriptor.
   private func iconDescriptor(in folder: URL, identity: String) -> Int32? {
-    guard let folderFD = folderDescriptor(folder, identity: identity) else { return nil }
+    guard let folderFD = folderDescriptor(folder, identity: identity) else { return .none }
     defer { _ = close(folderFD) }
-    let iconFD = iconFileName.withCString {
-      openat(folderFD, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-    }
-    guard iconFD >= 0 else { return nil }
+    let iconFD = iconFileName.withCString { openat(folderFD, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC) }
+    guard iconFD >= 0 else { return .none }
     var info = stat()
     guard fstat(iconFD, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
       info.st_size >= 0, info.st_size <= maximumIconBytes
     else {
       _ = close(iconFD)
-      return nil
+      return .none
     }
+
     return iconFD
   }
 
@@ -430,11 +448,9 @@ extension FileSystemService {
     guard fstat(folderFD, &folderInfo) == 0 else { throw posterPosixError() }
     guard fileIdentity(folderInfo) == identity else { throw DirectoryAccessError.identityChanged }
 
-    let iconFD = iconFileName.withCString {
-      openat(folderFD, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-    }
+    let iconFD = iconFileName.withCString { openat(folderFD, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC) }
     if iconFD < 0 {
-      if errno == ENOENT { return nil }
+      if errno == ENOENT { return .none }
       throw posterPosixError()
     }
     var iconInfo = stat()
@@ -449,6 +465,7 @@ extension FileSystemService {
       _ = close(iconFD)
       throw CocoaError(.fileReadCorruptFile)
     }
+
     return iconFD
   }
 
@@ -456,15 +473,14 @@ extension FileSystemService {
   private func strictAttribute(_ name: String, from descriptor: Int32) throws -> Data? {
     let length = fgetxattr(descriptor, name, nil, 0, 0, 0)
     if length < 0 {
-      if errno == ENOATTR { return nil }
+      if errno == ENOATTR { return .none }
       throw posterPosixError()
     }
     guard length <= maximumIconBytes else { throw CocoaError(.fileReadTooLarge) }
     var value = Data(count: length)
-    let result = value.withUnsafeMutableBytes { bytes in
-      fgetxattr(descriptor, name, bytes.baseAddress, length, 0, 0)
-    }
+    let result = value.withUnsafeMutableBytes { bytes in fgetxattr(descriptor, name, bytes.baseAddress, length, 0, 0) }
     guard result == length else { throw posterPosixError() }
+
     return value
   }
 
@@ -489,24 +505,24 @@ extension FileSystemService {
     material.append(contents)
     material.append(0)
     material.append(resourceFork)
+
     return SHA256.hash(data: material).map { String(format: "%02x", $0) }.joined()
   }
 
   /// Reads an extended attribute only when its size is within the icon limit.
   private func readAttribute(_ name: String, from descriptor: Int32) -> Data? {
     let length = fgetxattr(descriptor, name, nil, 0, 0, 0)
-    guard length >= 0, length <= maximumIconBytes else { return nil }
+    guard length >= 0, length <= maximumIconBytes else { return .none }
     var value = Data(count: length)
-    let result = value.withUnsafeMutableBytes { bytes in
-      fgetxattr(descriptor, name, bytes.baseAddress, length, 0, 0)
-    }
-    return result == length ? value : nil
+    let result = value.withUnsafeMutableBytes { bytes in fgetxattr(descriptor, name, bytes.baseAddress, length, 0, 0) }
+
+    return result == length ? value : .none
   }
 
   /// Hashes the icon file and resource fork so external icon edits invalidate ownership.
   private func iconDigest(descriptor: Int32) -> String? {
     guard let resourceFork = readAttribute("com.apple.ResourceFork", from: descriptor) else {
-      return nil
+      return .none
     }
     var contents = Data()
     var buffer = [UInt8](repeating: 0, count: 4096)
@@ -515,33 +531,35 @@ extension FileSystemService {
       if count == 0 { break }
       if count < 0 {
         if errno == EINTR { continue }
-        return nil
+        return .none
       }
-      guard contents.count + count <= maximumIconBytes else { return nil }
+      guard contents.count + count <= maximumIconBytes else { return .none }
       contents.append(contentsOf: buffer[0..<count])
     }
     var material = Data("Icon\r\0".utf8)
     material.append(contents)
     material.append(0)
     material.append(resourceFork)
+
     return SHA256.hash(data: material).map { String(format: "%02x", $0) }.joined()
   }
 
   /// Returns whether ownership metadata still matches the current icon and folder identity.
   private func isOwnedIcon(at folder: URL, identity: String) -> Bool {
-    assignedAppearance(at: folder, identity: identity) != nil
+    assignedAppearance(at: folder, identity: identity) != .none
   }
 
   /// Reads ownership metadata only when it matches the current icon digest and folder identity.
   private func assignedAppearance(at folder: URL, identity: String) -> PosterAppearance? {
-    guard (try? hasCustomIcon(at: folder)) == true else { return nil }
-    guard let descriptor = iconDescriptor(in: folder, identity: identity) else { return nil }
+    guard (try? hasCustomIcon(at: folder)) == true else { return .none }
+    guard let descriptor = iconDescriptor(in: folder, identity: identity) else { return .none }
     defer { _ = close(descriptor) }
     guard let marker = readAttribute(ownershipAttribute, from: descriptor),
       let ownership = try? JSONDecoder().decode(PosterOwnership.self, from: marker),
       ownership.identity == identity, let digest = iconDigest(descriptor: descriptor)
-    else { return nil }
-    return ownership.digest == digest ? ownership.appearance : nil
+    else { return .none }
+
+    return ownership.digest == digest ? ownership.appearance : .none
   }
 
   /// Records the identity and digest of the icon after Finder accepts the assignment.
@@ -554,22 +572,21 @@ extension FileSystemService {
         PosterOwnership(identity: identity, digest: digest, appearance: appearance)
       )
     else { return }
-    _ = marker.withUnsafeBytes {
-      fsetxattr(descriptor, ownershipAttribute, $0.baseAddress, $0.count, 0, 0)
-    }
+    _ = marker.withUnsafeBytes { fsetxattr(descriptor, ownershipAttribute, $0.baseAddress, $0.count, 0, 0) }
   }
 
   /// Opens the folder without following symlinks and optionally confirms its identity.
-  private func folderDescriptor(_ folder: URL, identity: String? = nil) -> Int32? {
+  private func folderDescriptor(_ folder: URL, identity: String? = .none) -> Int32? {
     let descriptor = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    guard descriptor >= 0 else { return nil }
+    guard descriptor >= 0 else { return .none }
     if let identity {
       var info = stat()
       guard fstat(descriptor, &info) == 0, fileIdentity(info) == identity else {
         _ = close(descriptor)
-        return nil
+        return .none
       }
     }
+
     return descriptor
   }
 
@@ -589,6 +606,7 @@ extension FileSystemService {
       if errno == ENOATTR { return false }
       throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
     }
+
     return true
   }
 
@@ -599,9 +617,7 @@ extension FileSystemService {
     }
     defer { _ = close(descriptor) }
     let value = Data("1".utf8)
-    let result = value.withUnsafeBytes {
-      fsetxattr(descriptor, suppressionAttribute, $0.baseAddress, $0.count, 0, 0)
-    }
+    let result = value.withUnsafeBytes { fsetxattr(descriptor, suppressionAttribute, $0.baseAddress, $0.count, 0, 0) }
     guard result == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
   }
 
@@ -613,7 +629,5 @@ extension FileSystemService {
   }
 
   /// Captures the active POSIX failure as a Foundation error.
-  private func posterPosixError() -> NSError {
-    NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-  }
+  private func posterPosixError() -> NSError { NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
 }

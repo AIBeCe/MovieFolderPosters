@@ -59,9 +59,7 @@ struct CollectionProcessingStorageNamespaceTests {
       let lease = try #require(try store.acquireLease(for: key))
       try lease.write(Data("fresh".utf8))
     }
-    #expect(throws: (any Error).self) {
-      try PersistenceStore(directory: container.appendingPathComponent("Outcomes"))
-    }
+    #expect(throws: (any Error).self) { try PersistenceStore(directory: container.appendingPathComponent("Outcomes")) }
     let reopened = try CollectionProcessingStorageNamespace.open(in: container)
     let lease = try #require(try reopened.acquireLease(for: key))
     #expect(try lease.read() == Data("fresh".utf8))
@@ -244,7 +242,7 @@ struct CollectionProcessingStorageNamespaceTests {
   /// Captures both the immutable bytes and inode identity of every record and lock file.
   private func snapshot(_ directory: URL) throws -> [String: FileSnapshot] {
     try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(
-      at: directory, includingPropertiesForKeys: nil).map {
+      at: directory, includingPropertiesForKeys: .none).map {
         ($0.lastPathComponent, try FileSnapshot(bytes: Data(contentsOf: $0), inode: inode($0)))
     })
   }

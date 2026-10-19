@@ -51,6 +51,7 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   /// Optional stable change fingerprint for deduplicating work.
   public var fingerprint: String?
 
+  /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey {
     case name, identity, state, reason, movieID, movieTitle, movieYear, movieIdentitySource
     case ownership, assessedAt, retryAt
@@ -74,12 +75,12 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   ///   - retryAt: Earliest time an automatic retry is eligible.
   ///   - lastFailure: Safe category and stage from the most recent failure.
   ///   - fingerprint: Stable child-change fingerprint, when available.
-  public init(name: String, identity: String? = nil, state: FolderProcessingState = .pending,
-              reason: FolderProcessingReason? = nil, movieID: Int? = nil, movieTitle: String? = nil,
-              movieYear: Int? = nil, movieIdentitySource: MovieIdentitySource? = nil,
-              ownership: PosterOwnership = .unknown, assessedAt: Date? = nil,
-              retryAt: Date? = nil, lastFailure: FolderProcessingFailure? = nil,
-              fingerprint: String? = nil) {
+  public init(name: String, identity: String? = .none, state: FolderProcessingState = .pending,
+              reason: FolderProcessingReason? = .none, movieID: Int? = .none, movieTitle: String? = .none,
+              movieYear: Int? = .none, movieIdentitySource: MovieIdentitySource? = .none,
+              ownership: PosterOwnership = .unknown, assessedAt: Date? = .none,
+              retryAt: Date? = .none, lastFailure: FolderProcessingFailure? = .none,
+              fingerprint: String? = .none) {
     self.name = name
     self.identity = identity
     self.state = state
@@ -98,6 +99,6 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   /// Whether the record contains the complete evidence required to count as Done.
   public var isVerifiedDone: Bool {
     state == .done && ownership == .owned && (movieID ?? .zero) > .zero &&
-      identity?.isEmpty == false && assessedAt != nil
+      identity?.isEmpty == false && assessedAt != .none
   }
 }

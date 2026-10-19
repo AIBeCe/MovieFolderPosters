@@ -26,6 +26,10 @@ struct ManualResolutionScenario {
   /// Processor configured to update the fixture's outcomes.
   let processor: MovieFolderProcessor
 
+  /// Creates a persisted scenario with either ambiguous candidates or no suitable metadata match.
+  ///
+  /// - Parameter isAmbiguous: Whether the provider returns competing candidates rather than an empty search.
+  /// - Throws: Fixture setup, filesystem identity, or persistence errors.
   init(isAmbiguous: Bool) throws {
     let fixture = try Fixture()
     self.fixture = fixture
@@ -95,7 +99,7 @@ func confirmedManualResolutionDoesNotRepeatAfterRetryExpiryAndProcessorRestart(i
     try scenario.collectionStore.read(rootID: scenario.rootID)?.folders.first)
   #expect(firstAssessment.state == expectedState)
   #expect(firstAssessment.reason == (isAmbiguous ? .ambiguousMovie : .noSuitableMovie))
-  #expect(firstAssessment.retryAt == nil)
+  #expect(firstAssessment.retryAt == .none)
   let expectedReason: FolderProcessingReason = isAmbiguous ? .ambiguousMovie : .noSuitableMovie
   try scenario.setLegacyRetryDate()
   let second = try await scenario.processor.process(
@@ -104,7 +108,7 @@ func confirmedManualResolutionDoesNotRepeatAfterRetryExpiryAndProcessorRestart(i
     try scenario.collectionStore.read(rootID: scenario.rootID)?.folders.first)
   #expect(secondAssessment.state == expectedState)
   #expect(secondAssessment.reason == expectedReason)
-  #expect(secondAssessment.retryAt == nil)
+  #expect(secondAssessment.retryAt == .none)
   scenario.clock.advance(by: 86_401)
   let restartedProcessor = try fixture.processor(
     provider: scenario.provider, clock: { scenario.clock.now },
@@ -115,7 +119,7 @@ func confirmedManualResolutionDoesNotRepeatAfterRetryExpiryAndProcessorRestart(i
     try scenario.collectionStore.read(rootID: scenario.rootID)?.folders.first)
   #expect(restartedAssessment.state == expectedState)
   #expect(restartedAssessment.reason == expectedReason)
-  #expect(restartedAssessment.retryAt == nil)
+  #expect(restartedAssessment.retryAt == .none)
 
   #expect(first.unresolved == 1)
   #expect(second.unresolved == 1)

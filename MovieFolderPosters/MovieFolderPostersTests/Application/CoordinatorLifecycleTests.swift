@@ -27,7 +27,7 @@ struct CoordinatorLifecycleTests {
     root.showLog()
     #expect(root.logCoordinator.windowController?.window === firstWindow)
     #expect(firstWindow.isVisible)
-    #expect(root.configurationCoordinator == nil)
+    #expect(root.configurationCoordinator == .none)
   }
 
   /// A cold Settings route starts configuration once, and activation never creates another feature window.
@@ -36,9 +36,9 @@ struct CoordinatorLifecycleTests {
       activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     root.applicationDidBecomeActive()
-    #expect(root.configurationCoordinator == nil)
-    #expect(root.logCoordinator.windowController == nil)
-    #expect(root.posterActionCoordinator.windowController == nil)
+    #expect(root.configurationCoordinator == .none)
+    #expect(root.logCoordinator.windowController == .none)
+    #expect(root.posterActionCoordinator.windowController == .none)
     try root.showSettings()
     let configuration = try #require(root.configurationCoordinator)
     let mainWindow = try #require(configuration.mainWindow?.window)
@@ -50,8 +50,8 @@ struct CoordinatorLifecycleTests {
     try root.showSettings()
     #expect(root.configurationCoordinator === configuration)
     #expect(configuration.settingsWindow?.window === settingsWindow)
-    #expect(root.logCoordinator.windowController == nil)
-    #expect(root.posterActionCoordinator.windowController == nil)
+    #expect(root.logCoordinator.windowController == .none)
+    #expect(root.posterActionCoordinator.windowController == .none)
   }
 
   /// A configuration failure remains retryable and local producer failures reach the independent Log.
@@ -61,7 +61,7 @@ struct CoordinatorLifecycleTests {
       activity: ActivityServiceFake(), configurationBuilder: builder,
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     #expect(throws: CocoaError.self) { try root.showSettings() }
-    #expect(root.configurationCoordinator == nil)
+    #expect(root.configurationCoordinator == .none)
     try root.showSettings()
     let configuration = try #require(root.configurationCoordinator)
     defer { configuration.mainWindow?.close(); configuration.settingsWindow?.close() }
@@ -126,7 +126,7 @@ struct CoordinatorLifecycleTests {
     #expect(sheet.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua)
     mainWindow.endSheet(sheet)
     settings.select(.system)
-    #expect(application.appearance == nil)
+    #expect(application.appearance == .none)
   }
 
   /// Failed local writes must reach an already visible Log without a success-only storage notification.
@@ -186,23 +186,23 @@ struct CoordinatorLifecycleTests {
     await service.waitForCancellationCount(2)
     #expect(!secondModel.isBusy)
     #expect(coordinator.viewModel == nil)
-    #expect(coordinator.windowController == nil)
+    #expect(coordinator.windowController == .none)
   }
 
   /// Feature delegates and notification subscriptions must not keep abandoned flows alive.
   @Test func featureOwnersAreReleasedAfterTheirWindowsClose() throws {
     var log: LogCoordinator? = LogCoordinator(activity: ActivityServiceFake())
-    let logIsReleased = { [weak log] in log == nil }
+    let logIsReleased = { [weak log] in log == .none }
     log?.show()
     log?.windowController?.close()
-    log = nil
+    log = .none
     #expect(logIsReleased())
     var configuration: ConfigurationCoordinator? = ConfigurationCoordinator(
       service: CoordinatorConfigurationService(), activity: ActivityServiceFake(), appearance: try isolatedAppearance())
-    let configurationIsReleased = { [weak configuration] in configuration == nil }
+    let configurationIsReleased = { [weak configuration] in configuration == .none }
     configuration?.start()
     configuration?.mainWindow?.close()
-    configuration = nil
+    configuration = .none
     #expect(configurationIsReleased())
   }
 
@@ -289,7 +289,7 @@ private actor CoordinatorPosterService: MoviePosterActionServicing {
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws -> MovieSearchResult {
     searchCount += 1
     if let waiter = searchWaiter, searchCount >= waiter.count {
-      searchWaiter = nil
+      searchWaiter = .none
       waiter.continuation.resume()
     }
     do {
@@ -297,7 +297,7 @@ private actor CoordinatorPosterService: MoviePosterActionServicing {
     } catch {
       cancellationCount += 1
       if let waiter = cancellationWaiter, cancellationCount >= waiter.count {
-        cancellationWaiter = nil
+        cancellationWaiter = .none
         waiter.continuation.resume()
       }
       throw error
@@ -308,5 +308,5 @@ private actor CoordinatorPosterService: MoviePosterActionServicing {
   func refreshPoster(for request: MoviePosterRequest) throws -> Int { 7 }
   func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) throws -> Int { movie.id }
   func removePoster(for request: MoviePosterRequest) throws -> Bool { true }
-  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { nil }
+  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { .none }
 }

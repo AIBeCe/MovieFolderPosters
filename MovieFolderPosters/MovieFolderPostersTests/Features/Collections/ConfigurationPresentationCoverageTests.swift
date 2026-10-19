@@ -24,7 +24,7 @@ struct ConfigurationPresentationCoverageTests {
     #expect(matte.state == .on)
     #expect(raw.state == .off)
     #expect(raw.isEnabled)
-    raw.performClick(nil)
+    raw.performClick(.none)
     #expect(await service.waitForPosterAppearance(.raw))
     #expect(model.posterAppearance == .raw)
     await waitForSelection(raw: raw, matte: matte)
@@ -44,7 +44,7 @@ struct ConfigurationPresentationCoverageTests {
     let system = try #require(buttons.first { $0.title == "System" })
 
     #expect(system.state == .on)
-    dark.performClick(nil)
+    dark.performClick(.none)
 
     #expect(preferences.choice == .dark)
     #expect(dark.state == .on)
@@ -59,12 +59,10 @@ struct ConfigurationPresentationCoverageTests {
     let controller = try makeSettingsController(model: model)
     let pane = try #require(controller.tabViewItems[1].viewController)
     let field = try #require(descendants(pane.view).compactMap { $0 as? NSSecureTextField }.first)
-    let save = try #require(descendants(pane.view).compactMap { $0 as? NSButton }.first {
-      $0.title == "Save Token"
-    })
+    let save = try #require(descendants(pane.view).compactMap { $0 as? NSButton }.first { $0.title == "Save Token" })
     field.stringValue = "isolated-test-token"
 
-    save.performClick(nil)
+    save.performClick(.none)
 
     #expect(field.stringValue.isEmpty)
     #expect(await service.waitForSavedCredential())
@@ -85,13 +83,13 @@ struct ConfigurationPresentationCoverageTests {
     controller.delegate = delegate
     let buttons = descendants(controller.view).compactMap { $0 as? NSButton }
 
-    try #require(buttons.first { $0.accessibilityLabel() == "Settings" }).performClick(nil)
-    try #require(buttons.first { $0.accessibilityLabel() == "Log" }).performClick(nil)
-    try #require(buttons.first { $0.title == "Check Installation…" }).performClick(nil)
-    try #require(buttons.first { $0.accessibilityLabel() == "Add collection" }).performClick(nil)
+    try #require(buttons.first { $0.accessibilityLabel() == "Settings" }).performClick(.none)
+    try #require(buttons.first { $0.accessibilityLabel() == "Log" }).performClick(.none)
+    try #require(buttons.first { $0.title == "Check Installation…" }).performClick(.none)
+    try #require(buttons.first { $0.accessibilityLabel() == "Add collection" }).performClick(.none)
 
     #expect(delegate.routes == ["settings", "log", "installation", "select"])
-    #expect(delegate.selectedDirectory == nil)
+    #expect(delegate.selectedDirectory == .none)
   }
 
   /// Verifies the table distinguishes folder access from persisted processing results.
@@ -110,8 +108,8 @@ struct ConfigurationPresentationCoverageTests {
       activity: PresentationActivityService())
     await model.load()
     let availableSummary = CollectionProcessingSummary(
-      processingState: nil,
-      presentation: CollectionProcessingPresentation(processingState: nil),
+      processingState: .none,
+      presentation: CollectionProcessingPresentation(processingState: .none),
       counts: CollectionProcessingCounts(done: 4, notFound: 1, severalMatches: 2, total: 7),
       displayState: .current)
     let summaries = PresentationSummaryService(values: [availableID: availableSummary])
@@ -123,9 +121,7 @@ struct ConfigurationPresentationCoverageTests {
     let table = try #require(descendants(controller.view).compactMap { $0 as? NSTableView }.first)
     #expect(controller.numberOfRows(in: table) == 2)
 
-    let collectionColumn = try #require(table.tableColumns.first {
-      $0.identifier.rawValue == "collection"
-    })
+    let collectionColumn = try #require(table.tableColumns.first { $0.identifier.rawValue == "collection" })
     let collectionCell = try #require(
       controller.tableView(table, viewFor: collectionColumn, row: 0))
     let collectionLabels = descendants(collectionCell).compactMap { $0 as? NSTextField }
@@ -212,7 +208,7 @@ private actor PresentationConfigurationService: ConfigurationServicing {
 
   /// Clears credential presence in the isolated summary.
   func removeCredential() throws {
-    savedCredential = nil
+    savedCredential = .none
     summary = ConfigurationSummary(
       directories: summary.directories, credentialConfigured: false,
       posterAppearance: summary.posterAppearance)
@@ -230,9 +226,9 @@ private actor PresentationConfigurationService: ConfigurationServicing {
   func waitForSavedCredential() async -> Bool {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: .seconds(2))
-    while savedCredential == nil, clock.now < deadline { await Task.yield() }
+    while savedCredential == .none, clock.now < deadline { await Task.yield() }
 
-    return savedCredential != nil
+    return savedCredential != .none
   }
 
   /// Yields until the selected poster finish reaches the isolated service.
@@ -272,13 +268,9 @@ private final class ConfigurationPresentationRouteProbe: ConfigurationViewContro
     routes.append("settings")
   }
 
-  func configurationViewControllerDidRequestLog(_ controller: ConfigurationViewController) {
-    routes.append("log")
-  }
+  func configurationViewControllerDidRequestLog(_ controller: ConfigurationViewController) { routes.append("log") }
 
-  func configurationViewControllerDidRequestInstallationReadiness(
-    _ controller: ConfigurationViewController
-  ) {
+  func configurationViewControllerDidRequestInstallationReadiness(_ controller: ConfigurationViewController) {
     routes.append("installation")
   }
 

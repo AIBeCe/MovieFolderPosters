@@ -5,7 +5,9 @@ import Persistence
 import Synchronization
 import Testing
 
+/// Regression coverage for generation-safe, durable collection processing state.
 struct CollectionProcessingStoreTests {
+  /// Checks that operation start and completion persist with monotonically increasing revisions.
   @Test func recordProcessingStartPersistsStateAndCommitUsesExpectedRevision() throws {
     let fixture = try Fixture()
     let context = fixture.context
@@ -31,6 +33,7 @@ struct CollectionProcessingStoreTests {
     #expect(reopened == saved)
   }
 
+  /// Checks that notifications expose committed state after persistence leases are released.
   @Test func notificationsObserveCommittedRevisionAfterLeasesAreReleased() throws {
     let fixture = try Fixture()
     let notifier = TestCollectionProcessingNotifier(
@@ -50,6 +53,7 @@ struct CollectionProcessingStoreTests {
     #expect(notifier.leasesAvailableDuringCallback)
   }
 
+  /// Checks that a rejected stale commit emits no change notification.
   @Test func rejectedCommitDoesNotSendNotification() throws {
     let fixture = try Fixture()
     let notifier = TestCollectionProcessingNotifier(
@@ -69,6 +73,7 @@ struct CollectionProcessingStoreTests {
     #expect(notifier.revisions.isEmpty)
   }
 
+  /// Checks that an older writer cannot overwrite a committed revision.
   @Test func staleRevisionCannotOverwriteNewerProcessingState() throws {
     let fixture = try Fixture()
     let started = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
@@ -81,6 +86,7 @@ struct CollectionProcessingStoreTests {
     }
   }
 
+  /// Checks that changed credentials invalidate a captured generation before processing starts.
   @Test func settingsGenerationChangeRejectsBegin() throws {
     let fixture = try Fixture()
     try fixture.configuration.update { $0.credentialRevision = UUID() }
@@ -90,6 +96,7 @@ struct CollectionProcessingStoreTests {
     }
   }
 
+  /// Checks that reauthorization replaces active state and rejects writers from the previous authorization.
   @Test func reauthorizationStartsFreshProcessingStateAndRejectsOldWriter() throws {
     let fixture = try Fixture()
     let oldContext = fixture.context
@@ -116,6 +123,7 @@ struct CollectionProcessingStoreTests {
     }
   }
 
+  /// Checks that changing a submitted context cannot bypass persisted generation validation.
   @Test func commitCannotReplacePersistedContextWithNewSettingsGeneration() throws {
     let fixture = try Fixture()
     let started = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
@@ -130,6 +138,7 @@ struct CollectionProcessingStoreTests {
     }
   }
 
+  /// Checks that manual work in a new generation preserves history without promoting old assessments.
   @Test func manualStartInNewGenerationDoesNotPromoteOldNegativeAssessment() throws {
     let fixture = try Fixture()
     let oldContext = fixture.context
@@ -150,7 +159,7 @@ struct CollectionProcessingStoreTests {
     var manual = try fixture.processingStore.recordProcessingStart(context: newContext, action: .manual, child: "Film")
     #expect(manual.context == newContext)
     #expect(manual.isInventoryComplete == false)
-    #expect(manual.inspectedAt == nil)
+    #expect(manual.inspectedAt == .none)
     #expect(manual.folders == [FolderProcessingRecord(name: "Film")])
     #expect(manual.lastCompletedRun == savedPreviousRun.operation)
     #expect(manual.lastCompletedRunContext == oldContext)
@@ -159,10 +168,11 @@ struct CollectionProcessingStoreTests {
     manual.operation?.endedAt = Date(timeIntervalSince1970: 20)
     let savedManual = try fixture.processingStore.commit(manual, expectedRevision: manual.revision)
     #expect(savedManual.folders.first?.state == .pending)
-    #expect(savedManual.calculateCounts().notFound == nil)
+    #expect(savedManual.calculateCounts().notFound == .none)
     #expect(CollectionProcessingPresentation(processingState: savedManual).lastCompletedRunIsCurrentContext == false)
   }
 
+  /// Checks that a removed collection cannot recreate its processing record.
   @Test func removedRootCannotRecreateProcessingState() throws {
     let fixture = try Fixture()
     try fixture.configuration.update { $0.directories.removeAll() }
@@ -170,18 +180,20 @@ struct CollectionProcessingStoreTests {
     #expect(throws: CollectionProcessingError.rootRemoved) {
       try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     }
-    #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == nil)
+    #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == .none)
   }
 
+  /// Checks that pruning removes outcomes for roots absent from current settings.
   @Test func pruneRemovesOnlyRootsAbsentFromCurrentConfiguration() throws {
     let fixture = try Fixture()
     _ = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     try fixture.configuration.update { $0.directories.removeAll() }
 
     #expect(try fixture.processingStore.pruneToConfiguredRoots().isEmpty)
-    #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == nil)
+    #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == .none)
   }
 
+  /// Checks that unsupported persisted schemas are reported without replacing their records.
   @Test func unsupportedSchemaIsPreservedAndReported() throws {
     let fixture = try Fixture()
     let unsupported = CollectionProcessingState(schemaVersion: 2, context: fixture.context)
@@ -199,26 +211,42 @@ struct CollectionProcessingStoreTests {
     let lease = try #require(try fixture.processingStorePersistence.acquireLease(
       for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)
     ))
-    #expect(try lease.read() != nil)
+    #expect(try lease.read() != .none)
   }
 
+  /// Isolated stores and captured generations for processing repository tests.
   private struct Fixture {
+    /// Collection identifier shared by configured roots and processing records.
     let rootID = UUID()
+    /// Stable filesystem identity assigned to the configured test root.
     let rootIdentity = "stable-root"
+    /// Authorization generation captured by the test root.
     let authorizationVersion = UUID()
+    /// Credential generation captured by the test settings.
     let credentialRevision = UUID()
+    /// Persistence namespace containing test configuration.
     let configurationStore: PersistenceStore
+    /// Persistence namespace containing test processing records.
     let processingStorePersistence: PersistenceStore
+    /// Repository used to change settings generations during tests.
     let configuration: ConfigurationRepository
+    /// Processing repository sharing the test configuration.
     let processingStore: CollectionProcessingStore
+    /// Disposable parent directory for the isolated persistence namespaces.
     let directory: URL
 
-    var context: CollectionProcessingContext {
-      makeContext()
-    }
+    /// Current fixture generation with no test-specific overrides.
+    var context: CollectionProcessingContext { makeContext() }
 
-    func makeContext(authorizationVersion: UUID? = nil, credentialRevision: UUID? = nil,
-                     rootIdentity: String? = nil) -> CollectionProcessingContext {
+    /// Builds a captured generation with optional authorization, credential, or identity overrides.
+    ///
+    /// - Parameters:
+    ///   - authorizationVersion: Replacement authorization generation, or the fixture default.
+    ///   - credentialRevision: Replacement credential generation, or the fixture default.
+    ///   - rootIdentity: Replacement filesystem identity, or the fixture default.
+    /// - Returns: A processing context using the selected generation.
+    func makeContext(authorizationVersion: UUID? = .none, credentialRevision: UUID? = .none,
+                     rootIdentity: String? = .none) -> CollectionProcessingContext {
       CollectionProcessingContext(
         rootID: rootID, rootIdentity: rootIdentity ?? self.rootIdentity,
         authorizationVersion: authorizationVersion ?? self.authorizationVersion,
@@ -227,6 +255,8 @@ struct CollectionProcessingStoreTests {
       )
     }
 
+    /// Creates independent persistence stores and configures one authorized collection.
+    /// - Throws: Persistence directory creation or configuration write errors.
     init() throws {
       directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       let configURL = directory.appendingPathComponent("Settings")
@@ -251,8 +281,12 @@ struct CollectionProcessingStoreTests {
       processingStore = CollectionProcessingStore(store: localProcessingStore, configuration: configRepository)
     }
 
+    /// Reopens the same processing namespace with an optional change observer.
+    /// - Parameter notifier: Observer to notify after successful commits.
+    /// - Returns: A repository sharing the fixture's settings and outcome records.
+    /// - Throws: Persistence directory setup errors.
     func makeRepository(
-      notifier: (any CollectionProcessingStateChangeNotifying)? = nil
+      notifier: (any CollectionProcessingStateChangeNotifying)? = .none
     ) throws -> CollectionProcessingStore {
       CollectionProcessingStore(
         store: try PersistenceStore(directory: directory.appendingPathComponent("Outcomes")),
@@ -261,6 +295,9 @@ struct CollectionProcessingStoreTests {
       )
     }
 
+    /// Measures the persisted processing envelope size for the capacity probe.
+    /// - Returns: The encoded record size in bytes.
+    /// - Throws: Record lookup, file attribute, or missing-size assertion failures.
     func recordSize() throws -> Int {
       let recordsDirectory = directory.appendingPathComponent("Outcomes")
       let recordName = try #require(FileManager.default.contentsOfDirectory(atPath: recordsDirectory.path)
@@ -268,31 +305,48 @@ struct CollectionProcessingStoreTests {
       let attributes = try FileManager.default.attributesOfItem(
         atPath: recordsDirectory.appendingPathComponent(recordName).path
       )
+
       return try #require((attributes[.size] as? NSNumber)?.intValue)
     }
   }
 
+  /// Observes committed revisions and verifies that repository leases are released before callbacks.
   private final class TestCollectionProcessingNotifier: CollectionProcessingStateChangeNotifying {
+    /// Synchronized notification observations shared across callbacks and assertions.
     private struct State: Sendable {
+      /// Committed revisions observed by this notifier.
       var revisions: [UInt64] = []
+      /// Whether both persistence leases were available during the latest callback.
       var leasesAvailable = false
     }
 
+    /// Configuration namespace probed for callback-time lease availability.
     private let configurationStore: PersistenceStore
+    /// Processing namespace probed and read after each committed notification.
     private let processingStorePersistence: PersistenceStore
+    /// Collection whose committed revisions are observed.
     private let rootID: UUID
+    /// Lock-protected callback observations.
     private let state = Mutex(State())
 
+    /// Snapshot of committed revisions observed so far.
     var revisions: [UInt64] { state.withLock { $0.revisions } }
 
+    /// Whether the latest callback could acquire both repository leases.
     var leasesAvailableDuringCallback: Bool { state.withLock { $0.leasesAvailable } }
 
+    /// Creates an observer for the supplied namespaces and collection identifier.
+    /// - Parameters:
+    ///   - configurationStore: Settings namespace whose lease must be free during notification.
+    ///   - processingStorePersistence: Outcome namespace to inspect after commits.
+    ///   - rootID: Collection whose processing record is observed.
     init(configurationStore: PersistenceStore, processingStorePersistence: PersistenceStore, rootID: UUID) {
       self.configurationStore = configurationStore
       self.processingStorePersistence = processingStorePersistence
       self.rootID = rootID
     }
 
+    /// Reads the committed revision while checking that both repository leases are available.
     func collectionProcessingStateDidChange() {
       let settingsLease = try? configurationStore.acquireLease(for: ConfigurationRepository.recordKey)
       let resultLease = try? processingStorePersistence.acquireLease(
@@ -308,6 +362,7 @@ struct CollectionProcessingStoreTests {
       }
     }
 
+    /// Clears previous notification observations before the next test operation.
     func reset() {
       state.withLock {
         $0.revisions = []
@@ -319,7 +374,8 @@ struct CollectionProcessingStoreTests {
 
 /// Explicitly enabled process and scale probes, separate from ordinary store regressions.
 extension CollectionProcessingStoreTests {
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"] != nil))
+  /// Checks that an independent process reads only complete committed processing snapshots.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"] != .none))
   func processReaderObservesOnlyCompleteCommittedStates() throws {
     let fixture = try Fixture()
     let executablePath = try #require(ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"])
@@ -372,6 +428,7 @@ extension CollectionProcessingStoreTests {
     #expect(revisions.allSatisfy { $0 >= 2 && $0 <= processingState.revision })
   }
 
+  /// Measures checkpoint encoding and envelope size for a large configured inventory.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_BENCHMARK"] == "1"))
   func largeInventory32RecordCheckpointsReportEncodeAndEnvelopeCost() throws {
     let fixture = try Fixture()
@@ -426,9 +483,7 @@ extension CollectionProcessingStoreTests {
   }
 
   /// Configures the opt-in child process and its file-based handshake without starting it.
-  private static func readerProbe(
-    executablePath: String, directory: URL, rootID: UUID, output: Pipe
-  ) -> Process {
+  private static func readerProbe(executablePath: String, directory: URL, rootID: UUID, output: Pipe) -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executablePath)
     process.arguments = [
@@ -443,12 +498,16 @@ extension CollectionProcessingStoreTests {
     return process
   }
 
+  /// Builds distinguishable membership for each committed process-probe revision.
+  /// - Parameter revision: Revision embedded in every generated folder name.
+  /// - Returns: A complete test membership with revision-specific names.
   private static func processProbeRecords(revision: UInt64) -> [FolderProcessingRecord] {
-    (0..<64).map { index in
-      FolderProcessingRecord(name: "rev-\(revision)-\(index)", identity: "identity-\(index)")
-    }
+    (0..<64).map { index in FolderProcessingRecord(name: "rev-\(revision)-\(index)", identity: "identity-\(index)") }
   }
 
+  /// Waits for a process-probe handshake file, throwing when its bounded deadline expires.
+  /// - Parameter url: Handshake file expected from the independent reader.
+  /// - Throws: `ProbeError.timeout` when the file does not appear within five seconds.
   private static func waitForFile(_ url: URL) throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(5))
     while !FileManager.default.fileExists(atPath: url.path) {
@@ -457,6 +516,13 @@ extension CollectionProcessingStoreTests {
     }
   }
 
+  /// Retries short processing-store lease contention up to the bounded attempt limit.
+  /// - Parameters:
+  ///   - processingState: Snapshot to commit after acquiring the processing lease.
+  ///   - expectedRevision: Revision that must still be current.
+  ///   - processingStore: Repository participating in the independent-reader probe.
+  /// - Returns: The successfully committed snapshot.
+  /// - Throws: `ProbeError.timeout` after repeated contention, or any non-contention commit failure.
   private static func commitWhenAvailable(
     _ processingState: CollectionProcessingState,
     expectedRevision: UInt64,
@@ -473,5 +539,6 @@ extension CollectionProcessingStoreTests {
     throw ProbeError.timeout
   }
 
+  /// Bounded handshake or lease-retry failures from the opt-in process probe.
   private enum ProbeError: Error { case timeout }
 }

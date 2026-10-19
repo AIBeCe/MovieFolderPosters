@@ -23,16 +23,30 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   /// Context in which the latest completed run was recorded, for historical labeling.
   public var lastCompletedRunContext: CollectionProcessingContext?
 
+  /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey {
     case schemaVersion, revision, context, operation, folders, isInventoryComplete = "inventoryComplete"
     case inspectedAt, inventoryIssue, lastCompletedRun, lastCompletedRunContext
   }
 
+  /// Creates a snapshot of collection membership, assessments, and operation history.
+  ///
+  /// - Parameters:
+  ///   - schemaVersion: Persisted format version, checked by `validate()` before use.
+  ///   - revision: Committed revision used to reject stale writers.
+  ///   - context: Root identity, authorization, and settings generation for this snapshot.
+  ///   - operation: Active or most recently terminated operation, when recorded.
+  ///   - folders: Immediate-child membership and latest individual assessments.
+  ///   - isInventoryComplete: Whether inspection classified all immediate children.
+  ///   - inspectedAt: Inspection time required for a complete inventory.
+  ///   - inventoryIssue: Safe explanation of an incomplete inventory.
+  ///   - lastCompletedRun: Latest completed collection-wide operation, when available.
+  ///   - lastCompletedRunContext: Generation captured for the historical completed run.
   public init(schemaVersion: Int = 1, revision: UInt64 = .zero, context: CollectionProcessingContext,
-              operation: CollectionProcessingOperation? = nil, folders: [FolderProcessingRecord] = [],
-              isInventoryComplete: Bool = false, inspectedAt: Date? = nil,
-              inventoryIssue: FolderProcessingReason? = nil, lastCompletedRun: CollectionProcessingOperation? = nil,
-              lastCompletedRunContext: CollectionProcessingContext? = nil) {
+              operation: CollectionProcessingOperation? = .none, folders: [FolderProcessingRecord] = [],
+              isInventoryComplete: Bool = false, inspectedAt: Date? = .none,
+              inventoryIssue: FolderProcessingReason? = .none, lastCompletedRun: CollectionProcessingOperation? = .none,
+              lastCompletedRunContext: CollectionProcessingContext? = .none) {
     self.schemaVersion = schemaVersion
     self.revision = revision
     self.context = context
@@ -46,7 +60,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   }
 
   /// Whether headline folder counts are supported by a complete inspected inventory.
-  public var hasKnownTotal: Bool { isInventoryComplete && inspectedAt != nil }
+  public var hasKnownTotal: Bool { isInventoryComplete && inspectedAt != .none }
 
   /// Validates schema, unique membership, capacity, and Done evidence invariants.
   public func validate() throws {
@@ -57,19 +71,20 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
     guard folders.allSatisfy({ $0.state != .done || $0.isVerifiedDone }) else {
       throw CollectionProcessingError.invalidState
     }
-    guard !isInventoryComplete || inspectedAt != nil else { throw CollectionProcessingError.invalidState }
+    guard !isInventoryComplete || inspectedAt != .none else { throw CollectionProcessingError.invalidState }
   }
 
   /// Counts known assessments while leaving Total unavailable for incomplete inventories.
   public func calculateCounts() -> CollectionProcessingCounts {
     guard hasKnownTotal else {
-      return CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil)
+      return CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)
     }
     let assessed = folders.allSatisfy { $0.state != .pending && $0.state != .uncertain }
+
     return CollectionProcessingCounts(
-      done: assessed ? folders.filter { $0.isVerifiedDone }.count : nil,
-      notFound: assessed ? folders.filter { $0.state == .notFound }.count : nil,
-      severalMatches: assessed ? folders.filter { $0.state == .severalMatches }.count : nil,
+      done: assessed ? folders.filter { $0.isVerifiedDone }.count : .none,
+      notFound: assessed ? folders.filter { $0.state == .notFound }.count : .none,
+      severalMatches: assessed ? folders.filter { $0.state == .severalMatches }.count : .none,
       total: folders.count
     )
   }

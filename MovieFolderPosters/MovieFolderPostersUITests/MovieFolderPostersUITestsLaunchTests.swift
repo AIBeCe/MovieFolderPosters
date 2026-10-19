@@ -11,12 +11,10 @@ import XCTest
 final class MovieFolderPostersUITestsLaunchTests: XCTestCase {
 
   /// Runs the launch test for each target application UI configuration.
-  override static var runsForEachTargetApplicationUIConfiguration: Bool {
-    true
-  }
+  override static var runsForEachTargetApplicationUIConfiguration: Bool { true }
 
-  @MainActor
   /// Launches the app and attaches a retained screenshot to the test result.
+  @MainActor
   func testLaunch() throws {
     continueAfterFailure = false
     let app = XCUIApplication()

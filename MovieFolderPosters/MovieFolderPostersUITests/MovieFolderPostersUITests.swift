@@ -2,8 +2,8 @@ import XCTest
 
 /// Exercises the host app's main configuration, Settings, and log windows.
 final class MovieFolderPostersUITests: XCTestCase {
-  @MainActor
   /// Confirms the native windows expose their primary controls and secure token field.
+  @MainActor
   func testNativeMainSettingsAndLogWindows() throws {
     let app = XCUIApplication()
     app.launch()

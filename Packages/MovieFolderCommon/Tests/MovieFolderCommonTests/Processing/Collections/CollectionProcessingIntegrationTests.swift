@@ -143,7 +143,7 @@ struct CollectionProcessingIntegrationTests {
     } catch TMDbError.invalidPosterPath {}
     let failedRefresh = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     #expect(failedRefresh.folders.first?.state == .done)
-    #expect(failedRefresh.folders.first?.lastFailure != nil)
+    #expect(failedRefresh.folders.first?.lastFailure != .none)
     #expect(failedRefresh.operation?.state == .failed)
 
     _ = try await processor.removePoster(
@@ -165,7 +165,7 @@ struct CollectionProcessingIntegrationTests {
     let running = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     #expect(running.operation?.state == .running)
     #expect(running.calculateCounts().total == 1)
-    #expect(running.calculateCounts().notFound == nil)
+    #expect(running.calculateCounts().notFound == .none)
     task.cancel()
     do {
       _ = try await task.value
@@ -174,7 +174,7 @@ struct CollectionProcessingIntegrationTests {
     let interrupted = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     #expect(interrupted.operation?.state == .interrupted)
     #expect(interrupted.folders.first?.state == .uncertain)
-    #expect(interrupted.lastCompletedRun == nil)
+    #expect(interrupted.lastCompletedRun == .none)
   }
 
   /// Complete negative and ambiguous searches remain distinguishable after reopening storage.
@@ -198,7 +198,7 @@ struct CollectionProcessingIntegrationTests {
   @Test func emptyCollectionEstablishesRealZeros() async throws {
     let fixture = try CollectionProcessingFixture(names: [])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
-    #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == nil)
+    #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == .none)
     _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider()).process(
       root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
@@ -216,7 +216,7 @@ struct CollectionProcessingIntegrationTests {
       root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     #expect(processingState.operation?.state == .partial)
-    #expect(processingState.lastCompletedRun == nil)
+    #expect(processingState.lastCompletedRun == .none)
     #expect(processingState.folders.contains { $0.state == .pending || $0.state == .deferred })
     #expect(processingState.folders.contains { $0.reason == .authentication })
   }
@@ -237,6 +237,10 @@ private struct CollectionProcessingFixture {
   /// Cross-generation collection coordination store.
   let coordination: PersistenceStore
 
+  /// Creates a disposable configured collection with the requested immediate-child directories.
+  ///
+  /// - Parameter names: Child folder names to create in the test collection.
+  /// - Throws: Filesystem setup, identity lookup, or persistence errors.
   init(names: [String]) throws {
     base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     root = base.appendingPathComponent("Movies")
@@ -281,15 +285,16 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   /// Whether the unique movie identity lacks provider artwork.
   var missingArtwork = false
 
+  /// Returns the configured offline search scenario, including incomplete or ambiguous results.
   func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
     if authenticationFailure { throw TMDbError.authentication }
     if missingArtwork {
       return MovieSearchResult(
         movies: [
-          MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year, posterPath: nil)
+          MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year, posterPath: .none)
         ], hasMorePages: false)
     }
-    if posterData != nil {
+    if posterData != .none {
       return MovieSearchResult(
         movies: [
           MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year, posterPath: "/chosen.jpg")
@@ -302,9 +307,11 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
           MovieMetadata(id: 2, title: title, originalTitle: title, releaseYear: year, posterPath: "/two.jpg")
         ], hasMorePages: false)
     }
+
     return MovieSearchResult(movies: [], hasMorePages: title == "Incomplete")
   }
 
+  /// Returns fixture artwork or the configured transport or missing-artwork failure.
   func downloadPoster(path: String) throws -> Data {
     if shouldFailPoster { throw TMDbError.transport(code: -1009) }
     guard let posterData else { throw TMDbError.invalidPosterPath }
@@ -318,12 +325,13 @@ private struct CacheFailurePosterAssigner: PosterAssigner {
   /// Only the disposable test processing-store directory is modified.
   let directory: URL
 
+  /// Assigns the real test icon, then corrupts only test outcome records to simulate a later cache failure.
   func assignPoster(
     _ imageData: Data, toChild name: String, in root: URL, expectedIdentity: String?
   ) throws -> PosterAssignmentResult {
     let result = try FileSystemService().assignPoster(
       imageData, toChild: name, in: root, expectedIdentity: expectedIdentity)
-    let records = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+    let records = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: .none)
       .filter { $0.pathExtension == "json" }
     for record in records { try Data("broken envelope".utf8).write(to: record) }
 
@@ -333,10 +341,12 @@ private struct CacheFailurePosterAssigner: PosterAssigner {
 
 /// Permits inspection while rejecting the manual mutation guard used by automatic restyling.
 private struct RefusingRestyleGuard: MovieFolderMutationGuard {
+  /// Permits automatic mutation to reach the manual restyle guard under test.
   func movieFolderProcessor(
     _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
-  ) throws -> PersistenceLease? { nil }
+  ) throws -> PersistenceLease? { .none }
 
+  /// Rejects restyling with the configured icon-assignment failure.
   func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
     throw FolderPosterError.iconAssignmentFailed
   }
@@ -349,19 +359,24 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
   /// One test awaiting the processing boundary.
   private var waiter: CheckedContinuation<Void, Never>?
 
+  /// Suspends the test until the provider has entered its cancellable search.
   func waitForSearch() async {
     if started { return }
     await withCheckedContinuation { waiter = $0 }
   }
 
+  /// Signals search entry and suspends long enough for the test to cancel processing.
   func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
     started = true
     waiter?.resume()
-    waiter = nil
+    waiter = .none
     try await Task.sleep(for: .seconds(60))
 
     return MovieSearchResult(movies: [], hasMorePages: false)
   }
 
+  /// Rejects artwork requests because this provider exists only to exercise search cancellation.
+  /// - Parameter path: Unused provider artwork path.
+  /// - Throws: `TMDbError.invalidPosterPath` for every request.
   func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
 }

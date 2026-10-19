@@ -33,7 +33,7 @@ import Testing
         token: try TMDbAccessToken("fixture-token"),
         transport: StubTMDbTransport(posterData: Data()))
 
-      let search = try await client.searchMovies(title: "Another Movie", year: nil)
+      let search = try await client.searchMovies(title: "Another Movie", year: .none)
       #expect(search.movies.isEmpty)
       #expect(!search.hasMorePages)
     }
@@ -50,9 +50,7 @@ import Testing
       let endpoint = try #require(URL(string: address))
       let transport: any HTTPTransport = StubTMDbTransport(posterData: Data())
 
-      await #expect(throws: TMDbError.invalidConfiguration) {
-        try await transport.send(URLRequest(url: endpoint))
-      }
+      await #expect(throws: TMDbError.invalidConfiguration) { try await transport.send(URLRequest(url: endpoint)) }
     }
 
     /// Cancellation is checked before an otherwise supported fixture response is constructed.

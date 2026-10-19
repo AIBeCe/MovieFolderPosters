@@ -24,7 +24,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
       self,
       selector: #selector(configurationChanged(_:)),
       name: MovieFolderEnvironment.configurationChanged,
-      object: nil
+      object: .none
     )
   }
 
@@ -32,8 +32,8 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   /// - Parameter request: The Finder action and folder identity to handle.
   func start(_ request: MoviePosterRequest) {
     if activeRequest == request, let windowController {
-      windowController.showWindow(nil)
-      windowController.window?.makeKeyAndOrderFront(nil)
+      windowController.showWindow(.none)
+      windowController.window?.makeKeyAndOrderFront(.none)
       return
     }
     windowController?.close()
@@ -52,18 +52,15 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     self.viewModel = viewModel
     activeRequest = request
     windowController = controller
-    controller.showWindow(nil)
-    window.makeKeyAndOrderFront(nil)
+    controller.showWindow(.none)
+    window.makeKeyAndOrderFront(.none)
   }
 
   /// Opens the movie page requested by the action view model.
   /// - Parameters:
   ///   - viewModel: The model that requested navigation.
   ///   - url: The TMDb movie page to open.
-  func moviePosterActionViewModel(
-    _ viewModel: MoviePosterActionViewModel,
-    didRequestOpeningMoviePage url: URL
-  ) {
+  func moviePosterActionViewModel(_ viewModel: MoviePosterActionViewModel, didRequestOpeningMoviePage url: URL) {
     _ = NSWorkspace.shared.open(url)
   }
 
@@ -71,17 +68,15 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   /// - Parameter notification: The AppKit window-close notification.
   func windowWillClose(_ notification: Notification) {
     viewModel?.cancelCurrentOperation()
-    viewModel = nil
-    activeRequest = nil
-    windowController = nil
+    viewModel = .none
+    activeRequest = .none
+    windowController = .none
   }
 
   /// Cancels the active action after another process changes configuration.
   /// - Parameter notification: The distributed configuration-change notification.
   @objc private func configurationChanged(_ notification: Notification) {
-    Task { @MainActor [weak self] in
-      self?.viewModel?.configurationDidChange()
-    }
+    Task { @MainActor [weak self] in self?.viewModel?.configurationDidChange() }
   }
 
   deinit {
@@ -106,20 +101,21 @@ private final class MoviePosterActionViewController: NSViewController,
   /// Displays user-facing failures.
   private let errorLabel = NSTextField(labelWithString: "")
   /// Starts a TMDb search.
-  private let searchButton = NSButton(title: "Search TMDb", target: nil, action: nil)
+  private let searchButton = NSButton(title: "Search TMDb", target: .none, action: .none)
   /// Performs the action associated with the current request.
-  private let primaryButton = NSButton(title: "", target: nil, action: nil)
+  private let primaryButton = NSButton(title: "", target: .none, action: .none)
   /// Opens the currently selected movie's TMDb page.
   private let viewSelectedButton = NSButton(
-    title: "View Selected Movie on TMDb", target: nil, action: nil)
+    title: "View Selected Movie on TMDb", target: .none, action: .none)
 
   /// Creates the action view for the supplied model.
   /// - Parameter viewModel: The model providing action state and operations.
   init(viewModel: MoviePosterActionViewModel) {
     self.viewModel = viewModel
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Declines archive construction because the action view requires an injected model.
   required init?(coder: NSCoder) { nil }
 
   /// Builds the controls required by the current action kind.
@@ -172,9 +168,7 @@ private final class MoviePosterActionViewController: NSViewController,
 
   /// Renders the latest model state after an action changes.
   /// - Parameter viewModel: The model that published the state change.
-  func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel) {
-    render()
-  }
+  func moviePosterActionViewModelDidChange(_ viewModel: MoviePosterActionViewModel) { render() }
 
   /// Provides action-specific explanatory text beneath the folder name.
   private var descriptionLabel: NSTextField {

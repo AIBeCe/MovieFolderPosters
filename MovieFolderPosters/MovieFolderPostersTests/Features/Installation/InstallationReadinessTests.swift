@@ -73,7 +73,7 @@ struct InstallationReadinessTests {
     let incompleteBundle = BundleMetadata(
       bundleIdentifier: "example.MovieFolderPosters.FinderSync",
       version: "1.0",
-      build: nil,
+      build: .none,
       extensionPoint: "com.apple.FinderSync"
     )
     let receipt = ExtensionReceiptEvidence.observed(version: "1.0", build: "7", date: now)
@@ -132,7 +132,7 @@ struct InstallationReadinessTests {
     weak var retainedProvider = provider
     let retained = try #require(provider)
     let service = InstallationReadinessService(environment: retained)
-    provider = nil
+    provider = .none
     #expect(retainedProvider != nil)
     _ = await service.check()
     #expect(retainedProvider?.processingState.3 == 1)
@@ -174,7 +174,7 @@ struct InstallationReadinessTests {
     }
     let record = try #require(
       FileManager.default.contentsOfDirectory(
-        at: fixture.directory, includingPropertiesForKeys: nil
+        at: fixture.directory, includingPropertiesForKeys: .none
       ).first { $0.pathExtension == "json" })
     try FileManager.default.removeItem(at: record)
     try FileManager.default.createDirectory(at: record, withIntermediateDirectories: false)
@@ -184,7 +184,7 @@ struct InstallationReadinessTests {
 
   /// Builds a report from explicit evidence values for focused assertions.
   private func makeReport(
-    extensionBundle: BundleMetadata? = nil,
+    extensionBundle: BundleMetadata? = .none,
     includeExtension: Bool = true,
     enabled: Bool? = false,
     receipt: ExtensionReceiptEvidence = .missing,
@@ -197,7 +197,7 @@ struct InstallationReadinessTests {
         host: bundle(version: "1.0", build: "7"),
         embeddedExtension: includeExtension
           ? extensionBundle ?? bundle(version: "1.0", build: "7")
-          : nil,
+          : .none,
         hostSignature: hostSignature,
         embeddedExtensionSignature: embeddedExtensionSignature),
       extensionEnabled: enabled,
@@ -222,6 +222,8 @@ private struct PersistenceFixture {
   /// Store used by the shared-storage readiness probe.
   let store: PersistenceStore
 
+  /// Creates a fresh temporary store without accessing shared application storage.
+  /// - Throws: A persistence error if the isolated store cannot be opened.
   init() throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     store = try PersistenceStore(directory: directory)
@@ -236,13 +238,13 @@ private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unch
   /// Protects counters that may be read from multiple executors.
   private let lock = NSLock()
   /// Number of installation metadata reads.
-  private var installation = 0
+  private var installation = Int.zero
   /// Number of extension-enabled state reads.
-  private var enablement = 0
+  private var enablement = Int.zero
   /// Number of activation receipt reads.
-  private var receipt = 0
+  private var receipt = Int.zero
   /// Number of shared-storage checks.
-  private var storage = 0
+  private var storage = Int.zero
 
   func readInstallationMetadata() -> InstallationMetadata {
     lock.withLock { installation += 1 }
@@ -273,10 +275,11 @@ private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unch
 }
 
 extension InstallationMetadata {
+  /// Matching host and embedded-extension metadata for readiness assertions.
   fileprivate static var valid: InstallationMetadata {
     let host = BundleMetadata(
       bundleIdentifier: "example.MovieFolderPosters", version: "1.0",
-      build: "7", extensionPoint: nil)
+      build: "7", extensionPoint: .none)
     let embedded = BundleMetadata(
       bundleIdentifier: "example.MovieFolderPosters.FinderSync", version: "1.0",
       build: "7", extensionPoint: "com.apple.FinderSync")
@@ -288,7 +291,7 @@ extension InstallationMetadata {
 /// Returns sanitized failure evidence for readiness error-handling tests.
 private struct FailingReadinessEnvironment: InstallationReadinessEnvironment {
   func readInstallationMetadata() -> InstallationMetadata { .valid }
-  func extensionEnabled() -> Bool? { nil }
+  func extensionEnabled() -> Bool? { .none }
   func readReceipt() -> ExtensionReceiptEvidence { .unavailable(.failed) }
   func checkSharedStorage() throws -> SharedStorageEvidence {
     throw NSError(

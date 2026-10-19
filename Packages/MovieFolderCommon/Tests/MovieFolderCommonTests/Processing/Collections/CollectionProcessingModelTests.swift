@@ -3,6 +3,7 @@ import Foundation
 @testable import MovieFolderCommon
 import Testing
 
+/// Regression coverage for conservative processing counts and persisted model compatibility.
 struct CollectionProcessingModelTests {
   /// Historical serialized field names retained as a compatibility fixture.
   private static let legacyJSONFixture = #"""
@@ -59,11 +60,13 @@ struct CollectionProcessingModelTests {
   }
   """#
 
+  /// Stable generation shared by the collection projection regressions.
   private let context = CollectionProcessingContext(
     rootID: UUID(), rootIdentity: "root-identity", authorizationVersion: UUID(),
     credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish
   )
 
+  /// Checks that Done requires verified identity and an application-owned poster.
   @Test func doneRequiresOwnedPosterAndVerifiedIdentity() throws {
     var processingState = CollectionProcessingState(context: context, folders: [
       FolderProcessingRecord(name: "Film", identity: "child", state: .done, movieID: 42,
@@ -75,6 +78,7 @@ struct CollectionProcessingModelTests {
     #expect(throws: CollectionProcessingError.invalidState) { try processingState.validate() }
   }
 
+  /// Checks that an incomplete inventory cannot expose authoritative counts.
   @Test func incompleteInventoryLeavesTotalAndCountsUnavailable() {
     let processingState = CollectionProcessingState(
       context: context,
@@ -83,10 +87,11 @@ struct CollectionProcessingModelTests {
       inspectedAt: Date()
     )
 
-    #expect(processingState.calculateCounts().total == nil)
-    #expect(processingState.calculateCounts().notFound == nil)
+    #expect(processingState.calculateCounts().total == .none)
+    #expect(processingState.calculateCounts().notFound == .none)
   }
 
+  /// Checks that complete membership establishes Total before assessments establish headline counts.
   @Test func completeInventoryKnowsTotalBeforeAssessmentButNotHeadlineCounts() {
     let processingState = CollectionProcessingState(
       context: context,
@@ -96,15 +101,17 @@ struct CollectionProcessingModelTests {
     )
 
     #expect(processingState.calculateCounts().total == 1)
-    #expect(processingState.calculateCounts().done == nil)
+    #expect(processingState.calculateCounts().done == .none)
   }
 
+  /// Checks that an inspected empty collection has known zero counts.
   @Test func inspectedEmptyInventoryHasZeroCounts() {
     let processingState = CollectionProcessingState(context: context, isInventoryComplete: true, inspectedAt: Date())
     let expected = CollectionProcessingCounts(done: 0, notFound: 0, severalMatches: 0, total: 0)
     #expect(processingState.calculateCounts() == expected)
   }
 
+  /// Checks that projections distinguish stale generations, active work, and interrupted runs.
   @Test func projectionSeparatesStaleBusyAndInterruptedStates() {
     let operation = CollectionProcessingOperation(
       action: .automatic, startedAt: Date(), endedAt: Date(), state: .interrupted)
@@ -121,6 +128,7 @@ struct CollectionProcessingModelTests {
     ).state == .interrupted)
   }
 
+  /// Checks that unsupported schemas and duplicate folder membership fail validation.
   @Test func unknownSchemaAndDuplicateMembershipAreRejected() {
     var processingState = CollectionProcessingState(schemaVersion: 99, context: context)
     #expect(throws: CollectionProcessingError.unsupportedSchema) { try processingState.validate() }
@@ -129,6 +137,7 @@ struct CollectionProcessingModelTests {
     #expect(throws: CollectionProcessingError.invalidState) { try processingState.validate() }
   }
 
+  /// Checks that renamed Swift declarations retain their historical persisted keys and values.
   @Test func legacyJSONKeepsRenamedFieldsAndOperationValues() throws {
 
     let processingState = try JSONDecoder().decode(

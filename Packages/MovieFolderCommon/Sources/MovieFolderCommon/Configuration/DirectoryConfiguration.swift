@@ -61,7 +61,7 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   ///   - path: The saved absolute collection path.
   ///   - availability: The most recently assessed access state.
   ///   - counts: Verified processing counts, or no value while unavailable.
-  public init(id: UUID, path: String, availability: DirectoryAvailability, counts: CollectionCounts? = nil) {
+  public init(id: UUID, path: String, availability: DirectoryAvailability, counts: CollectionCounts? = .none) {
     self.id = id
     self.path = path
     self.availability = availability
@@ -181,7 +181,7 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   ///   - identity: The observed filesystem identity, when established.
   ///   - volumePath: The previously observed mount path, when available.
   public init(id: UUID, path: String, transferBookmark: Data, authorizationVersion: UUID,
-              identity: String? = nil, volumePath: String? = nil) {
+              identity: String? = .none, volumePath: String? = .none) {
     self.id = id
     self.path = path
     self.transferBookmark = transferBookmark

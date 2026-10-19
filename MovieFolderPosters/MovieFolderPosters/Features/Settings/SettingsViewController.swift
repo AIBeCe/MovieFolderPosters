@@ -16,25 +16,22 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
   init(viewModel: ConfigurationViewModel, appearanceSettings: AppAppearanceSettings) {
     self.viewModel = viewModel
     self.appearanceSettings = appearanceSettings
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
     tabStyle = .toolbar
     addTab(
       label: "Poster Layout",
-      image: NSImage(systemSymbolName: "rectangle.portrait", accessibilityDescription: nil)
-    ) {
-      PosterLayoutPane(viewModel: viewModel)
-    }
-    addTab(label: "TMDb", image: NSImage(systemSymbolName: "key", accessibilityDescription: nil)) {
+      image: NSImage(systemSymbolName: "rectangle.portrait", accessibilityDescription: .none)
+    ) { PosterLayoutPane(viewModel: viewModel) }
+    addTab(label: "TMDb", image: NSImage(systemSymbolName: "key", accessibilityDescription: .none)) {
       TMDbPane(viewModel: viewModel)
     }
     addTab(
       label: "Appearance",
-      image: NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: nil)
-    ) {
-      AppAppearancePane(settings: appearanceSettings)
-    }
+      image: NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: .none)
+    ) { AppAppearancePane(settings: appearanceSettings) }
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) is unavailable")
@@ -146,9 +143,10 @@ private final class PosterLayoutPane: SettingsPaneController {
   /// - Parameter viewModel: Model that stores poster appearance.
   init(viewModel: ConfigurationViewModel) {
     self.viewModel = viewModel
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -201,7 +199,6 @@ private final class PosterLayoutPane: SettingsPaneController {
   }
 
   /// Updates selection and error state from the model.
-  /// Reflects the current token state and operation availability in the pane.
   override func updatePresentation() {
     for (index, button) in choices.enumerated() {
       button.updateSelection(PosterAppearance.allCases[index] == viewModel.posterAppearance)
@@ -236,9 +233,9 @@ private final class TMDbPane: SettingsPaneController {
   /// Secure field containing the token entered by the user.
   private let tokenField = NSSecureTextField()
   /// Saves the entered token.
-  private let saveButton = NSButton(title: "Save Token", target: nil, action: nil)
+  private let saveButton = NSButton(title: "Save Token", target: .none, action: .none)
   /// Removes the stored token.
-  private let removeButton = NSButton(title: "Remove Token", target: nil, action: nil)
+  private let removeButton = NSButton(title: "Remove Token", target: .none, action: .none)
   /// Shows whether a token was present at the last configuration load.
   private let statusLabel = NSTextField(labelWithString: "Not configured")
   /// Displays a safe credential-operation failure.
@@ -248,9 +245,10 @@ private final class TMDbPane: SettingsPaneController {
   /// - Parameter viewModel: Model that stores credential state.
   init(viewModel: ConfigurationViewModel) {
     self.viewModel = viewModel
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -285,6 +283,7 @@ private final class TMDbPane: SettingsPaneController {
     updatePresentation()
   }
 
+  /// Reflects the current token state and operation availability in the pane.
   override func updatePresentation() {
     statusLabel.stringValue = viewModel.credentialConfigured ? "Configured" : "Not configured"
     errorLabel.stringValue = viewModel.errorMessage ?? " "
@@ -319,9 +318,10 @@ private final class AppAppearancePane: SettingsPaneController {
   /// - Parameter settings: The store that persists the appearance choice.
   init(settings: AppAppearanceSettings) {
     self.settings = settings
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -338,6 +338,7 @@ private final class AppAppearancePane: SettingsPaneController {
       if appearance == .system {
         button.setAccessibilityHelp("Follow the macOS appearance automatically.")
       }
+
       return button
     }
     let previews = NSStackView(views: choices)

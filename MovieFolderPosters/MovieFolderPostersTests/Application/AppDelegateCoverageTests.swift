@@ -46,7 +46,7 @@ struct AppDelegateCoverageTests {
     let delegate = AppDelegate(coordinator: fixture.root)
     let invalid = try #require(URL(string: "https://example.invalid/not-an-action"))
     delegate.application(NSApplication.shared, open: [invalid])
-    #expect(fixture.root.posterActionCoordinator.windowController == nil)
+    #expect(fixture.root.posterActionCoordinator.windowController == .none)
     let request = MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: .change)
     delegate.application(NSApplication.shared, open: [invalid, request.url])
     let window = try #require(fixture.root.posterActionCoordinator.windowController?.window)
@@ -64,7 +64,7 @@ struct AppDelegateCoverageTests {
     let alerts = DelegateAlertRecorder()
     let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
     delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
-    #expect(fixture.root.configurationCoordinator == nil)
+    #expect(fixture.root.configurationCoordinator == .none)
     let alert = try #require(alerts.alerts.first)
     if migrationRequired {
       #expect(alert.messageText == "Processing storage needs migration")
@@ -102,7 +102,7 @@ private struct DelegateFixture {
   let menu: NSMenu?
 
   /// Builds an isolated feature root with an optional deterministic startup failure.
-  init(failure: DelegateConfigurationBuilder.Failure? = nil) throws {
+  init(failure: DelegateConfigurationBuilder.Failure? = .none) throws {
     suite = "AppDelegateCoverageTests.\(UUID().uuidString)"
     defaults = try #require(UserDefaults(suiteName: suite))
     appearance = NSApplication.shared.appearance
@@ -167,7 +167,7 @@ private actor DelegatePosterService: MoviePosterActionServicing {
   func refreshPoster(for request: MoviePosterRequest) throws -> Int { 7 }
   func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) throws -> Int { movie.id }
   func removePoster(for request: MoviePosterRequest) throws -> Bool { false }
-  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { nil }
+  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { .none }
 }
 
 /// Captures configured alerts at the modal platform boundary without displaying sheets or dialogs.

@@ -77,6 +77,7 @@ final class ConfigurationViewModel {
       credentialConfigured
       ? "Configured; provider validation was not performed."
       : "Not configured. Save a read access token in Settings."
+
     return
       "Last-loaded setup (may be stale): \(directories.count) collections; \(accessible) host access "
       + "preflights passed. See collection rows for other states.\nTMDb token at last load: \(token)\n"
@@ -99,9 +100,7 @@ final class ConfigurationViewModel {
   func load() async {
     await perform(
       action: .configurationLoaded, failureMessage: "Could not load configuration."
-    ) {
-      try await self.service.configurationSummary()
-    }
+    ) { try await self.service.configurationSummary() }
   }
 
   /// Adds a collection root and refreshes the displayed summary.
@@ -177,9 +176,7 @@ final class ConfigurationViewModel {
     posterAppearance = appearance
     await perform(
       action: .posterAppearanceSaved, failureMessage: "Could not save the poster appearance.",
-      onFailure: {
-        self.posterAppearance = previousAppearance
-      },
+      onFailure: { self.posterAppearance = previousAppearance },
       operation: {
         try await self.service.setPosterAppearance(appearance)
 
@@ -198,7 +195,7 @@ final class ConfigurationViewModel {
   ///   - operation: The service request whose summary becomes the new model state.
   private func perform(
     action: MovieFolderActivityEvent.Action,
-    collectionID: UUID? = nil,
+    collectionID: UUID? = .none,
     failureMessage: String,
     onFailure: @MainActor () -> Void = {},
     operation: @MainActor () async throws -> ConfigurationSummary
@@ -206,7 +203,7 @@ final class ConfigurationViewModel {
     guard !isBusy else { return }
 
     isBusy = true
-    errorMessage = nil
+    errorMessage = .none
     publish()
 
     do {

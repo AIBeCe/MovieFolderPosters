@@ -30,6 +30,7 @@ extension FileSystemService {
     }
     CGImageDestinationAddImage(destination, image, nil)
     guard CGImageDestinationFinalize(destination) else { throw FolderPosterError.invalidImage }
+
     return output as Data
   }
 }
@@ -72,6 +73,7 @@ enum PosterAppearanceRenderer {
     }
 
     guard let rendered = context.makeImage() else { throw FolderPosterError.invalidImage }
+
     return rendered
   }
 
@@ -81,6 +83,7 @@ enum PosterAppearanceRenderer {
     let scale = min(canvas.width / size.width, canvas.height / size.height)
     let width = size.width * scale
     let height = size.height * scale
+
     return CGRect(
       x: (canvas.width - width) / 2, y: (canvas.height - height) / 2,
       width: width, height: height)
@@ -92,10 +95,7 @@ enum PosterAppearanceRenderer {
   }
 
   /// Draws a poster with rounded clipping and a soft shadow.
-  private static func drawRoundedPoster(
-    _ poster: CGImage, in bounds: CGRect, radius: CGFloat,
-    on context: CGContext
-  ) {
+  private static func drawRoundedPoster(_ poster: CGImage, in bounds: CGRect, radius: CGFloat, on context: CGContext) {
     let path = roundedPath(bounds, radius: radius)
     addShadow(for: path, on: context)
     context.saveGState()

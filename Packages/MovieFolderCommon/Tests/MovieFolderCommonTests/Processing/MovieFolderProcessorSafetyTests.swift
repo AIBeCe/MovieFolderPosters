@@ -23,7 +23,7 @@ extension MovieFolderProcessorTests {
       persistence: fixture.persistence, provider: CountingProvider(),
       cacheDirectory: fixture.cache, posterAssigner: LeaseCheckingAssigner(store: store),
       mutationGuard: guardProbe)
-    guardProbe = nil
+    guardProbe = .none
     XCTAssertNotNil(weakGuard)
 
     let summary = try await processor.process(root: fixture.movies)

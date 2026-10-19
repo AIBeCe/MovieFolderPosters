@@ -40,9 +40,7 @@ nonisolated struct SecurityScopedDirectoryAuthorization: DirectoryAuthorizationP
       expectedIdentity: expectedIdentity)
   }
   /// Creates a security-scoped bookmark for later access.
-  func makeBookmark(for directory: URL) throws -> Data {
-    try FileSystemService().makeDirectoryBookmark(for: directory)
-  }
+  func makeBookmark(for directory: URL) throws -> Data { try FileSystemService().makeDirectoryBookmark(for: directory) }
 }
 
 /// Removes outcome records no longer referenced by committed configuration.
@@ -88,7 +86,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
     notifier: any ConfigurationChangeNotifying = SharedConfigurationChangeNotifier(),
     authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization(),
-    processingCleanup: (any CollectionProcessingCleaning)? = nil,
+    processingCleanup: (any CollectionProcessingCleaning)? = .none,
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder()
   ) {
     self.repository = repository
@@ -131,7 +129,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     try persistRefreshedDirectories(refreshed, original: configuration)
 
     return ConfigurationSummary(
-      directories: statuses, credentialConfigured: try credentials.read() != nil,
+      directories: statuses, credentialConfigured: try credentials.read() != .none,
       posterAppearance: configuration.posterAppearance)
   }
 
@@ -179,7 +177,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
         at: URL(fileURLWithPath: directory.path),
         expectedIdentity: directory.identity, expectedVolumePath: directory.volumePath)
       availability =
-        directory.identity != nil
+        directory.identity != .none
           && [.missing, .disconnected, .identityChanged]
             .contains(evidence.state)
         ? Self.availability(for: evidence.state) : .reauthorizationRequired
@@ -219,7 +217,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       at: access.url, expectedIdentity: directory.identity)
     var updated = directory
     let resolvedPath = access.url.resolvingSymlinksInPath().standardizedFileURL.path
-    if resolvedPath != directory.path, directory.identity == nil {
+    if resolvedPath != directory.path, directory.identity == .none {
       throw DirectoryAccessError.staleBookmark
     }
     if let identity = evidence.identity, evidence.state != .identityChanged {
@@ -317,9 +315,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     defer { notifier.configurationDidChange() }
     try repository.update(
       { $0.credentialRevision = UUID() },
-      afterCommit: {
-        try credentials.save(value.trimmingCharacters(in: .whitespacesAndNewlines))
-      })
+      afterCommit: { try credentials.save(value.trimmingCharacters(in: .whitespacesAndNewlines)) })
   }
 
   /// Removes the TMDb token and updates the credential revision.

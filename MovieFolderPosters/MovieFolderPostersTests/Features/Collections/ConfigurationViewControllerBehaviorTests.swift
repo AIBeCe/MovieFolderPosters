@@ -47,6 +47,9 @@ import Testing
       )))
   await model.load()
   let controller = ConfigurationViewController(viewModel: model)
+  /// Collects the view hierarchy for native control and accessibility assertions.
+  /// - Parameter view: Root of the hierarchy to inspect.
+  /// - Returns: The root followed by every descendant.
   func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
   let views = descendants(controller.view)
   #expect(!views.contains { $0 is NSSecureTextField })

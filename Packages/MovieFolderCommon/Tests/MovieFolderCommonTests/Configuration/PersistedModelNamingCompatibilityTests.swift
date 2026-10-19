@@ -72,8 +72,8 @@ struct PersistedModelNamingCompatibilityTests {
       "action": "applicationOpened", "outcome": "succeeded"
     ], options: [.sortedKeys])
     let decoded = try JSONDecoder().decode(MovieFolderActivityEvent.self, from: legacy)
-    #expect(decoded.operationID == nil)
-    #expect(decoded.collectionID == nil)
+    #expect(decoded.operationID == .none)
+    #expect(decoded.collectionID == .none)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     #expect(try encoder.encode(decoded) == legacy)

@@ -13,7 +13,7 @@ struct DirectoryObservationSchedulerTests {
     var probe: SchedulerProbe? = SchedulerProbe(roots: [root], events: stream.continuation)
     weak var weakProbe = probe
     let scheduler = DirectoryObservationScheduler(delegate: try #require(probe))
-    probe = nil
+    probe = .none
 
     #expect(weakProbe != nil)
     await scheduler.reload()
@@ -142,7 +142,7 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
   /// A weak observation of the scheduler supplied to the delegate.
   private(set) weak var loadingScheduler: DirectoryObservationScheduler?
   /// The number of completed or initiated root loads observed by the probe.
-  private(set) var loadCount = 0
+  private(set) var loadCount = Int.zero
   /// Root URLs passed to the processing delegate in call order.
   private(set) var processed: [URL] = []
 
@@ -180,7 +180,7 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
   /// Resumes the blocked configuration load.
   func releaseLoad() {
     loadGate?.resume()
-    loadGate = nil
+    loadGate = .none
   }
 
   /// Changes the roots returned by the next configuration reload.
@@ -202,14 +202,12 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
         gate = continuation
         events.yield(.started(url))
       }
-    } onCancel: {
-      events.yield(.cancelled)
-    }
+    } onCancel: { events.yield(.cancelled) }
   }
 
   /// Releases the held continuation or lease so the test can observe completion.
   func release() {
     gate?.resume()
-    gate = nil
+    gate = .none
   }
 }

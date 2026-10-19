@@ -15,8 +15,8 @@ struct MoviePosterActionServiceTests {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let service = MoviePosterActionService(
-      credentials: ActionCredentials(token: nil), activity: ActivityServiceFake(), environment: fixture)
-    #expect(try await service.matchedMovieID(for: fixture.request) == nil)
+      credentials: ActionCredentials(token: .none), activity: ActivityServiceFake(), environment: fixture)
+    #expect(try await service.matchedMovieID(for: fixture.request) == .none)
   }
 
   /// Rejects malformed searches before configuration or credentials can be consulted.
@@ -26,7 +26,7 @@ struct MoviePosterActionServiceTests {
     defer { fixture.cleanup() }
     let service = fixture.service()
     await #expect(throws: MoviePosterActionServiceError.invalidQuery) {
-      try await service.searchMovies(for: fixture.request, query: query, year: nil)
+      try await service.searchMovies(for: fixture.request, query: query, year: .none)
     }
   }
 
@@ -80,10 +80,9 @@ struct MoviePosterActionServiceTests {
     let directory = try #require(try fixture.repository.read().directories.first)
     let lease = try #require(try fixture.authorizations.acquireLease(
       for: "host-\(directory.id)-\(directory.authorizationVersion)"))
-    await #expect {
-      try await fixture.service().matchedMovieID(for: fixture.request)
-    } throws: { error in
+    await #expect { try await fixture.service().matchedMovieID(for: fixture.request) } throws: { error in
       if case ConfigurationError.busy = error { return true }
+
       return false
     }
     withExtendedLifetime(lease) {}
@@ -93,9 +92,9 @@ struct MoviePosterActionServiceTests {
   @Test func missingCredentialPreventsSearch() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let service = fixture.service(token: nil)
+    let service = fixture.service(token: .none)
     await #expect(throws: MoviePosterActionServiceError.credentialUnavailable) {
-      try await service.searchMovies(for: fixture.request, query: "Dune", year: nil)
+      try await service.searchMovies(for: fixture.request, query: "Dune", year: .none)
     }
   }
 
@@ -106,7 +105,7 @@ struct MoviePosterActionServiceTests {
     let provider = ActionProvider()
     await #expect(throws: TMDbError.self) {
       try await fixture.service(token: "invalid\ntoken", provider: provider).searchMovies(
-        for: fixture.request, query: "Dune", year: nil)
+        for: fixture.request, query: "Dune", year: .none)
     }
     #expect(await provider.searches.isEmpty)
   }
@@ -144,7 +143,7 @@ struct MoviePosterActionServiceTests {
     #expect(try await service.refreshPoster(for: fixture.request) == 7)
     #expect(try await service.removePoster(for: fixture.request))
     #expect(try await service.removePoster(for: fixture.request) == false)
-    #expect(try await service.matchedMovieID(for: fixture.request) == nil)
+    #expect(try await service.matchedMovieID(for: fixture.request) == .none)
     #expect(await provider.downloads == ["/chosen.png", "/chosen.png"])
     #expect(await provider.searches.isEmpty)
     #expect(try await activity.entries().map(\.event.status) == [
@@ -170,9 +169,10 @@ struct MoviePosterActionServiceTests {
     defer { fixture.cleanup() }
     let provider = ActionProvider(repository: fixture.repository)
     await #expect {
-      try await fixture.service(provider: provider).searchMovies(for: fixture.request, query: "Dune", year: nil)
+      try await fixture.service(provider: provider).searchMovies(for: fixture.request, query: "Dune", year: .none)
     } throws: { error in
       if case ConfigurationError.configurationChanged = error { return true }
+
       return false
     }
   }
@@ -247,15 +247,15 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   }
 
   func makeDirectoryBookmark(for directory: URL) throws -> Data {
-    try directory.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    try directory.bookmarkData(options: [], includingResourceValuesForKeys: .none, relativeTo: .none)
   }
   func appGroupContainerURL() throws -> URL { container }
   func makeConfigurationRepository() throws -> ConfigurationRepository { repository }
   func makePrivateAuthorizationStore() throws -> PersistenceStore { authorizations }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore { processing }
   /// Composes the real action service without external storage, credentials, or networking.
-  func service(token: String? = "fixture-token", provider: (any MovieMetadataProvider)? = nil,
-               activity: (any MovieFolderActivityServicing)? = nil) -> MoviePosterActionService {
+  func service(token: String? = "fixture-token", provider: (any MovieMetadataProvider)? = .none,
+               activity: (any MovieFolderActivityServicing)? = .none) -> MoviePosterActionService {
     MoviePosterActionService(credentials: ActionCredentials(token: token), activity: activity ?? ActivityServiceFake(),
       environment: self, provider: provider ?? ActionProvider())
   }
@@ -287,7 +287,7 @@ private actor ActionProvider: MovieMetadataProvider {
   let cancels: Bool
 
   /// Creates deterministic metadata with optional configuration invalidation or cancellation.
-  init(repository: ConfigurationRepository? = nil, cancels: Bool = false, changesDuringDownload: Bool = false) {
+  init(repository: ConfigurationRepository? = .none, cancels: Bool = false, changesDuringDownload: Bool = false) {
     self.repository = repository
     self.cancels = cancels
     self.changesDuringDownload = changesDuringDownload

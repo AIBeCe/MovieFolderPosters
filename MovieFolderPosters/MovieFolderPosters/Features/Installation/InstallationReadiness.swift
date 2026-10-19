@@ -33,21 +33,15 @@ protocol InstallationReadinessEnvironment: Sendable {
 /// Reads installation evidence from the running app and shared container.
 nonisolated struct SystemInstallationReadinessEnvironment: InstallationReadinessEnvironment {
   /// Inspects the current host bundle and its embedded Finder extension.
-  func readInstallationMetadata() -> InstallationMetadata {
-    InstallationReadinessService.inspectMainBundle()
-  }
+  func readInstallationMetadata() -> InstallationMetadata { InstallationReadinessService.inspectMainBundle() }
   /// Queries FinderSync for the current extension-enabled state.
   func extensionEnabled() async -> Bool? {
     await MainActor.run { FIFinderSyncController.isExtensionEnabled }
   }
   /// Reads the persisted activation receipt without exposing storage errors.
-  func readReceipt() -> ExtensionReceiptEvidence {
-    InstallationReadinessService.readExtensionReceipt()
-  }
+  func readReceipt() -> ExtensionReceiptEvidence { InstallationReadinessService.readExtensionReceipt() }
   /// Runs a read/write probe in the shared App Group storage.
-  func checkSharedStorage() throws -> SharedStorageEvidence {
-    InstallationReadinessService.performSharedStorageCheck()
-  }
+  func checkSharedStorage() throws -> SharedStorageEvidence { InstallationReadinessService.performSharedStorageCheck() }
   /// Returns the current system date for receipt-age calculations.
   func currentDate() -> Date { Date() }
 }
@@ -88,9 +82,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   }
 
   /// Inspects bundle versions, extension point, and static code signatures.
-  nonisolated fileprivate static func inspectMainBundle() -> InstallationMetadata {
-    inspectBundle(Bundle.main)
-  }
+  nonisolated fileprivate static func inspectMainBundle() -> InstallationMetadata { inspectBundle(Bundle.main) }
 
   /// Inspects metadata and static signatures without launching the supplied bundle.
   /// - Parameter hostBundle: Host whose embedded extension is inspected.
@@ -104,12 +96,12 @@ actor InstallationReadinessService: InstallationReadinessServicing {
         forInfoDictionaryKey: "CFBundleShortVersionString"
       ) as? String,
       build: hostBundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
-      extensionPoint: nil)
+      extensionPoint: .none)
     let hostSignature = Self.codeSignatureStatus(at: hostBundle.bundleURL)
 
     guard let extensionURL, let extensionBundle = Bundle(url: extensionURL) else {
       return InstallationMetadata(
-        host: host, embeddedExtension: nil,
+        host: host, embeddedExtension: .none,
         hostSignature: hostSignature)
     }
     let extensionInfo =
@@ -142,7 +134,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
     let verificationStatus = SecStaticCodeCheckValidity(
       code,
       SecCSFlags(rawValue: kSecCSStrictValidate),
-      nil
+      .none
     )
 
     return verificationStatus == errSecSuccess ? .valid : .invalid
@@ -315,12 +307,9 @@ nonisolated enum InstallationReadinessReportBuilder {
   }
 
   /// Adds host and embedded-extension signature results to the report.
-  private static func appendCodeSignatureStatus(
-    _ installation: InstallationMetadata,
-    to lines: inout [String]
-  ) {
+  private static func appendCodeSignatureStatus(_ installation: InstallationMetadata, to lines: inout [String]) {
     lines.append("Host app code signature: \(signatureLabel(installation.hostSignature)).")
-    if installation.embeddedExtension == nil {
+    if installation.embeddedExtension == .none {
       lines.append("Embedded extension code signature: Unknown (not embedded).")
     } else {
       lines.append(
@@ -345,18 +334,16 @@ nonisolated enum InstallationReadinessReportBuilder {
   }
 
   /// Adds bundle presence, metadata, extension-point, and version checks.
-  private static func appendBundleStatus(
-    _ installation: InstallationMetadata, to lines: inout [String]
-  ) {
+  private static func appendBundleStatus(_ installation: InstallationMetadata, to lines: inout [String]) {
     guard let hostVersion = installation.host.version, let hostBuild = installation.host.build,
-      installation.host.bundleIdentifier != nil,
+      installation.host.bundleIdentifier != .none,
       let embedded = installation.embeddedExtension
     else {
       lines.append("Embedded Finder extension: Unknown (bundle metadata unavailable).")
       return
     }
     guard let extensionVersion = embedded.version, let extensionBuild = embedded.build,
-      embedded.bundleIdentifier != nil,
+      embedded.bundleIdentifier != .none,
       let point = embedded.extensionPoint
     else {
       lines.append("Embedded Finder extension: Unknown (bundle metadata incomplete).")
@@ -381,7 +368,7 @@ nonisolated enum InstallationReadinessReportBuilder {
       lines.append(
         "Finder extension setting: Disabled. Enable it in System Settings > "
           + "Login Items & Extensions.")
-    case nil: lines.append("Finder extension setting: Unknown (FinderSync status unavailable).")
+    case .none: lines.append("Finder extension setting: Unknown (FinderSync status unavailable).")
     }
   }
 
@@ -400,7 +387,7 @@ nonisolated enum InstallationReadinessReportBuilder {
       let embedded = installation.embeddedExtension
       let embeddedVersion = embedded?.version
       let embeddedBuild = embedded?.build
-      let embeddedBuildKnown = embeddedVersion != nil && embeddedBuild != nil
+      let embeddedBuildKnown = embeddedVersion != .none && embeddedBuild != .none
       let buildsMatch = embeddedBuildKnown && embeddedVersion == version && embeddedBuild == build
       let timeStatus: String
       if age < 0 {
@@ -446,7 +433,5 @@ nonisolated enum InstallationReadinessReportBuilder {
   ///
   /// - Parameter date: The timestamp recorded in the receipt.
   /// - Returns: The timestamp encoded as ISO 8601 text.
-  private static func dateText(_ date: Date) -> String {
-    ISO8601DateFormatter().string(from: date)
-  }
+  private static func dateText(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
 }

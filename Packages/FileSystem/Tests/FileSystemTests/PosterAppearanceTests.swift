@@ -4,8 +4,8 @@ import Testing
 
 @testable import FileSystem
 
-@Suite(.serialized)
 /// Exercises poster sizing, rendering treatments, and rejection of malformed image data.
+@Suite(.serialized)
 struct PosterAppearanceTests {
   /// Service instance used to render test poster data.
   private let service = FileSystemService()
@@ -55,11 +55,12 @@ struct PosterAppearanceTests {
 
   /// Scenario: renderer rejects malformed image data.
   @Test func rendererRejectsMalformedImageData() {
-    #expect(throws: FolderPosterError.self) {
-      try service.renderPoster(Data([0, 1, 2]), appearance: .softFinish)
-    }
+    #expect(throws: FolderPosterError.self) { try service.renderPoster(Data([0, 1, 2]), appearance: .softFinish) }
   }
 
+  /// Encodes a solid red PNG for rendering assertions.
+  /// - Returns: The encoded poster image.
+  /// - Throws: A test requirement failure when image creation fails.
   private func makePoster() throws -> Data {
     let context = try #require(
       CGContext(
@@ -74,6 +75,7 @@ struct PosterAppearanceTests {
       CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
     #expect(CGImageDestinationFinalize(destination))
+
     return data as Data
   }
 }
@@ -105,6 +107,7 @@ private struct Raster {
             | CGImageAlphaInfo.premultipliedLast.rawValue)
       else { return false }
       context.draw(image, in: CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight))
+
       return true
     }
     guard rendered else { return nil }
@@ -116,6 +119,7 @@ private struct Raster {
   /// Returns the RGBA components at the requested coordinate.
   func pixel(x: Int, y: Int) -> [UInt8] {
     let offset = (y * width + x) * 4
+
     return Array(bytes[offset..<(offset + 4)])
   }
 }

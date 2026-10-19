@@ -22,6 +22,7 @@ private actor ScriptedTransport: HTTPTransport {
   func send(_ request: URLRequest) throws -> HTTPResponse {
     requests.append(request)
     guard !responses.isEmpty else { throw URLError(.badServerResponse) }
+
     return try responses.removeFirst().get()
   }
 
@@ -37,6 +38,7 @@ private func response(_ json: String, status: Int = 200) -> HTTPResponse {
 /// Makes a known-valid URL available to synchronous URLProtocol fixtures.
 private func requiredURL(_ string: String) -> URL {
   guard let url = URL(string: string) else { preconditionFailure("Invalid test URL: \(string)") }
+
   return url
 }
 
@@ -56,6 +58,7 @@ private func validPNG() throws -> Data {
       data, UTType.png.identifier as CFString, 1, nil))
   CGImageDestinationAddImage(destination, image, nil)
   precondition(CGImageDestinationFinalize(destination))
+
   return data as Data
 }
 
@@ -100,7 +103,7 @@ private func validPNG() throws -> Data {
     .success(response("{\"page\":1,\"total_pages\":0,\"results\":[]}"))
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  let result = try await client.searchMovies(title: "missing", year: nil)
+  let result = try await client.searchMovies(title: "missing", year: .none)
   #expect(result.movies.isEmpty)
   #expect(!result.hasMorePages)
 }
@@ -122,9 +125,7 @@ private func validPNG() throws -> Data {
         contentType: "text/plain"))
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  await #expect(throws: TMDbError.authentication) {
-    try await client.searchMovies(title: "Alien", year: nil)
-  }
+  await #expect(throws: TMDbError.authentication) { try await client.searchMovies(title: "Alien", year: .none) }
 }
 
 /// Scenario: auth failures are typed.
@@ -132,9 +133,7 @@ private func validPNG() throws -> Data {
 func authFailuresAreTyped(status: Int) async throws {
   let transport = ScriptedTransport([.success(response("{}", status: status))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  await #expect(throws: TMDbError.authentication) {
-    try await client.searchMovies(title: "Alien", year: nil)
-  }
+  await #expect(throws: TMDbError.authentication) { try await client.searchMovies(title: "Alien", year: .none) }
 }
 
 /// Scenario: rate limit carries retry after without body.
@@ -148,7 +147,7 @@ func authFailuresAreTyped(status: Int) async throws {
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.rateLimited(retryAfter: "30")) {
-    try await client.searchMovies(title: "Alien", year: nil)
+    try await client.searchMovies(title: "Alien", year: .none)
   }
 }
 
@@ -158,7 +157,7 @@ func otherHTTPFailuresPreserveStatus(status: Int) async throws {
   let transport = ScriptedTransport([.success(response("private body", status: status))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.httpStatus(status)) {
-    try await client.searchMovies(title: "Alien", year: nil)
+    try await client.searchMovies(title: "Alien", year: .none)
   }
 }
 
@@ -167,7 +166,7 @@ func otherHTTPFailuresPreserveStatus(status: Int) async throws {
   let transport = ScriptedTransport([.failure(URLError(.notConnectedToInternet))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.transport(code: URLError.notConnectedToInternet.rawValue)) {
-    try await client.searchMovies(title: "Alien", year: nil)
+    try await client.searchMovies(title: "Alien", year: .none)
   }
 }
 
@@ -182,7 +181,7 @@ func otherHTTPFailuresPreserveStatus(status: Int) async throws {
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.responseTooLarge) {
-    try await client.searchMovies(title: "Alien", year: nil)
+    try await client.searchMovies(title: "Alien", year: .none)
   }
 }
 
@@ -205,7 +204,7 @@ func malformedSearchPayloadsAreRejected(json: String) async throws {
   let transport = ScriptedTransport([.success(response(json))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.malformedResponse) {
-    try await client.searchMovies(title: "Alien", year: nil)
+    try await client.searchMovies(title: "Alien", year: .none)
   }
 }
 
@@ -228,14 +227,14 @@ func malformedSearchPayloadsAreRejected(json: String) async throws {
     .success(HTTPResponse(data: png, statusCode: 200, contentType: "image/png"))
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  let search = try await client.searchMovies(title: "Unknown", year: nil)
-  #expect(search.movies.first?.releaseYear == nil)
+  let search = try await client.searchMovies(title: "Unknown", year: .none)
+  #expect(search.movies.first?.releaseYear == .none)
   let downloaded = try await client.downloadPoster(path: "/p.png")
   #expect(downloaded == png)
   let requests = await transport.capturedRequests()
   #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer token")
   #expect(requests[2].url?.host == "image.tmdb.org")
-  #expect(requests[2].value(forHTTPHeaderField: "Authorization") == nil)
+  #expect(requests[2].value(forHTTPHeaderField: "Authorization") == .none)
 }
 
 /// Scenario: unsafe poster paths are rejected.
@@ -298,9 +297,7 @@ func untrustedImageConfigurationIsRejected(baseURL: String) async throws {
     contentType: "application/json")
   let transport = ScriptedTransport([.success(configuration)])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  await #expect(throws: TMDbError.invalidConfiguration) {
-    try await client.downloadPoster(path: "/p.png")
-  }
+  await #expect(throws: TMDbError.invalidConfiguration) { try await client.downloadPoster(path: "/p.png") }
   #expect(await transport.capturedRequests().count == 1)
 }
 
@@ -310,7 +307,8 @@ func untrustedImageConfigurationIsRejected(baseURL: String) async throws {
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   let task = Task { @Sendable in
     withUnsafeCurrentTask { $0?.cancel() }
-    return try await client.searchMovies(title: "Alien", year: nil)
+
+    return try await client.searchMovies(title: "Alien", year: .none)
   }
   await #expect(throws: CancellationError.self) { try await task.value }
   #expect(await transport.capturedRequests().isEmpty)
@@ -331,7 +329,7 @@ private actor BlockingTransport: HTTPTransport {
       responseContinuation = continuation
       hasStarted = true
       startedContinuation?.resume()
-      startedContinuation = nil
+      startedContinuation = .none
     }
   }
 
@@ -344,7 +342,7 @@ private actor BlockingTransport: HTTPTransport {
   /// Resumes the suspended request with a deterministic response.
   func resume(with response: HTTPResponse) {
     responseContinuation?.resume(returning: response)
-    responseContinuation = nil
+    responseContinuation = .none
   }
 }
 
@@ -352,7 +350,7 @@ private actor BlockingTransport: HTTPTransport {
 @Test func cancellationDuringTransportIsPropagatedAfterResponse() async throws {
   let transport = BlockingTransport()
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  let task = Task { try await client.searchMovies(title: "Alien", year: nil) }
+  let task = Task { try await client.searchMovies(title: "Alien", year: .none) }
   await transport.waitUntilStarted()
   task.cancel()
   await transport.resume(with: response("{\"page\":1,\"total_pages\":0,\"results\":[]}"))
@@ -373,9 +371,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
   private static let lock = NSLock()
 
   /// Handles only requests sent to the transport test host.
-  override static func canInit(with request: URLRequest) -> Bool {
-    request.url?.host == "transport.test"
-  }
+  override static func canInit(with request: URLRequest) -> Bool { request.url?.host == "transport.test" }
 
   /// Preserves the request URL because the test protocol does not canonicalize requests.
   override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -428,6 +424,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
   static func recordedPaths() -> [String] {
     lock.lock()
     defer { lock.unlock() }
+
     return paths
   }
 
@@ -435,6 +432,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
   static func recordedStoppedPaths() -> [String] {
     lock.lock()
     defer { lock.unlock() }
+
     return stoppedPaths
   }
 
@@ -450,6 +448,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
     if let semaphore = responseSignals[path] { return semaphore }
     let semaphore = DispatchSemaphore(value: 0)
     responseSignals[path] = semaphore
+
     return semaphore
   }
 
@@ -460,6 +459,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
     if let semaphore = stopSignals[path] { return semaphore }
     let semaphore = DispatchSemaphore(value: 0)
     stopSignals[path] = semaphore
+
     return semaphore
   }
 }
@@ -468,6 +468,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
 private func controlledTransport() -> URLSessionTransport {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [ControlledURLProtocol.self]
+
   return URLSessionTransport(configuration: configuration)
 }
 

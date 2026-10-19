@@ -13,19 +13,19 @@ extension MovieFolderProcessor {
   ///   - state: The root processing state being inspected or updated.
   func recordUnresolved(
     _ candidate: FolderCandidate, in state: inout ProcessingState,
-    reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = nil
+    reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = .none
   ) {
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .unresolved,
       retryDate: reason == .noSuitableMovie || reason == .ambiguousMovie
-        ? nil : now().addingTimeInterval(Self.unresolvedRetryInterval),
+        ? .none : now().addingTimeInterval(Self.unresolvedRetryInterval),
       matchedMovieID: movie?.id,
       posterPath: movie?.posterPath,
       processingReason: reason,
       movieTitle: movie?.title,
       movieYear: movie?.releaseYear,
-      movieIdentitySource: movie == nil ? nil : .conservativeMatch
+      movieIdentitySource: movie == .none ? .none : .conservativeMatch
     )
   }
 
@@ -36,7 +36,7 @@ extension MovieFolderProcessor {
   ///   - state: The root processing state being inspected or updated.
   func recordTransientFailure(
     _ candidate: FolderCandidate, in state: inout ProcessingState,
-    stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = nil
+    stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none
   ) {
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
@@ -48,7 +48,7 @@ extension MovieFolderProcessor {
       movieTitle: movie?.title,
       movieYear: movie?.releaseYear,
       lastFailure: FolderProcessingFailure(reason: .unavailable, stage: stage, occurredAt: now()),
-      movieIdentitySource: movie == nil ? nil : .conservativeMatch
+      movieIdentitySource: movie == .none ? .none : .conservativeMatch
     )
   }
 
@@ -71,7 +71,7 @@ extension MovieFolderProcessor {
     do {
       try saveState(state, to: lease)
     } catch {
-      if processingState != nil {
+      if processingState != .none {
         var record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
         record.reason = .cachePersistenceFailure
         record.lastFailure = FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now())
@@ -80,7 +80,7 @@ extension MovieFolderProcessor {
       }
       throw error
     }
-    if processingState != nil {
+    if processingState != .none {
       let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
       try recordFolderProcessing(record, in: &processingState)
     }
@@ -112,7 +112,7 @@ extension MovieFolderProcessor {
     let name = Self.posterCacheName(path)
     guard let data = try? fileSystem.readData(named: name, in: cacheDirectory),
       Self.isValidPoster(data)
-    else { return nil }
+    else { return .none }
 
     return data
   }
@@ -130,7 +130,7 @@ extension MovieFolderProcessor {
 
       return now().addingTimeInterval(interval)
     default:
-      return nil
+      return .none
     }
   }
 
@@ -151,7 +151,7 @@ extension MovieFolderProcessor {
       formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss z"
       requested = formatter.date(from: retryAfter)?.timeIntervalSince(now)
     } else {
-      requested = nil
+      requested = .none
     }
 
     return min(

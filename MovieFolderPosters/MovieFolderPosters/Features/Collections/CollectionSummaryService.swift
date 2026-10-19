@@ -51,6 +51,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
   /// Opens shared host read dependencies without exposing UI services to the Finder target.
   static func shared() throws -> CollectionSummaryService {
     let sharedContainer = try MovieFolderEnvironment.appGroupContainerURL()
+
     return CollectionSummaryService(
       configuration: try MovieFolderEnvironment.makeConfigurationRepository(),
       processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore(),
@@ -94,7 +95,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     for root in latestConfiguration.directories {
       guard let previous = result[root.id], let processingState = previous.processingState else {
         currentResult[root.id] = CollectionProcessingSummary(
-          processingState: nil, presentation: CollectionProcessingPresentation(processingState: nil),
+          processingState: .none, presentation: CollectionProcessingPresentation(processingState: .none),
           counts: Self.unknownCounts, displayState: .unavailable)
         continue
       }
@@ -138,8 +139,8 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       processingState = try processingStore.read(rootID: root.id)
     } catch {
       return CollectionProcessingSummary(
-        processingState: nil,
-        presentation: CollectionProcessingPresentation(processingState: nil),
+        processingState: .none,
+        presentation: CollectionProcessingPresentation(processingState: .none),
         counts: Self.unknownCounts,
         displayState: .unavailable
       )
@@ -190,9 +191,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     } catch {
       return summaryAfterReadFailure(error, previous: processingState, isStale: isStale)
     }
-    let remainsStale = refreshed.map {
-      !Self.matches($0.context, root: root, configuration: saved)
-    } ?? false
+    let remainsStale = refreshed.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
     let isOrphaned = !remainsStale && refreshed?.operation?.state == .running
     let displayState: CollectionProcessingDisplayState = if remainsStale {
       .stale
@@ -201,11 +200,12 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     } else {
       CollectionProcessingPresentation(processingState: refreshed).state
     }
+
     return CollectionProcessingSummary(
       processingState: refreshed,
       presentation: CollectionProcessingPresentation(
         processingState: refreshed, isStale: remainsStale,
-        stateOverride: isOrphaned ? .interrupted : nil),
+        stateOverride: isOrphaned ? .interrupted : .none),
       counts: remainsStale ? Self.unknownCounts : (refreshed?.calculateCounts() ?? Self.unknownCounts),
       displayState: displayState
     )
@@ -228,10 +228,11 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     } else {
       .busy
     }
+
     return CollectionProcessingSummary(
       processingState: processingState,
       presentation: CollectionProcessingPresentation(
-        processingState: isUnavailable ? nil : processingState,
+        processingState: isUnavailable ? .none : processingState,
         isStale: isStale,
         isBusy: !isStale && !isUnavailable),
       counts: isStale || isUnavailable
@@ -242,7 +243,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
 
   /// Values used when no current-context evidence can support a headline count.
   private static var unknownCounts: CollectionProcessingCounts {
-    CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil)
+    CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)
   }
 
   /// Checks every field that can make a saved result belong to another processing context.

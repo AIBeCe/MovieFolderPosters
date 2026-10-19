@@ -7,6 +7,7 @@ import Testing
 
 @testable import MovieFolderPosters
 
+/// Verifies Settings exposes labeled poster previews and the persisted appearance selection.
 @Test @MainActor
 func settingsShowsThreeLabeledPosterExamplesWithSavedSelection() async throws {
   let service = ConfigurationServiceFake(
@@ -21,12 +22,13 @@ func settingsShowsThreeLabeledPosterExamplesWithSavedSelection() async throws {
   let buttons = nativeViews(in: pane.view).compactMap { $0 as? NSButton }
   for title in ["Raw", "Soft finish", "Matte frame"] {
     let button = try #require(buttons.first { $0.title == title })
-    #expect(button.image != nil)
+    #expect(button.image != .none)
     #expect(button.state == (title == "Matte frame" ? .on : .off))
     #expect(button.accessibilityLabel() == title)
   }
 }
 
+/// Verifies selecting an appearance preview updates the app and saved preference.
 @Test @MainActor
 func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   let suite = "AppearancePreviewTests.\(UUID())"
@@ -40,9 +42,9 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   let pane = try #require(settings.tabViewItems[2].viewController)
   let buttons = nativeViews(in: pane.view).compactMap { $0 as? NSButton }
   #expect(buttons.map(\.title) == ["System", "Light", "Dark"])
-  #expect(buttons.allSatisfy { $0.image != nil })
+  #expect(buttons.allSatisfy { $0.image != .none })
   let dark = try #require(buttons.first { $0.title == "Dark" })
-  dark.performClick(nil)
+  dark.performClick(.none)
   #expect(appearance.choice == .dark)
   #expect(AppAppearanceSettings(defaults: defaults).choice == .dark)
   #expect(dark.state == .on)
@@ -57,13 +59,13 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   var delegate: NavigationDelegateProbe? = NavigationDelegateProbe()
   controller.delegate = delegate
   let buttons = nativeViews(in: controller.view).compactMap { $0 as? NSButton }
-  try #require(buttons.first { $0.accessibilityLabel() == "Settings" }).performClick(nil)
-  try #require(buttons.first { $0.accessibilityLabel() == "Log" }).performClick(nil)
-  try #require(buttons.first { $0.title == "Check Installation…" }).performClick(nil)
+  try #require(buttons.first { $0.accessibilityLabel() == "Settings" }).performClick(.none)
+  try #require(buttons.first { $0.accessibilityLabel() == "Log" }).performClick(.none)
+  try #require(buttons.first { $0.title == "Check Installation…" }).performClick(.none)
   #expect(delegate?.requests == ["settings", "log", "installation"])
   #expect(delegate?.lastSender === controller)
   weak var released = delegate
-  delegate = nil
+  delegate = .none
   #expect(released == nil)
   #expect(controller.delegate == nil)
 }
@@ -89,7 +91,7 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   #expect(probe?.lastAppearance === settings)
   #expect(probe?.lastLog === log)
   weak var released = probe
-  probe = nil
+  probe = .none
   #expect(released == nil)
   #expect(settings.delegate == nil)
   #expect(log.delegate == nil)

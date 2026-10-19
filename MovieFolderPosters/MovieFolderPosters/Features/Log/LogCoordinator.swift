@@ -24,10 +24,10 @@ final class LogCoordinator: NSObject {
   func show() {
     if !isObservingActivity {
       DistributedNotificationCenter.default().addObserver(
-        self, selector: #selector(activityChanged(_:)), name: MovieFolderEnvironment.activityChanged, object: nil)
+        self, selector: #selector(activityChanged(_:)), name: MovieFolderEnvironment.activityChanged, object: .none)
       isObservingActivity = true
     }
-    if windowController == nil {
+    if windowController == .none {
       let window = NSWindow(contentViewController: LogViewController(log: viewModel))
       window.title = "Log — Movie Folder Posters"
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -38,13 +38,13 @@ final class LogCoordinator: NSObject {
       windowController = NSWindowController(window: window)
     }
     viewModel.requestReload()
-    windowController?.showWindow(nil)
-    windowController?.window?.makeKeyAndOrderFront(nil)
+    windowController?.showWindow(.none)
+    windowController?.window?.makeKeyAndOrderFront(.none)
   }
 
   /// Refreshes an existing projection without creating a hidden window.
   func applicationDidBecomeActive() {
-    if windowController != nil { viewModel.requestReload() }
+    if windowController != .none { viewModel.requestReload() }
   }
 
   /// Preserves process-local failed-write evidence when no successful-append notification can be posted.

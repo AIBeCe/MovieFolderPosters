@@ -135,16 +135,16 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
   ///   - rootLeaseUnavailable: Whether a competing operation prevented the root visit.
   ///   - rootBackoffUntil: The provider-wide retry boundary, if present.
   public init(
-    examined: Int = 0,
-    assigned: Int = 0,
-    restyled: Int = 0,
-    unresolved: Int = 0,
-    transientFailures: Int = 0,
-    skippedExistingIcons: Int = 0,
-    skippedPreviouslyProcessed: Int = 0,
-    skippedRetryWindow: Int = 0,
+    examined: Int = .zero,
+    assigned: Int = .zero,
+    restyled: Int = .zero,
+    unresolved: Int = .zero,
+    transientFailures: Int = .zero,
+    skippedExistingIcons: Int = .zero,
+    skippedPreviouslyProcessed: Int = .zero,
+    skippedRetryWindow: Int = .zero,
     rootLeaseUnavailable: Bool = false,
-    rootBackoffUntil: Date? = nil
+    rootBackoffUntil: Date? = .none
   ) {
     self.examined = examined
     self.assigned = assigned

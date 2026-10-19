@@ -30,7 +30,7 @@ public struct HTTPResponse: Sendable {
   ///   - statusCode: The HTTP status code.
   ///   - contentType: The response content type, when available.
   ///   - retryAfter: The server-provided retry delay, when available.
-  public init(data: Data, statusCode: Int, contentType: String?, retryAfter: String? = nil) {
+  public init(data: Data, statusCode: Int, contentType: String?, retryAfter: String? = .none) {
     self.data = data
     self.statusCode = statusCode
     self.contentType = contentType
@@ -127,9 +127,7 @@ public struct TMDbAccessToken: Sendable, CustomStringConvertible, CustomDebugStr
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { throw TMDbError.missingToken }
     guard
-      !value.unicodeScalars.contains(where: { scalar in
-        scalar == "\r" || scalar == "\n"
-      })
+      !value.unicodeScalars.contains(where: { scalar in scalar == "\r" || scalar == "\n" })
     else { throw TMDbError.missingToken }
     self.value = trimmed
   }
@@ -157,7 +155,7 @@ public final class URLSessionTransport: HTTPTransport {
   /// Creates a transport using an injected URLSession configuration.
   init(configuration: URLSessionConfiguration) {
     session = URLSession(
-      configuration: configuration, delegate: RedirectBlocker(), delegateQueue: nil)
+      configuration: configuration, delegate: RedirectBlocker(), delegateQueue: .none)
   }
 
   /// Invalidates outstanding work and releases the underlying session.
@@ -168,12 +166,13 @@ public final class URLSessionTransport: HTTPTransport {
   /// Builds the cookie-free, cache-free default transport configuration.
   private static func defaultConfiguration() -> URLSessionConfiguration {
     let configuration = URLSessionConfiguration.ephemeral
-    configuration.httpCookieStorage = nil
+    configuration.httpCookieStorage = .none
     configuration.httpShouldSetCookies = false
-    configuration.urlCache = nil
+    configuration.urlCache = .none
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     configuration.timeoutIntervalForRequest = 20
     configuration.timeoutIntervalForResource = 45
+
     return configuration
   }
 
@@ -225,7 +224,7 @@ private final class RedirectBlocker: NSObject, URLSessionTaskDelegate, Sendable 
     newRequest request: URLRequest,
     completionHandler: @escaping (URLRequest?) -> Void
   ) {
-    completionHandler(nil)
+    completionHandler(.none)
   }
 }
 
@@ -292,6 +291,7 @@ public struct TMDbClient: Sendable {
           throw TMDbError.malformedResponse
         }
         let date = try parseReleaseDate(item.releaseDate)
+
         return MovieMetadata(
           id: item.id, title: item.title, originalTitle: item.originalTitle,
           releaseYear: date?.year, posterPath: item.posterPath)
@@ -328,19 +328,19 @@ public struct TMDbClient: Sendable {
     guard let base = URL(string: configuration.images.secureBaseURL),
       let baseComponents = URLComponents(url: base, resolvingAgainstBaseURL: false),
       baseComponents.scheme == "https", baseComponents.host == "image.tmdb.org",
-      baseComponents.user == nil, baseComponents.password == nil,
-      baseComponents.port == nil || baseComponents.port == 443,
+      baseComponents.user == .none, baseComponents.password == .none,
+      baseComponents.port == .none || baseComponents.port == 443,
       baseComponents.path == "/t/p/", baseComponents.percentEncodedPath == "/t/p/",
-      baseComponents.query == nil,
-      baseComponents.fragment == nil,
+      baseComponents.query == .none,
+      baseComponents.fragment == .none,
       configuration.images.posterSizes.contains("w500")
     else { throw TMDbError.invalidConfiguration }
     guard let imageURL = URL(string: "https://image.tmdb.org/t/p/w500\(path)"),
       let imageComponents = URLComponents(url: imageURL, resolvingAgainstBaseURL: false),
       imageComponents.scheme == "https", imageComponents.host == "image.tmdb.org",
-      imageComponents.user == nil, imageComponents.password == nil,
-      imageComponents.port == nil, imageComponents.path.hasPrefix("/t/p/w500/"),
-      imageComponents.query == nil, imageComponents.fragment == nil
+      imageComponents.user == .none, imageComponents.password == .none,
+      imageComponents.port == .none, imageComponents.path.hasPrefix("/t/p/w500/"),
+      imageComponents.query == .none, imageComponents.fragment == .none
     else {
       throw TMDbError.invalidConfiguration
     }
@@ -354,6 +354,7 @@ public struct TMDbClient: Sendable {
     else {
       throw TMDbError.invalidImage
     }
+
     return response.data
   }
 
@@ -397,7 +398,7 @@ public struct TMDbClient: Sendable {
 
   /// Parses and validates an ISO-style Gregorian release date returned by TMDb.
   private func parseReleaseDate(_ value: String?) throws -> (year: Int, month: Int, day: Int)? {
-    guard let value, !value.isEmpty else { return nil }
+    guard let value, !value.isEmpty else { return .none }
     let parts = value.split(separator: "-", omittingEmptySubsequences: false)
     guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
       let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
@@ -416,6 +417,7 @@ public struct TMDbClient: Sendable {
       calendar.component(.month, from: date) == month,
       calendar.component(.day, from: date) == day
     else { throw TMDbError.malformedResponse }
+
     return (year, month, day)
   }
 
@@ -441,6 +443,7 @@ public struct TMDbClient: Sendable {
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options),
       image.width > 0, image.height > 0
     else { return false }
+
     return true
   }
 
@@ -474,6 +477,7 @@ public struct TMDbClient: Sendable {
       }
       offset = crcEnd
     }
+
     return false
   }
 
@@ -498,6 +502,7 @@ public struct TMDbClient: Sendable {
         crc = crc & 1 == 1 ? (crc >> 1) ^ 0xedb8_8320 : crc >> 1
       }
     }
+
     return crc ^ 0xffff_ffff
   }
 }

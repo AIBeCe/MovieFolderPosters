@@ -23,7 +23,7 @@ public struct DirectoryReadiness: Sendable, Equatable {
   public let volumePath: String?
 
   /// Creates a readiness result with optional directory and volume identity details.
-  public init(state: DirectoryReadinessState, identity: String? = nil, volumePath: String? = nil) {
+  public init(state: DirectoryReadinessState, identity: String? = .none, volumePath: String? = .none) {
     self.state = state
     self.identity = identity
     self.volumePath = volumePath
@@ -47,6 +47,7 @@ extension FileSystemService {
     guard (info.st_mode & S_IFMT) == S_IFDIR else {
       throw DirectoryAccessError.invalidDirectory
     }
+
     return try persistentIdentity(at: directory, descriptor: descriptor, service: self)
   }
 
@@ -59,8 +60,8 @@ extension FileSystemService {
   /// - Returns: The observed readiness state and any identities that could be read.
   public func inspectDirectory(
     at directory: URL,
-    expectedIdentity: String? = nil,
-    expectedVolumePath: String? = nil
+    expectedIdentity: String? = .none,
+    expectedVolumePath: String? = .none
   ) -> DirectoryReadiness {
     guard directory.isFileURL else { return DirectoryReadiness(state: .unsupported) }
 
@@ -124,7 +125,7 @@ extension FileSystemService {
     } catch {
       return DirectoryReadiness(state: .unknown, volumePath: volumePath)
     }
-    guard expectedIdentity == nil || expectedIdentity == identity else {
+    guard expectedIdentity == .none || expectedIdentity == identity else {
       return DirectoryReadiness(state: .identityChanged, identity: identity, volumePath: volumePath)
     }
     if (filesystem.f_flags & UInt32(MNT_RDONLY)) != 0 {
@@ -150,6 +151,7 @@ extension FileSystemService {
     guard filesystemName == "apfs" || filesystemName == "hfs" else {
       return DirectoryReadiness(state: .unknown, identity: identity, volumePath: volumePath)
     }
+
     return DirectoryReadiness(state: .accessible, identity: identity, volumePath: volumePath)
   }
 }
@@ -160,8 +162,7 @@ private func volatileIdentity(from info: stat) -> String {
 }
 
 /// Reads a volume-stable identity while checking that the path does not change during the read.
-func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSystemService) throws
-  -> String {
+func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSystemService) throws -> String {
   var before = stat()
   guard fstat(descriptor, &before) == 0 else { throw posixDirectoryIdentityError() }
   let openedBefore = volatileIdentity(from: before)
@@ -180,6 +181,7 @@ func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSyste
   guard openedBefore == openedAfter, openedAfter == pathAfter else {
     throw DirectoryAccessError.identityChanged
   }
+
   return "\(volumeUUID.lowercased()):\(after.st_ino):"
     + "\(after.st_birthtimespec.tv_sec):\(after.st_birthtimespec.tv_nsec)"
 }
@@ -197,18 +199,17 @@ private func directoryIdentityOpenError() -> Error {
 }
 
 /// Captures the current POSIX failure as an NSError.
-private func posixDirectoryIdentityError() -> NSError {
-  NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-}
+private func posixDirectoryIdentityError() -> NSError { NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
 
 /// Determines whether a missing path corresponds to an unmounted volume.
 private func isKnownUnmountedVolumePath(_ path: String) -> Bool? {
   var info = statfs()
   guard statfs(path, &info) == 0 else {
-    return errno == ENOENT || errno == ENOTDIR ? true : nil
+    return errno == ENOENT || errno == ENOTDIR ? true : .none
   }
   let resolvedMountPath = URL(fileURLWithPath: cString(info.f_mntonname)).standardizedFileURL.path
   let expectedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+
   return resolvedMountPath != expectedPath
 }
 
@@ -218,7 +219,7 @@ private func missingPathState(expectedVolumePath: String?) -> DirectoryReadiness
   switch isKnownUnmountedVolumePath(expectedVolumePath) {
   case true: return .disconnected
   case false: return .missing
-  case nil: return .unknown
+  case .none: return .unknown
   }
 }
 

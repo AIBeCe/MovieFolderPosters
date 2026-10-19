@@ -20,6 +20,7 @@ nonisolated public struct CollectionProcessingOperation: Codable, Sendable, Equa
   public var endedAt: Date?
   /// Current lifecycle result.
   public var state: CollectionProcessingOperationState
+  /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey { case id, action = "kind", startedAt, endedAt, state }
 
   /// Creates operation metadata with a fresh identifier by default.
@@ -31,7 +32,7 @@ nonisolated public struct CollectionProcessingOperation: Codable, Sendable, Equa
   ///   - endedAt: Time the operation ended, if known.
   ///   - state: Current lifecycle result.
   public init(id: UUID = UUID(), action: CollectionProcessingAction, startedAt: Date,
-              endedAt: Date? = nil, state: CollectionProcessingOperationState = .running) {
+              endedAt: Date? = .none, state: CollectionProcessingOperationState = .running) {
     self.id = id
     self.action = action
     self.startedAt = startedAt

@@ -8,6 +8,7 @@ nonisolated public struct FolderProcessingFailure: Codable, Sendable, Equatable 
   public let stage: FolderProcessingStage
   /// Time the attempt ended.
   public let occurredAt: Date
+  /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey { case reason = "code", stage, occurredAt }
 
   /// Creates allowlisted evidence for the most recent attempt.

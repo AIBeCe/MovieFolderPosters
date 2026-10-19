@@ -13,6 +13,7 @@ private func temporaryDirectory() -> URL {
 /// Computes the deterministic record path used by a key in the store.
 private func recordURL(_ directory: URL, _ key: String) -> URL {
   let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+
   return directory.appendingPathComponent(digest + ".json")
 }
 
@@ -39,12 +40,16 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let executable = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     .deletingLastPathComponent().deletingLastPathComponent()
     .appendingPathComponent(".build/debug/PersistenceTestProbe")
+  /// Runs the lease probe in another process to check cross-process exclusion.
+  /// - Returns: The probe process termination status.
+  /// - Throws: A process-launch error when the probe cannot start.
   func probe() throws -> Int32 {
     let process = Process()
     process.executableURL = executable
     process.arguments = [directory.path, "a"]
     try process.run()
     process.waitUntilExit()
+
     return process.terminationStatus
   }
   do {
@@ -88,9 +93,7 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
   #expect(throws: (any Error).self) { try store.acquireLease(for: "") }
-  #expect(throws: (any Error).self) {
-    try PersistenceStore(directory: #require(URL(string: "https://example.com")))
-  }
+  #expect(throws: (any Error).self) { try PersistenceStore(directory: #require(URL(string: "https://example.com"))) }
   let target = directory.appendingPathComponent("target")
   try Data("untouched".utf8).write(to: target)
   let lease = try #require(try store.acquireLease(for: "a"))
@@ -153,7 +156,7 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let store = try PersistenceStore(directory: directory)
   do {
     let lease = try #require(try store.acquireLease(for: "movie/../any opaque key"))
-    #expect(try lease.read() == nil)
+    #expect(try lease.read() == .none)
     try lease.write(Data([0, 1, 255]))
     #expect(try lease.read() == Data([0, 1, 255]))
   }
@@ -252,7 +255,7 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   try Data("broken".utf8).write(to: recordURL(directory, key))
 
   try lease.removeRecord()
-  #expect(try lease.read() == nil)
+  #expect(try lease.read() == .none)
   #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(
     SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".lock"
   ).path))

@@ -51,7 +51,7 @@ struct FileSystemTests {
     #expect(inventory.isComplete)
     #expect(inventory.members.map(\.name) == ["Movie"])
     #expect(inventory.members[0].candidate?.identity.isEmpty == false)
-    #expect(inventory.members[0].issue == nil)
+    #expect(inventory.members[0].issue == .none)
   }
 
   /// Scenario: strict poster inspection returns the current unowned state without mutation.
@@ -64,7 +64,7 @@ struct FileSystemTests {
 
     let inspection = try FileSystemService().inspectPoster(toChild: "Movie", in: root)
     #expect(inspection.ownership == .none)
-    #expect(inspection.appearance == nil)
+    #expect(inspection.appearance == .none)
     #expect(!inspection.isSuppressed)
   }
 
@@ -108,15 +108,9 @@ struct FileSystemTests {
       at: root.appendingPathComponent("Link"), withDestinationURL: real
     )
     let service = FileSystemService()
-    #expect(throws: DirectoryAccessError.self) {
-      try service.readCurrentState(ofChild: "Missing", in: root)
-    }
-    #expect(throws: DirectoryAccessError.self) {
-      try service.readCurrentState(ofChild: "Link", in: root)
-    }
-    #expect(throws: DirectoryAccessError.self) {
-      try service.readCurrentState(ofChild: "../Real", in: root)
-    }
+    #expect(throws: DirectoryAccessError.self) { try service.readCurrentState(ofChild: "Missing", in: root) }
+    #expect(throws: DirectoryAccessError.self) { try service.readCurrentState(ofChild: "Link", in: root) }
+    #expect(throws: DirectoryAccessError.self) { try service.readCurrentState(ofChild: "../Real", in: root) }
   }
 
   /// Scenario: cached data round trips and missing read returns nil.
@@ -125,7 +119,7 @@ struct FileSystemTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let cache = root.appendingPathComponent("Cache", isDirectory: true)
     let service = FileSystemService()
-    #expect(try service.readData(named: "poster-1", in: cache) == nil)
+    #expect(try service.readData(named: "poster-1", in: cache) == .none)
     let expected = Data("poster bytes".utf8)
     try service.writeData(expected, named: "poster-1", in: cache)
     #expect(try service.readData(named: "poster-1", in: cache) == expected)
@@ -144,13 +138,9 @@ struct FileSystemTests {
     let service = FileSystemService()
 
     for name in ["../escape", ".hidden", "a/b", "a\\b", ""] {
-      #expect(throws: DirectoryAccessError.self) {
-        try service.writeData(Data(), named: name, in: cache)
-      }
+      #expect(throws: DirectoryAccessError.self) { try service.writeData(Data(), named: name, in: cache) }
     }
-    #expect(throws: DirectoryAccessError.self) {
-      try service.writeData(Data(), named: "item", in: link)
-    }
+    #expect(throws: DirectoryAccessError.self) { try service.writeData(Data(), named: "item", in: link) }
     #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
   }
 
@@ -174,9 +164,7 @@ struct FileSystemTests {
       at: cache.appendingPathComponent("item"), withIntermediateDirectories: false
     )
     #expect(throws: DirectoryAccessError.self) { try service.readData(named: "item", in: cache) }
-    #expect(throws: DirectoryAccessError.self) {
-      try service.writeData(Data(), named: "item", in: cache)
-    }
+    #expect(throws: DirectoryAccessError.self) { try service.writeData(Data(), named: "item", in: cache) }
   }
 
   /// Scenario: cached data read does not block on pipe entry.
@@ -188,9 +176,7 @@ struct FileSystemTests {
     let pipePath = cache.appendingPathComponent("pipe").path
     #expect(mkfifo(pipePath, mode_t(0o600)) == 0)
 
-    #expect(throws: DirectoryAccessError.self) {
-      try FileSystemService().readData(named: "pipe", in: cache)
-    }
+    #expect(throws: DirectoryAccessError.self) { try FileSystemService().readData(named: "pipe", in: cache) }
   }
 
   /// Scenario: cached data rejects symlinked ancestor.
@@ -261,9 +247,7 @@ struct FileSystemTests {
     var operationRan = false
 
     do {
-      try FileSystemService().withDirectoryAccess(bookmark: Data([0, 1, 2])) { _ in
-        operationRan = true
-      }
+      try FileSystemService().withDirectoryAccess(bookmark: Data([0, 1, 2])) { _ in operationRan = true }
       Issue.record("Expected malformed bookmark data to be rejected")
     } catch {
       #expect(!operationRan)
@@ -293,17 +277,19 @@ struct FileSystemTests {
     let expected = Data("Unchanged movie fixture".utf8)
     try expected.write(to: movie)
 
-    #expect(throws: DirectoryAccessError.self) {
-      try FileSystemService().verifyReadWriteAccess(in: movie)
-    }
+    #expect(throws: DirectoryAccessError.self) { try FileSystemService().verifyReadWriteAccess(in: movie) }
     #expect(try Data(contentsOf: movie) == expected)
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["movie.mkv"])
   }
 
+  /// Creates an isolated root for filesystem service tests.
+  /// - Returns: The newly created root URL.
+  /// - Throws: A filesystem error when the directory cannot be created.
   private func makeTemporaryDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+
     return root
   }
 }

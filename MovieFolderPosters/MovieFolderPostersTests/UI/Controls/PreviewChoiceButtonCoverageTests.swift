@@ -11,7 +11,7 @@ struct PreviewChoiceButtonCoverageTests {
   @Test func buttonReflectsSelectionInStateAndBorder() throws {
     let image = NSImage(size: NSSize(width: 24, height: 24))
     let button = PreviewChoiceButton(
-      title: "Soft finish", image: image, target: nil, action: #selector(NSObject.description))
+      title: "Soft finish", image: image, target: .none, action: #selector(NSObject.description))
 
     #expect(button.title == "Soft finish")
     #expect(button.accessibilityLabel() == "Soft finish")
@@ -34,7 +34,7 @@ struct PreviewChoiceButtonCoverageTests {
     for appearance in PosterAppearance.allCases {
       let image = try #require(SettingsPreviewArtwork.poster(appearance))
       #expect(image.size == NSSize(width: 164, height: 164))
-      #expect(image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil)
+      #expect(image.cgImage(forProposedRect: .none, context: .none, hints: .none) != nil)
     }
   }
 
@@ -43,7 +43,7 @@ struct PreviewChoiceButtonCoverageTests {
     for appearance in AppColorAppearance.allCases {
       let image = SettingsPreviewArtwork.appearance(appearance)
       #expect(image.size == NSSize(width: 144, height: 94))
-      #expect(image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil)
+      #expect(image.cgImage(forProposedRect: .none, context: .none, hints: .none) != nil)
     }
   }
 }

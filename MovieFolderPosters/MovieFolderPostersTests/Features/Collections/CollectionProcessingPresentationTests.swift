@@ -109,7 +109,7 @@ import Testing
   let summaryViewModel = CollectionSummaryViewModel(
     service: FixedCollectionSummaryService(summaries: [rootID: summary]))
   summaryViewModel.reload()
-  for _ in 0..<100 where summaryViewModel.summary(for: rootID) == nil {
+  for _ in 0..<100 where summaryViewModel.summary(for: rootID) == .none {
     try await Task.sleep(for: .milliseconds(5))
   }
   let controller = ConfigurationViewController(
@@ -167,7 +167,7 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
   #expect(summary?.displayState == expectedState)
   #expect(summary?.presentation.state == expectedState)
   #expect(summary?.displayState != .interrupted)
-  if error != .busy { #expect(summary?.counts.total == nil) }
+  if error != .busy { #expect(summary?.counts.total == .none) }
   #expect(reader.calls == 2)
   #expect(!reader.wasReadOnMainThread)
 }
@@ -180,5 +180,5 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
   let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: activity)
   await model.saveCredential("private-test-token")
   #expect(model.credentialConfigured)
-  #expect(model.errorMessage == nil)
+  #expect(model.errorMessage == .none)
 }

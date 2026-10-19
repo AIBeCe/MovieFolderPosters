@@ -27,7 +27,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     #expect(model.query == "Arrival")
     #expect(model.yearText == "2016")
     let search = try button("Search TMDb", in: controls)
-    search.performClick(nil)
+    search.performClick(.none)
     await waitForIdle(model)
     let picker = try #require(controls.compactMap { $0 as? NSPopUpButton }.first)
     #expect(picker.itemTitles == ["Choose a movie…", "Arrival — Premier Contact (2016) · TMDb ID 42",
@@ -40,7 +40,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     #expect(model.canApplySelectedMovie)
     #expect(apply.isEnabled)
     #expect(try button("View Selected Movie on TMDb", in: controls).isEnabled)
-    apply.performClick(nil)
+    apply.performClick(.none)
     await waitForIdle(model)
     #expect(fields.contains { $0.stringValue.contains("Poster updated from TMDb movie 42.") })
     #expect(picker.selectedTag() == 42)
@@ -71,7 +71,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     }
     let primary = try button(title, in: controls)
     #expect(primary.keyEquivalent == "\r")
-    primary.performClick(nil)
+    primary.performClick(.none)
     await waitForIdle(model)
     #expect(controls.compactMap { $0 as? NSTextField }.contains { $0.stringValue == expected && !$0.isHidden })
   }
@@ -106,12 +106,12 @@ private actor WindowPosterService: MoviePosterActionServicing {
     MovieSearchResult(movies: [
       MovieMetadata(id: 42, title: "Arrival", originalTitle: "Premier Contact", releaseYear: 2016,
         posterPath: "/arrival.png"),
-      MovieMetadata(id: 43, title: "Unknown release", originalTitle: "Unknown release", releaseYear: nil,
+      MovieMetadata(id: 43, title: "Unknown release", originalTitle: "Unknown release", releaseYear: .none,
         posterPath: "/unknown.png")
     ], hasMorePages: true)
   }
   func refreshPoster(for request: MoviePosterRequest) throws -> Int { 42 }
   func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) throws -> Int { movie.id }
   func removePoster(for request: MoviePosterRequest) throws -> Bool { true }
-  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { nil }
+  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { .none }
 }

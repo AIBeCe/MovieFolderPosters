@@ -19,8 +19,8 @@ struct DirectoryReadinessTests {
 
     #expect(
       result.identity == (try? FileSystemService().persistentDirectoryIdentity(at: directory)))
-    #expect(result.identity != nil || result.state == .unknown)
-    #expect(result.volumePath != nil)
+    #expect(result.identity != .none || result.state == .unknown)
+    #expect(result.volumePath != .none)
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == before)
     #expect(try Data(contentsOf: movie) == movieContents)
   }
@@ -146,9 +146,13 @@ struct DirectoryReadinessTests {
 
 }
 
+/// Creates an isolated directory for readiness and identity checks.
+/// - Returns: The newly created directory URL.
+/// - Throws: A filesystem error when the directory cannot be created.
 private func makeReadinessDirectory() throws -> URL {
   let directory = FileManager.default.temporaryDirectory
     .appendingPathComponent("FileSystemReadiness-\(UUID().uuidString)", isDirectory: true)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+
   return directory
 }

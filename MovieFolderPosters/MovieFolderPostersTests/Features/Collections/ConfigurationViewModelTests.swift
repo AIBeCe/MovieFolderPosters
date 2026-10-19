@@ -42,7 +42,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
     summary: ConfigurationSummary = ConfigurationSummary(
       directories: [], credentialConfigured: false, posterAppearance: .softFinish
     ),
-    gate: AsyncOperationGate? = nil
+    gate: AsyncOperationGate? = .none
   ) {
     currentSummary = summary
     self.gate = gate
@@ -146,7 +146,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
   private func record(_ call: ConfigurationServiceCall) throws {
     try lock.withLock {
       if let nextError {
-        self.nextError = nil
+        self.nextError = .none
         throw nextError
       }
       recordedCalls.append(call)
@@ -167,7 +167,7 @@ actor AsyncOperationGate {
   func block() async {
     hasEntered = true
     entryContinuation?.resume()
-    entryContinuation = nil
+    entryContinuation = .none
     await withCheckedContinuation { operationContinuation = $0 }
   }
 
@@ -180,7 +180,7 @@ actor AsyncOperationGate {
   /// Resumes an operation suspended by `block()`.
   func open() {
     operationContinuation?.resume()
-    operationContinuation = nil
+    operationContinuation = .none
   }
 }
 
@@ -189,7 +189,7 @@ actor AsyncOperationGate {
 final class ConfigurationDelegateProbe: ConfigurationViewModelDelegate,
   ConfigurationViewModelActivityDelegate {
   /// Number of model-state updates received.
-  var updates = 0
+  var updates = Int.zero
   /// Activity log used to inspect messages sent by the view model.
   var events: [MovieFolderActivityEvent] = []
 
@@ -206,15 +206,14 @@ final class ConfigurationDelegateProbe: ConfigurationViewModelDelegate,
 /// Supplies fixed installation evidence to the configuration coordinator tests.
 struct InstallationServiceFake: InstallationReadinessServicing {
   /// Returns deterministic report content without inspecting the host installation.
-  func check() -> InstallationReadinessReport {
-    InstallationReadinessReport(text: "Controlled installation evidence")
-  }
+  func check() -> InstallationReadinessReport { InstallationReadinessReport(text: "Controlled installation evidence") }
 }
 
+/// Collects native controls in a view hierarchy for presentation assertions.
+/// - Parameter root: Root of the hierarchy to inspect.
+/// - Returns: The root followed by every descendant.
 @MainActor
-func nativeViews(in root: NSView) -> [NSView] {
-  [root] + root.subviews.flatMap { nativeViews(in: $0) }
-}
+func nativeViews(in root: NSView) -> [NSView] { [root] + root.subviews.flatMap { nativeViews(in: $0) } }
 
 /// Records navigation requests made by the configuration controller.
 @MainActor
@@ -234,9 +233,7 @@ final class NavigationDelegateProbe: ConfigurationViewControllerDelegate {
     requests.append("log")
   }
   /// Records an installation readiness request.
-  func configurationViewControllerDidRequestInstallationReadiness(
-    _ controller: ConfigurationViewController
-  ) {
+  func configurationViewControllerDidRequestInstallationReadiness(_ controller: ConfigurationViewController) {
     lastSender = controller
     requests.append("installation")
   }
@@ -246,7 +243,7 @@ final class NavigationDelegateProbe: ConfigurationViewControllerDelegate {
 @MainActor
 final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, ActivityLogViewModelDelegate {
   /// Number of appearance changes received.
-  var appearanceUpdates = 0
+  var appearanceUpdates = Int.zero
   /// Entry counts observed after each log update.
   var logEntryCounts: [Int] = []
   /// Settings object that sent the latest appearance update.
@@ -319,7 +316,7 @@ final class FailingOrphanReread: CollectionProcessingStateReading, @unchecked Se
   /// Failure supplied by the coordinated reread.
   private let failure: CollectionProcessingError
   /// Number of processing state reads attempted.
-  private var readCount = 0
+  private var readCount = Int.zero
   /// Whether any synchronous persisted read ran on the main thread.
   private var readOnMainThread = false
 
@@ -341,6 +338,7 @@ final class FailingOrphanReread: CollectionProcessingStateReading, @unchecked Se
       readCount += 1
       readOnMainThread = readOnMainThread || Thread.isMainThread
       guard readCount == 1 else { throw failure }
+
       return processingState
     }
   }
@@ -353,7 +351,7 @@ actor DeferredCollectionSummaryService: CollectionSummaryServicing {
   /// Gates that let the test control completion order.
   private let gates: [SummaryReadGate]
   /// Number of reads started by the model.
-  private(set) var callCount = 0
+  private(set) var callCount = Int.zero
 
   /// Creates a deferred service with one result and gate per expected read.
   init(responses: [[UUID: CollectionProcessingSummary]]) {
@@ -396,6 +394,6 @@ actor SummaryReadGate {
   func open() {
     isOpen = true
     continuation?.resume()
-    continuation = nil
+    continuation = .none
   }
 }

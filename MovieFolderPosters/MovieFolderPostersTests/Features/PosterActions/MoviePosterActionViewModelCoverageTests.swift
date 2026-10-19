@@ -31,7 +31,7 @@ struct MoviePosterActionViewModelCoverageTests {
     model.removePoster()
     await waitForIdle(model)
     #expect(model.statusMessage == "This folder has no custom poster.")
-    #expect(model.errorMessage == nil)
+    #expect(model.errorMessage == .none)
   }
 
   /// Configuration invalidation cancels ongoing work and explains why the user must reopen.
@@ -41,7 +41,7 @@ struct MoviePosterActionViewModelCoverageTests {
     #expect(model.isBusy)
     model.configurationDidChange()
     #expect(!model.isBusy)
-    #expect(model.statusMessage == nil)
+    #expect(model.statusMessage == .none)
     #expect(model.errorMessage == "Directory configuration changed. Reopen this action to continue.")
   }
 
@@ -52,7 +52,7 @@ struct MoviePosterActionViewModelCoverageTests {
     model.refreshPoster()
     await waitForIdle(model)
     #expect(model.errorMessage == failure.expectedMessage)
-    #expect(model.statusMessage == nil)
+    #expect(model.statusMessage == .none)
     #expect(!model.isBusy)
   }
 
@@ -61,13 +61,13 @@ struct MoviePosterActionViewModelCoverageTests {
     let model = makeModel(action: .refresh, cancels: true)
     model.refreshPoster()
     await waitForIdle(model)
-    #expect(model.errorMessage == nil)
-    #expect(model.statusMessage == nil)
+    #expect(model.errorMessage == .none)
+    #expect(model.statusMessage == .none)
   }
 
   /// Builds one real presentation model for an external operation outcome.
   private func makeModel(action: MoviePosterAction, removed: Bool = true,
-                         failure: ActionFailureCase? = nil, cancels: Bool = false) -> MoviePosterActionViewModel {
+                         failure: ActionFailureCase? = .none, cancels: Bool = false) -> MoviePosterActionViewModel {
     MoviePosterActionViewModel(service: CoverageActionService(removed: removed, failure: failure, cancels: cancels),
       request: MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: action))
   }
@@ -155,5 +155,5 @@ private actor CoverageActionService: MoviePosterActionServicing {
   }
   func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) throws -> Int { movie.id }
   func removePoster(for request: MoviePosterRequest) throws -> Bool { removed }
-  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { nil }
+  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { .none }
 }

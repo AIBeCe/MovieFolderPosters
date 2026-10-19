@@ -86,8 +86,8 @@ struct DirectoryConfigurationTests {
       "developmentFixtures":false}
       """
     let configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(json.utf8))
-    #expect(configuration.directories.first?.identity == nil)
-    #expect(configuration.directories.first?.volumePath == nil)
+    #expect(configuration.directories.first?.identity == .none)
+    #expect(configuration.directories.first?.volumePath == .none)
     #expect(configuration.directories.first?.id == rootID)
     #expect(configuration.credentialRevision == revision)
   }
@@ -281,7 +281,7 @@ struct DirectoryConfigurationTests {
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
     let held = try #require(try store.acquireLease(for: ConfigurationRepository.recordKey))
-    let counter = ConfigurationReadGate(lease: nil)
+    let counter = ConfigurationReadGate(lease: .none)
     do {
       _ = try await repository.readWhenAvailable(pause: { await counter.release() })
       Issue.record("Persistent contention must fail after bounded attempts")
@@ -297,7 +297,7 @@ private actor ConfigurationReadGate {
   /// The real persistence lease retained until the contention test releases it.
   private var lease: PersistenceLease?
   /// The number of retry pauses observed while configuration was busy.
-  private(set) var waitCount = 0
+  private(set) var waitCount = Int.zero
   /// Creates the configuration read gate from the supplied dependencies and state.
   ///
   /// - Parameter lease: The already-held persistence lease used throughout this operation.
@@ -305,6 +305,6 @@ private actor ConfigurationReadGate {
   /// Releases the held continuation or lease so the test can observe completion.
   func release() {
     waitCount += 1
-    lease = nil
+    lease = .none
   }
 }

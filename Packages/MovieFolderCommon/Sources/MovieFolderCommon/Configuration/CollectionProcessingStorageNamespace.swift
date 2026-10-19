@@ -189,7 +189,7 @@ public enum CollectionProcessingStorageNamespace {
       defer { close(markerDescriptor) }
       try Constants.marker.withUnsafeBytes { bytes in
         guard let address = bytes.baseAddress else { return }
-        var offset = 0
+        var offset = Int.zero
         while offset < bytes.count {
           let count = Darwin.write(markerDescriptor, address.advanced(by: offset), bytes.count - offset)
           if count < 0 {

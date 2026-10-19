@@ -49,8 +49,8 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   private let scrollView = NSScrollView()
   /// Starts the folder picker for a new collection.
   private let addButton = NSButton(
-    image: NSImage(systemSymbolName: "plus", accessibilityDescription: nil) ?? NSImage(),
-    target: nil, action: nil)
+    image: NSImage(systemSymbolName: "plus", accessibilityDescription: .none) ?? NSImage(),
+    target: .none, action: .none)
   /// Displays the latest configuration error when present.
   private let errorLabel = NSTextField(wrappingLabelWithString: "")
   /// Receives requests to present other host windows.
@@ -65,9 +65,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   ) {
     self.viewModel = viewModel
     self.summaryViewModel = summaryViewModel
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -104,6 +105,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     summaryViewModel.addDelegate(self)
   }
 
+  /// Configures collection controls and subscribes to configuration and outcome presentation updates.
   override func viewDidLoad() {
     super.viewDidLoad()
     refresh()
@@ -180,7 +182,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// - Returns: The configured button.
   private func iconButton(_ symbol: String, label: String, action: Selector) -> NSButton {
     let button = NSButton(
-      image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage(),
+      image: NSImage(systemSymbolName: symbol, accessibilityDescription: .none) ?? NSImage(),
       target: self, action: action)
     button.isBordered = false
     button.setAccessibilityLabel(label)
@@ -200,12 +202,12 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     if let row = presentedDirectories.firstIndex(where: { $0.id == selected }) {
       tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     } else {
-      tableView.deselectAll(nil)
+      tableView.deselectAll(.none)
     }
     addButton.isEnabled = !viewModel.isBusy
     tableView.isEnabled = !viewModel.isBusy
     errorLabel.stringValue = viewModel.errorMessage ?? ""
-    errorLabel.isHidden = viewModel.errorMessage == nil
+    errorLabel.isHidden = viewModel.errorMessage == .none
   }
 
   /// Returns the number of collection rows currently displayed.
@@ -215,7 +217,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// Creates the row view that owns hover and accessibility removal controls.
   /// - Returns: The configured row, or `nil` for an invalid row index.
   func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-    guard presentedDirectories.indices.contains(row) else { return nil }
+    guard presentedDirectories.indices.contains(row) else { return .none }
     let rowView = CollectionRowView()
     rowView.directoryIdentifier = presentedDirectories[row].id
     rowView.removalDelegate = self
@@ -226,9 +228,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// Returns the explanation shown for a directory availability state.
   /// - Parameter availability: The latest directory readiness state.
   /// - Returns: User-facing text describing that state.
-  private func availabilityDescription(_ availability: DirectoryAvailability) -> String {
-    availability.explanation
-  }
+  private func availabilityDescription(_ availability: DirectoryAvailability) -> String { availability.explanation }
 
   /// Keeps result freshness and inspection evidence distinct from folder access evidence.
   private func collectionProcessingDescription(_ summary: CollectionProcessingSummary?) -> String {
@@ -288,8 +288,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   func collectionSummaryViewModelDidChange(_ viewModel: CollectionSummaryViewModel) { refresh() }
 
   /// Returns the context menu requested by the table.
-  fileprivate func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int)
-    -> NSMenu? {
+  fileprivate func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int) -> NSMenu? {
     contextMenu(row: row)
   }
 
@@ -306,9 +305,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   }
 
   /// Forwards the Settings action to the window coordinator.
-  @objc private func showSettings() {
-    delegate?.configurationViewControllerDidRequestSettings(self)
-  }
+  @objc private func showSettings() { delegate?.configurationViewControllerDidRequestSettings(self) }
   /// Forwards the Log action to the window coordinator.
   @objc private func showLog() { delegate?.configurationViewControllerDidRequestLog(self) }
   /// Forwards the readiness action to the window coordinator.
@@ -337,7 +334,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     delegate?.configurationViewControllerDidRequestProcessingDetails(self, rootID: identifier)
   }
   /// Opens the folder picker for a new collection root.
-  @objc private func addDirectory() { chooseDirectory(identifier: nil) }
+  @objc private func addDirectory() { chooseDirectory(identifier: .none) }
 
   /// Opens the folder picker to restore access for an existing collection.
   /// - Parameter sender: Context-menu item containing the collection identifier.
@@ -373,7 +370,7 @@ extension ConfigurationViewController {
   /// Creates a cell for the requested collection column.
   /// - Returns: A cell for a valid row, or `nil` when the row is out of range.
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard presentedDirectories.indices.contains(row) else { return nil }
+    guard presentedDirectories.indices.contains(row) else { return .none }
     let directory = presentedDirectories[row]
     let cell = NSTableCellView()
     let label = NSTextField(labelWithString: "")
@@ -393,7 +390,7 @@ extension ConfigurationViewController {
       default: value = counts?.total
       }
       label.stringValue = value.map(String.init) ?? "—"
-      label.toolTip = value == nil ? "No processing summary is available." : nil
+      label.toolTip = value == .none ? "No processing summary is available." : .none
       label.alignment = .center
       label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
       label.translatesAutoresizingMaskIntoConstraints = false
@@ -416,9 +413,7 @@ private extension ConfigurationViewController {
   ///   - cell: Cell receiving the configured row hierarchy.
   ///   - label: Primary path label retained by the table cell.
   ///   - directory: Saved root and current access status.
-  func configureCollectionCell(
-    _ cell: NSTableCellView, label: NSTextField, directory: ConfiguredDirectoryStatus
-  ) {
+  func configureCollectionCell(_ cell: NSTableCellView, label: NSTextField, directory: ConfiguredDirectoryStatus) {
     let url = URL(fileURLWithPath: directory.path)
     label.stringValue =
       url.deletingLastPathComponent().lastPathComponent + " / " + url.lastPathComponent
@@ -427,7 +422,7 @@ private extension ConfigurationViewController {
     let folder = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
     folder.translatesAutoresizingMaskIntoConstraints = false
     let state = NSImageView(
-      image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())
+      image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: .none) ?? NSImage())
     state.contentTintColor = directory.availability == .available ? .systemGreen : .systemOrange
     state.toolTip = availabilityDescription(directory.availability)
     state.setAccessibilityLabel(availabilityDescription(directory.availability))
@@ -514,7 +509,7 @@ private final class CollectionTableView: NSTableView {
   /// Builds the context menu for the row under the pointer.
   override func menu(for event: NSEvent) -> NSMenu? {
     actionDelegate?.collectionTableView(
-      self, menuForRow: row(at: convert(event.locationInWindow, from: nil)))
+      self, menuForRow: row(at: convert(event.locationInWindow, from: .none)))
   }
 
   /// Routes Delete and Forward Delete to selected-row removal.
@@ -543,9 +538,9 @@ private final class CollectionRowView: NSTableRowView {
   var directoryIdentifier: UUID?
   /// The button revealed while the pointer is over the row.
   private let removeButton = NSButton(
-    image: NSImage(systemSymbolName: "minus.circle", accessibilityDescription: nil) ?? NSImage(),
-    target: nil,
-    action: nil
+    image: NSImage(systemSymbolName: "minus.circle", accessibilityDescription: .none) ?? NSImage(),
+    target: .none,
+    action: .none
   )
   /// Tracks pointer entry and exit for the hover affordance.
   private var tracking: NSTrackingArea?
@@ -578,6 +573,7 @@ private final class CollectionRowView: NSTableRowView {
     ])
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -587,7 +583,7 @@ private final class CollectionRowView: NSTableRowView {
     if let tracking { removeTrackingArea(tracking) }
     let area = NSTrackingArea(
       rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-      owner: self, userInfo: nil)
+      owner: self, userInfo: .none)
     addTrackingArea(area)
     tracking = area
   }
@@ -620,6 +616,7 @@ private final class CollectionHeaderView: NSTableHeaderView {
     if let addButton, !children.contains(where: { ($0 as? NSButton) === addButton }) {
       children.append(addButton)
     }
+
     return children
   }
 }

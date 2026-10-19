@@ -14,7 +14,9 @@ private final class ActivityNotifierProbe: MovieFolderActivityChangeNotifying {
   func movieFolderActivityDidChange() { count.withLock { $0 += 1 } }
 }
 
+/// Regression coverage for durable, privacy-preserving activity history.
 struct MovieFolderActivityTests {
+  /// Checks that persisted events accept only the closed, path-free event vocabulary.
   @Test func closedEventVocabularyRoundTripsWithoutPathsOrSecrets() throws {
     for action in MovieFolderActivityEvent.Action.allCases {
       for status in MovieFolderActivityEvent.Status.allCases {
@@ -33,6 +35,7 @@ struct MovieFolderActivityTests {
     #expect(throws: DecodingError.self) { try JSONDecoder().decode(MovieFolderActivityEvent.self, from: arbitrary) }
   }
 
+  /// Checks that deferred, failed, or blocked work cannot report complete success.
   @Test func automaticSummaryNeverClaimsCompletionForDeferredOrFailedWork() {
     #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary()) == .succeeded)
     #expect(
@@ -45,6 +48,7 @@ struct MovieFolderActivityTests {
     #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: blockedSummary) == .unavailable)
   }
 
+  /// Checks that clearing durable history preserves configuration and processing outcomes.
   @Test func recordsPersistAcrossInstancesAndClearOnlyActivity() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -90,6 +94,7 @@ struct MovieFolderActivityTests {
     #expect(try await first.entries().first?.sequence == 2)
   }
 
+  /// Checks that a cancelled producer can persist its terminal activity event.
   @Test func cancelledProducerCommitsTerminalCancellationUsingRealRecorder() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -112,6 +117,7 @@ struct MovieFolderActivityTests {
     #expect(notifier.changes == 2)
   }
 
+  /// Checks that observed write failures remain visible through concrete and protocol access after recovery.
   @Test func asyncWriteFailurePropertyPreservesConcreteAndExistentialDispatchAfterRecovery() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try Data([0]).write(to: directory)
@@ -137,6 +143,7 @@ struct MovieFolderActivityTests {
     #expect(try await reopened.entries().map(\.event) == [recovered])
   }
 
+  /// Checks that failed activity writes emit no committed-change notification.
   @Test func unavailableStorageDoesNotEmitCommittedHint() async throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try Data([0]).write(to: file)

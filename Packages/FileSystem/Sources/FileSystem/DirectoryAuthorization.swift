@@ -30,10 +30,11 @@ extension FileSystemService {
   /// - Throws: ``DirectoryAccessError`` or a Foundation error if validation or bookmark creation fails.
   public func makeTransferBookmark(for directory: URL) throws -> Data {
     try validateDirectory(directory)
+
     return try directory.bookmarkData(
       options: [],
-      includingResourceValuesForKeys: nil,
-      relativeTo: nil
+      includingResourceValuesForKeys: .none,
+      relativeTo: .none
     )
   }
 
@@ -48,7 +49,7 @@ extension FileSystemService {
   public func acquireDirectoryAccess(
     bookmark: Data,
     securityScoped: Bool,
-    expectedIdentity: String? = nil
+    expectedIdentity: String? = .none
   ) throws -> DirectoryAccessLease {
     var resolutionOptions: URL.BookmarkResolutionOptions = [.withoutUI, .withoutMounting]
     if securityScoped {
@@ -61,14 +62,14 @@ extension FileSystemService {
       directory = try URL(
         resolvingBookmarkData: bookmark,
         options: resolutionOptions,
-        relativeTo: nil,
+        relativeTo: .none,
         bookmarkDataIsStale: &isStale
       )
     } catch {
       throw DirectoryAccessError.invalidDirectory
     }
 
-    guard !isStale || expectedIdentity != nil else {
+    guard !isStale || expectedIdentity != .none else {
       throw DirectoryAccessError.staleBookmark
     }
 
@@ -88,6 +89,7 @@ extension FileSystemService {
       directory, service: self, expectedIdentity: expectedIdentity)
 
     transferAccessToLease = startedAccessing
+
     return DirectoryAccessLease(
       url: directory,
       isAccessingSecurityScopedResource: startedAccessing
@@ -141,7 +143,7 @@ private func validateDirectoryDescriptorAccess(
       currentPathIdentity: openedPersistentIdentity,
       expectedIdentity: expectedIdentity
     )
-  } catch is DirectoryIdentityUnavailable where expectedIdentity == nil {
+  } catch is DirectoryIdentityUnavailable where expectedIdentity == .none {
     // The descriptor and current path already match; durable identity is optional for this lease.
   }
 }
@@ -160,7 +162,7 @@ func validateDirectoryIdentity(
   expectedIdentity: String?
 ) throws {
   guard openedIdentity == currentPathIdentity,
-    expectedIdentity == nil || expectedIdentity == openedIdentity
+    expectedIdentity == .none || expectedIdentity == openedIdentity
   else {
     throw DirectoryAccessError.identityChanged
   }

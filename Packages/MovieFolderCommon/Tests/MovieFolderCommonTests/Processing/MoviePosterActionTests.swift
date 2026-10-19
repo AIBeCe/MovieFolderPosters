@@ -320,7 +320,7 @@ extension MoviePosterActionTests {
     let processor = fixture.processor(provider: provider)
     let first = try await processor.process(root: fixture.movies)
     XCTAssertNotNil(first.rootBackoffUntil)
-    await provider.setSearchError(nil)
+    await provider.setSearchError(.none)
     let identity = try fixture.identity(of: "Dune (2021)")
     let selected = MovieMetadata(
       id: 7, title: "Dune", originalTitle: "Dune",
@@ -482,8 +482,8 @@ private struct ActionFixture {
   /// - Returns: The constructed MovieFolderProcessor result.
   func processor(
     provider: ActionProvider,
-    coordinationStore: PersistenceStore? = nil,
-    mutationGuard: (any MovieFolderMutationGuard)? = nil
+    coordinationStore: PersistenceStore? = .none,
+    mutationGuard: (any MovieFolderMutationGuard)? = .none
   ) -> MovieFolderProcessor {
     MovieFolderProcessor(
       persistence: persistence, provider: provider,
@@ -496,7 +496,7 @@ private struct ActionFixture {
 /// Metadata fixture supporting explicit results, failures, and suspended searches.
 private actor ActionProvider: MovieMetadataProvider {
   /// The number of search requests observed by the test provider.
-  private(set) var searchCount = 0
+  private(set) var searchCount = Int.zero
   /// Provider poster paths downloaded during the test.
   private(set) var posterPaths: [String] = []
   /// Valid source image bytes returned by the transport or test provider.
@@ -520,7 +520,7 @@ private actor ActionProvider: MovieMetadataProvider {
   ///   - searchError: The configured provider error thrown by a test search.
   ///   - delaysSearch: Whether a search suspends until the test explicitly releases its continuation.
   init(
-    posterData: Data, searchResult: MovieSearchResult? = nil, searchError: TMDbError? = nil,
+    posterData: Data, searchResult: MovieSearchResult? = .none, searchError: TMDbError? = .none,
     delaysSearch: Bool = false
   ) {
     self.posterData = posterData
@@ -550,7 +550,7 @@ private actor ActionProvider: MovieMetadataProvider {
       return try await withCheckedThrowingContinuation { continuation in
         searchContinuation = continuation
         searchStarted?.resume()
-        searchStarted = nil
+        searchStarted = .none
       }
     }
 
@@ -560,9 +560,7 @@ private actor ActionProvider: MovieMetadataProvider {
   /// Suspends until the provider has reached its controllable search boundary.
   func waitForSearch() async {
     if searchContinuation != nil { return }
-    await withCheckedContinuation { continuation in
-      searchStarted = continuation
-    }
+    await withCheckedContinuation { continuation in searchStarted = continuation }
   }
 
   /// Resumes the pending provider search with its configured response.
@@ -574,7 +572,7 @@ private actor ActionProvider: MovieMetadataProvider {
           posterPath: "/dune.jpg")
       ], hasMorePages: false)
     searchContinuation?.resume(returning: result)
-    searchContinuation = nil
+    searchContinuation = .none
   }
 
   /// Changes the result returned by subsequent test searches.
@@ -616,13 +614,12 @@ private struct ConfigurationMutationGuard: MovieFolderMutationGuard {
   /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
   func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? { nil }
+    throws -> PersistenceLease? { .none }
 
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? {
+  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
     try repository.mutationLease(for: directory, expectedConfiguration: configuration)
   }
 }
@@ -637,11 +634,12 @@ private struct RefusingMutationGuard: MovieFolderMutationGuard {
   /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
   func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? { nil }
+    throws -> PersistenceLease? { .none }
 
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? { throw PosterActionError.busy }
+  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
+    throw PosterActionError.busy
+  }
 }

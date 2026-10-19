@@ -35,7 +35,7 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
   ///   - status: The observed lifecycle result.
   ///   - operationID: Optional operation correlation identifier.
   ///   - collectionID: Optional configured collection identifier.
-  public init(action: Action, status: Status, operationID: UUID? = nil, collectionID: UUID? = nil) {
+  public init(action: Action, status: Status, operationID: UUID? = .none, collectionID: UUID? = .none) {
     self.action = action
     self.status = status
     self.operationID = operationID
@@ -47,7 +47,7 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
   /// - Returns: Availability, partial completion, or completion derived without folder names.
   public static func automaticProcessingStatus(for summary: ProcessingSummary) -> Status {
     if summary.rootLeaseUnavailable { return .unavailable }
-    if summary.rootBackoffUntil != nil || summary.skippedRetryWindow > 0 || summary.transientFailures > 0 {
+    if summary.rootBackoffUntil != .none || summary.skippedRetryWindow > 0 || summary.transientFailures > 0 {
       return .partial
     }
 

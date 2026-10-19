@@ -12,13 +12,13 @@ struct KeychainCredentialStoreTests {
   @Test func readsOnlySuccessfulUTF8Payloads() throws {
     let backend = CredentialBackendProbe()
     let store = KeychainCredentialStore(accessGroup: "test.group", backend: backend)
-    backend.response.withLock { $0 = (errSecItemNotFound, nil) }
-    #expect(try store.read() == nil)
+    backend.response.withLock { $0 = (errSecItemNotFound, .none) }
+    #expect(try store.read() == .none)
     backend.response.withLock { $0 = (errSecSuccess, Data("test-token".utf8)) }
     #expect(try store.read() == "test-token")
     backend.response.withLock { $0 = (errSecSuccess, Data([0xff])) }
     #expect(throws: ConfigurationError.self) { try store.read() }
-    backend.response.withLock { $0 = (errSecAuthFailed, nil) }
+    backend.response.withLock { $0 = (errSecAuthFailed, .none) }
     #expect(throws: ConfigurationError.self) { try store.read() }
   }
 
@@ -62,7 +62,7 @@ struct KeychainCredentialStoreTests {
 /// Represents the OS boundary only; credential decisions remain in the real store.
 private final class CredentialBackendProbe: KeychainCredentialBackend {
   /// Configured lookup result.
-  let response = Mutex<(OSStatus, Data?)>((errSecSuccess, nil))
+  let response = Mutex<(OSStatus, Data?)>((errSecSuccess, .none))
   /// Configured update status.
   let updateStatus = Mutex<OSStatus>(errSecSuccess)
   /// Configured insertion status.

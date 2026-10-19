@@ -64,8 +64,8 @@ public actor DirectoryObservationScheduler {
       generation = UUID()
       activeTask?.cancel()
       await activeTask?.value
-      activeTask = nil
-      activeURL = nil
+      activeTask = .none
+      activeURL = .none
       pending = []
       guard !isStopped else { return }
       roots = await delegate.directoryObservationSchedulerLoadRoots(self)
@@ -108,7 +108,7 @@ public actor DirectoryObservationScheduler {
 
   /// Starts the next still-observed root only when no other task is active.
   private func pump() {
-    guard !isReloading, !isStopped, activeTask == nil else { return }
+    guard !isReloading, !isStopped, activeTask == .none else { return }
     while let next = pending.first {
       pending.removeFirst()
       guard roots.contains(next), observed.contains(next) else { continue }
@@ -132,8 +132,8 @@ public actor DirectoryObservationScheduler {
   /// - Parameter identifier: The stable root or generation identifier involved in the operation.
   private func completed(_ identifier: UUID) {
     guard generation == identifier else { return }
-    activeTask = nil
-    activeURL = nil
+    activeTask = .none
+    activeURL = .none
     pump()
   }
 }

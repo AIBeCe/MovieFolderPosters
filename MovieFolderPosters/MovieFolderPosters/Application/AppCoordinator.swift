@@ -17,6 +17,7 @@ protocol ConfigurationCoordinatorBuilding {
 /// Composes the live configuration workflow, including service-owned removal cleanup.
 @MainActor
 struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
+  /// Opens the host flow, starts best-effort orphan cleanup, and honors explicit Debug fixture arguments.
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
     let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
@@ -68,7 +69,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   ///   - appearance: Preferences exposed by Settings and applied by this root.
   init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
        configurationBuilder: any ConfigurationCoordinatorBuilding = ConfigurationCoordinatorBuilder(),
-       posterService: (any MoviePosterActionServicing)? = nil,
+       posterService: (any MoviePosterActionServicing)? = .none,
        appearance: AppAppearanceSettings = AppAppearanceSettings()) {
     self.activity = activity
     self.configurationBuilder = configurationBuilder
@@ -90,7 +91,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// Creates or reopens configuration without recreating successful child flows.
   /// - Throws: Initialization errors, allowing a later explicit attempt to retry.
   func showConfiguration() throws {
-    if configurationCoordinator == nil {
+    if configurationCoordinator == .none {
       let configuration = try configurationBuilder.makeCoordinator(activity: activity, appearance: appearance)
       configuration.delegate = self
       configurationCoordinator = configuration
@@ -101,7 +102,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// Presents Settings sharing Main's configuration state.
   /// - Throws: Initialization errors if configuration has not started.
   func showSettings() throws {
-    if configurationCoordinator == nil { try showConfiguration() }
+    if configurationCoordinator == .none { try showConfiguration() }
     configurationCoordinator?.showSettings()
   }
 

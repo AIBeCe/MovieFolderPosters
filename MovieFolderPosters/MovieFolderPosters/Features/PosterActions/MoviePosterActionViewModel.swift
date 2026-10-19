@@ -67,7 +67,7 @@ final class MoviePosterActionViewModel {
   /// Whether another page of search results is available.
   var hasMorePages: Bool { searchResult?.hasMorePages ?? false }
   /// Whether the selected movie can be applied now.
-  var canApplySelectedMovie: Bool { selectedMovie != nil && !isBusy }
+  var canApplySelectedMovie: Bool { selectedMovie != .none && !isBusy }
   /// Whether a valid selected movie page can be opened.
   var canOpenSelectedMoviePage: Bool { (selectedMovie?.id ?? 0) > 0 }
   /// The action requested for this folder.
@@ -77,7 +77,8 @@ final class MoviePosterActionViewModel {
 
   /// The selected result, if it still appears in the current poster-bearing results.
   private var selectedMovie: MovieMetadata? {
-    guard let selectedMovieID else { return nil }
+    guard let selectedMovieID else { return .none }
+
     return movies.first { $0.id == selectedMovieID }
   }
 
@@ -125,7 +126,7 @@ final class MoviePosterActionViewModel {
     let yearInput = yearText.trimmingCharacters(in: .whitespacesAndNewlines)
     let year: Int?
     if yearInput.isEmpty {
-      year = nil
+      year = .none
     } else if let parsedYear = Int(yearInput), (1888...2099).contains(parsedYear) {
       year = parsedYear
     } else {
@@ -133,23 +134,21 @@ final class MoviePosterActionViewModel {
       return
     }
 
-    searchResult = nil
-    selectedMovieID = nil
-    statusMessage = nil
+    searchResult = .none
+    selectedMovieID = .none
+    statusMessage = .none
     let service = service
     let request = request
     perform(
       "Searching TMDb…",
-      operation: {
-        try await service.searchMovies(for: request, query: cleanQuery, year: year)
-      },
+      operation: { try await service.searchMovies(for: request, query: cleanQuery, year: year) },
       completion: { [weak self] result in
-      self?.searchResult = result
-      self?.selectedMovieID = nil
-      self?.statusMessage =
-        result.movies.contains(where: Self.hasPoster)
-        ? "Choose a poster below and apply it when ready."
-        : "No poster-bearing movies were found."
+        self?.searchResult = result
+        self?.selectedMovieID = .none
+        self?.statusMessage =
+          result.movies.contains(where: Self.hasPoster)
+          ? "Choose a poster below and apply it when ready."
+          : "No poster-bearing movies were found."
       }
     )
   }
@@ -165,13 +164,14 @@ final class MoviePosterActionViewModel {
       movie.id > 0,
       Self.hasPoster(movie)
     else {
-      selectedMovieID = nil
+      selectedMovieID = .none
       setError("Choose a movie that has a poster.")
       return false
     }
     selectedMovieID = movie.id
-    errorMessage = nil
+    errorMessage = .none
     publish()
+
     return true
   }
 
@@ -187,12 +187,8 @@ final class MoviePosterActionViewModel {
     let request = request
     perform(
       "Applying selected poster…",
-      operation: {
-        try await service.applyPoster(movie, for: request)
-      },
-      completion: { [weak self] movieID in
-      self?.statusMessage = "Poster updated from TMDb movie \(movieID)."
-      }
+      operation: { try await service.applyPoster(movie, for: request) },
+      completion: { [weak self] movieID in self?.statusMessage = "Poster updated from TMDb movie \(movieID)." }
     )
   }
 
@@ -207,7 +203,7 @@ final class MoviePosterActionViewModel {
       return
     }
     statusMessage = "Opening the selected movie on TMDb."
-    errorMessage = nil
+    errorMessage = .none
     navigationDelegate?.moviePosterActionViewModel(self, didRequestOpeningMoviePage: url)
     publish()
   }
@@ -219,12 +215,8 @@ final class MoviePosterActionViewModel {
     let request = request
     perform(
       "Refreshing poster…",
-      operation: {
-        try await service.refreshPoster(for: request)
-      },
-      completion: { [weak self] movieID in
-      self?.statusMessage = "Poster refreshed from TMDb movie \(movieID)."
-      }
+      operation: { try await service.refreshPoster(for: request) },
+      completion: { [weak self] movieID in self?.statusMessage = "Poster refreshed from TMDb movie \(movieID)." }
     )
   }
 
@@ -235,11 +227,9 @@ final class MoviePosterActionViewModel {
     let request = request
     perform(
       "Removing poster…",
-      operation: {
-        try await service.removePoster(for: request)
-      },
+      operation: { try await service.removePoster(for: request) },
       completion: { [weak self] removed in
-      self?.statusMessage = removed ? "Poster removed." : "This folder has no custom poster."
+        self?.statusMessage = removed ? "Poster removed." : "This folder has no custom poster."
       }
     )
   }
@@ -251,20 +241,18 @@ final class MoviePosterActionViewModel {
     let request = request
     perform(
       "Looking up the assigned movie…",
-      operation: {
-        try await service.matchedMovieID(for: request)
-      },
+      operation: { try await service.matchedMovieID(for: request) },
       completion: { [weak self] movieID in
-      guard let movieID, movieID > 0,
-        let url = URL(string: "https://www.themoviedb.org/movie/\(movieID)")
-      else {
-        self?.setError("No assigned TMDb movie is available for this folder.")
-        return
-      }
-      self?.statusMessage = "Opening the assigned movie on TMDb."
-      if let self {
-        self.navigationDelegate?.moviePosterActionViewModel(self, didRequestOpeningMoviePage: url)
-      }
+        guard let movieID, movieID > 0,
+          let url = URL(string: "https://www.themoviedb.org/movie/\(movieID)")
+        else {
+          self?.setError("No assigned TMDb movie is available for this folder.")
+          return
+        }
+        self?.statusMessage = "Opening the assigned movie on TMDb."
+        if let self {
+          self.navigationDelegate?.moviePosterActionViewModel(self, didRequestOpeningMoviePage: url)
+        }
       }
     )
   }
@@ -273,9 +261,9 @@ final class MoviePosterActionViewModel {
   func cancelCurrentOperation() {
     operationID = UUID()
     operationTask?.cancel()
-    operationTask = nil
+    operationTask = .none
     isBusy = false
-    statusMessage = nil
+    statusMessage = .none
     publish()
   }
 
@@ -299,7 +287,7 @@ final class MoviePosterActionViewModel {
     guard !isBusy else { return }
     isBusy = true
     statusMessage = status
-    errorMessage = nil
+    errorMessage = .none
     let currentOperationID = UUID()
     operationID = currentOperationID
     publish()
@@ -312,16 +300,16 @@ final class MoviePosterActionViewModel {
         completion(value)
       } catch is CancellationError {
         guard let self, self.operationID == currentOperationID else { return }
-        self.statusMessage = nil
+        self.statusMessage = .none
       } catch {
         guard let self, self.operationID == currentOperationID else { return }
         self.errorMessage = self.userMessage(for: error)
-        self.statusMessage = nil
+        self.statusMessage = .none
       }
 
       guard let self, self.operationID == currentOperationID else { return }
       self.isBusy = false
-      self.operationTask = nil
+      self.operationTask = .none
       self.publish()
     }
   }
@@ -331,14 +319,12 @@ final class MoviePosterActionViewModel {
   /// - Parameter message: A safe message suitable for display in the action window.
   private func setError(_ message: String) {
     errorMessage = message
-    statusMessage = nil
+    statusMessage = .none
     publish()
   }
 
   /// Notifies the current observer of updated presentation state.
-  private func publish() {
-    delegate?.moviePosterActionViewModelDidChange(self)
-  }
+  private func publish() { delegate?.moviePosterActionViewModelDidChange(self) }
 
   /// Converts service failures into user-facing messages without exposing private paths.
   ///
@@ -370,6 +356,7 @@ final class MoviePosterActionViewModel {
   /// - Returns: `true` when the result can provide poster artwork.
   private static func hasPoster(_ movie: MovieMetadata) -> Bool {
     guard let path = movie.posterPath else { return false }
+
     return !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
@@ -377,7 +364,5 @@ final class MoviePosterActionViewModel {
   ///
   /// - Parameter movie: The search result to inspect.
   /// - Returns: `true` when the result can provide poster artwork.
-  private func hasPoster(_ movie: MovieMetadata) -> Bool {
-    Self.hasPoster(movie)
-  }
+  private func hasPoster(_ movie: MovieMetadata) -> Bool { Self.hasPoster(movie) }
 }

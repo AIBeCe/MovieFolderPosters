@@ -48,7 +48,7 @@ import Testing
   await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
   #expect(table.numberOfRows == 1)
   #expect(clear.isEnabled)
-  clear.performClick(nil)
+  clear.performClick(.none)
   while log.canClear { await Task.yield() }
   while log.isClearing || log.isLoading { await Task.yield() }
   #expect(log.entries.isEmpty)
@@ -76,8 +76,8 @@ import Testing
   }
   let contextClick = try #require(
     NSEvent.mouseEvent(
-      with: .rightMouseDown, location: table.convert(NSPoint(x: 10, y: 10), to: nil),
-      modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+      with: .rightMouseDown, location: table.convert(NSPoint(x: 10, y: 10), to: .none),
+      modifierFlags: [], timestamp: 0, windowNumber: 0, context: .none,
       eventNumber: 1, clickCount: 1, pressure: 0
     ))
   let menu = try #require(table.menu(for: contextClick))
@@ -85,7 +85,7 @@ import Testing
   #expect(removeItem.representedObject as? UUID == first.id)
   let row = try #require(controller.tableView(table, rowViewForRow: 1))
   let remove = try #require(nativeViews(in: row).compactMap { $0 as? NSButton }.first)
-  remove.performClick(nil)
+  remove.performClick(.none)
   for _ in 0..<100 where !service.calls.contains(.remove(second.id)) {
     try await Task.sleep(for: .milliseconds(5))
   }
@@ -95,7 +95,7 @@ import Testing
   let delete = try #require(
     NSEvent.keyEvent(
       with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-      windowNumber: 0, context: nil, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}",
+      windowNumber: 0, context: .none, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}",
       isARepeat: false, keyCode: 51
     ))
   table.keyDown(with: delete)

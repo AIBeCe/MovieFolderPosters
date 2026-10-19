@@ -24,7 +24,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   ///   - notifier: Optional hint sender invoked after successful commits.
   public init(
     store: PersistenceStore, configuration: ConfigurationRepository,
-    notifier: (any CollectionProcessingStateChangeNotifying)? = nil
+    notifier: (any CollectionProcessingStateChangeNotifying)? = .none
   ) {
     self.store = store
     self.configuration = configuration
@@ -53,7 +53,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   /// The caller must hold the shared root-coordination lease across the resulting work.
   public func recordProcessingStart(
     context: CollectionProcessingContext, action: CollectionProcessingAction,
-    child: String? = nil, now: Date = Date()
+    child: String? = .none, now: Date = Date()
   ) throws -> CollectionProcessingState {
     let processingState = try withLocks(context: context) { lease in
       let stored = try decode(lease.read(), expectedRootID: context.rootID)
@@ -72,7 +72,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
         processingState.context = context
         processingState.folders = stored.folders.map { FolderProcessingRecord(name: $0.name) }
         processingState.isInventoryComplete = false
-        processingState.inspectedAt = nil
+        processingState.inspectedAt = .none
         processingState.inventoryIssue = .inventoryPending
       } else {
         processingState = stored ?? CollectionProcessingState(context: context)
@@ -82,17 +82,17 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       if action == .automatic {
         processingState.folders = []
         processingState.isInventoryComplete = false
-        processingState.inspectedAt = nil
+        processingState.inspectedAt = .none
         processingState.inventoryIssue = .inventoryPending
       } else if let child {
         if let index = processingState.folders.firstIndex(where: { $0.name == child }) {
           processingState.folders[index].state = .pending
-          processingState.folders[index].reason = nil
-          processingState.folders[index].assessedAt = nil
+          processingState.folders[index].reason = .none
+          processingState.folders[index].assessedAt = .none
         } else {
           processingState.folders.append(FolderProcessingRecord(name: child))
           processingState.isInventoryComplete = false
-          processingState.inspectedAt = nil
+          processingState.inspectedAt = .none
         }
       }
 
@@ -106,6 +106,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       return processingState
     }
     notifier?.collectionProcessingStateDidChange()
+
     return processingState
   }
 
@@ -146,6 +147,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       return committed
     }
     notifier?.collectionProcessingStateDidChange()
+
     return committed
   }
 
@@ -158,6 +160,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     guard let lease = try store.acquireLease(for: Self.processingStateKey(for: rootID)) else {
       throw CollectionProcessingError.busy
     }
+
     return try decode(lease.read(), expectedRootID: rootID)
   }
 
@@ -168,9 +171,8 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   public func pruneToConfiguredRoots() throws -> Set<String> {
     let (saved, settingsLease) = try configuration.readHoldingLease()
     let keys = Set(saved.directories.map { Self.processingStateKey(for: $0.id) })
-    return try withExtendedLifetime(settingsLease) {
-      try store.pruneRecords(keepingKeys: keys)
-    }
+
+    return try withExtendedLifetime(settingsLease) { try store.pruneRecords(keepingKeys: keys) }
   }
 
   /// Acquires settings and short processing state leases; callers retain root coordination across work.
@@ -181,9 +183,8 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       withExtendedLifetime(settingsLease) {}
       throw CollectionProcessingError.busy
     }
-    return try withExtendedLifetime((settingsLease, processingStateLease)) {
-      try body(processingStateLease)
-    }
+
+    return try withExtendedLifetime((settingsLease, processingStateLease)) { try body(processingStateLease) }
   }
 
   /// Checks the captured root and settings generations against current saved configuration.
@@ -214,7 +215,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
 
   /// Decodes a bounded record and rejects mismatched or unsupported states.
   private func decode(_ data: Data?, expectedRootID: UUID) throws -> CollectionProcessingState? {
-    guard let data else { return nil }
+    guard let data else { return .none }
     let processingState: CollectionProcessingState
     do {
       processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: data)
@@ -223,6 +224,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     }
     guard processingState.context.rootID == expectedRootID else { throw CollectionProcessingError.invalidState }
     try processingState.validate()
+
     return processingState
   }
 

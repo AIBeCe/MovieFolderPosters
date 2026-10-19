@@ -10,12 +10,14 @@ final class InstallationReadinessViewController: NSViewController {
   /// - Parameter report: Safe diagnostics without credentials or bookmark payloads.
   init(report: InstallationReadinessReport) {
     self.report = report
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+  /// Builds the native read-only diagnostics view and installs its selectable report text.
   override func loadView() {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 320))
     scroll.hasVerticalScroller = true

@@ -15,7 +15,7 @@ struct CollectionSummaryCoverageTests {
     defer { fixture.cleanup() }
     _ = try fixture.seedOutcome(completed: false)
     let lease = holdsLease ? try fixture.coordination.acquireLease(
-      for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : nil
+      for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == (holdsLease ? .busy : .interrupted))
     #expect(summary.presentation.state == summary.displayState)
@@ -33,14 +33,14 @@ struct CollectionSummaryCoverageTests {
     #expect(previous.calculateCounts().total == 1)
     try fixture.configuration.update { $0.credentialRevision = UUID() }
     let lease = holdsLease ? try fixture.coordination.acquireLease(
-      for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : nil
+      for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == .stale)
-    #expect(summary.counts.total == nil)
+    #expect(summary.counts.total == .none)
     #expect(summary.processingState?.context == fixture.context)
     #expect(summary.processingState?.folders == previous.folders)
     #expect(summary.processingState?.folders.first?.movieID == 7)
-    #expect(summary.counts.done == nil)
+    #expect(summary.counts.done == .none)
     #expect(summary.presentation.state == .stale)
     withExtendedLifetime(lease) {}
   }
@@ -57,8 +57,9 @@ struct CollectionSummaryCoverageTests {
     }
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == .unavailable)
-    #expect(summary.processingState == nil)
-    #expect(summary.counts == CollectionProcessingCounts(done: nil, notFound: nil, severalMatches: nil, total: nil))
+    #expect(summary.processingState == .none)
+    #expect(summary.counts == CollectionProcessingCounts(
+      done: .none, notFound: .none, severalMatches: .none, total: .none))
   }
 
   /// A root removed while its record is read is retained only as stale evidence; new roots stay unavailable.
@@ -72,14 +73,14 @@ struct CollectionSummaryCoverageTests {
       folders: [], isInventoryComplete: true, inspectedAt: Date())
     let replacementID = UUID()
     let reader = ReconfiguringSummaryReader(configuration: fixture.configuration,
-      snapshot: hasOutcome ? snapshot : nil, replacementID: replacementID)
+      snapshot: hasOutcome ? snapshot : .none, replacementID: replacementID)
     let service = CollectionSummaryService(configuration: fixture.configuration,
       processingStore: reader, coordinationStore: fixture.coordination)
     let summaries = await service.summaries()
     #expect(summaries[replacementID]?.displayState == .unavailable)
-    #expect(summaries[replacementID]?.counts.total == nil)
+    #expect(summaries[replacementID]?.counts.total == .none)
     #expect(summaries[fixture.context.rootID]?.displayState == (hasOutcome ? .stale : .unavailable))
-    #expect(summaries[fixture.context.rootID]?.counts.total == nil)
+    #expect(summaries[fixture.context.rootID]?.counts.total == .none)
     #expect(summaries.count == 2)
   }
 }

@@ -12,7 +12,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   /// Provides scrolling for the activity table.
   private let scroll = NSScrollView()
   /// Clears persisted activity history only.
-  private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
+  private let clearButton = NSButton(title: "Clear", target: .none, action: .none)
 
   /// Describes loading, empty history, and independent history operation failures.
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
@@ -22,9 +22,10 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   /// - Parameter log: The log to display and observe.
   init(log: ActivityLogViewModel) {
     self.log = log
-    super.init(nibName: nil, bundle: nil)
+    super.init(nibName: .none, bundle: .none)
   }
 
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
@@ -113,7 +114,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   ///   - row: The entry index to display.
   /// - Returns: The label for a valid row, or `nil` if the row is out of range.
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard log.entries.indices.contains(row) else { return nil }
+    guard log.entries.indices.contains(row) else { return .none }
     let entry = log.entries[row]
     let text: String
     switch tableColumn?.identifier.rawValue {

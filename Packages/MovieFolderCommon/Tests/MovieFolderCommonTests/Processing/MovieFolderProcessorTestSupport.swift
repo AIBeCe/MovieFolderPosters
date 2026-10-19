@@ -74,9 +74,9 @@ struct Fixture {
     provider: CountingProvider,
     clock: @escaping @Sendable () -> Date = Date.init,
     appearance: PosterAppearance = .softFinish,
-    posterAssigner: (any PosterAssigner)? = nil,
-    mutationGuard: (any MovieFolderMutationGuard)? = nil,
-    processingStore: CollectionProcessingStore? = nil
+    posterAssigner: (any PosterAssigner)? = .none,
+    mutationGuard: (any MovieFolderMutationGuard)? = .none,
+    processingStore: CollectionProcessingStore? = .none
   ) throws -> MovieFolderProcessor {
     MovieFolderProcessor(
       fileSystem: FileSystemService(), persistence: persistence, provider: provider,
@@ -88,9 +88,9 @@ struct Fixture {
 /// Controllable metadata provider that records requests and can suspend or fail searches.
 actor CountingProvider {
   /// The number of search requests observed by the test provider.
-  private(set) var searchCount = 0
+  private(set) var searchCount = Int.zero
   /// The number of source-image downloads observed by the test provider.
-  private(set) var posterCount = 0
+  private(set) var posterCount = Int.zero
   /// An optional configured search response overriding the default movie fixture.
   private let search: MovieSearchResult?
   /// Whether a search suspends until the test explicitly releases its continuation.
@@ -117,10 +117,10 @@ actor CountingProvider {
   ///   - cancellationError: The provider error intentionally raced against task cancellation.
   ///   - failuresRemaining: How many initial provider requests must fail before normal responses resume.
   init(
-    search: MovieSearchResult? = nil,
+    search: MovieSearchResult? = .none,
     delaysSearch: Bool = false,
-    searchError: TMDbError? = nil,
-    cancellationError: TMDbError? = nil,
+    searchError: TMDbError? = .none,
+    cancellationError: TMDbError? = .none,
     failuresRemaining: Int = .max
   ) {
     self.search = search
@@ -140,7 +140,7 @@ actor CountingProvider {
   func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
     searchCount += 1
     if let nextSearchError {
-      self.nextSearchError = nil
+      self.nextSearchError = .none
       throw nextSearchError
     }
     if let searchError, failuresRemaining > 0 {
@@ -152,7 +152,7 @@ actor CountingProvider {
         try await withCheckedThrowingContinuation { continuation in
           searchContinuation = continuation
           searchStarted?.resume()
-          searchStarted = nil
+          searchStarted = .none
         }
       } onCancel: {
         Task { await self.cancelPendingSearch() }
@@ -188,9 +188,7 @@ actor CountingProvider {
   /// Suspends until the provider has reached its controllable search boundary.
   func waitForSearch() async {
     if searchContinuation != nil { return }
-    await withCheckedContinuation { continuation in
-      searchStarted = continuation
-    }
+    await withCheckedContinuation { continuation in searchStarted = continuation }
   }
 
   /// Resumes the pending provider search with its configured response.
@@ -204,13 +202,13 @@ actor CountingProvider {
             posterPath: "/dune.jpg")
         ], hasMorePages: false)
     searchContinuation?.resume(returning: result)
-    searchContinuation = nil
+    searchContinuation = .none
   }
 
   /// Resumes the suspended request with the configured cancellation failure.
   private func cancelPendingSearch() {
     searchContinuation?.resume(throwing: cancellationError ?? CancellationError())
-    searchContinuation = nil
+    searchContinuation = .none
   }
 }
 
@@ -221,7 +219,7 @@ final class RecordingAssigner: PosterAssigner, @unchecked Sendable {
   /// Serializes access to mutable observations from synchronous Sendable test collaborators.
   private let lock = NSLock()
   /// The number of recorded icon-assignment attempts.
-  private var count = 0
+  private var count = Int.zero
   /// Whether the next assignment must throw its injected failure.
   private var shouldFailNext = false
 
@@ -318,14 +316,15 @@ struct RootIdentityMutationGuard: MovieFolderMutationGuard {
       throw DirectoryAccessError.identityChanged
     }
 
-    return nil
+    return .none
   }
 
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? { nil }
+  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
+    .none
+  }
 }
 
 /// Suppresses a poster at the final mutation boundary to exercise revalidation.
@@ -343,18 +342,17 @@ struct SuppressingMutationGuard: MovieFolderMutationGuard {
   /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
   func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? { nil }
+    throws -> PersistenceLease? { .none }
 
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? {
+  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
     _ = try FileSystemService().removeAssignedPoster(
       toChild: "Dune (2021)", in: root,
       expectedIdentity: identity)
 
-    return nil
+    return .none
   }
 }
 
@@ -399,8 +397,9 @@ final class LeaseMutationGuard: MovieFolderMutationGuard, @unchecked Sendable {
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? { nil }
+  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
+    .none
+  }
 }
 
 /// Confirms the mutation lease remains held when the icon adapter is called.
