@@ -53,7 +53,7 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   /// The most recently assessed access and filesystem compatibility state.
   public let availability: DirectoryAvailability
   /// Verified collection processing state, or no value when counts have not been established.
-  public var counts: CollectionCounts? = nil
+  public var counts: CollectionCounts?
 
   /// Creates presentation evidence for one saved collection root.
   /// - Parameters:
@@ -168,9 +168,9 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   /// The generation distinguishing replacement grants for the same root identifier.
   public let authorizationVersion: UUID
   /// Filesystem identity evidence used to reject replacement folders.
-  public var identity: String? = nil
+  public var identity: String?
   /// The previously observed mount path used to explain disconnected storage.
-  public var volumePath: String? = nil
+  public var volumePath: String?
 
   /// Creates a saved root with its transferred authorization and filesystem evidence.
   /// - Parameters:

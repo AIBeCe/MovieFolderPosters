@@ -94,8 +94,7 @@ extension FileSystemService {
   /// - Returns: Centered bounds fully contained by the canvas.
   /// - Throws: ``FolderPosterError/invalidImage`` when either size is invalid.
   public func posterBounds(for size: CGSize, in canvas: CGSize = CGSize(width: 512, height: 512))
-    throws -> CGRect
-  {
+    throws -> CGRect {
     guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
       canvas.width.isFinite, canvas.height.isFinite, canvas.width > 0, canvas.height > 0
     else {
@@ -313,8 +312,7 @@ extension FileSystemService {
     return try iconAssignmentLock.withLock { _ in
       let identity = try lockedIdentity(of: child, expected: expectedIdentity)
       if try suppressionExists(at: child, identity: identity)
-        || !isOwnedIcon(at: child, identity: identity)
-      {
+        || !isOwnedIcon(at: child, identity: identity) {
         return .existingIconPreserved
       }
       try Task.checkCancellation()

@@ -1,7 +1,7 @@
 import Foundation
 import Persistence
-import Testing
 import Synchronization
+import Testing
 
 @testable import MovieFolderCommon
 
@@ -41,8 +41,8 @@ struct MovieFolderActivityTests {
       MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(skippedRetryWindow: 1)) == .partial)
     #expect(
       MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(rootBackoffUntil: Date())) == .partial)
-    #expect(
-      MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(rootLeaseUnavailable: true)) == .unavailable)
+    let blockedSummary = ProcessingSummary(rootLeaseUnavailable: true)
+    #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: blockedSummary) == .unavailable)
   }
 
   @Test func recordsPersistAcrossInstancesAndClearOnlyActivity() async throws {

@@ -48,7 +48,7 @@ import Testing
     ])
     func unsupportedEndpointFailsLocally(address: String) async throws {
       let endpoint = try #require(URL(string: address))
-      let transport = StubTMDbTransport(posterData: Data())
+      let transport: any HTTPTransport = StubTMDbTransport(posterData: Data())
 
       await #expect(throws: TMDbError.invalidConfiguration) {
         try await transport.send(URLRequest(url: endpoint))
@@ -59,7 +59,7 @@ import Testing
     /// - Throws: A fixture URL construction failure.
     @Test func cancelledRequestDoesNotProduceFixtureResponse() async throws {
       let endpoint = try #require(URL(string: "https://api.themoviedb.org/3/configuration"))
-      let transport = StubTMDbTransport(posterData: Data())
+      let transport: any HTTPTransport = StubTMDbTransport(posterData: Data())
       let request = Task {
         withUnsafeCurrentTask { $0?.cancel() }
 

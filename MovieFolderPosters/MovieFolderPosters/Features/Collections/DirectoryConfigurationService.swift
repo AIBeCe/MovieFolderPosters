@@ -111,60 +111,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     var statuses: [ConfiguredDirectoryStatus] = []
     var refreshed: [UUID: MonitoredDirectory] = [:]
     for directory in configuration.directories {
-      let availability: DirectoryAvailability
-      do {
-        guard let lease = try authorizations.acquireLease(for: authorizationKey(directory)) else {
-          throw ConfigurationError.busy
-        }
-        guard let bookmark = try lease.read() else {
-          throw DirectoryAccessError.staleBookmark
-        }
-        let access = try authorization.acquireAccess(
-          bookmark: bookmark, expectedIdentity: directory.identity)
-        let evidence = fileSystem.inspectDirectory(
-          at: access.url, expectedIdentity: directory.identity)
-        var updated = directory
-        let resolvedPath = access.url.resolvingSymlinksInPath().standardizedFileURL.path
-        if resolvedPath != directory.path, directory.identity == nil {
-          throw DirectoryAccessError.staleBookmark
-        }
-        if let identity = evidence.identity, evidence.state != .identityChanged {
-          updated.path = resolvedPath
-          updated.identity = identity
-          updated.volumePath = evidence.volumePath ?? directory.volumePath
-          updated.transferBookmark = try fileSystem.makeTransferBookmark(for: access.url)
-          if updated.path != directory.path {
-            try lease.write(authorization.makeBookmark(for: access.url))
-          }
-          refreshed[directory.id] = updated
-        }
-        withExtendedLifetime(access) {}
-        availability = Self.availability(for: evidence.state)
-      } catch ConfigurationError.busy {
-        availability = .checkUnavailable
-      } catch DirectoryAccessError.identityChanged {
-        availability = .identityChanged
-      } catch DirectoryAccessError.staleBookmark {
-        let evidence = fileSystem.inspectDirectory(
-          at: URL(fileURLWithPath: directory.path),
-          expectedIdentity: directory.identity, expectedVolumePath: directory.volumePath)
-        availability =
-          directory.identity != nil
-            && [.missing, .disconnected, .identityChanged]
-              .contains(evidence.state)
-          ? Self.availability(for: evidence.state) : .reauthorizationRequired
-      } catch {
-        let evidence = fileSystem.inspectDirectory(
-          at: URL(fileURLWithPath: directory.path),
-          expectedIdentity: directory.identity, expectedVolumePath: directory.volumePath)
-        if [.missing, .disconnected, .identityChanged].contains(evidence.state) {
-          availability = Self.availability(for: evidence.state)
-        } else if case DirectoryAccessError.accessDenied = error {
-          availability = .reauthorizationRequired
-        } else {
-          availability = .unavailable
-        }
-      }
+      let assessment = assessDirectory(directory)
+      let availability = assessment.availability
+      if let updated = assessment.refreshed { refreshed[directory.id] = updated }
       statuses.append(
         ConfiguredDirectoryStatus(
           id: directory.id,
@@ -176,26 +125,116 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     let overlapping = assessed.findOverlappingDirectoryIDs()
     statuses = statuses.map { status in
       guard overlapping.contains(status.id) else { return status }
+
       return ConfiguredDirectoryStatus(id: status.id, path: status.path, availability: .overlapping)
     }
+    try persistRefreshedDirectories(refreshed, original: configuration)
+
+    return ConfigurationSummary(
+      directories: statuses, credentialConfigured: try credentials.read() != nil,
+      posterAppearance: configuration.posterAppearance)
+  }
+
+  /// Saves refreshed evidence only while each root still equals the originally assessed configuration.
+  /// - Parameters:
+  ///   - refreshed: Roots with validated replacement evidence.
+  ///   - original: Configuration against which authorization was checked.
+  /// - Throws: A configuration persistence error.
+  private func persistRefreshedDirectories(
+    _ refreshed: [UUID: MonitoredDirectory], original: DirectoryConfiguration
+  ) throws {
     if !refreshed.isEmpty {
       try repository.update { current in
         for index in current.directories.indices {
           let identifier = current.directories[index].id
           if let updated = refreshed[identifier],
-            configuration.directories.first(where: { $0.id == identifier })
-              == current.directories[index]
-          {
+            original.directories.first(where: { $0.id == identifier })
+              == current.directories[index] {
             current.directories[index] = updated
           }
         }
       }
       notifier.configurationDidChange()
     }
-    return ConfigurationSummary(
-      directories: statuses, credentialConfigured: try credentials.read() != nil,
-      posterAppearance: configuration.posterAppearance)
+  }
 
+  /// Resolves one root's access evidence while retaining authorization through inspection and bookmark refresh.
+  /// - Parameter directory: The saved root whose identity must still match.
+  /// - Returns: Availability and any safely refreshed path or bookmark metadata.
+  private func assessDirectory(
+    _ directory: MonitoredDirectory
+  ) -> (availability: DirectoryAvailability, refreshed: MonitoredDirectory?) {
+    var refreshed: MonitoredDirectory?
+    let availability: DirectoryAvailability
+    do {
+      let assessment = try inspectAuthorizedDirectory(directory)
+      availability = assessment.availability
+      refreshed = assessment.refreshed
+    } catch ConfigurationError.busy {
+      availability = .checkUnavailable
+    } catch DirectoryAccessError.identityChanged {
+      availability = .identityChanged
+    } catch DirectoryAccessError.staleBookmark {
+      let evidence = fileSystem.inspectDirectory(
+        at: URL(fileURLWithPath: directory.path),
+        expectedIdentity: directory.identity, expectedVolumePath: directory.volumePath)
+      availability =
+        directory.identity != nil
+          && [.missing, .disconnected, .identityChanged]
+            .contains(evidence.state)
+        ? Self.availability(for: evidence.state) : .reauthorizationRequired
+    } catch {
+      let evidence = fileSystem.inspectDirectory(
+        at: URL(fileURLWithPath: directory.path),
+        expectedIdentity: directory.identity, expectedVolumePath: directory.volumePath)
+      if [.missing, .disconnected, .identityChanged].contains(evidence.state) {
+        availability = Self.availability(for: evidence.state)
+      } else if case DirectoryAccessError.accessDenied = error {
+        availability = .reauthorizationRequired
+      } else {
+        availability = .unavailable
+      }
+    }
+
+    return (availability, refreshed)
+  }
+
+  /// Refreshes authorized metadata while keeping both access and the bookmark lease alive.
+  /// - Parameter directory: Root requiring matching persistent identity.
+  /// - Returns: Availability and any validated metadata refresh.
+  /// - Throws: Authorization, identity, bookmark, or persistence errors.
+  private func inspectAuthorizedDirectory(
+    _ directory: MonitoredDirectory
+  ) throws -> (availability: DirectoryAvailability, refreshed: MonitoredDirectory?) {
+    var refreshed: MonitoredDirectory?
+    guard let lease = try authorizations.acquireLease(for: authorizationKey(directory)) else {
+      throw ConfigurationError.busy
+    }
+    guard let bookmark = try lease.read() else {
+      throw DirectoryAccessError.staleBookmark
+    }
+    let access = try authorization.acquireAccess(
+      bookmark: bookmark, expectedIdentity: directory.identity)
+    let evidence = fileSystem.inspectDirectory(
+      at: access.url, expectedIdentity: directory.identity)
+    var updated = directory
+    let resolvedPath = access.url.resolvingSymlinksInPath().standardizedFileURL.path
+    if resolvedPath != directory.path, directory.identity == nil {
+      throw DirectoryAccessError.staleBookmark
+    }
+    if let identity = evidence.identity, evidence.state != .identityChanged {
+      updated.path = resolvedPath
+      updated.identity = identity
+      updated.volumePath = evidence.volumePath ?? directory.volumePath
+      updated.transferBookmark = try fileSystem.makeTransferBookmark(for: access.url)
+      if updated.path != directory.path {
+        try lease.write(authorization.makeBookmark(for: access.url))
+      }
+      refreshed = updated
+    }
+    withExtendedLifetime(access) {}
+
+    return (Self.availability(for: evidence.state), refreshed)
   }
 
   /// Persists a poster appearance and notifies shared components.

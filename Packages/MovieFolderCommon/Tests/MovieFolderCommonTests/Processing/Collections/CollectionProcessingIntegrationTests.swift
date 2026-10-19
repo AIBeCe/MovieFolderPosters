@@ -275,13 +275,13 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   /// Whether every search should produce an authentication backoff.
   var authenticationFailure = false
   /// Optional real fixture artwork for manual assignment verification.
-  var posterData: Data? = nil
+  var posterData: Data?
   /// Whether the identified movie's image request should simulate an offline transport.
   var shouldFailPoster = false
   /// Whether the unique movie identity lacks provider artwork.
   var missingArtwork = false
 
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
     if authenticationFailure { throw TMDbError.authentication }
     if missingArtwork {
       return MovieSearchResult(
@@ -305,7 +305,7 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
     return MovieSearchResult(movies: [], hasMorePages: title == "Incomplete")
   }
 
-  func downloadPoster(path: String) async throws -> Data {
+  func downloadPoster(path: String) throws -> Data {
     if shouldFailPoster { throw TMDbError.transport(code: -1009) }
     guard let posterData else { throw TMDbError.invalidPosterPath }
 
@@ -363,5 +363,5 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
     return MovieSearchResult(movies: [], hasMorePages: false)
   }
 
-  func downloadPoster(path: String) async throws -> Data { throw TMDbError.invalidPosterPath }
+  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
 }

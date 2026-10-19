@@ -1,11 +1,10 @@
-import MovieFolderCommon
 import AppKit
+import MovieFolderCommon
 
 /// Displays the host activity history in a table with a clear action.
 @MainActor
 final class LogViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate,
-  ActivityLogViewModelDelegate
-{
+  ActivityLogViewModelDelegate {
   /// The activity log displayed by this controller.
   private let log: ActivityLogViewModel
   /// The table displaying timestamp, message, and category columns.
@@ -32,31 +31,12 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   /// Builds the table, clear action, and surrounding layout.
   override func loadView() {
     view = NSView()
-    table.style = .plain
-    table.intercellSpacing = .zero
-    table.usesAlternatingRowBackgroundColors = true
-    table.rowHeight = 24
-    table.dataSource = self
-    table.delegate = self
-    table.columnAutoresizingStyle = .noColumnAutoresizing
-    for (identifier, title, width) in [
-      ("time", "Time", 110.0), ("text", "Text", 480.0),
-      ("category", "Category", 140.0)
-    ] {
-      let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
-      column.title = title
-      column.width = width
-      column.minWidth = 60
-      table.addTableColumn(column)
-    }
-    scroll.documentView = table
-    scroll.hasVerticalScroller = true
-    scroll.autohidesScrollers = true
-    scroll.borderType = .bezelBorder
+    configureTable()
     clearButton.target = self
     clearButton.action = #selector(clear)
     clearButton.setAccessibilityLabel("Clear retained activity history")
-    clearButton.toolTip = "Clears retained activity history for the app and Finder extension. Settings and posters are kept."
+    clearButton.toolTip =
+      "Clears retained activity history for the app and Finder extension. Settings and posters are kept."
     let scope = NSTextField(wrappingLabelWithString:
       "Clear removes retained activity history for the app and Finder extension. Settings and posters are kept.")
     scope.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
@@ -83,6 +63,31 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     ])
     log.delegate = self
     refresh()
+  }
+
+  /// Configures the activity columns and their scrolling container.
+  private func configureTable() {
+    table.style = .plain
+    table.intercellSpacing = .zero
+    table.usesAlternatingRowBackgroundColors = true
+    table.rowHeight = 24
+    table.dataSource = self
+    table.delegate = self
+    table.columnAutoresizingStyle = .noColumnAutoresizing
+    for (identifier, title, width) in [
+      ("time", "Time", 110.0), ("text", "Text", 480.0),
+      ("category", "Category", 140.0)
+    ] {
+      let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+      column.title = title
+      column.width = width
+      column.minWidth = 60
+      table.addTableColumn(column)
+    }
+    scroll.documentView = table
+    scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    scroll.borderType = .bezelBorder
   }
 
   /// Resizes the message column to fill the available table width.

@@ -36,8 +36,7 @@ extension ConfigurationViewControllerDelegate {
 final class ConfigurationViewController: NSViewController, NSTableViewDataSource,
   NSTableViewDelegate,
   ConfigurationViewModelDelegate, CollectionSummaryViewModelDelegate,
-  CollectionTableViewActionDelegate, CollectionRowViewDelegate
-{
+  CollectionTableViewActionDelegate, CollectionRowViewDelegate {
   /// Supplies collection state and performs configuration operations.
   private let viewModel: ConfigurationViewModel
   /// Supplies independently refreshed processing snapshots for collection rows.
@@ -213,90 +212,6 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// - Returns: The count of the current directory processing state.
   func numberOfRows(in tableView: NSTableView) -> Int { presentedDirectories.count }
 
-  /// Creates a cell for the requested collection column.
-  /// - Returns: A cell for a valid row, or `nil` when the row is out of range.
-  func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard presentedDirectories.indices.contains(row) else { return nil }
-    let directory = presentedDirectories[row]
-    let cell = NSTableCellView()
-    let label = NSTextField(labelWithString: "")
-    label.lineBreakMode = .byTruncatingMiddle
-    cell.textField = label
-    if tableColumn?.identifier.rawValue == "collection" {
-      let url = URL(fileURLWithPath: directory.path)
-      label.stringValue =
-        url.deletingLastPathComponent().lastPathComponent + " / " + url.lastPathComponent
-      label.toolTip = directory.path + "\n" + availabilityDescription(directory.availability)
-        + "\n" + collectionProcessingDescription(summaryViewModel.summary(for: directory.id))
-      let folder = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
-      folder.translatesAutoresizingMaskIntoConstraints = false
-      let state = NSImageView(
-        image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())
-      state.contentTintColor = directory.availability == .available ? .systemGreen : .systemOrange
-      state.toolTip = availabilityDescription(directory.availability)
-      state.setAccessibilityLabel(availabilityDescription(directory.availability))
-      state.translatesAutoresizingMaskIntoConstraints = false
-      let status = NSTextField(labelWithString: availabilityDescription(directory.availability))
-      status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-      status.textColor = .secondaryLabelColor
-      status.lineBreakMode = .byTruncatingTail
-      status.toolTip = status.stringValue
-      let processingDescription = NSTextField(labelWithString: collectionProcessingDescription(
-        summaryViewModel.summary(for: directory.id)))
-      processingDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-      processingDescription.textColor = .secondaryLabelColor
-      processingDescription.lineBreakMode = .byTruncatingTail
-      processingDescription.toolTip = processingDescription.stringValue
-      let evidence = NSStackView(views: [status, processingDescription])
-      evidence.orientation = .vertical
-      evidence.alignment = .leading
-      evidence.spacing = 1
-      let description = NSStackView(views: [label, evidence])
-      description.orientation = .vertical
-      description.alignment = .leading
-      description.spacing = 1
-      let row = NSStackView(views: [folder, description, state])
-      row.orientation = .horizontal
-      row.alignment = .centerY
-      row.spacing = 6
-      row.translatesAutoresizingMaskIntoConstraints = false
-      cell.addSubview(row)
-      NSLayoutConstraint.activate([
-        row.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
-        row.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -6),
-        row.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        folder.widthAnchor.constraint(equalToConstant: 20),
-        folder.heightAnchor.constraint(equalToConstant: 20),
-        state.widthAnchor.constraint(equalToConstant: 8),
-        state.heightAnchor.constraint(equalToConstant: 8)
-      ])
-    } else if tableColumn?.identifier.rawValue == "remove" {
-      return NSView()
-    } else {
-      let counts = summaryViewModel.summary(for: directory.id)?.counts
-      let value: Int?
-      switch tableColumn?.identifier.rawValue {
-      case "done": value = counts?.done
-      case "notFound": value = counts?.notFound
-      case "matches": value = counts?.severalMatches
-      default: value = counts?.total
-      }
-      label.stringValue = value.map(String.init) ?? "—"
-      label.toolTip = value == nil ? "No processing summary is available." : nil
-      label.alignment = .center
-      label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-      label.translatesAutoresizingMaskIntoConstraints = false
-      cell.addSubview(label)
-      NSLayoutConstraint.activate([
-        label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 3),
-        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -3),
-        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-      ])
-    }
-
-    return cell
-  }
-
   /// Creates the row view that owns hover and accessibility removal controls.
   /// - Returns: The configured row, or `nil` for an invalid row index.
   func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -374,8 +289,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
 
   /// Returns the context menu requested by the table.
   fileprivate func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int)
-    -> NSMenu?
-  {
+    -> NSMenu? {
     contextMenu(row: row)
   }
 
@@ -452,6 +366,117 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     guard !viewModel.isBusy else { return }
     delegate?.configurationViewController(self, didRequestDirectorySelection: identifier)
   }
+}
+
+/// Renders collection identity, access evidence, and processing count cells.
+extension ConfigurationViewController {
+  /// Creates a cell for the requested collection column.
+  /// - Returns: A cell for a valid row, or `nil` when the row is out of range.
+  func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    guard presentedDirectories.indices.contains(row) else { return nil }
+    let directory = presentedDirectories[row]
+    let cell = NSTableCellView()
+    let label = NSTextField(labelWithString: "")
+    label.lineBreakMode = .byTruncatingMiddle
+    cell.textField = label
+    if tableColumn?.identifier.rawValue == "collection" {
+      configureCollectionCell(cell, label: label, directory: directory)
+    } else if tableColumn?.identifier.rawValue == "remove" {
+      return NSView()
+    } else {
+      let counts = summaryViewModel.summary(for: directory.id)?.counts
+      let value: Int?
+      switch tableColumn?.identifier.rawValue {
+      case "done": value = counts?.done
+      case "notFound": value = counts?.notFound
+      case "matches": value = counts?.severalMatches
+      default: value = counts?.total
+      }
+      label.stringValue = value.map(String.init) ?? "—"
+      label.toolTip = value == nil ? "No processing summary is available." : nil
+      label.alignment = .center
+      label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+      label.translatesAutoresizingMaskIntoConstraints = false
+      cell.addSubview(label)
+      NSLayoutConstraint.activate([
+        label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 3),
+        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -3),
+        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+      ])
+    }
+
+    return cell
+  }
+
+}
+
+private extension ConfigurationViewController {
+  /// Adds the folder, access evidence, and processing evidence to a collection-name cell.
+  /// - Parameters:
+  ///   - cell: Cell receiving the configured row hierarchy.
+  ///   - label: Primary path label retained by the table cell.
+  ///   - directory: Saved root and current access status.
+  func configureCollectionCell(
+    _ cell: NSTableCellView, label: NSTextField, directory: ConfiguredDirectoryStatus
+  ) {
+    let url = URL(fileURLWithPath: directory.path)
+    label.stringValue =
+      url.deletingLastPathComponent().lastPathComponent + " / " + url.lastPathComponent
+    label.toolTip = directory.path + "\n" + availabilityDescription(directory.availability)
+      + "\n" + collectionProcessingDescription(summaryViewModel.summary(for: directory.id))
+    let folder = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
+    folder.translatesAutoresizingMaskIntoConstraints = false
+    let state = NSImageView(
+      image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())
+    state.contentTintColor = directory.availability == .available ? .systemGreen : .systemOrange
+    state.toolTip = availabilityDescription(directory.availability)
+    state.setAccessibilityLabel(availabilityDescription(directory.availability))
+    state.translatesAutoresizingMaskIntoConstraints = false
+    let evidence = collectionEvidence(for: directory)
+    let description = NSStackView(views: [label, evidence])
+    description.orientation = .vertical
+    description.alignment = .leading
+    description.spacing = 1
+    let row = NSStackView(views: [folder, description, state])
+    row.orientation = .horizontal
+    row.alignment = .centerY
+    row.spacing = 6
+    row.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(row)
+    NSLayoutConstraint.activate([
+      row.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+      row.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -6),
+      row.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+      folder.widthAnchor.constraint(equalToConstant: 20),
+      folder.heightAnchor.constraint(equalToConstant: 20),
+      state.widthAnchor.constraint(equalToConstant: 8),
+      state.heightAnchor.constraint(equalToConstant: 8)
+    ])
+  }
+
+  /// Creates the secondary labels describing access and persisted processing evidence.
+  /// - Parameter directory: Collection whose latest evidence should be displayed.
+  /// - Returns: A vertical stack of the two evidence labels.
+  func collectionEvidence(for directory: ConfiguredDirectoryStatus) -> NSStackView {
+    let status = NSTextField(labelWithString: availabilityDescription(directory.availability))
+    status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    status.textColor = .secondaryLabelColor
+    status.lineBreakMode = .byTruncatingTail
+    status.toolTip = status.stringValue
+    let processingDescription = NSTextField(labelWithString: collectionProcessingDescription(
+      summaryViewModel.summary(for: directory.id)))
+    processingDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    processingDescription.textColor = .secondaryLabelColor
+    processingDescription.lineBreakMode = .byTruncatingTail
+    processingDescription.toolTip = processingDescription.stringValue
+    let evidence = NSStackView(views: [status, processingDescription])
+    evidence.orientation = .vertical
+    evidence.alignment = .leading
+    evidence.spacing = 1
+
+    return evidence
+  }
+
 }
 
 /// Supplies concise row labels for persisted result lifecycle states.

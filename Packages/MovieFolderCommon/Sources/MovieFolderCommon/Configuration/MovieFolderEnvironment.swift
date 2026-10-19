@@ -1,6 +1,6 @@
 import Foundation
-import Persistence
 import OSLog
+import Persistence
 
 /// Resolves storage and notifications in the calling host or Finder extension process.
 ///
@@ -133,16 +133,16 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
   /// Explicit history availability failure, with no sensitive error detail.
   private enum Failure: Error { case unavailable }
 
-  func record(_ event: MovieFolderActivityEvent) async -> Bool {
+  func record(_ event: MovieFolderActivityEvent) -> Bool {
     Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Activity")
       .error("Activity storage unavailable; the product operation result is unchanged")
 
     return false
   }
 
-  var hasObservedWriteFailure: Bool { get async { true } }
-  func entries() async throws -> [MovieFolderActivityEntry] { throw Failure.unavailable }
-  func clear() async throws { throw Failure.unavailable }
+  var hasObservedWriteFailure: Bool { true }
+  func entries() throws -> [MovieFolderActivityEntry] { throw Failure.unavailable }
+  func clear() throws { throw Failure.unavailable }
 }
 
 /// Resolves process-specific storage locations without granting access to their contents.

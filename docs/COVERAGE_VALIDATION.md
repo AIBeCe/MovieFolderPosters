@@ -124,3 +124,6 @@ Lint evidence: `/private/tmp/mfp-coverage-lint-final.json` and
 
 The user subsequently approved committing point 1. Merge, push, issue closure, and point 2 implementation remain
 outside this completed point.
+
+Point 1 was committed as `548d278`. Subsequent point 2 refactoring and its updated coverage measurements are
+recorded in [SwiftLint validation](SWIFTLINT_VALIDATION.md).

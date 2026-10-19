@@ -22,7 +22,7 @@ import OSLog
     /// - Parameter request: The metadata or image request routed to deterministic development responses.
     /// - Returns: A deterministic JSON or PNG response for the supported fixture endpoint.
     /// - Throws: Cancellation, JSON serialization failures, or a TMDb error for an unsupported fixture endpoint.
-    public func send(_ request: URLRequest) async throws -> HTTPResponse {
+    public func send(_ request: URLRequest) throws -> HTTPResponse {
       try Task.checkCancellation()
       guard let url = request.url else { throw TMDbError.invalidQuery }
       switch (url.host, url.path) {

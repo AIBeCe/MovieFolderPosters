@@ -72,6 +72,16 @@ nonisolated public struct ReleaseNameParser: Sendable {
     }
     let titleWords = Array(words[..<boundary])
     guard !titleWords.isEmpty else { return .unresolved(.missingTitle) }
+
+    return parseTitleWords(titleWords, hasTechnicalSuffix: boundary < words.count)
+  }
+
+  /// Selects a release year only when the retained title tokens provide unambiguous evidence.
+  /// - Parameters:
+  ///   - titleWords: Nonempty tokens before the established technical metadata boundary.
+  ///   - hasTechnicalSuffix: Whether ambiguous words precede a recognized release suffix.
+  /// - Returns: A conservative title/year parse or its unresolved reason.
+  private func parseTitleWords(_ titleWords: [String], hasTechnicalSuffix: Bool) -> ReleaseNameParseResult {
     // A leading year-shaped number can be a movie title (1917, 1984, 2001), never its release year.
     let years = titleWords.indices.dropFirst().filter { year(in: titleWords[$0]) != nil }
     let bracketedYears = years.filter { isBracketed(titleWords[$0]) }
@@ -93,7 +103,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
         return parsed(Array(titleWords[..<selected]), year: year(in: titleWords[selected]))
       }
       // Unknown words after a possible year before a technical suffix may be title or release annotations.
-      if boundary < words.count { return .unresolved(.ambiguousMetadata) }
+      if hasTechnicalSuffix { return .unresolved(.ambiguousMetadata) }
     }
 
     return parsed(titleWords, year: nil)
@@ -156,8 +166,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
   private func isTechnical(_ token: String) -> Bool {
     let lower = token.lowercased()
     if Self.resolutions.contains(lower) || Self.suffixTags.contains(lower)
-      || matches(lower, in: Self.sources) || matches(lower, in: Self.codecs)
-    {
+      || matches(lower, in: Self.sources) || matches(lower, in: Self.codecs) {
       return true
     }
     // Audio channel separators have already become spaces; accept their numeric pieces only in a suffix.

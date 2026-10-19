@@ -1,9 +1,64 @@
 import FileSystem
 import Foundation
-import Testing
 @testable import MovieFolderCommon
+import Testing
 
 struct CollectionProcessingModelTests {
+  /// Historical serialized field names retained as a compatibility fixture.
+  private static let legacyJSONFixture = #"""
+  {
+    "context": {
+      "appearance": "softFinish",
+      "authorizationVersion": "22222222-2222-2222-2222-222222222222",
+      "credentialRevision": "33333333-3333-3333-3333-333333333333",
+      "developmentFixtures": false,
+      "rootID": "11111111-1111-1111-1111-111111111111",
+      "rootIdentity": "root-identity"
+    },
+    "folders": [{
+      "assessedAt": 200,
+      "fingerprint": "folder-identity:Movie (2021)",
+      "identity": "folder-identity",
+      "latestAttempt": {"code": "storage", "occurredAt": 200, "stage": "persist"},
+      "movieID": 7,
+      "movieIdentitySource": "explicitSelection",
+      "movieTitle": "Movie",
+      "movieYear": 2021,
+      "name": "Movie (2021)",
+      "ownership": "owned",
+      "reason": "cachePersistenceFailure",
+      "retryAt": 300,
+      "state": "done"
+    }],
+    "inspectedAt": 100,
+    "inventoryComplete": true,
+    "lastCompletedRun": {
+      "endedAt": 200,
+      "id": "44444444-4444-4444-4444-444444444444",
+      "kind": "automatic",
+      "startedAt": 100,
+      "state": "completed"
+    },
+    "lastCompletedRunContext": {
+      "appearance": "softFinish",
+      "authorizationVersion": "22222222-2222-2222-2222-222222222222",
+      "credentialRevision": "33333333-3333-3333-3333-333333333333",
+      "developmentFixtures": false,
+      "rootID": "11111111-1111-1111-1111-111111111111",
+      "rootIdentity": "root-identity"
+    },
+    "operation": {
+      "endedAt": 200,
+      "id": "44444444-4444-4444-4444-444444444444",
+      "kind": "selection",
+      "startedAt": 100,
+      "state": "completed"
+    },
+    "revision": 7,
+    "schemaVersion": 1
+  }
+  """#
+
   private let context = CollectionProcessingContext(
     rootID: UUID(), rootIdentity: "root-identity", authorizationVersion: UUID(),
     credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish
@@ -75,60 +130,9 @@ struct CollectionProcessingModelTests {
   }
 
   @Test func legacyJSONKeepsRenamedFieldsAndOperationValues() throws {
-    let legacyJSON = #"""
-    {
-      "context": {
-        "appearance": "softFinish",
-        "authorizationVersion": "22222222-2222-2222-2222-222222222222",
-        "credentialRevision": "33333333-3333-3333-3333-333333333333",
-        "developmentFixtures": false,
-        "rootID": "11111111-1111-1111-1111-111111111111",
-        "rootIdentity": "root-identity"
-      },
-      "folders": [{
-        "assessedAt": 200,
-        "fingerprint": "folder-identity:Movie (2021)",
-        "identity": "folder-identity",
-        "latestAttempt": {"code": "storage", "occurredAt": 200, "stage": "persist"},
-        "movieID": 7,
-        "movieIdentitySource": "explicitSelection",
-        "movieTitle": "Movie",
-        "movieYear": 2021,
-        "name": "Movie (2021)",
-        "ownership": "owned",
-        "reason": "cachePersistenceFailure",
-        "retryAt": 300,
-        "state": "done"
-      }],
-      "inspectedAt": 100,
-      "inventoryComplete": true,
-      "lastCompletedRun": {
-        "endedAt": 200,
-        "id": "44444444-4444-4444-4444-444444444444",
-        "kind": "automatic",
-        "startedAt": 100,
-        "state": "completed"
-      },
-      "lastCompletedRunContext": {
-        "appearance": "softFinish",
-        "authorizationVersion": "22222222-2222-2222-2222-222222222222",
-        "credentialRevision": "33333333-3333-3333-3333-333333333333",
-        "developmentFixtures": false,
-        "rootID": "11111111-1111-1111-1111-111111111111",
-        "rootIdentity": "root-identity"
-      },
-      "operation": {
-        "endedAt": 200,
-        "id": "44444444-4444-4444-4444-444444444444",
-        "kind": "selection",
-        "startedAt": 100,
-        "state": "completed"
-      },
-      "revision": 7,
-      "schemaVersion": 1
-    }
-    """#
-    let processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: Data(legacyJSON.utf8))
+
+    let processingState = try JSONDecoder().decode(
+      CollectionProcessingState.self, from: Data(Self.legacyJSONFixture.utf8))
     try processingState.validate()
 
     #expect(processingState.folders.first?.lastFailure?.reason == .storage)

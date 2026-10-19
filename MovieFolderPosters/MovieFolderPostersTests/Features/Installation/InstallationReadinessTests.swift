@@ -249,7 +249,7 @@ private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unch
 
     return .valid
   }
-  func extensionEnabled() async -> Bool? {
+  func extensionEnabled() -> Bool? {
     lock.withLock { enablement += 1 }
 
     return true
@@ -288,7 +288,7 @@ extension InstallationMetadata {
 /// Returns sanitized failure evidence for readiness error-handling tests.
 private struct FailingReadinessEnvironment: InstallationReadinessEnvironment {
   func readInstallationMetadata() -> InstallationMetadata { .valid }
-  func extensionEnabled() async -> Bool? { nil }
+  func extensionEnabled() -> Bool? { nil }
   func readReceipt() -> ExtensionReceiptEvidence { .unavailable(.failed) }
   func checkSharedStorage() throws -> SharedStorageEvidence {
     throw NSError(

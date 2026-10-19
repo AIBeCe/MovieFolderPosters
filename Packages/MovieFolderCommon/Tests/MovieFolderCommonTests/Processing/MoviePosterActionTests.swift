@@ -306,6 +306,10 @@ final class MoviePosterActionTests: XCTestCase {
     XCTAssertTrue(posterPaths.isEmpty)
   }
 
+}
+
+/// Manual recovery and coordination regression scenarios.
+extension MoviePosterActionTests {
   /// Verifies manual Selection Clears Root Backoff.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func testManualSelectionClearsRootBackoff() async throws {
@@ -588,7 +592,7 @@ private actor ActionProvider: MovieMetadataProvider {
   /// - Parameter path: The provider-relative source poster path.
   /// - Returns: The downloaded source image bytes; decoding is validated by the processing caller.
   /// - Throws: Provider, transport, image-response, or cancellation errors.
-  func downloadPoster(path: String) async throws -> Data {
+  func downloadPoster(path: String) throws -> Data {
     posterPaths.append(path)
 
     return posterData
@@ -612,15 +616,13 @@ private struct ConfigurationMutationGuard: MovieFolderMutationGuard {
   /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
   func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease?
-  { nil }
+    throws -> PersistenceLease? { nil }
 
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
   func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease?
-  {
+    throws -> PersistenceLease? {
     try repository.mutationLease(for: directory, expectedConfiguration: configuration)
   }
 }
@@ -635,13 +637,11 @@ private struct RefusingMutationGuard: MovieFolderMutationGuard {
   /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
   func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease?
-  { nil }
+    throws -> PersistenceLease? { nil }
 
   /// Revalidates authorization immediately before a manual mutation.
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
   func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease?
-  { throw PosterActionError.busy }
+    throws -> PersistenceLease? { throw PosterActionError.busy }
 }

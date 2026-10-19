@@ -99,6 +99,18 @@ extension FileSystemService {
       return DirectoryReadiness(state: .identityChanged)
     }
 
+    return inspectOpenedDirectory(at: directory, descriptor: descriptor, expectedIdentity: expectedIdentity)
+  }
+
+  /// Assesses the pinned directory's volume, permissions, and metadata support without releasing its descriptor.
+  /// - Parameters:
+  ///   - directory: Path whose identity must continue matching the opened directory.
+  ///   - descriptor: Borrowed descriptor retained and closed by the caller.
+  ///   - expectedIdentity: Optional saved directory identity.
+  /// - Returns: Readiness evidence collected from the same open directory.
+  private func inspectOpenedDirectory(
+    at directory: URL, descriptor: Int32, expectedIdentity: String?
+  ) -> DirectoryReadiness {
     var filesystem = statfs()
     guard fstatfs(descriptor, &filesystem) == 0 else {
       return DirectoryReadiness(state: .unknown)
@@ -149,8 +161,7 @@ private func volatileIdentity(from info: stat) -> String {
 
 /// Reads a volume-stable identity while checking that the path does not change during the read.
 func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSystemService) throws
-  -> String
-{
+  -> String {
   var before = stat()
   guard fstat(descriptor, &before) == 0 else { throw posixDirectoryIdentityError() }
   let openedBefore = volatileIdentity(from: before)
@@ -214,6 +225,12 @@ private func missingPathState(expectedVolumePath: String?) -> DirectoryReadiness
 /// Decodes a fixed-size POSIX C string without reading beyond its value.
 private func cString<Value>(_ value: Value) -> String {
   withUnsafeBytes(of: value) { bytes in
-    String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+    let terminated = Array(bytes.prefix { $0 != 0 }) + [UInt8.zero]
+
+    return terminated.withUnsafeBufferPointer { buffer in
+      guard let address = buffer.baseAddress else { return "" }
+
+      return String(decodingCString: address, as: UTF8.self)
+    }
   }
 }

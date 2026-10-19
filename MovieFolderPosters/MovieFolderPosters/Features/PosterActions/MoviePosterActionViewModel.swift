@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import Foundation
+import MovieFolderCommon
 import Network
 
 /// Receives presentation-state changes from a poster action.
@@ -142,15 +142,16 @@ final class MoviePosterActionViewModel {
       "Searching TMDb…",
       operation: {
         try await service.searchMovies(for: request, query: cleanQuery, year: year)
-      }
-    ) { [weak self] result in
+      },
+      completion: { [weak self] result in
       self?.searchResult = result
       self?.selectedMovieID = nil
       self?.statusMessage =
         result.movies.contains(where: Self.hasPoster)
         ? "Choose a poster below and apply it when ready."
         : "No poster-bearing movies were found."
-    }
+      }
+    )
   }
 
   /// Selects a poster-bearing result from the current search response.
@@ -188,10 +189,11 @@ final class MoviePosterActionViewModel {
       "Applying selected poster…",
       operation: {
         try await service.applyPoster(movie, for: request)
-      }
-    ) { [weak self] movieID in
+      },
+      completion: { [weak self] movieID in
       self?.statusMessage = "Poster updated from TMDb movie \(movieID)."
-    }
+      }
+    )
   }
 
   /// Requests that the UI open the selected movie's TMDb page.
@@ -219,10 +221,11 @@ final class MoviePosterActionViewModel {
       "Refreshing poster…",
       operation: {
         try await service.refreshPoster(for: request)
-      }
-    ) { [weak self] movieID in
+      },
+      completion: { [weak self] movieID in
       self?.statusMessage = "Poster refreshed from TMDb movie \(movieID)."
-    }
+      }
+    )
   }
 
   /// Removes the custom poster assigned to the requested folder.
@@ -234,10 +237,11 @@ final class MoviePosterActionViewModel {
       "Removing poster…",
       operation: {
         try await service.removePoster(for: request)
-      }
-    ) { [weak self] removed in
+      },
+      completion: { [weak self] removed in
       self?.statusMessage = removed ? "Poster removed." : "This folder has no custom poster."
-    }
+      }
+    )
   }
 
   /// Looks up and opens the TMDb page for the movie already assigned to the folder.
@@ -249,8 +253,8 @@ final class MoviePosterActionViewModel {
       "Looking up the assigned movie…",
       operation: {
         try await service.matchedMovieID(for: request)
-      }
-    ) { [weak self] movieID in
+      },
+      completion: { [weak self] movieID in
       guard let movieID, movieID > 0,
         let url = URL(string: "https://www.themoviedb.org/movie/\(movieID)")
       else {
@@ -261,7 +265,8 @@ final class MoviePosterActionViewModel {
       if let self {
         self.navigationDelegate?.moviePosterActionViewModel(self, didRequestOpeningMoviePage: url)
       }
-    }
+      }
+    )
   }
 
   /// Cancels the active request and returns the model to an idle state.

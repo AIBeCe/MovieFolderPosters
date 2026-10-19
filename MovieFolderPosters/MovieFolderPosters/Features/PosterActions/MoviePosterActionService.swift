@@ -1,6 +1,6 @@
-import MovieFolderCommon
 import FileSystem
 import Foundation
+import MovieFolderCommon
 import Network
 import Persistence
 
@@ -189,8 +189,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Returns: Matching movie metadata and pagination state.
   /// - Throws: An action, configuration, or TMDb error if validation or search fails.
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws
-    -> MovieSearchResult
-  {
+    -> MovieSearchResult {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanQuery.isEmpty, !cleanQuery.contains("\r"), !cleanQuery.contains("\n"),
       year.map({ (1888...2099).contains($0) }) ?? true
@@ -319,8 +318,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
     if let bookmark = try authorizationLease.read(),
       let persisted = try? fileSystem.acquireDirectoryAccess(
         bookmark: bookmark, securityScoped: true,
-        expectedIdentity: directory.identity)
-    {
+        expectedIdentity: directory.identity) {
       rootAccess = persisted
     } else {
       rootAccess = try fileSystem.acquireDirectoryAccess(
@@ -378,8 +376,7 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Returns: A provider configured with the saved credential.
   /// - Throws: A credential or fixture error when no usable provider can be created.
   private func makeProvider(for configuration: DirectoryConfiguration) throws
-    -> any MovieMetadataProvider
-  {
+    -> any MovieMetadataProvider {
     guard let token = try credentials.read() else {
       throw MoviePosterActionServiceError.credentialUnavailable
     }
@@ -460,12 +457,10 @@ nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
   func movieFolderProcessor(
     _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
   )
-    throws -> PersistenceLease?
-  { nil }
+    throws -> PersistenceLease? { nil }
 
   func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease?
-  {
+    throws -> PersistenceLease? {
     let lease = try repository.mutationLease(for: directory, expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == rootIdentity else {
       withExtendedLifetime(lease) {}
@@ -502,7 +497,7 @@ private struct MissingTokenProvider: MovieMetadataProvider {
   ///   - title: The requested movie title.
   ///   - year: The optional release year.
   /// - Throws: `TMDbError.missingToken` for every search request.
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
     throw TMDbError.missingToken
   }
 
@@ -510,7 +505,7 @@ private struct MissingTokenProvider: MovieMetadataProvider {
   ///
   /// - Parameter path: The remote poster path requested by the processor.
   /// - Throws: `TMDbError.missingToken` for every download request.
-  func downloadPoster(path: String) async throws -> Data {
+  func downloadPoster(path: String) throws -> Data {
     throw TMDbError.missingToken
   }
 }

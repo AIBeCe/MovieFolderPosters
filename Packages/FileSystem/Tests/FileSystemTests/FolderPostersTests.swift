@@ -180,6 +180,10 @@ struct FolderPostersTests {
     #expect(try service.assignedPosterAppearance(toChild: "Movie", in: root) == nil)
   }
 
+}
+
+/// Poster appearance and ownership policy regression scenarios.
+extension FolderPostersTests {
   /// Scenario: appearance aware assignment records selected style.
   @Test func appearanceAwareAssignmentRecordsSelectedStyle() throws {
     let (root, _) = try makeMovieDirectory()

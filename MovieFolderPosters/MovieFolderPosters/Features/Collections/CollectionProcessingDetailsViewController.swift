@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import AppKit
+import MovieFolderCommon
 
 /// Displays committed collection outcome evidence without offering retry or correction actions.
 @MainActor

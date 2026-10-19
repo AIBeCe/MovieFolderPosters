@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import Foundation
+import MovieFolderCommon
 import Network
 import Testing
 
@@ -128,7 +128,7 @@ struct MoviePosterActionViewModelTests {
   }
 
   /// Verifies that the state delegate reads updated values from the sending model.
-  @Test func stateDelegateReadsUpdatedStateFromSender() async {
+  @Test func stateDelegateReadsUpdatedStateFromSender() {
     let viewModel = MoviePosterActionViewModel(
       service: ActionServiceStub(), request: request(.change))
     let state = ActionStateProbe()
@@ -235,8 +235,7 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws
-    -> MovieSearchResult
-  {
+    -> MovieSearchResult {
     callCounts.search += 1
     if searchShouldFail { throw TMDbError.authentication }
     try await Task.sleep(for: searchDelay)
@@ -244,26 +243,26 @@ private actor ActionServiceStub: MoviePosterActionServicing {
     return searchResult
   }
 
-  func refreshPoster(for request: MoviePosterRequest) async throws -> Int {
+  func refreshPoster(for request: MoviePosterRequest) throws -> Int {
     callCounts.refresh += 1
 
     return 7
   }
 
-  func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
+  func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) throws -> Int {
     callCounts.apply += 1
     lastAppliedMovieID = movie.id
 
     return movie.id
   }
 
-  func removePoster(for request: MoviePosterRequest) async throws -> Bool {
+  func removePoster(for request: MoviePosterRequest) throws -> Bool {
     callCounts.remove += 1
 
     return true
   }
 
-  func matchedMovieID(for request: MoviePosterRequest) async throws -> Int? {
+  func matchedMovieID(for request: MoviePosterRequest) throws -> Int? {
     callCounts.view += 1
 
     return 7

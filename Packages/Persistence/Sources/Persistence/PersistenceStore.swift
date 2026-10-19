@@ -83,35 +83,47 @@ public struct PersistenceStore: Sendable {
       guard let digest = Self.recordDigest(from: filename), !retainedDigests.contains(digest)
       else { continue }
 
-      let lockDescriptor = openat(
-        directory.fileDescriptor, digest + ".lock",
-        O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
-      guard lockDescriptor >= 0 else { throw PersistenceError.io(errno) }
-      if flock(lockDescriptor, LOCK_EX | LOCK_NB) != 0 {
-        let code = errno
-        close(lockDescriptor)
-        if code == EWOULDBLOCK || code == EAGAIN {
-          deferredDigests.insert(digest)
-          continue
-        }
-        throw PersistenceError.io(code)
-      }
-      defer {
-        flock(lockDescriptor, LOCK_UN)
-        close(lockDescriptor)
-      }
-
-      var info = stat()
-      if fstatat(directory.fileDescriptor, filename, &info, AT_SYMLINK_NOFOLLOW) != 0 {
-        if errno == ENOENT { continue }
-        throw PersistenceError.io(errno)
-      }
-      guard (info.st_mode & S_IFMT) == S_IFREG else { continue }
-      if unlinkat(directory.fileDescriptor, filename, 0) != 0, errno != ENOENT {
-        throw PersistenceError.io(errno)
-      }
+      if try !pruneRecord(named: filename, digest: digest) { deferredDigests.insert(digest) }
     }
+
     return deferredDigests
+  }
+
+  /// Removes one obsolete regular record under its canonical lock, leaving lock files reusable.
+  /// - Parameters:
+  ///   - filename: Validated record filename relative to the pinned store directory.
+  ///   - digest: Digest identifying this record's lock.
+  /// - Returns: False only when another owner holds the record lease.
+  /// - Throws: Descriptor, enumeration, or removal errors.
+  private func pruneRecord(named filename: String, digest: String) throws -> Bool {
+    let lockDescriptor = openat(
+      directory.fileDescriptor, digest + ".lock",
+      O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
+    guard lockDescriptor >= 0 else { throw PersistenceError.io(errno) }
+    if flock(lockDescriptor, LOCK_EX | LOCK_NB) != 0 {
+      let code = errno
+      close(lockDescriptor)
+      if code == EWOULDBLOCK || code == EAGAIN {
+        return false
+      }
+      throw PersistenceError.io(code)
+    }
+    defer {
+      flock(lockDescriptor, LOCK_UN)
+      close(lockDescriptor)
+    }
+
+    var info = stat()
+    if fstatat(directory.fileDescriptor, filename, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+      if errno == ENOENT { return true }
+      throw PersistenceError.io(errno)
+    }
+    guard (info.st_mode & S_IFMT) == S_IFREG else { return true }
+    if unlinkat(directory.fileDescriptor, filename, 0) != 0, errno != ENOENT {
+      throw PersistenceError.io(errno)
+    }
+
+    return true
   }
 
   /// Produces the stable hexadecimal SHA-256 identifier used by lock and record filenames.
@@ -200,6 +212,28 @@ public final class PersistenceLease: Sendable {
     mutex.lock()
     defer { mutex.unlock() }
 
+    try validateExistingRecord()
+    try validatePayloadSize(data)
+
+    let envelope = Envelope(version: 1, keyDigest: keyDigest, payload: data)
+    let encoded: Data
+    do {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+      encoded = try encoder.encode(envelope)
+    } catch {
+      throw PersistenceError.corruptRecord
+    }
+    if let maximumRecordBytes, encoded.count > maximumRecordBytes {
+      throw PersistenceError.recordTooLarge
+    }
+
+    try atomicWrite(encoded, named: recordName)
+  }
+
+  /// Validates the existing record while the caller retains the lease mutex.
+  /// - Throws: Unsafe file, envelope, size, or I/O errors before any replacement is attempted.
+  private func validateExistingRecord() throws {
     var info = stat()
     if fstatat(directory.fileDescriptor, recordName, &info, AT_SYMLINK_NOFOLLOW) == 0 {
       guard (info.st_mode & S_IFMT) == S_IFREG else {
@@ -228,7 +262,12 @@ public final class PersistenceLease: Sendable {
     } else if errno != ENOENT {
       throw PersistenceError.io(errno)
     }
+  }
 
+  /// Rejects payloads that cannot fit in the configured encoded envelope limit.
+  /// - Parameter data: Candidate payload, before envelope encoding.
+  /// - Throws: Invalid envelope or capacity errors.
+  private func validatePayloadSize(_ data: Data) throws {
     if let maximumRecordBytes {
       let emptyEnvelope = Envelope(version: 1, keyDigest: keyDigest, payload: Data())
       let emptyEncoding: Data
@@ -244,21 +283,6 @@ public final class PersistenceLease: Sendable {
         throw PersistenceError.recordTooLarge
       }
     }
-
-    let envelope = Envelope(version: 1, keyDigest: keyDigest, payload: data)
-    let encoded: Data
-    do {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-      encoded = try encoder.encode(envelope)
-    } catch {
-      throw PersistenceError.corruptRecord
-    }
-    if let maximumRecordBytes, encoded.count > maximumRecordBytes {
-      throw PersistenceError.recordTooLarge
-    }
-
-    try atomicWrite(encoded, named: recordName)
   }
 
   /// Explicitly removes only the regular record file owned by this held lease.

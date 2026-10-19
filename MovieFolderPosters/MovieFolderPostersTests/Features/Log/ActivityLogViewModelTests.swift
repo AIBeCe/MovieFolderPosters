@@ -41,7 +41,7 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
   /// Whether a read is currently suspended.
   var isReadHeld: Bool { heldRead != nil }
 
-  func record(_ event: MovieFolderActivityEvent) async -> Bool {
+  func record(_ event: MovieFolderActivityEvent) -> Bool {
     guard !failsWrites else { return false }
     sequence += 1
     history.append(MovieFolderActivityEntry(id: UUID(), sequence: sequence, occurredAt: Date(), event: event))
@@ -62,7 +62,7 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
     return snapshot
   }
 
-  func clear() async throws {
+  func clear() throws {
     if failsClear { throw Failure.unavailable }
     history = []
   }
@@ -123,7 +123,6 @@ struct ActivityLogViewModelTests {
     #expect(!log.hasLoadFailure)
     #expect(await service.readCount == 2)
   }
-
 
   @Test func failedClearFencesCapturedReadAndReloadsHistoryWithoutLosingFailure() async {
     let service = ActivityServiceFake()

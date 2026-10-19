@@ -5,8 +5,7 @@ import Network
 /// Owns the lifetime of a Finder-requested poster action window.
 @MainActor
 final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
-  MoviePosterActionViewModelNavigationDelegate
-{
+  MoviePosterActionViewModelNavigationDelegate {
   /// Service used by the action model to search or change a poster.
   private let service: any MoviePosterActionServicing
   /// Window controller retained while the action window is open.
@@ -93,8 +92,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
 /// Renders controls and progress for one movie-folder poster action.
 @MainActor
 private final class MoviePosterActionViewController: NSViewController,
-  MoviePosterActionViewModelDelegate
-{
+  MoviePosterActionViewModelDelegate {
   /// Supplies action state and handles user operations.
   private let viewModel: MoviePosterActionViewModel
   /// Search title entry field.

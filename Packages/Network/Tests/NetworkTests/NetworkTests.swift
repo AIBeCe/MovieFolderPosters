@@ -19,7 +19,7 @@ private actor ScriptedTransport: HTTPTransport {
   }
 
   /// Records the request and returns the next queued response.
-  func send(_ request: URLRequest) async throws -> HTTPResponse {
+  func send(_ request: URLRequest) throws -> HTTPResponse {
     requests.append(request)
     guard !responses.isEmpty else { throw URLError(.badServerResponse) }
     return try responses.removeFirst().get()
@@ -373,12 +373,12 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
   private static let lock = NSLock()
 
   /// Handles only requests sent to the transport test host.
-  override class func canInit(with request: URLRequest) -> Bool {
+  override static func canInit(with request: URLRequest) -> Bool {
     request.url?.host == "transport.test"
   }
 
   /// Preserves the request URL because the test protocol does not canonicalize requests.
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   /// Produces deterministic responses, redirects, oversized bodies, or a held request.
   override func startLoading() {
@@ -390,9 +390,7 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
 
     let status = path == "/redirect" ? 302 : 200
     let headers = ["Content-Type": "application/json", "Retry-After": "12"]
-      .merging(path == "/redirect" ? ["Location": "https://transport.test/followed"] : [:]) {
-        _, new in new
-      }
+      .merging(path == "/redirect" ? ["Location": "https://transport.test/followed"] : [:]) { _, new in new }
     guard
       let response = HTTPURLResponse(
         url: url, statusCode: status, httpVersion: "HTTP/1.1",
@@ -498,7 +496,7 @@ private func controlledTransport() -> URLSessionTransport {
   let request = URLRequest(url: requiredURL("https://transport.test/redirect"))
   let response = try await transport.send(request)
   #expect(response.statusCode == 302)
-  #expect(ControlledURLProtocol.recordedPaths().filter { $0 == "/followed" }.isEmpty)
+  #expect(!ControlledURLProtocol.recordedPaths().contains { $0 == "/followed" })
 }
 
 /// Scenario: url session transport cancels an in flight request.

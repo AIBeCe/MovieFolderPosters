@@ -1,0 +1,120 @@
+import FileSystem
+import Foundation
+import Network
+import Persistence
+
+/// Internal processing failures recorded or propagated by the automatic pipeline.
+nonisolated enum ProcessingFailure: Error {
+  case changedIdentity
+  case invalidPoster
+}
+
+/// The last persisted outcome used to decide whether and when a folder should be retried.
+nonisolated enum FolderRecordStatus: String, Codable {
+  case processed
+  case unresolved
+  case transientFailure
+}
+
+/// Persisted movie decision associated with one folder fingerprint.
+nonisolated struct FolderRecord: Codable {
+  /// The folder identity and name associated with a persisted decision.
+  let fingerprint: String
+  /// The persisted outcome determining reuse and retry behavior.
+  let status: FolderRecordStatus
+  /// The earliest automatic retry time for an unresolved or failed folder.
+  let retryDate: Date?
+  /// The explicit or confidently matched TMDb identity, when recorded.
+  let matchedMovieID: Int?
+  /// The provider-relative source poster path, when available.
+  let posterPath: String?
+  /// Detailed unresolved evidence; absent on older cache records.
+  var processingReason: FolderProcessingReason?
+  /// Saved provider title, when available.
+  var movieTitle: String?
+  /// Saved provider release year, when available.
+  var movieYear: Int?
+  /// Safe latest failure evidence retained through retry deferral.
+  var lastFailure: FolderProcessingFailure?
+  private enum CodingKeys: String, CodingKey {
+    case fingerprint, status, retryDate, matchedMovieID, posterPath, processingReason, movieTitle, movieYear
+    case lastFailure = "latestAttempt"
+    case movieIdentitySource
+  }
+  /// How the saved movie identity was established.
+  var movieIdentitySource: MovieIdentitySource?
+
+  /// Whether this unchanged folder has a confirmed result that needs user resolution.
+  var requiresManualResolution: Bool {
+    status == .unresolved && (processingReason == .noSuitableMovie || processingReason == .ambiguousMovie)
+  }
+}
+
+/// Per-root folder decisions, cached searches, and provider backoff persisted together.
+nonisolated struct ProcessingState: Codable {
+  /// Processing decisions keyed by immediate child folder name.
+  var folders: [String: FolderRecord] = [:]
+  /// Cached provider responses keyed by normalized query digest.
+  var queries: [String: CachedSearch] = [:]
+  /// The provider-wide retry boundary saved for this root, when present.
+  var rootBackoffUntil: Date?
+}
+
+/// Codable search results with their completeness evidence and creation time.
+nonisolated struct CachedSearch: Codable {
+  /// Movie records retained from the cached response.
+  private let movies: [CachedMovie]
+  /// Whether unexamined search pages prevent a unique automatic match.
+  let hasMorePages: Bool
+  /// When the search response entered the cache.
+  let createdAt: Date
+
+  /// Stores a provider response and creation time in a Codable representation.
+  ///
+  /// - Parameters:
+  ///   - result: The provider response whose movie records and pagination evidence are cached.
+  ///   - createdAt: The instant used to evaluate future cache expiry.
+  init(result: MovieSearchResult, createdAt: Date) {
+    movies = result.movies.map(CachedMovie.init)
+    hasMorePages = result.hasMorePages
+    self.createdAt = createdAt
+  }
+
+  /// Reconstructs the provider response from cached movie records and pagination evidence.
+  /// - Returns: A new search response with each cached movie restored to provider metadata.
+  func searchResult() -> MovieSearchResult {
+    MovieSearchResult(movies: movies.map(\.metadata), hasMorePages: hasMorePages)
+  }
+}
+
+/// Codable movie identity and source poster path stored with a cached search.
+nonisolated private struct CachedMovie: Codable {
+  /// Stable identity of the represented collection or movie record.
+  let id: Int
+  /// The display or parsed movie title used by the matching workflow.
+  let title: String
+  /// The original-language title considered alongside the localized title.
+  let originalTitle: String
+  /// The provider release year, or no value when unavailable.
+  let releaseYear: Int?
+  /// The provider-relative source poster path, when available.
+  let posterPath: String?
+
+  /// Copies the provider movie fields required to restore cached matching evidence.
+  ///
+  /// - Parameter movie: The explicit provider movie record to retain or apply.
+  init(_ movie: MovieMetadata) {
+    id = movie.id
+    title = movie.title
+    originalTitle = movie.originalTitle
+    releaseYear = movie.releaseYear
+    posterPath = movie.posterPath
+  }
+
+  /// The provider movie representation reconstructed from its cached fields.
+  var metadata: MovieMetadata {
+    MovieMetadata(
+      id: id, title: title, originalTitle: originalTitle,
+      releaseYear: releaseYear, posterPath: posterPath)
+  }
+}

@@ -78,7 +78,7 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
     }
   }
 
-  public var hasObservedWriteFailure: Bool { get async { didObserveWriteFailure } }
+  public var hasObservedWriteFailure: Bool { didObserveWriteFailure }
 
   public func entries() async throws -> [MovieFolderActivityEntry] {
     let storage = try await storage()
@@ -109,5 +109,5 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
 extension MovieFolderActivityServicing {
   /// Supplies the default absence of process-local failure tracking for alternative implementations.
   /// - Returns: `false`; implementations with retained write-failure evidence can override this default.
-  public var hasObservedWriteFailure: Bool { get async { false } }
+  public var hasObservedWriteFailure: Bool { false }
 }

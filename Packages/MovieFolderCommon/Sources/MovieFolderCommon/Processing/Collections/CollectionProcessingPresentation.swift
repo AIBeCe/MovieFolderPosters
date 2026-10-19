@@ -34,13 +34,22 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
     inspectedAt = processingState.inspectedAt
     lastCompletedRun = processingState.lastCompletedRun
     lastCompletedRunIsCurrentContext = processingState.lastCompletedRunContext == processingState.context
-    if let stateOverride { state = stateOverride }
-    else if isBusy { state = .busy }
-    else if isStale { state = .stale }
-    else if processingState.operation?.state == .running { state = .running }
-    else if processingState.operation?.state == .partial { state = .partial }
-    else if processingState.operation?.state == .interrupted { state = .interrupted }
-    else if processingState.operation?.state == .failed { state = .failed }
-    else { state = .current }
+    if let stateOverride {
+      state = stateOverride
+    } else if isBusy {
+      state = .busy
+    } else if isStale {
+      state = .stale
+    } else if processingState.operation?.state == .running {
+      state = .running
+    } else if processingState.operation?.state == .partial {
+      state = .partial
+    } else if processingState.operation?.state == .interrupted {
+      state = .interrupted
+    } else if processingState.operation?.state == .failed {
+      state = .failed
+    } else {
+      state = .current
+    }
   }
 }

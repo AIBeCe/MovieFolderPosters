@@ -1,9 +1,9 @@
 import FileSystem
 import Foundation
+@testable import MovieFolderCommon
 import Persistence
 import Synchronization
 import Testing
-@testable import MovieFolderCommon
 
 struct CollectionProcessingStoreTests {
   @Test func recordProcessingStartPersistsStateAndCommitUsesExpectedRevision() throws {
@@ -68,150 +68,6 @@ struct CollectionProcessingStoreTests {
     }
     #expect(notifier.revisions.isEmpty)
   }
-
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"] != nil))
-  func processReaderObservesOnlyCompleteCommittedStates() throws {
-    let fixture = try Fixture()
-    let executablePath = try #require(ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"])
-    var processingState = try fixture.processingStore.recordProcessingStart(
-      context: fixture.context, action: .automatic)
-    processingState.folders = Self.processProbeRecords(revision: processingState.revision + 1)
-    processingState.isInventoryComplete = true
-    processingState.inspectedAt = Date()
-    processingState = try fixture.processingStore.commit(processingState, expectedRevision: processingState.revision)
-
-    let readyURL = fixture.directory.appendingPathComponent("probe-ready")
-    let startURL = fixture.directory.appendingPathComponent("probe-start")
-    let firstSampleURL = fixture.directory.appendingPathComponent("probe-sampled")
-    let doneURL = fixture.directory.appendingPathComponent("probe-done")
-    let output = Pipe()
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    process.arguments = [
-      fixture.directory.appendingPathComponent("Outcomes").path,
-      fixture.rootID.uuidString,
-      readyURL.path,
-      startURL.path,
-      firstSampleURL.path,
-      doneURL.path
-    ]
-    process.standardOutput = output
-    try process.run()
-    defer {
-      if process.isRunning {
-        process.terminate()
-        process.waitUntilExit()
-      }
-    }
-
-    try Self.waitForFile(readyURL)
-    try Data().write(to: startURL)
-    try Self.waitForFile(firstSampleURL)
-    for _ in 0..<40 {
-      var checkpoint = processingState
-      checkpoint.folders = Self.processProbeRecords(revision: processingState.revision + 1)
-      processingState = try Self.commitWhenAvailable(
-        checkpoint, expectedRevision: processingState.revision, processingStore: fixture.processingStore
-      )
-    }
-    try Data().write(to: doneURL)
-    let exitDeadline = ContinuousClock.now.advanced(by: .seconds(5))
-    while process.isRunning && ContinuousClock.now < exitDeadline {
-      Thread.sleep(forTimeInterval: 0.005)
-    }
-    guard !process.isRunning else { throw ProbeError.timeout }
-    #expect(process.terminationStatus == 0)
-
-    let outputData = output.fileHandleForReading.readDataToEndOfFile()
-    let revisions = String(decoding: outputData, as: UTF8.self)
-      .split(whereSeparator: \.isNewline)
-      .compactMap { UInt64($0) }
-    #expect(revisions.first == 2)
-    #expect(revisions.last == processingState.revision)
-    #expect(revisions.allSatisfy { $0 >= 2 && $0 <= processingState.revision })
-  }
-
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_BENCHMARK"] == "1"))
-  func largeInventory32RecordCheckpointsReportEncodeAndEnvelopeCost() throws {
-    let fixture = try Fixture()
-    let clock = ContinuousClock()
-    let startedAt = clock.now
-    var encodeDuration: Duration = .zero
-    var processingState = try fixture.processingStore.recordProcessingStart(
-      context: fixture.context, action: .automatic)
-    let now = Date()
-    processingState.folders = (0..<10_000).map { index in
-      FolderProcessingRecord(name: "Folder-\(index)", identity: "identity-\(index)")
-    }
-    processingState.isInventoryComplete = true
-    processingState.inspectedAt = now
-    var encodeStart = clock.now
-    _ = try JSONEncoder().encode(processingState)
-    encodeDuration += encodeStart.duration(to: clock.now)
-    processingState = try fixture.processingStore.commit(processingState, expectedRevision: processingState.revision)
-
-    var peakEnvelopeBytes = try fixture.recordSize()
-    for lowerBound in stride(from: 0, to: processingState.folders.count, by: 32) {
-      let upperBound = min(lowerBound + 32, processingState.folders.count)
-      var checkpoint = processingState
-      for index in lowerBound..<upperBound {
-        checkpoint.folders[index].state = .notFound
-        checkpoint.folders[index].reason = .noSuitableMovie
-        checkpoint.folders[index].assessedAt = now
-      }
-      if upperBound == checkpoint.folders.count {
-        checkpoint.operation?.state = .completed
-        checkpoint.operation?.endedAt = now
-      }
-      encodeStart = clock.now
-      _ = try JSONEncoder().encode(checkpoint)
-      encodeDuration += encodeStart.duration(to: clock.now)
-      processingState = try fixture.processingStore.commit(checkpoint, expectedRevision: processingState.revision)
-      peakEnvelopeBytes = max(peakEnvelopeBytes, try fixture.recordSize())
-    }
-
-    let elapsed = startedAt.duration(to: clock.now).components
-    let encode = encodeDuration.components
-    let elapsedSeconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1_000_000_000_000_000_000
-    let encodeSeconds = Double(encode.seconds) + Double(encode.attoseconds) / 1_000_000_000_000_000_000
-    print(String(
-      format: "Collection processing capacity sample: folders=10000 batch=32 " +
-        "elapsed=%.3fs encode=%.3fs peakEnvelope=%d bytes",
-      elapsedSeconds, encodeSeconds, peakEnvelopeBytes
-    ))
-    #expect(processingState.folders.count == 10_000)
-    #expect(processingState.folders.allSatisfy { $0.state == .notFound })
-    #expect(peakEnvelopeBytes < 8 * 1024 * 1024)
-  }
-
-  private static func processProbeRecords(revision: UInt64) -> [FolderProcessingRecord] {
-    (0..<64).map { index in
-      FolderProcessingRecord(name: "rev-\(revision)-\(index)", identity: "identity-\(index)")
-    }
-  }
-
-  private static func waitForFile(_ url: URL) throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-    while !FileManager.default.fileExists(atPath: url.path) {
-      guard ContinuousClock.now < deadline else { throw ProbeError.timeout }
-      Thread.sleep(forTimeInterval: 0.001)
-    }
-  }
-
-  private static func commitWhenAvailable(
-    _ processingState: CollectionProcessingState,
-    expectedRevision: UInt64,
-    processingStore: CollectionProcessingStore
-  ) throws -> CollectionProcessingState {
-    for _ in 0..<1_000 {
-      do { return try processingStore.commit(processingState, expectedRevision: expectedRevision) }
-      catch CollectionProcessingError.busy { Thread.sleep(forTimeInterval: 0.001) }
-    }
-
-    throw ProbeError.timeout
-  }
-
-  private enum ProbeError: Error { case timeout }
 
   @Test func staleRevisionCannotOverwriteNewerProcessingState() throws {
     let fixture = try Fixture()
@@ -459,4 +315,163 @@ struct CollectionProcessingStoreTests {
       }
     }
   }
+}
+
+/// Explicitly enabled process and scale probes, separate from ordinary store regressions.
+extension CollectionProcessingStoreTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"] != nil))
+  func processReaderObservesOnlyCompleteCommittedStates() throws {
+    let fixture = try Fixture()
+    let executablePath = try #require(ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"])
+    var processingState = try fixture.processingStore.recordProcessingStart(
+      context: fixture.context, action: .automatic)
+    processingState.folders = Self.processProbeRecords(revision: processingState.revision + 1)
+    processingState.isInventoryComplete = true
+    processingState.inspectedAt = Date()
+    processingState = try fixture.processingStore.commit(processingState, expectedRevision: processingState.revision)
+
+    let readyURL = fixture.directory.appendingPathComponent("probe-ready")
+    let startURL = fixture.directory.appendingPathComponent("probe-start")
+    let firstSampleURL = fixture.directory.appendingPathComponent("probe-sampled")
+    let doneURL = fixture.directory.appendingPathComponent("probe-done")
+    let output = Pipe()
+    let process = Self.readerProbe(
+      executablePath: executablePath, directory: fixture.directory, rootID: fixture.rootID, output: output)
+    try process.run()
+    defer {
+      if process.isRunning {
+        process.terminate()
+        process.waitUntilExit()
+      }
+    }
+
+    try Self.waitForFile(readyURL)
+    try Data().write(to: startURL)
+    try Self.waitForFile(firstSampleURL)
+    for _ in 0..<40 {
+      var checkpoint = processingState
+      checkpoint.folders = Self.processProbeRecords(revision: processingState.revision + 1)
+      processingState = try Self.commitWhenAvailable(
+        checkpoint, expectedRevision: processingState.revision, processingStore: fixture.processingStore
+      )
+    }
+    try Data().write(to: doneURL)
+    let exitDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while process.isRunning && ContinuousClock.now < exitDeadline {
+      Thread.sleep(forTimeInterval: 0.005)
+    }
+    guard !process.isRunning else { throw ProbeError.timeout }
+    #expect(process.terminationStatus == 0)
+
+    let outputData = output.fileHandleForReading.readDataToEndOfFile()
+    let revisions = (try #require(String(bytes: outputData, encoding: .utf8)))
+      .split(whereSeparator: \.isNewline)
+      .compactMap { UInt64($0) }
+    #expect(revisions.first == 2)
+    #expect(revisions.last == processingState.revision)
+    #expect(revisions.allSatisfy { $0 >= 2 && $0 <= processingState.revision })
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_BENCHMARK"] == "1"))
+  func largeInventory32RecordCheckpointsReportEncodeAndEnvelopeCost() throws {
+    let fixture = try Fixture()
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    var encodeDuration: Duration = .zero
+    var processingState = try fixture.processingStore.recordProcessingStart(
+      context: fixture.context, action: .automatic)
+    let now = Date()
+    processingState.folders = (0..<10_000).map { index in
+      FolderProcessingRecord(name: "Folder-\(index)", identity: "identity-\(index)")
+    }
+    processingState.isInventoryComplete = true
+    processingState.inspectedAt = now
+    var encodeStart = clock.now
+    _ = try JSONEncoder().encode(processingState)
+    encodeDuration += encodeStart.duration(to: clock.now)
+    processingState = try fixture.processingStore.commit(processingState, expectedRevision: processingState.revision)
+
+    var peakEnvelopeBytes = try fixture.recordSize()
+    for lowerBound in stride(from: 0, to: processingState.folders.count, by: 32) {
+      let upperBound = min(lowerBound + 32, processingState.folders.count)
+      var checkpoint = processingState
+      for index in lowerBound..<upperBound {
+        checkpoint.folders[index].state = .notFound
+        checkpoint.folders[index].reason = .noSuitableMovie
+        checkpoint.folders[index].assessedAt = now
+      }
+      if upperBound == checkpoint.folders.count {
+        checkpoint.operation?.state = .completed
+        checkpoint.operation?.endedAt = now
+      }
+      encodeStart = clock.now
+      _ = try JSONEncoder().encode(checkpoint)
+      encodeDuration += encodeStart.duration(to: clock.now)
+      processingState = try fixture.processingStore.commit(checkpoint, expectedRevision: processingState.revision)
+      peakEnvelopeBytes = max(peakEnvelopeBytes, try fixture.recordSize())
+    }
+
+    let elapsed = startedAt.duration(to: clock.now).components
+    let encode = encodeDuration.components
+    let elapsedSeconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1_000_000_000_000_000_000
+    let encodeSeconds = Double(encode.seconds) + Double(encode.attoseconds) / 1_000_000_000_000_000_000
+    print(String(
+      format: "Collection processing capacity sample: folders=10000 batch=32 " +
+        "elapsed=%.3fs encode=%.3fs peakEnvelope=%d bytes",
+      elapsedSeconds, encodeSeconds, peakEnvelopeBytes
+    ))
+    #expect(processingState.folders.count == 10_000)
+    #expect(processingState.folders.allSatisfy { $0.state == .notFound })
+    #expect(peakEnvelopeBytes < 8 * 1024 * 1024)
+  }
+
+  /// Configures the opt-in child process and its file-based handshake without starting it.
+  private static func readerProbe(
+    executablePath: String, directory: URL, rootID: UUID, output: Pipe
+  ) -> Process {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executablePath)
+    process.arguments = [
+      directory.appendingPathComponent("Outcomes").path, rootID.uuidString,
+      directory.appendingPathComponent("probe-ready").path,
+      directory.appendingPathComponent("probe-start").path,
+      directory.appendingPathComponent("probe-sampled").path,
+      directory.appendingPathComponent("probe-done").path
+    ]
+    process.standardOutput = output
+
+    return process
+  }
+
+  private static func processProbeRecords(revision: UInt64) -> [FolderProcessingRecord] {
+    (0..<64).map { index in
+      FolderProcessingRecord(name: "rev-\(revision)-\(index)", identity: "identity-\(index)")
+    }
+  }
+
+  private static func waitForFile(_ url: URL) throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while !FileManager.default.fileExists(atPath: url.path) {
+      guard ContinuousClock.now < deadline else { throw ProbeError.timeout }
+      Thread.sleep(forTimeInterval: 0.001)
+    }
+  }
+
+  private static func commitWhenAvailable(
+    _ processingState: CollectionProcessingState,
+    expectedRevision: UInt64,
+    processingStore: CollectionProcessingStore
+  ) throws -> CollectionProcessingState {
+    for _ in 0..<1_000 {
+      do {
+        return try processingStore.commit(processingState, expectedRevision: expectedRevision)
+      } catch CollectionProcessingError.busy {
+        Thread.sleep(forTimeInterval: 0.001)
+      }
+    }
+
+    throw ProbeError.timeout
+  }
+
+  private enum ProbeError: Error { case timeout }
 }

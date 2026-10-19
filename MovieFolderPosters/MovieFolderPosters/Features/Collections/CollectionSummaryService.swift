@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import Foundation
+import MovieFolderCommon
 import Persistence
 
 /// One saved outcome processing state and the freshness state used to present it.
@@ -74,91 +74,22 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     guard let saved = try? await configuration.readWhenAvailable() else { return [:] }
     var result: [UUID: CollectionProcessingSummary] = [:]
     for root in saved.directories {
-      let processingState: CollectionProcessingState?
-      do {
-        processingState = try processingStore.read(rootID: root.id)
-      } catch {
-        result[root.id] = CollectionProcessingSummary(
-          processingState: nil,
-          presentation: CollectionProcessingPresentation(processingState: nil),
-          counts: Self.unknownCounts,
-          displayState: .unavailable
-        )
-        continue
-      }
-
-      let isStale = processingState.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
-      let hasRunningOperation = processingState?.operation?.state == .running
-      if isStale || hasRunningOperation,
-        let rootLease = try? coordinationStore.acquireLease(
-        for: CollectionProcessingStore.coordinationKey(for: URL(fileURLWithPath: root.path))) {
-        // A stale record may be replaced by work already in flight. Re-read only after obtaining
-        // the same canonical-root coordination lease used by Finder and manual poster actions.
-        let refreshed: CollectionProcessingState?
-        do {
-          refreshed = try processingStore.read(rootID: root.id)
-        } catch {
-          let isUnavailable = (error as? CollectionProcessingError) != .busy && !isStale
-          let displayState: CollectionProcessingDisplayState = if isStale {
-            .stale
-          } else if isUnavailable {
-            .unavailable
-          } else {
-            .busy
-          }
-          result[root.id] = CollectionProcessingSummary(
-            processingState: processingState,
-            presentation: CollectionProcessingPresentation(
-              processingState: isUnavailable ? nil : processingState,
-              isStale: isStale,
-              isBusy: !isStale && !isUnavailable),
-            counts: isStale || isUnavailable
-              ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
-            displayState: displayState
-          )
-          withExtendedLifetime(rootLease) {}
-          continue
-        }
-        let remainsStale = refreshed.map {
-          !Self.matches($0.context, root: root, configuration: saved)
-        } ?? false
-        let isOrphaned = !remainsStale && refreshed?.operation?.state == .running
-        let displayState: CollectionProcessingDisplayState = if remainsStale {
-          .stale
-        } else if isOrphaned {
-          .interrupted
-        } else {
-          CollectionProcessingPresentation(processingState: refreshed).state
-        }
-        result[root.id] = CollectionProcessingSummary(
-          processingState: refreshed,
-          presentation: CollectionProcessingPresentation(
-            processingState: refreshed, isStale: remainsStale,
-            stateOverride: isOrphaned ? .interrupted : nil),
-          counts: remainsStale ? Self.unknownCounts : (refreshed?.calculateCounts() ?? Self.unknownCounts),
-          displayState: displayState
-        )
-        withExtendedLifetime(rootLease) {}
-      } else {
-        let displayState: CollectionProcessingDisplayState = if isStale {
-          .stale
-        } else if hasRunningOperation {
-          .busy
-        } else {
-          CollectionProcessingPresentation(processingState: processingState).state
-        }
-        result[root.id] = CollectionProcessingSummary(
-          processingState: processingState,
-          presentation: CollectionProcessingPresentation(
-            processingState: processingState, isStale: isStale,
-            isBusy: hasRunningOperation && !isStale),
-          counts: isStale ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
-          displayState: displayState
-        )
-      }
+      result[root.id] = summary(for: root, configuration: saved)
     }
 
     guard let latestConfiguration = try? await configuration.readWhenAvailable() else { return [:] }
+
+    return revalidatedSummaries(result, configuration: latestConfiguration)
+  }
+
+  /// Rechecks the latest saved context after all root reads, retaining removed-root evidence as stale.
+  /// - Parameters:
+  ///   - result: Projections made from the initial configuration.
+  ///   - latestConfiguration: Configuration reread after projection.
+  /// - Returns: Projections fenced against the latest roots and processing settings.
+  private func revalidatedSummaries(
+    _ result: [UUID: CollectionProcessingSummary], configuration latestConfiguration: DirectoryConfiguration
+  ) -> [UUID: CollectionProcessingSummary] {
     var currentResult: [UUID: CollectionProcessingSummary] = [:]
     for root in latestConfiguration.directories {
       guard let previous = result[root.id], let processingState = previous.processingState else {
@@ -192,6 +123,121 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     }
 
     return currentResult
+  }
+
+  /// Reads and projects a root, checking potentially stale or running records under the root coordination lease.
+  /// - Parameters:
+  ///   - root: Configured root identity and authorization generation.
+  ///   - saved: Saved processing settings used to evaluate freshness.
+  /// - Returns: A current, stale, busy, interrupted, or unavailable projection.
+  private func summary(
+    for root: MonitoredDirectory, configuration saved: DirectoryConfiguration
+  ) -> CollectionProcessingSummary {
+    let processingState: CollectionProcessingState?
+    do {
+      processingState = try processingStore.read(rootID: root.id)
+    } catch {
+      return CollectionProcessingSummary(
+        processingState: nil,
+        presentation: CollectionProcessingPresentation(processingState: nil),
+        counts: Self.unknownCounts,
+        displayState: .unavailable
+      )
+    }
+
+    let isStale = processingState.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
+    let hasRunningOperation = processingState?.operation?.state == .running
+    if isStale || hasRunningOperation,
+      let rootLease = try? coordinationStore.acquireLease(
+      for: CollectionProcessingStore.coordinationKey(for: URL(fileURLWithPath: root.path))) {
+      defer { withExtendedLifetime(rootLease) {} }
+      return refreshedSummary(for: root, configuration: saved, previous: processingState, isStale: isStale)
+    } else {
+      let displayState: CollectionProcessingDisplayState = if isStale {
+        .stale
+      } else if hasRunningOperation {
+        .busy
+      } else {
+        CollectionProcessingPresentation(processingState: processingState).state
+      }
+      return CollectionProcessingSummary(
+        processingState: processingState,
+        presentation: CollectionProcessingPresentation(
+          processingState: processingState, isStale: isStale,
+          isBusy: hasRunningOperation && !isStale),
+        counts: isStale ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
+        displayState: displayState
+      )
+    }
+  }
+
+  /// Rereads a root while the caller retains its coordination lease, identifying orphaned running work.
+  /// - Parameters:
+  ///   - root: Root associated with the held lease.
+  ///   - saved: Processing context against which freshness is checked.
+  ///   - processingState: Evidence retained if the reread fails.
+  ///   - isStale: Whether the original evidence belongs to an older context.
+  /// - Returns: The projection supported by the reread or its failure.
+  private func refreshedSummary(
+    for root: MonitoredDirectory, configuration saved: DirectoryConfiguration,
+    previous processingState: CollectionProcessingState?, isStale: Bool
+  ) -> CollectionProcessingSummary {
+    // A stale record may be replaced by work already in flight. Re-read only after obtaining
+    // the same canonical-root coordination lease used by Finder and manual poster actions.
+    let refreshed: CollectionProcessingState?
+    do {
+      refreshed = try processingStore.read(rootID: root.id)
+    } catch {
+      return summaryAfterReadFailure(error, previous: processingState, isStale: isStale)
+    }
+    let remainsStale = refreshed.map {
+      !Self.matches($0.context, root: root, configuration: saved)
+    } ?? false
+    let isOrphaned = !remainsStale && refreshed?.operation?.state == .running
+    let displayState: CollectionProcessingDisplayState = if remainsStale {
+      .stale
+    } else if isOrphaned {
+      .interrupted
+    } else {
+      CollectionProcessingPresentation(processingState: refreshed).state
+    }
+    return CollectionProcessingSummary(
+      processingState: refreshed,
+      presentation: CollectionProcessingPresentation(
+        processingState: refreshed, isStale: remainsStale,
+        stateOverride: isOrphaned ? .interrupted : nil),
+      counts: remainsStale ? Self.unknownCounts : (refreshed?.calculateCounts() ?? Self.unknownCounts),
+      displayState: displayState
+    )
+  }
+
+  /// Preserves stale evidence and distinguishes contention from an unavailable reread.
+  /// - Parameters:
+  ///   - error: Failure from the coordinated reread.
+  ///   - processingState: Previously read evidence retained for details.
+  ///   - isStale: Whether the previous evidence is already stale.
+  /// - Returns: A projection with counts only when the evidence remains usable.
+  private func summaryAfterReadFailure(
+    _ error: any Error, previous processingState: CollectionProcessingState?, isStale: Bool
+  ) -> CollectionProcessingSummary {
+    let isUnavailable = (error as? CollectionProcessingError) != .busy && !isStale
+    let displayState: CollectionProcessingDisplayState = if isStale {
+      .stale
+    } else if isUnavailable {
+      .unavailable
+    } else {
+      .busy
+    }
+    return CollectionProcessingSummary(
+      processingState: processingState,
+      presentation: CollectionProcessingPresentation(
+        processingState: isUnavailable ? nil : processingState,
+        isStale: isStale,
+        isBusy: !isStale && !isUnavailable),
+      counts: isStale || isUnavailable
+        ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
+      displayState: displayState
+    )
   }
 
   /// Values used when no current-context evidence can support a headline count.

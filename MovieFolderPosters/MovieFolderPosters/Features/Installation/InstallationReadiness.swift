@@ -1,6 +1,6 @@
-import MovieFolderCommon
 import FinderSync
 import Foundation
+import MovieFolderCommon
 import Persistence
 import Security
 

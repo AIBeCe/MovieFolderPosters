@@ -22,8 +22,10 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   ///   - store: Dedicated bounded collection processing Persistence namespace.
   ///   - configuration: Current shared settings repository.
   ///   - notifier: Optional hint sender invoked after successful commits.
-  public init(store: PersistenceStore, configuration: ConfigurationRepository,
-       notifier: (any CollectionProcessingStateChangeNotifying)? = nil) {
+  public init(
+    store: PersistenceStore, configuration: ConfigurationRepository,
+    notifier: (any CollectionProcessingStateChangeNotifying)? = nil
+  ) {
     self.store = store
     self.configuration = configuration
     self.notifier = notifier
@@ -49,8 +51,10 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   /// - Returns: The running processing state with a persisted operation identifier.
   /// - Throws: Processing contention, stale configuration, invalid state, or persistence errors.
   /// The caller must hold the shared root-coordination lease across the resulting work.
-  public func recordProcessingStart(context: CollectionProcessingContext, action: CollectionProcessingAction,
-                    child: String? = nil, now: Date = Date()) throws -> CollectionProcessingState {
+  public func recordProcessingStart(
+    context: CollectionProcessingContext, action: CollectionProcessingAction,
+    child: String? = nil, now: Date = Date()
+  ) throws -> CollectionProcessingState {
     let processingState = try withLocks(context: context) { lease in
       let stored = try decode(lease.read(), expectedRootID: context.rootID)
       var processingState: CollectionProcessingState
@@ -132,8 +136,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       guard current.revision < UInt64.max else { throw CollectionProcessingError.revisionExhausted }
       committed.revision = current.revision + 1
       if let operation = committed.operation,
-        operation.state == .completed, operation.action == .automatic
-      {
+        operation.state == .completed, operation.action == .automatic {
         committed.lastCompletedRun = operation
         committed.lastCompletedRunContext = committed.context
       }
@@ -213,8 +216,11 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   private func decode(_ data: Data?, expectedRootID: UUID) throws -> CollectionProcessingState? {
     guard let data else { return nil }
     let processingState: CollectionProcessingState
-    do { processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: data) }
-    catch { throw CollectionProcessingError.unavailable }
+    do {
+      processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: data)
+    } catch {
+      throw CollectionProcessingError.unavailable
+    }
     guard processingState.context.rootID == expectedRootID else { throw CollectionProcessingError.invalidState }
     try processingState.validate()
     return processingState

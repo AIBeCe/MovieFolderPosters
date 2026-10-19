@@ -1,6 +1,6 @@
-import MovieFolderCommon
 import FileSystem
 import Foundation
+import MovieFolderCommon
 
 /// Receives changes to collection and credential presentation state.
 @MainActor
@@ -119,7 +119,9 @@ final class ConfigurationViewModel {
   ///
   /// - Parameter identifier: The stable identifier of the collection to remove.
   func removeDirectory(_ identifier: UUID) async {
-    await perform(action: .collectionRemoved, collectionID: identifier, failureMessage: "Could not remove this folder.") {
+    await perform(
+      action: .collectionRemoved, collectionID: identifier, failureMessage: "Could not remove this folder."
+    ) {
       try await self.service.removeDirectory(identifier)
 
       return try await self.service.configurationSummary()
@@ -177,12 +179,13 @@ final class ConfigurationViewModel {
       action: .posterAppearanceSaved, failureMessage: "Could not save the poster appearance.",
       onFailure: {
         self.posterAppearance = previousAppearance
-      }
-    ) {
-      try await self.service.setPosterAppearance(appearance)
+      },
+      operation: {
+        try await self.service.setPosterAppearance(appearance)
 
-      return try await self.service.configurationSummary()
-    }
+        return try await self.service.configurationSummary()
+      }
+    )
   }
 
   /// Serializes an operation, updates presentation state, and records its outcome.

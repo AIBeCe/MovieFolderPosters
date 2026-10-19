@@ -246,8 +246,7 @@ public struct FileSystemService: Sendable {
     do {
       directoryDescriptor = try openCacheDirectory(directory, create: false)
     } catch let error as NSError
-      where error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT)
-    {
+      where error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT) {
       return nil
     }
     defer { _ = close(directoryDescriptor) }

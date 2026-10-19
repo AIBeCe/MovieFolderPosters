@@ -460,16 +460,16 @@ public struct TMDbClient: Sendable {
       let dataStart = offset + 8
       let dataEnd = dataStart + Int(length)
       let crcEnd = dataEnd + 4
-      let type = String(decoding: bytes[typeStart..<(typeStart + 4)], as: UTF8.self)
+      let type = bytes[typeStart..<(typeStart + 4)]
       guard pngCRC(bytes[typeStart..<dataEnd]) == readUInt32(bytes, at: dataEnd) else {
         return false
       }
       if !sawHeader {
-        guard type == "IHDR", length == 13 else { return false }
+        guard type.elementsEqual("IHDR".utf8), length == 13 else { return false }
         sawHeader = true
-      } else if type == "IDAT" {
+      } else if type.elementsEqual("IDAT".utf8) {
         sawImageData = sawImageData || length > 0
-      } else if type == "IEND" {
+      } else if type.elementsEqual("IEND".utf8) {
         return length == 0 && sawImageData && crcEnd == bytes.count
       }
       offset = crcEnd

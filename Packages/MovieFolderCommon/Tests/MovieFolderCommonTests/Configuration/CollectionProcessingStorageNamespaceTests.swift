@@ -246,7 +246,7 @@ struct CollectionProcessingStorageNamespaceTests {
     try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(
       at: directory, includingPropertiesForKeys: nil).map {
         ($0.lastPathComponent, try FileSnapshot(bytes: Data(contentsOf: $0), inode: inode($0)))
-      })
+    })
   }
 
   /// Reads an entry inode without following symbolic links.

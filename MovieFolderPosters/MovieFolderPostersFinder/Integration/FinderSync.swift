@@ -1,6 +1,6 @@
-import MovieFolderCommon
 import FileSystem
 import FinderSync
+import MovieFolderCommon
 import Network
 import OSLog
 import Persistence
@@ -50,25 +50,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     do {
       let configuration = try await environment.configurationRepository().readWhenAvailable()
       let authorizations = try environment.authorizationStore()
-      var updated: [URL: AuthorizedRoot] = [:]
-      let overlapping = configuration.findOverlappingDirectoryIDs()
-      for directory in configuration.directories where !overlapping.contains(directory.id) {
-        do {
-          let access = try authorize(directory, store: authorizations)
-          guard access.url.resolvingSymlinksInPath().standardizedFileURL.path == directory.path else {
-            throw DirectoryAccessError.staleBookmark
-          }
-          let identity = try fileSystem.persistentDirectoryIdentity(at: access.url)
-          updated[access.url.standardizedFileURL] = AuthorizedRoot(
-            directory: directory, access: access,
-            identity: identity)
-        } catch {
-          logger.notice("Directory unavailable or needs reauthorization; id=\(directory.id)")
-        }
-      }
-      let grouped = Dictionary(grouping: updated.values, by: \.identity)
-      let duplicateIdentities = Set(grouped.filter { $0.value.count > 1 }.map(\.key))
-      updated = updated.filter { !duplicateIdentities.contains($0.value.identity) }
+      let updated = loadAuthorizedRoots(configuration, store: authorizations)
       roots = updated
       processor = nil
       do {
@@ -113,6 +95,37 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
 
       return []
     }
+  }
+
+  /// Authorizes nonoverlapping roots and excludes aliases sharing a persistent identity.
+  /// - Parameters:
+  ///   - configuration: Saved root and authorization generations.
+  ///   - store: Bookmark store used for each authorization lease.
+  /// - Returns: Roots retaining access for the processing lifetime.
+  private func loadAuthorizedRoots(
+    _ configuration: DirectoryConfiguration, store: PersistenceStore
+  ) -> [URL: AuthorizedRoot] {
+    var updated: [URL: AuthorizedRoot] = [:]
+    let overlapping = configuration.findOverlappingDirectoryIDs()
+    for directory in configuration.directories where !overlapping.contains(directory.id) {
+      do {
+        let access = try authorize(directory, store: store)
+        guard access.url.resolvingSymlinksInPath().standardizedFileURL.path == directory.path else {
+          throw DirectoryAccessError.staleBookmark
+        }
+        let identity = try fileSystem.persistentDirectoryIdentity(at: access.url)
+        updated[access.url.standardizedFileURL] = AuthorizedRoot(
+          directory: directory, access: access,
+          identity: identity)
+      } catch {
+        logger.notice("Directory unavailable or needs reauthorization; id=\(directory.id)")
+      }
+    }
+    let grouped = Dictionary(grouping: updated.values, by: \.identity)
+    let duplicateIdentities = Set(grouped.filter { $0.value.count > 1 }.map(\.key))
+    updated = updated.filter { !duplicateIdentities.contains($0.value.identity) }
+
+    return updated
   }
 
   /// Writes bounded extension-build evidence without exposing container paths.
@@ -186,8 +199,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     if let bookmark = try lease.read(),
       let access = try? environment.acquireDirectoryAccess(
         bookmark: bookmark, securityScoped: true,
-        expectedIdentity: directory.identity)
-    {
+        expectedIdentity: directory.identity) {
       return access
     }
     let access = try environment.acquireDirectoryAccess(
@@ -218,8 +230,7 @@ nonisolated struct FinderMutationGuard: MovieFolderMutationGuard {
   /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
   func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease?
-  {
+    throws -> PersistenceLease? {
     guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
     let lease = try repository.mutationLease(for: expected.directory, expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == expected.identity else {
@@ -234,8 +245,7 @@ nonisolated struct FinderMutationGuard: MovieFolderMutationGuard {
   ///
   /// - Parameter processor: The processor requesting authorization for its next mutation.
   func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease?
-  { nil }
+    throws -> PersistenceLease? { nil }
 }
 
 /// Bridges Finder lifecycle callbacks to retained, independently testable orchestration.

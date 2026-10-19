@@ -1,5 +1,5 @@
-import MovieFolderCommon
 import Foundation
+import MovieFolderCommon
 
 /// Receives main-actor presentation updates from the retained history model.
 @MainActor
@@ -40,9 +40,13 @@ final class ActivityLogViewModel {
   /// Accessible fixed presentation text for independent history states.
   var statusText: String {
     var messages: [String] = []
-    if isClearing { messages.append("Clearing activity history…") }
-    else if isLoading || !hasLoaded { messages.append("Loading activity history…") }
-    else if entries.isEmpty && !hasLoadFailure { messages.append("No retained activity.") }
+    if isClearing {
+      messages.append("Clearing activity history…")
+    } else if isLoading || !hasLoaded {
+      messages.append("Loading activity history…")
+    } else if entries.isEmpty && !hasLoadFailure {
+      messages.append("No retained activity.")
+    }
     if hasLoadFailure { messages.append("Could not load activity history. Reopen Log to retry.") }
     if hasClearFailure { messages.append("Could not clear activity history. The previous history is retained.") }
     if hasObservedWriteFailure {

@@ -77,6 +77,11 @@ Log owns generic bounded activity storage and depends on Persistence. MovieFolde
 Network, FileSystem, and Persistence; those services do not depend on MovieFolderCommon or either executable.
 Folders express ownership within one module per package; modules enforce dependency boundaries.
 
+MovieFolderProcessor remains one actor with cohesive source files for automatic processing, manual actions,
+poster assignment, outcome recording, and cache operations. Its contracts and cache record types are separate
+files within the same Processing folder and module. Tests mirror these responsibilities while retaining their
+suite identities. See [SwiftLint validation](SWIFTLINT_VALIDATION.md) for the refactoring and verification record.
+
 ## Xcode and verification scripts
 
 The host and test directories retain Xcode's folder-synchronized groups. Both executable targets link

@@ -14,8 +14,7 @@ protocol ConfigurationCoordinatorDelegate: AnyObject {
 /// Owns collection configuration, Settings, and their related picker and report presentations.
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
-  ConfigurationViewModelActivityDelegate
-{
+  ConfigurationViewModelActivityDelegate {
   /// Root router; the root retains this child for its flow lifetime.
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.

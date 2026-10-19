@@ -1,8 +1,8 @@
 import Foundation
 import OSLog
 
-/// Loads authorized roots and processes visits without exposing scheduler bookkeeping.
-public protocol DirectoryObservationSchedulerDelegate: Sendable {
+/// Loads authorized roots and processes visits through a strongly retained reference collaborator.
+public protocol DirectoryObservationSchedulerDelegate: AnyObject, Sendable {
   /// Loads authorized roots while retaining the access needed by subsequent visits.
   ///
   /// - Parameter scheduler: The scheduler requesting configuration or root processing.

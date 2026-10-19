@@ -1,6 +1,6 @@
-@testable import MovieFolderCommon
 import FileSystem
 import Foundation
+@testable import MovieFolderCommon
 import Persistence
 import Synchronization
 import Testing
@@ -256,7 +256,7 @@ struct DirectoryConfigurationServiceTests {
     let settings = try #require(
       try fixture.repository.store.acquireLease(for: ConfigurationRepository.recordKey))
     let bytes = try #require(try settings.read())
-    #expect(!String(decoding: bytes, as: UTF8.self).contains("fixture-secret-value"))
+    #expect(!(try #require(String(bytes: bytes, encoding: .utf8))).contains("fixture-secret-value"))
     // Release the read lease before the next coordinated mutation.
     withExtendedLifetime(settings) {}
   }
