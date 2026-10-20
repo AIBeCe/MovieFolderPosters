@@ -12,6 +12,22 @@ nonisolated struct CollectionProcessingSummary: Sendable, Equatable {
   let counts: CollectionProcessingCounts
   /// Lifecycle state after a nonblocking persisted-operation orphan check.
   let displayState: CollectionProcessingDisplayState
+
+  /// Returns saved folders that lack a verified or intentional terminal outcome.
+  ///
+  /// Stale and partial evidence remains available for display. Returned records
+  /// do not establish permission or eligibility to search, retry, or mutate icons.
+  ///
+  /// - Returns: Naturally sorted folder evidence, or `.none` when unavailable.
+  func unresolvedFolders() -> [FolderProcessingRecord]? {
+    guard let processingState else { return .none }
+
+    return processingState.folders.filter {
+      !$0.isVerifiedDone && $0.state != .preserved && $0.state != .suppressed
+    }.sorted {
+      $0.name.localizedStandardCompare($1.name) == .orderedAscending
+    }
+  }
 }
 
 /// Reads one already-committed collection processing state without starting processing.

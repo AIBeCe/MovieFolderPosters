@@ -163,6 +163,31 @@ Recovery acceptance now has controlled regression coverage for:
 The full remaining issue #4 implementation and subsequent local feature completion were explicitly authorized.
 Recovery is committed as `008a6f3` and integrated into local `develop`; no push or issue #5 implementation is included.
 
+## R100-05 point 1 — unresolved-folder projection
+
+Implemented on `feature/manual-resolution` after explicit approval on 2026-10-20.
+The host's `CollectionProcessingSummary.unresolvedFolders()` returns saved folder records in natural name order,
+excluding verified Done, preserved, and suppressed outcomes. All other records retain their identity, reason,
+retry date, and other evidence unchanged, including stale, partial, interrupted, and missing-identity evidence.
+An absent processing state returns no projection; an available state with no unresolved records returns an
+empty list. These display records establish neither current authorization nor action eligibility.
+
+Verification for this bounded point:
+
+- The test-first run failed to compile because the proposed method did not yet exist. After implementation,
+  all three new Swift Testing tests passed, including three parameterized freshness cases.
+- The full host harness passed 143 tests across 21 suites. Existing diagnostics in unrelated tests include
+  unused record results and weak variables that were never mutated; no new-source compiler warning was reported.
+- Independent review returned PASS with no Critical or Important findings.
+- SwiftLint reported zero violations across 140 files. Its first run could not save the external cache;
+  rerunning with `--no-cache` passed without changing rules or exclusions.
+- Git whitespace validation passed.
+
+Logs: `/private/tmp/mfp-manual-projection-{red,green,host,lint}.log`.
+The results sheet, Choose Movie routing, selected retry, and cancellation integration remain subsequent
+implementation points requiring their own proposals. This point does not qualify native UI, Finder callbacks,
+live provider requests, or icon persistence; no native build or runtime collection operation was performed.
+
 ## Implementation ledger
 
 - [x] 1. Shared state, reason, operation, snapshot, validation, and counting models with behavioral tests.
