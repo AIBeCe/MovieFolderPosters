@@ -235,8 +235,9 @@ struct CoordinatorLifecycleTests {
     await service.waitForSearchCount(1)
     let second = MoviePosterRequest(rootID: UUID(), childName: "Second", identity: "second", action: .change)
     coordinator.start(second)
-    #expect(!firstModel.isBusy)
+    #expect(firstModel.isCancelling)
     await service.waitForCancellationCount(1)
+    while firstModel.isBusy { await Task.yield() }
     let secondWindow = try #require(coordinator.windowController?.window)
     let secondModel = try #require(coordinator.viewModel)
     #expect(secondWindow !== firstWindow)
@@ -245,6 +246,7 @@ struct CoordinatorLifecycleTests {
     await service.waitForSearchCount(2)
     secondWindow.close()
     await service.waitForCancellationCount(2)
+    while secondModel.isBusy { await Task.yield() }
     #expect(!secondModel.isBusy)
     #expect(coordinator.viewModel == nil)
     #expect(coordinator.windowController == .none)
@@ -284,12 +286,13 @@ private final class RetryingConfigurationBuilder: ConfigurationCoordinatorBuildi
   private(set) var attemptCount = Int.zero
 
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     attemptCount += 1
     if attemptCount == 1 { throw CocoaError(.fileReadUnknown) }
 
     return ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance)
+      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, retryService: retryService)
   }
 }
 
@@ -297,7 +300,8 @@ private final class RetryingConfigurationBuilder: ConfigurationCoordinatorBuildi
 @MainActor
 private struct UnavailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     throw CocoaError(.fileReadUnknown)
   }
 }
@@ -306,8 +310,9 @@ private struct UnavailableConfigurationBuilder: ConfigurationCoordinatorBuilding
 @MainActor
 private struct AvailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
-    ConfigurationCoordinator(service: CoordinatorConfigurationService(), activity: activity, appearance: appearance)
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
+    ConfigurationCoordinator(service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, retryService: retryService)
   }
 }
 
@@ -330,11 +335,13 @@ private final class RecoveryCheckingConfigurationBuilder: ConfigurationCoordinat
   /// - Returns: A configuration owner backed by isolated services.
   /// - Throws: Recovery state failures that make the observed ordering unavailable.
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     observedRecoveryMode = try recovery.read().isRecoveryModeEnabled
 
     return ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, recovery: recovery)
+      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, recovery: recovery,
+      retryService: retryService)
   }
 }
 
@@ -352,7 +359,9 @@ private actor CoordinatorConfigurationService: ConfigurationServicing {
 }
 
 /// Keeps searches pending until cancellation so close/replacement paths exercise real tasks.
-private actor CoordinatorPosterService: MoviePosterActionServicing {
+private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRetryServicing {
+  /// Supplies no eligible selected work in isolated lifecycle tests.
+  func retryFolder(for request: MoviePosterRequest) -> FolderRetryResult { .notEligible }
   /// Searches that have actually entered the service.
   private var searchCount = Int.zero
   /// Searches that observed cancellation from their owning flow.

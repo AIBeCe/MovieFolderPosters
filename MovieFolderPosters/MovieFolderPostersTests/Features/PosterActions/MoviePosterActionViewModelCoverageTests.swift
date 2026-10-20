@@ -35,12 +35,13 @@ struct MoviePosterActionViewModelCoverageTests {
   }
 
   /// Configuration invalidation cancels ongoing work and explains why the user must reopen.
-  @Test func configurationInvalidationClearsBusyState() {
+  @Test func configurationInvalidationClearsBusyState() async {
     let model = makeModel(action: .refresh)
     model.refreshPoster()
     #expect(model.isBusy)
     model.configurationDidChange()
-    #expect(!model.isBusy)
+    #expect(model.isBusy)
+    await waitForIdle(model)
     #expect(model.statusMessage == .none)
     #expect(model.errorMessage == "Directory configuration changed. Reopen this action to continue.")
   }

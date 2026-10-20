@@ -123,7 +123,7 @@ nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironmen
 }
 
 /// Validates folder identity and configuration before performing a manual poster action.
-actor MoviePosterActionService: MoviePosterActionServicing {
+actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServicing {
   /// Performs identity checks and reads the current folder state.
   private let fileSystem = FileSystemService()
   /// Reads the TMDb token without retaining its value in configuration state.
@@ -136,6 +136,8 @@ actor MoviePosterActionService: MoviePosterActionServicing {
 
   /// Retained best-effort recorder whose failure never changes a poster result.
   private let activity: any MovieFolderActivityServicing
+  /// Holds admission through asynchronous suspension and cancellation unwinding.
+  private var isOperationRunning = false
 
   /// Creates the service with a credential provider.
   ///
@@ -158,17 +160,58 @@ actor MoviePosterActionService: MoviePosterActionServicing {
 
   /// Refreshes a poster and records an independent typed operation outcome.
   func refreshPoster(for request: MoviePosterRequest) async throws -> Int {
-    try await recordAction(.posterRefresh, request: request) { try await performRefreshPoster(for: request) }
+    try await withExclusiveAction {
+      try await recordAction(.posterRefresh, request: request) { try await performRefreshPoster(for: request) }
+    }
   }
 
   /// Applies a selected poster and records an independent typed operation outcome.
   func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) async throws -> Int {
-    try await recordAction(.posterSelection, request: request) { try await performApplyPoster(movie, for: request) }
+    try await withExclusiveAction {
+      try await recordAction(.posterSelection, request: request) { try await performApplyPoster(movie, for: request) }
+    }
   }
 
   /// Removes a poster and records an independent typed operation outcome.
   func removePoster(for request: MoviePosterRequest) async throws -> Bool {
-    try await recordAction(.posterRemoval, request: request) { try await performRemovePoster(for: request) }
+    try await withExclusiveAction {
+      try await recordAction(.posterRemoval, request: request) { try await performRemovePoster(for: request) }
+    }
+  }
+
+  /// Retries only the selected child while preserving current recovery and mutation policy.
+  /// - Parameter request: Current collection and selected child identity.
+  /// - Returns: The saved eligibility or attempted-processing disposition.
+  /// - Throws: Admission, authorization, identity, provider, storage, or cancellation errors.
+  func retryFolder(for request: MoviePosterRequest) async throws -> FolderRetryResult {
+    try await withExclusiveAction {
+      try await recordAction(.posterRefresh, request: request) {
+        try await withAuthorizedRoot(request) { context in
+          try Task.checkCancellation()
+          let processor = try makeProcessor(for: context, provider: makeProvider(for: context.configuration))
+          try ensureConfigurationIsCurrent(context)
+
+          return try await processor.retryEligibleFolder(
+            root: context.root, child: request.childName, expectedIdentity: request.identity,
+            processingContext: processingContext(for: context))
+        }
+      }
+    }
+  }
+
+  /// Prevents overlapping host actions while allowing cooperative cancellation.
+  /// - Parameter operation: Authorized work performed while admission is retained.
+  /// - Returns: The operation's result.
+  /// - Throws: Contention, cancellation, or the operation's original error.
+  private func withExclusiveAction<Value: Sendable>(
+    _ operation: () async throws -> Value
+  ) async throws -> Value {
+    try Task.checkCancellation()
+    guard !isOperationRunning else { throw PosterActionError.busy }
+    isOperationRunning = true
+    defer { isOperationRunning = false }
+
+    return try await operation()
   }
 
   /// Keeps logging failures separate from the original authorized operation result or thrown error.
@@ -209,14 +252,19 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       throw MoviePosterActionServiceError.invalidQuery
     }
 
-    return try await withAuthorizedRoot(request) { context in
-      try Task.checkCancellation()
-      let provider = try makeProvider(for: context.configuration)
-      let result = try await provider.searchMovies(title: cleanQuery, year: year)
-      try Task.checkCancellation()
-      try ensureConfigurationIsCurrent(context)
+    return try await withExclusiveAction {
+      try await withAuthorizedRoot(request) { context in
+        try Task.checkCancellation()
+        let provider = try makeProvider(for: context.configuration)
+        let result = try await provider.searchMovies(title: cleanQuery, year: year)
+        try Task.checkCancellation()
+        try ensureConfigurationIsCurrent(context)
+        guard let current = try? fileSystem.readCurrentState(ofChild: request.childName, in: context.root),
+          current.identity == request.identity
+        else { throw MoviePosterActionServiceError.childChanged }
 
-      return result
+        return result
+      }
     }
   }
 
@@ -291,13 +339,15 @@ actor MoviePosterActionService: MoviePosterActionServicing {
   /// - Returns: The saved movie identifier, or `nil` when no assignment exists.
   /// - Throws: An action error if the folder cannot be accessed safely.
   func matchedMovieID(for request: MoviePosterRequest) async throws -> Int? {
-    try await withAuthorizedRoot(request) { context in
-      try Task.checkCancellation()
-      let processor = try makeProcessor(for: context, provider: MissingTokenProvider())
+    try await withExclusiveAction {
+      try await withAuthorizedRoot(request) { context in
+        try Task.checkCancellation()
+        let processor = try makeProcessor(for: context, provider: MissingTokenProvider())
 
-      return try await processor.matchedMovieID(
-        root: context.root, child: request.childName,
-        expectedIdentity: request.identity)
+        return try await processor.matchedMovieID(
+          root: context.root, child: request.childName,
+          expectedIdentity: request.identity)
+      }
     }
   }
 
@@ -471,11 +521,13 @@ nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
   /// The persistent identity captured before processing begins.
   let rootIdentity: String
 
-  /// Supplies no automatic-mutation lease because this guard belongs to the manual-action flow.
+  /// Holds the same configuration fence when a selected retry reuses automatic assignment.
   func movieFolderProcessor(
     _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
   )
-    throws -> PersistenceLease? { .none }
+    throws -> PersistenceLease? {
+    try movieFolderProcessorWillPerformManualMutation(processor)
+  }
 
   /// Holds configuration stable and rejects root replacement before a manual filesystem mutation.
   /// - Parameter processor: Processor requesting permission to mutate the captured root.

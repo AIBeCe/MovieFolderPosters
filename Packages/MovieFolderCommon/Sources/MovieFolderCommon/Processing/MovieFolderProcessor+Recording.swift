@@ -29,11 +29,11 @@ extension MovieFolderProcessor {
   }
 
   /// Marks unfinished work conservatively when cancellation or an error exits the operation.
-  func interruptUnfinishedProcessing(_ processingState: inout CollectionProcessingState?) {
+  func interruptUnfinishedProcessing(_ processingState: inout CollectionProcessingState?, child: String? = .none) {
     guard processingState?.operation?.state == .running else { return }
     if let folders = processingState?.folders {
       processingState?.folders = folders.map { record in
-        guard record.state == .pending else { return record }
+        guard record.state == .pending, child == .none || record.name == child else { return record }
         var uncertain = record
         uncertain.state = .uncertain
         uncertain.reason = .interrupted
@@ -93,10 +93,12 @@ extension MovieFolderProcessor {
   }
 
   /// Explains a root backoff for members that have not yet been assessed.
-  func deferPendingFolderAssessments(_ processingState: inout CollectionProcessingState?, until date: Date) {
+  func deferPendingFolderAssessments(
+    _ processingState: inout CollectionProcessingState?, until date: Date, child: String? = .none
+  ) {
     guard let current = processingState else { return }
     processingState?.folders = current.folders.map { record in
-      guard record.state == .pending else { return record }
+      guard record.state == .pending, child == .none || record.name == child else { return record }
       var deferred = record
       deferred.state = .deferred
       deferred.reason = .retryDeferred

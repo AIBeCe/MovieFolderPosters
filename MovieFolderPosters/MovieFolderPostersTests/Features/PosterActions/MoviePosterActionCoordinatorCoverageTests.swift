@@ -9,6 +9,23 @@ import Testing
 /// Exercises real action-window controls against deterministic external operation results.
 @Suite(.serialized) @MainActor
 struct MoviePosterActionCoordinatorCoverageTests {
+  /// Results reuse the real Choose Movie controls as a child sheet without starting a search.
+  @Test func chooseMovieAttachesToResultsAndDismissesWithItsParent() throws {
+    let coordinator = MoviePosterActionCoordinator(service: WindowPosterService())
+    let parent = NSWindow(contentViewController: NSViewController())
+    parent.makeKeyAndOrderFront(.none)
+    defer { parent.close() }
+    coordinator.start(request(.change), attachedTo: parent)
+    let child = try #require(coordinator.windowController?.window)
+    #expect(child.sheetParent === parent)
+    let model = try #require(coordinator.viewModel)
+    #expect(model.searchResult == .none)
+    #expect(!model.isBusy)
+    coordinator.dismissActions(attachedTo: parent)
+    #expect(coordinator.windowController == .none)
+    #expect(parent.attachedSheet == .none)
+  }
+
   /// Editing fields, searching, choosing and applying must update the actual presentation model and controls.
   @Test func searchSelectionAndApplyRenderTheChosenResult() async throws {
     let coordinator = MoviePosterActionCoordinator(service: WindowPosterService())

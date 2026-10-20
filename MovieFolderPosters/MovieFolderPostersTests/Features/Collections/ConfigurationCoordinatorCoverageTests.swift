@@ -9,6 +9,31 @@ import Testing
 /// Covers coordinator routes that combine injected services with real AppKit windows and sheets.
 @Suite(.serialized) @MainActor
 struct ConfigurationCoordinatorCoverageTests {
+  /// Main opens the focused results sheet without changing configuration or starting provider work.
+  @Test func unresolvedResultsOpenAndCloseWithoutConfigurationMutation() async throws {
+    let rootID = UUID()
+    let directory = ConfiguredDirectoryStatus(
+      id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
+    let service = ConfigurationCoverageService(
+      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false))
+    let activity = ConfigurationCoverageActivity()
+    let coordinator = try makeCoordinator(service: service, activity: activity)
+    coordinator.start()
+    let window = try #require(coordinator.mainWindow?.window)
+    defer { closeSheetsAndWindow(window) }
+    let main = try #require(window.contentViewController as? ConfigurationViewController)
+    try await waitForConfigurationLoad(service: service, activity: activity, controller: main)
+    coordinator.configurationViewControllerDidRequestUnresolvedResults(main, rootID: rootID)
+    let sheet = try #require(coordinator.resultsWindow)
+    #expect(sheet.sheetParent === window)
+    #expect(sheet.title == "Unresolved Results — Movies")
+    let results = try #require(sheet.contentViewController as? CollectionResultsViewController)
+    coordinator.collectionResultsViewControllerDidRequestClose(results)
+    #expect(coordinator.resultsWindow == .none)
+    #expect(window.attachedSheet == .none)
+    #expect(await service.mutationCount == .zero)
+  }
+
   /// Verifies that overlapping readiness requests share one in-flight evidence check.
   @Test func installationRequestCoalescesOverlappingChecks() async throws {
     let service = ConfigurationCoverageService()

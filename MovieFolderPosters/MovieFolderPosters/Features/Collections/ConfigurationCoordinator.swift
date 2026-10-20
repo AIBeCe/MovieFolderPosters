@@ -9,12 +9,26 @@ protocol ConfigurationCoordinatorDelegate: AnyObject {
   func configurationCoordinatorDidRequestLog(_ coordinator: ConfigurationCoordinator)
   /// Invalidates sibling activity presentation after a local write, including unsuccessful writes.
   func configurationCoordinator(_ coordinator: ConfigurationCoordinator, didRecordActivitySaved saved: Bool)
+  /// Requests explicit selection in the existing poster-action flow attached to results.
+  func configurationCoordinator(
+    _ coordinator: ConfigurationCoordinator, didRequestPosterAction request: MoviePosterRequest,
+    attachedTo parent: NSWindow)
+  /// Cancels the nested selection flow before its owning results sheet closes.
+  func configurationCoordinator(_ coordinator: ConfigurationCoordinator, willCloseResults window: NSWindow)
+}
+
+/// Keeps read-only hosts independent of optional resolution presentation.
+extension ConfigurationCoordinatorDelegate {
+  func configurationCoordinator(
+    _ coordinator: ConfigurationCoordinator, didRequestPosterAction request: MoviePosterRequest,
+    attachedTo parent: NSWindow) {}
+  func configurationCoordinator(_ coordinator: ConfigurationCoordinator, willCloseResults window: NSWindow) {}
 }
 
 /// Owns collection configuration, Settings, and their related picker and report presentations.
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
-  ConfigurationViewModelActivityDelegate {
+  ConfigurationViewModelActivityDelegate, CollectionResultsViewControllerDelegate, NSWindowDelegate {
   /// Root router; the root retains this child for its flow lifetime.
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.
@@ -33,6 +47,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private var isObservingProcessing = false
   /// Prevents overlapping installation checks and sheets.
   private var checkingInstallation = false
+  /// Shared host admission service used by selected retries.
+  private let retryService: any CollectionRetryServicing
+  /// Results presentation retained until explicit dismissal or parent closure.
+  private(set) var resultsWindow: NSWindow?
+  /// Owns selected retry lifetime independently of view rendering.
+  private var resultsViewModel: CollectionResultsViewModel?
 
   /// Creates the host flow and connects its configuration and appearance services.
   ///
@@ -48,10 +68,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     summaryService: any CollectionSummaryServicing = EmptyCollectionSummaryService(),
     appearance: AppAppearanceSettings = AppAppearanceSettings(),
     installationService: any InstallationReadinessServicing = InstallationReadinessService(),
-    recovery: ProcessingRecoveryService? = .none
+    recovery: ProcessingRecoveryService? = .none,
+    retryService: any CollectionRetryServicing = UnavailableCollectionRetryService()
   ) {
     self.installationService = installationService
     self.appearance = appearance
+    self.retryService = retryService
     viewModel = ConfigurationViewModel(service: service, activity: activity, recovery: recovery)
     summaryViewModel = CollectionSummaryViewModel(service: summaryService)
     super.init()
@@ -69,8 +91,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       DistributedNotificationCenter.default().addObserver(
         self, selector: #selector(processingChanged(_:)),
         name: MovieFolderEnvironment.collectionProcessingStateChanged, object: .none)
+      DistributedNotificationCenter.default().addObserver(
+        self, selector: #selector(resultsConfigurationChanged(_:)),
+        name: MovieFolderEnvironment.configurationChanged, object: .none)
     }
     if let mainWindow {
+      mainWindow.window?.delegate = self
       refreshCollectionProcessingState()
       show(mainWindow)
       return
@@ -82,6 +108,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       title: "Movie Folder Posters", controller: controller,
       size: NSSize(width: 780, height: 310), minimum: NSSize(width: 680, height: 260))
     mainWindow = window
+    window.window?.delegate = self
     show(window)
   }
 
@@ -160,6 +187,62 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     window.beginSheet(sheet, completionHandler: .none)
   }
 
+  /// Opens a finite results sheet; reading its evidence never requests provider work.
+  /// - Parameter rootID: Configured collection selected in Main.
+  private func showUnresolvedResults(rootID: UUID) {
+    guard let parent = mainWindow?.window, parent.attachedSheet == .none, !viewModel.isBusy,
+      let directory = viewModel.directories.first(where: { $0.id == rootID })
+    else { return }
+    let model = CollectionResultsViewModel(rootID: rootID, summaries: summaryViewModel, retryService: retryService)
+    let controller = CollectionResultsViewController(viewModel: model)
+    controller.delegate = self
+    let sheet = NSWindow(contentViewController: controller)
+    sheet.title = "Unresolved Results — \(URL(fileURLWithPath: directory.path).lastPathComponent)"
+    sheet.styleMask = [.titled, .closable, .resizable]
+    sheet.setContentSize(NSSize(width: 800, height: 480))
+    sheet.minSize = NSSize(width: 680, height: 360)
+    sheet.delegate = self
+    resultsWindow = sheet
+    resultsViewModel = model
+    parent.beginSheet(sheet)
+    model.reload()
+  }
+
+  /// Cancels outstanding work and dismisses only the results flow's own child sheets.
+  private func closeResults() {
+    guard let sheet = resultsWindow else { return }
+    resultsWindow = .none
+    resultsViewModel?.cancelCurrentOperation()
+    delegate?.configurationCoordinator(self, willCloseResults: sheet)
+    if let parent = sheet.sheetParent { parent.endSheet(sheet) }
+    sheet.delegate = .none
+    sheet.close()
+    resultsViewModel = .none
+    summaryViewModel.reload()
+  }
+
+  /// Prevents results work from outliving either its own sheet or Main.
+  func windowWillClose(_ notification: Notification) {
+    guard let window = notification.object as? NSWindow else { return }
+    if window === mainWindow?.window {
+      window.delegate = .none
+      closeResults()
+    } else if window === resultsWindow {
+      closeResults()
+    }
+  }
+
+  /// Forwards an explicit row action to the application-owned Choose Movie flow.
+  func collectionResultsViewController(
+    _ controller: CollectionResultsViewController, didRequestMovieSelection request: MoviePosterRequest
+  ) {
+    guard let parent = resultsWindow, parent.attachedSheet == .none else { return }
+    delegate?.configurationCoordinator(self, didRequestPosterAction: request, attachedTo: parent)
+  }
+
+  /// Ends the results presentation after its Done action.
+  func collectionResultsViewControllerDidRequestClose(_ controller: CollectionResultsViewController) { closeResults() }
+
   /// Combines installation evidence with the last-loaded setup summary.
   ///
   /// - Returns: The report text shown by the readiness sheet.
@@ -228,6 +311,19 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Responds to a request for a collection's saved processing details.
   func configurationViewControllerDidRequestProcessingDetails(_ controller: ConfigurationViewController, rootID: UUID) {
     showProcessingDetails(rootID: rootID)
+  }
+
+  /// Presents focused unresolved results for a configured collection.
+  func configurationViewControllerDidRequestUnresolvedResults(_ controller: ConfigurationViewController, rootID: UUID) {
+    showUnresolvedResults(rootID: rootID)
+  }
+
+  /// Invalidates captured selection after authorization or processing policy changes.
+  @objc private func resultsConfigurationChanged(_ notification: Notification) {
+    Task { @MainActor [weak self] in
+      self?.resultsViewModel?.configurationDidChange()
+      self?.summaryViewModel.reload()
+    }
   }
 
   /// Reloads committed projections after an external change without retaining notification payloads.

@@ -133,7 +133,8 @@ private struct DelegateConfigurationBuilder: ConfigurationCoordinatorBuilding {
   let failure: Failure?
 
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     if let failure {
       switch failure {
       case .migration: throw CollectionProcessingStorageNamespaceError.legacyMigrationRequired
@@ -142,7 +143,7 @@ private struct DelegateConfigurationBuilder: ConfigurationCoordinatorBuilding {
       }
     }
 
-    return ConfigurationCoordinator(service: DelegateConfigurationService(), activity: activity, appearance: appearance)
+    return ConfigurationCoordinator(service: DelegateConfigurationService(), activity: activity, appearance: appearance, retryService: retryService)
   }
 }
 
@@ -160,7 +161,9 @@ private actor DelegateConfigurationService: ConfigurationServicing {
 }
 
 /// Prevents networking and filesystem access from lifecycle-created poster windows.
-private actor DelegatePosterService: MoviePosterActionServicing {
+private actor DelegatePosterService: MoviePosterActionServicing, CollectionRetryServicing {
+  /// Supplies no eligible selected work in isolated lifecycle tests.
+  func retryFolder(for request: MoviePosterRequest) -> FolderRetryResult { .notEligible }
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) throws -> MovieSearchResult {
     MovieSearchResult(movies: [], hasMorePages: false)
   }

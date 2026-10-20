@@ -166,7 +166,7 @@ private extension CollectionProcessingDisplayState {
 }
 
 /// Supplies readable labels for saved folder assessments.
-private extension FolderProcessingState {
+extension FolderProcessingState {
   /// User-facing state name for one immediate child directory.
   var displayDescription: String {
     switch self {
@@ -185,7 +185,7 @@ private extension FolderProcessingState {
 }
 
 /// Supplies concise explanations for persisted folder assessment reasons.
-private extension FolderProcessingReason {
+extension FolderProcessingReason {
   /// Safe user-facing reason that contains no raw provider or filesystem error.
   var displayDescription: String {
     switch self {

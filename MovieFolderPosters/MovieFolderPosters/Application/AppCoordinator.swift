@@ -8,10 +8,12 @@ protocol ConfigurationCoordinatorBuilding {
   /// - Parameters:
   ///   - activity: Recorder shared across independent host features.
   ///   - appearance: Application-wide preferences supplied to Settings.
+  ///   - retryService: The same host action service used by Choose Movie.
   /// - Returns: A configuration flow ready to start.
   /// - Throws: Required configuration or processing storage initialization failures.
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator
 }
 
 /// Composes the live configuration workflow, including service-owned removal cleanup.
@@ -19,7 +21,8 @@ protocol ConfigurationCoordinatorBuilding {
 struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
   /// Opens the host flow, starts best-effort orphan cleanup, and honors explicit Debug fixture arguments.
   func makeCoordinator(activity: any MovieFolderActivityServicing,
-                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
     let service = try DirectoryConfigurationService(
       repository: MovieFolderEnvironment.makeConfigurationRepository(),
@@ -42,13 +45,14 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
 
     return try ConfigurationCoordinator(
       service: service, activity: activity, summaryService: CollectionSummaryService.shared(), appearance: appearance,
-      recovery: try? MovieFolderEnvironment.makeProcessingRecoveryService())
+      recovery: try? MovieFolderEnvironment.makeProcessingRecoveryService(), retryService: retryService)
   }
 }
 
 /// Owns independent host flows and routes application-wide events and policies.
 @MainActor
-final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSettingsDelegate {
+final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSettingsDelegate,
+  MoviePosterActionCoordinatorDelegate {
   /// Configuration exists only after its dependencies initialize successfully.
   private(set) var configurationCoordinator: ConfigurationCoordinator?
   /// Operational Log remains available when configuration cannot start.
@@ -63,6 +67,8 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   private let appearance: AppAppearanceSettings
   /// Establishes launch-requested recovery before routes can admit processing.
   private let recoveryLaunch: ProcessingRecoveryLaunchController
+  /// One admission owner shared by selected retries and all poster-action operations.
+  private let posterService: any MoviePosterActionServicing & CollectionRetryServicing
 
   /// Creates child flows without opening configuration storage.
   /// - Parameters:
@@ -72,16 +78,19 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   ///   - appearance: Preferences exposed by Settings and applied by this root.
   init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
        configurationBuilder: any ConfigurationCoordinatorBuilding = ConfigurationCoordinatorBuilder(),
-       posterService: (any MoviePosterActionServicing)? = .none,
+       posterService: (any MoviePosterActionServicing & CollectionRetryServicing)? = .none,
        appearance: AppAppearanceSettings = AppAppearanceSettings(),
        recoveryLaunch: ProcessingRecoveryLaunchController = ProcessingRecoveryLaunchController()) {
     self.activity = activity
     self.configurationBuilder = configurationBuilder
     self.appearance = appearance
     self.recoveryLaunch = recoveryLaunch
+    let sharedPosterService = posterService ?? MoviePosterActionService(activity: activity)
+    self.posterService = sharedPosterService
     logCoordinator = LogCoordinator(activity: activity)
     posterActionCoordinator = MoviePosterActionCoordinator(
-      service: posterService ?? MoviePosterActionService(activity: activity))
+      service: sharedPosterService)
+    posterActionCoordinator.delegate = self
     appearance.delegate = self
   }
 
@@ -127,7 +136,8 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
     if let existing = configurationCoordinator {
       configuration = existing
     } else {
-      configuration = try configurationBuilder.makeCoordinator(activity: activity, appearance: appearance)
+      configuration = try configurationBuilder.makeCoordinator(
+        activity: activity, appearance: appearance, retryService: posterService)
       configuration.delegate = self
       configurationCoordinator = configuration
     }
@@ -145,6 +155,25 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
 
   func configurationCoordinator(_ coordinator: ConfigurationCoordinator, didRecordActivitySaved saved: Bool) {
     logCoordinator.producerDidRecord(saved: saved)
+  }
+
+  /// Presents the existing explicit selection flow as a child of the results sheet.
+  func configurationCoordinator(
+    _ coordinator: ConfigurationCoordinator, didRequestPosterAction request: MoviePosterRequest,
+    attachedTo parent: NSWindow
+  ) {
+    do { try recoveryLaunch.prepare() } catch { return }
+    posterActionCoordinator.start(request, attachedTo: parent)
+  }
+
+  /// Cancels only the action sheet owned by the results flow being dismissed.
+  func configurationCoordinator(_ coordinator: ConfigurationCoordinator, willCloseResults window: NSWindow) {
+    posterActionCoordinator.dismissActions(attachedTo: window)
+  }
+
+  /// Reloads committed results even when a distributed notification was missed.
+  func moviePosterActionCoordinatorDidFinishOperation(_ coordinator: MoviePosterActionCoordinator) {
+    configurationCoordinator?.refreshCollectionProcessingState()
   }
 
   func appAppearanceSettingsDidChange(_ settings: AppAppearanceSettings) {

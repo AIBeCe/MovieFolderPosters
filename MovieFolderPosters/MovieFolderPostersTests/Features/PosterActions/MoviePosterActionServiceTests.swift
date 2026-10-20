@@ -10,6 +10,86 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// Cancelling a noncooperative provider retains admission until its service call returns.
+  @Test(.timeLimit(.minutes(1))) func cancelledSearchRetainsSharedAdmissionUntilItReturns() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let provider = SuspendedActionProvider()
+    let service = fixture.service(provider: provider)
+    let search = Task { try await service.searchMovies(for: fixture.request, query: "Dune", year: 2021) }
+    await provider.waitForSearch()
+    search.cancel()
+    await #expect(throws: PosterActionError.busy) { try await service.matchedMovieID(for: fixture.request) }
+    await #expect(throws: PosterActionError.busy) { try await service.retryFolder(for: fixture.request) }
+    await provider.finishSearch()
+    await #expect(throws: CancellationError.self) { try await search.value }
+    #expect(try await service.matchedMovieID(for: fixture.request) == .none)
+  }
+
+  /// Explicit selection and selected retry retain unrelated evidence and update authoritative counts.
+  /// - Parameter choosesMovie: Whether the user resolves a confirmed negative result by explicit selection.
+  @Test(arguments: [false, true])
+  func selectedActionsUpdateOnlyTheirRequestedFolder(choosesMovie: Bool) async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let configuration = try fixture.repository.read()
+    let root = try #require(configuration.directories.first)
+    let rootIdentity = try #require(root.identity)
+    let context = CollectionProcessingContext(
+      rootID: root.id, rootIdentity: rootIdentity, authorizationVersion: root.authorizationVersion,
+      credentialRevision: configuration.credentialRevision,
+      usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance)
+    let unrelated = FolderProcessingRecord(
+      name: "Unrelated", identity: "untouched", state: .notFound, reason: .noSuitableMovie)
+    var initial = try fixture.processing.recordProcessingStart(context: context, action: .automatic)
+    initial.folders = [
+      FolderProcessingRecord(name: fixture.request.childName, identity: fixture.request.identity,
+        state: choosesMovie ? .notFound : .failed, reason: choosesMovie ? .noSuitableMovie : .connectivity),
+      unrelated
+    ]
+    initial.isInventoryComplete = true
+    initial.inspectedAt = Date()
+    initial.operation?.state = .partial
+    _ = try fixture.processing.commit(initial, expectedRevision: initial.revision)
+    let provider = ActionProvider()
+    let service = fixture.service(provider: provider)
+    if choosesMovie {
+      let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+        posterPath: "/chosen.png")
+      #expect(try await service.applyPoster(movie, for: fixture.request) == 7)
+      #expect(await provider.searches.isEmpty)
+    } else {
+      let result = try await service.retryFolder(for: fixture.request)
+      guard case .attempted(let summary, let stopSelection) = result else {
+        Issue.record("Eligible selected work must be attempted")
+        return
+      }
+      #expect(summary.assigned == 1)
+      #expect(!stopSelection)
+    }
+    let saved = try #require(try fixture.processing.read(rootID: root.id))
+    #expect(saved.folders.first { $0.name == fixture.request.childName }?.isVerifiedDone == true)
+    #expect(saved.folders.first { $0.name == unrelated.name } == unrelated)
+    #expect(saved.calculateCounts().done == 1)
+    #expect(saved.calculateCounts().notFound == 1)
+    #expect(saved.calculateCounts().total == 2)
+  }
+
+  /// Candidate results cannot be returned for a child replaced while the search was suspended.
+  @Test(.timeLimit(.minutes(1))) func searchRevalidatesChildAfterProviderReturns() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let provider = SuspendedActionProvider()
+    let service = fixture.service(provider: provider)
+    let search = Task { try await service.searchMovies(for: fixture.request, query: "Dune", year: 2021) }
+    await provider.waitForSearch()
+    let child = fixture.movies.appendingPathComponent(fixture.request.childName)
+    try FileManager.default.moveItem(at: child, to: fixture.movies.appendingPathComponent("Previous"))
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
+    await provider.finishSearch()
+    await #expect(throws: MoviePosterActionServiceError.childChanged) { try await search.value }
+  }
+
   /// A previously composed host service rechecks durable admission before direct manual searches.
   @Test func cachedManualServiceHonorsRecoveryModeAndExplicitResume() async throws {
     let fixture = try PosterActionFixture()
@@ -331,4 +411,36 @@ private actor ActionProvider: MovieMetadataProvider {
 
     return try Data(contentsOf: resources)
   }
+}
+
+/// Holds a real service search at its provider boundary without depending on clock delays.
+private actor SuspendedActionProvider: MovieMetadataProvider {
+  /// Whether the service reached the search boundary.
+  private var hasStarted = false
+  /// Waiter notified when search begins.
+  private var startedWaiter: CheckedContinuation<Void, Never>?
+  /// Provider response retained until the test explicitly permits it.
+  private var responseWaiter: CheckedContinuation<MovieSearchResult, Never>?
+
+  /// Waits for search entry so cancellation and replacement occur during real suspended work.
+  func waitForSearch() async {
+    guard !hasStarted else { return }
+    await withCheckedContinuation { startedWaiter = $0 }
+  }
+
+  /// Releases an empty completed search without manufacturing a matched movie.
+  func finishSearch() {
+    responseWaiter?.resume(returning: MovieSearchResult(movies: [], hasMorePages: false))
+    responseWaiter = .none
+  }
+
+  func searchMovies(title: String, year: Int?) async -> MovieSearchResult {
+    hasStarted = true
+    startedWaiter?.resume()
+    startedWaiter = .none
+
+    return await withCheckedContinuation { responseWaiter = $0 }
+  }
+
+  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
 }

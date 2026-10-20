@@ -2,10 +2,20 @@ import AppKit
 import MovieFolderCommon
 import Network
 
+/// Connects completed poster operations to independent saved-results presentation.
+@MainActor
+protocol MoviePosterActionCoordinatorDelegate: AnyObject {
+  /// Requests a reload after an action returns or its presentation closes.
+  /// - Parameter coordinator: The coordinator whose action ended.
+  func moviePosterActionCoordinatorDidFinishOperation(_ coordinator: MoviePosterActionCoordinator)
+}
+
 /// Owns the lifetime of a Finder-requested poster action window.
 @MainActor
 final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
-  MoviePosterActionViewModelNavigationDelegate {
+  MoviePosterActionViewModelNavigationDelegate, MoviePosterActionViewModelOperationDelegate {
+  /// The application root owns both this flow and its results consumers.
+  weak var delegate: (any MoviePosterActionCoordinatorDelegate)?
   /// Service used by the action model to search or change a poster.
   private let service: any MoviePosterActionServicing
   /// Window controller retained while the action window is open.
@@ -29,30 +39,34 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   }
 
   /// Presents a window for the request, reusing it when the same request is active.
-  /// - Parameter request: The Finder action and folder identity to handle.
-  func start(_ request: MoviePosterRequest) {
-    if activeRequest == request, let windowController {
+  /// - Parameters:
+  ///   - request: The explicit action and folder identity to handle.
+  ///   - parent: The owning results sheet, or no parent for a Finder action window.
+  func start(_ request: MoviePosterRequest, attachedTo parent: NSWindow? = .none) {
+    if activeRequest == request, let windowController,
+      windowController.window?.sheetParent === parent, viewModel?.isConfigurationInvalidated != true {
       windowController.showWindow(.none)
       windowController.window?.makeKeyAndOrderFront(.none)
       return
     }
-    windowController?.close()
+    closeCurrentPresentation()
 
     let viewModel = MoviePosterActionViewModel(service: service, request: request)
     let content = MoviePosterActionViewController(viewModel: viewModel)
     let window = NSWindow(contentViewController: content)
     window.title = "\(request.action.title) — \(request.childName)"
-    window.setContentSize(NSSize(width: 540, height: request.action == .change ? 290 : 220))
-    window.styleMask = [.titled, .closable, .miniaturizable]
+    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 330 : 260))
+    window.styleMask = parent == .none ? [.titled, .closable, .miniaturizable] : [.titled, .closable]
     window.isReleasedWhenClosed = false
     window.delegate = self
 
     viewModel.navigationDelegate = self
+    viewModel.operationDelegate = self
     let controller = NSWindowController(window: window)
     self.viewModel = viewModel
     activeRequest = request
     windowController = controller
-    controller.showWindow(.none)
+    if let parent { parent.beginSheet(window) } else { controller.showWindow(.none) }
     window.makeKeyAndOrderFront(.none)
   }
 
@@ -67,10 +81,33 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   /// Cancels outstanding work and releases state when the action window closes.
   /// - Parameter notification: The AppKit window-close notification.
   func windowWillClose(_ notification: Notification) {
+    guard let window = notification.object as? NSWindow, window === windowController?.window else { return }
     viewModel?.cancelCurrentOperation()
+    if let parent = window.sheetParent { parent.endSheet(window) }
+    window.delegate = .none
     viewModel = .none
     activeRequest = .none
     windowController = .none
+    delegate?.moviePosterActionCoordinatorDidFinishOperation(self)
+  }
+
+  /// Cancels only the nested action owned by the supplied results sheet.
+  /// - Parameter parent: Results sheet being dismissed.
+  func dismissActions(attachedTo parent: NSWindow) {
+    guard windowController?.window?.sheetParent === parent else { return }
+    closeCurrentPresentation()
+  }
+
+  /// Ends sheet attachment before closing the current action presentation.
+  private func closeCurrentPresentation() {
+    guard let window = windowController?.window else { return }
+    viewModel?.cancelCurrentOperation()
+    if let parent = window.sheetParent { parent.endSheet(window) }
+    window.close()
+  }
+
+  func moviePosterActionViewModelDidFinishOperation(_ viewModel: MoviePosterActionViewModel) {
+    delegate?.moviePosterActionCoordinatorDidFinishOperation(self)
   }
 
   /// Cancels the active action after another process changes configuration.
@@ -107,6 +144,10 @@ private final class MoviePosterActionViewController: NSViewController,
   /// Opens the currently selected movie's TMDb page.
   private let viewSelectedButton = NSButton(
     title: "View Selected Movie on TMDb", target: .none, action: .none)
+  /// Requests cancellation while retaining the visible operation's drain state.
+  private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
+  /// Dismisses this finite action presentation without applying an implicit selection.
+  private let doneButton = NSButton(title: "Done", target: .none, action: .none)
 
   /// Creates the action view for the supplied model.
   /// - Parameter viewModel: The model providing action state and operations.
@@ -154,6 +195,16 @@ private final class MoviePosterActionViewController: NSViewController,
     } else {
       stack.addArrangedSubview(primaryButton)
     }
+    cancelButton.target = self
+    cancelButton.action = #selector(cancelPosterOperation)
+    cancelButton.setAccessibilityLabel("Cancel current poster operation")
+    doneButton.target = self
+    doneButton.action = #selector(closePresentation)
+    doneButton.keyEquivalent = "\u{1b}"
+    let lifecycleRow = NSStackView(views: [cancelButton, doneButton])
+    lifecycleRow.orientation = .horizontal
+    lifecycleRow.spacing = 8
+    stack.addArrangedSubview(lifecycleRow)
     view = root
   }
 
@@ -223,9 +274,13 @@ private final class MoviePosterActionViewController: NSViewController,
   private func render() {
     guard isViewLoaded else { return }
     let busy = viewModel.isBusy
-    searchButton.isEnabled = !busy
+    searchButton.isEnabled = viewModel.canStartOperation
     resultPicker.isEnabled = !busy && !viewModel.movies.isEmpty
-    primaryButton.isEnabled = !busy
+    primaryButton.isEnabled = viewModel.canStartOperation
+    queryField.isEnabled = viewModel.canStartOperation
+    yearField.isEnabled = viewModel.canStartOperation
+    cancelButton.isEnabled = busy && !viewModel.isCancelling
+    cancelButton.title = viewModel.isCancelling ? "Cancelling…" : "Cancel"
     statusLabel.stringValue =
       viewModel.hasMorePages
       ? (viewModel.statusMessage ?? "") + " More results may be available on TMDb."
@@ -304,4 +359,8 @@ private final class MoviePosterActionViewController: NSViewController,
   @objc private func removePoster() { viewModel.removePoster() }
   /// Opens the TMDb page for the movie already assigned to the folder.
   @objc private func openMoviePage() { viewModel.openMoviePage() }
+  /// Requests cancellation while leaving the active operation visible until it returns.
+  @objc private func cancelPosterOperation() { viewModel.cancelCurrentOperation() }
+  /// Closes through the coordinator's existing window-lifetime callbacks.
+  @objc private func closePresentation() { view.window?.performClose(.none) }
 }

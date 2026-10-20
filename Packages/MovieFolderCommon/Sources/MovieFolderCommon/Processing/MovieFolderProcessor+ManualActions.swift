@@ -229,7 +229,7 @@ extension MovieFolderProcessor {
   ///   - expectedIdentity: The filesystem identity captured when the operation was authorized.
   /// - Returns: The current child evidence after identity validation.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  private func actionCandidate(root: URL, child: String, expectedIdentity: String) throws -> FolderCandidate {
+  func actionCandidate(root: URL, child: String, expectedIdentity: String) throws -> FolderCandidate {
     let candidate: FolderCandidate
     do {
       candidate = try fileSystem.readCurrentState(ofChild: child, in: root)

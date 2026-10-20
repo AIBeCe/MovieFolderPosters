@@ -15,6 +15,9 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
   /// Requests the read-only outcome details for one configured collection.
   func configurationViewControllerDidRequestProcessingDetails(
     _ controller: ConfigurationViewController, rootID: UUID)
+  /// Requests focused manual resolution for the selected collection.
+  func configurationViewControllerDidRequestUnresolvedResults(
+    _ controller: ConfigurationViewController, rootID: UUID)
   /// Requests folder selection for a new root or authorization replacement.
   func configurationViewController(
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?)
@@ -23,6 +26,9 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
 /// Provides no-op defaults for delegate actions a host may choose not to present.
 @MainActor
 extension ConfigurationViewControllerDelegate {
+  /// Allows hosts without a resolution flow to retain read-only configuration.
+  func configurationViewControllerDidRequestUnresolvedResults(
+    _ controller: ConfigurationViewController, rootID: UUID) {}
   /// Ignores a details request when the host does not present outcome sheets.
   func configurationViewControllerDidRequestProcessingDetails(
     _ controller: ConfigurationViewController, rootID: UUID) {}
@@ -284,6 +290,12 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       details.target = self
       details.representedObject = directory.id
       menu.addItem(details)
+      let unresolved = NSMenuItem(
+        title: "Unresolved Results…", action: #selector(showUnresolvedResults(_:)), keyEquivalent: "")
+      unresolved.target = self
+      unresolved.representedObject = directory.id
+      unresolved.isEnabled = !viewModel.isBusy
+      menu.addItem(unresolved)
     }
     let refresh = NSMenuItem(
       title: "Refresh Status", action: #selector(refreshStatus), keyEquivalent: "")
@@ -348,6 +360,11 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   @objc private func showProcessingDetails(_ sender: NSMenuItem) {
     guard let identifier = sender.representedObject as? UUID else { return }
     requestProcessingDetails(for: identifier)
+  }
+  /// Requests manual-resolution results without starting a search or processing operation.
+  @objc private func showUnresolvedResults(_ sender: NSMenuItem) {
+    guard let identifier = sender.representedObject as? UUID else { return }
+    delegate?.configurationViewControllerDidRequestUnresolvedResults(self, rootID: identifier)
   }
   /// Requests read-only outcome evidence for the selected root.
   private func requestProcessingDetails(for identifier: UUID) {
