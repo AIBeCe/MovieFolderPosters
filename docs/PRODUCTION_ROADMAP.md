@@ -40,8 +40,10 @@ Issue creation does not authorize implementation, change release scope, or imply
   explicitly scoped, and not permission to recurse. Normal collection discovery remains immediate-child-only.
 - Native icon metadata mutations require approved scope, current authorization, identity, ownership, suppression,
   and policy checks after asynchronous work and immediately before writing.
-- Keep processing finite and tied to actual authorized invocations/process lifetimes. No watcher, timer-based
-  scan, launch agent, daemon, or promise that an extension will keep running or wake itself later.
+- Keep processing finite and tied to authorized roots and extension lifetimes. While Finder observes a configured
+  collection, a root-directory event may queue one coalesced rescan and provider backoff may schedule one retry at
+  its recorded deadline. Neither trigger survives observation end, configuration reload, or extension termination;
+  no launch agent, daemon, persistent scheduler, or wake-up guarantee is introduced.
 - Separate authoritative folder outcomes from a bounded activity stream. Derive neither from a screenshot,
   unstructured Console text, or optimistic network requests. Stale/unknown/partial values remain labelled.
 - Prefer missing posters to incorrect ones. A suggestion, imported record, old approval, or matching path never
@@ -164,7 +166,7 @@ GitHub issue: [#4](https://github.com/AIBeCe/MovieFolderPosters/issues/4); miles
 - [x] Presentation: Separate saved-state freshness from processing completion. Show Needs processing, Waiting to retry, Needs manual resolution, and Complete with relevant counts; mixed conditions remain visible together. Current alone must not imply completion. Full rules: [Processing recovery policy](COLLECTION_PROCESSING.md#approved-recovery-policy--r100-04-and-r100-05).
 - Dependencies: R100-02 and R100-03; no new background process.
 - Acceptance: Controlled tests cover 401/403, 429 with changing Retry-After, server errors, cancellation, process loss, and a later explicit resume without repeating completed writes. A next-eligible time is never presented as a scheduled execution promise. Recovery mode cannot be bypassed by another entry point or stale process.
-- Acceptance: Repeated visits, cooldown expiry, reloads, and process restarts never automatically repeat confirmed Not found/Several matches searches. Eligible retries respect failure policy and shared provider backoff. Legacy reassessment persists its classification and is not repeated after restart; interrupted reassessment resumes safely. Tests cover preserved Done evidence, legacy JSON, and mixed manual/retry/pending collection labels. Manual-resolution controls remain in R100-05; no timer or background scheduler is added.
+- Acceptance: Repeated visits, cooldown expiry, reloads, and process restarts never automatically repeat confirmed Not found/Several matches searches. Eligible retries respect failure policy and shared provider backoff. Legacy reassessment persists its classification and is not repeated after restart; interrupted reassessment resumes safely. Tests cover preserved Done evidence, legacy JSON, and mixed manual/retry/pending collection labels. Manual-resolution controls remain in R100-05. This issue originally added no timer; the later observed-collection bugfix adds an extension-lifetime retry only while Finder continues observing the root.
 - Source ideas: E61, E62, E63, E64, N98.
 
 Recovery commit `008a6f3` was fast-forwarded into local `develop` on 2026-10-20. See

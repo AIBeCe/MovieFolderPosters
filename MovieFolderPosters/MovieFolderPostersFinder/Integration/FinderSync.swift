@@ -148,10 +148,13 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// - Parameters:
   ///   - scheduler: The scheduler requesting configuration or root processing.
   ///   - url: The observed collection root URL.
+  /// - Returns: The provider backoff deadline for a deferred observed-root continuation.
   /// - Throws: Configuration contention or changes, bookmark access failures, persistence failures, or a root identity
   /// mismatch.
-  func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws {
-    guard let root = roots[url], let processor, let configuration = processingConfiguration else { return }
+  func directoryObservationScheduler(
+    _ scheduler: DirectoryObservationScheduler, process url: URL
+  ) async throws -> Date? {
+    guard let root = roots[url], let processor, let configuration = processingConfiguration else { return .none }
     let operationID = UUID()
     await activity.record(MovieFolderActivityEvent(
       action: .automaticProcessing, status: .started,
@@ -171,6 +174,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         action: .automaticProcessing, status: MovieFolderActivityEvent.automaticProcessingStatus(for: result),
         operationID: operationID, collectionID: root.directory.id))
       logger.notice("Processing returned: examined=\(result.examined), assigned=\(result.assigned)")
+
+      return result.rootBackoffUntil
     } catch {
       await activity.record(MovieFolderActivityEvent(
         action: .automaticProcessing, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,

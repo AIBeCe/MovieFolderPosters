@@ -14,6 +14,10 @@
 - Approved poster appearance scope adds Raw, default Soft finish, and graphite Matte frame settings.
 - Keep fixtures explicitly opt-in in Debug; Release uses the configured TMDb read access token.
 - Creating or approving the project plan does not authorize further product implementation.
+- Before registering a new MovieFolderPosters Finder extension build, remove prior MovieFolderPosters extension
+  registrations. First identify the intended current host bundle; remove only stale MovieFolderPosters PlugInKit
+  registrations and matching LaunchServices records that point to obsolete host bundles. Preserve unrelated
+  extensions and the intended active build, then verify that System Settings shows one MovieFolderPosters entry.
 
 ## Proposal before implementation
 

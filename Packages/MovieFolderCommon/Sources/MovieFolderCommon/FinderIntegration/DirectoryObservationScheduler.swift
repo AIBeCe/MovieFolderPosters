@@ -1,3 +1,5 @@
+import Darwin
+import Dispatch
 import Foundation
 import OSLog
 
@@ -13,8 +15,9 @@ public protocol DirectoryObservationSchedulerDelegate: AnyObject, Sendable {
   /// - Parameters:
   ///   - scheduler: The scheduler requesting configuration or root processing.
   ///   - url: The observed collection root URL.
+  /// - Returns: The provider-wide retry deadline, if this visit stopped during backoff.
   /// - Throws: Cancellation or a failure reported by the configured processing collaborator.
-  func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws
+  func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws -> Date?
 }
 
 /// Serializes observed-root work and drains cancelled work before loading new configuration.
@@ -31,6 +34,14 @@ public actor DirectoryObservationScheduler {
   private var activeTask: Task<Void, Never>?
   /// The root currently being processed, if any.
   private var activeURL: URL?
+  /// Directory sources retained only while their configured roots remain observed.
+  private var monitors: [URL: (source: any DispatchSourceFileSystemObject, identifier: UUID)] = [:]
+  /// Short delays that combine bursts of directory changes into one visit per root.
+  private var changeTasks: [URL: (task: Task<Void, Never>, identifier: UUID)] = [:]
+  /// One-shot retry tasks for observed roots stopped by provider backoff.
+  private var retryTasks: [URL: (task: Task<Void, Never>, identifier: UUID)] = [:]
+  /// Expired deadlines already given an immediate continuation, preventing a stale-result loop.
+  private var resumedExpiredDeadlines: [URL: Date] = [:]
   /// A token rejecting completions from a superseded configuration generation.
   private var generation = UUID()
   /// Whether cancelled work is draining or new root configuration is being loaded.
@@ -62,6 +73,9 @@ public actor DirectoryObservationScheduler {
     repeat {
       reloadRequested = false
       generation = UUID()
+      stopAllMonitors()
+      cancelDeferredTasks()
+      resumedExpiredDeadlines = [:]
       activeTask?.cancel()
       await activeTask?.value
       activeTask = .none
@@ -72,6 +86,7 @@ public actor DirectoryObservationScheduler {
       observed.formIntersection(roots)
       pending = Array(observed).sorted { $0.path < $1.path }
     } while reloadRequested && !isStopped
+    for root in observed { startMonitoring(root) }
   }
 
   /// Queues a registered root when observation begins, coalescing duplicate visits.
@@ -81,6 +96,7 @@ public actor DirectoryObservationScheduler {
     let canonical = url.standardizedFileURL
     guard !isStopped, isReloading || roots.contains(canonical) else { return }
     observed.insert(canonical)
+    if !isReloading { startMonitoring(canonical) }
     let needsReplacement = activeURL != canonical || activeTask?.isCancelled == true
     if needsReplacement && !pending.contains(canonical) { pending.append(canonical) }
     pump()
@@ -92,6 +108,10 @@ public actor DirectoryObservationScheduler {
   public func end(_ url: URL) {
     let canonical = url.standardizedFileURL
     observed.remove(canonical)
+    stopMonitoring(canonical)
+    changeTasks.removeValue(forKey: canonical)?.task.cancel()
+    retryTasks.removeValue(forKey: canonical)?.task.cancel()
+    resumedExpiredDeadlines.removeValue(forKey: canonical)
     pending.removeAll { $0 == canonical }
     if activeURL == canonical { activeTask?.cancel() }
   }
@@ -101,9 +121,84 @@ public actor DirectoryObservationScheduler {
     isStopped = true
     generation = UUID()
     activeTask?.cancel()
+    stopAllMonitors()
+    cancelDeferredTasks()
+    resumedExpiredDeadlines = [:]
     pending = []
     observed = []
     roots = []
+  }
+
+  /// Queues one follow-up visit for a changed, still-observed root.
+  ///
+  /// - Parameter url: The configured root whose immediate children may have changed.
+  func directoryContentsChanged(_ url: URL) {
+    let canonical = url.standardizedFileURL
+    guard !isStopped, roots.contains(canonical), observed.contains(canonical) else { return }
+    if !pending.contains(canonical) { pending.append(canonical) }
+    pump()
+  }
+
+  /// Reports whether a provider retry is scheduled, allowing focused lifecycle synchronization.
+  ///
+  /// - Parameter url: The configured observed root.
+  /// - Returns: Whether an uncancelled retry is currently retained for that root.
+  func hasScheduledRetry(for url: URL) -> Bool { retryTasks[url.standardizedFileURL] != nil }
+
+  /// Starts a root-only directory source; its callback is advisory and never authorizes mutation.
+  private func startMonitoring(_ url: URL) {
+    guard monitors[url] == nil else { return }
+    let descriptor = open(url.path, O_EVTONLY | O_CLOEXEC)
+    guard descriptor >= 0 else {
+      logger.notice("Could not monitor observed collection root")
+      return
+    }
+    let identifier = UUID()
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: descriptor, eventMask: [.write, .rename, .delete, .revoke],
+      queue: DispatchQueue.global(qos: .utility))
+    source.setEventHandler { [weak self] in
+      Task { await self?.monitorChanged(url, identifier: identifier) }
+    }
+    source.setCancelHandler { _ = close(descriptor) }
+    monitors[url] = (source, identifier)
+    source.resume()
+  }
+
+  /// Accepts only events from the current source and combines an event burst before scanning.
+  private func monitorChanged(_ url: URL, identifier: UUID) {
+    guard monitors[url]?.identifier == identifier, changeTasks[url] == nil else { return }
+    let changeIdentifier = UUID()
+    let task = Task { [weak self] in
+      do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+      await self?.deliverChange(url, monitorIdentifier: identifier, changeIdentifier: changeIdentifier)
+    }
+    changeTasks[url] = (task, changeIdentifier)
+  }
+
+  /// Delivers a coalesced directory event if its source still belongs to the observed root.
+  private func deliverChange(_ url: URL, monitorIdentifier: UUID, changeIdentifier: UUID) {
+    guard changeTasks[url]?.identifier == changeIdentifier else { return }
+    changeTasks[url] = .none
+    guard monitors[url]?.identifier == monitorIdentifier else { return }
+    directoryContentsChanged(url)
+  }
+
+  /// Cancels a source and closes its descriptor through the source cancellation handler.
+  private func stopMonitoring(_ url: URL) { monitors.removeValue(forKey: url)?.source.cancel() }
+
+  /// Cancels all directory sources before an authorization reload or shutdown.
+  private func stopAllMonitors() {
+    for monitor in monitors.values { monitor.source.cancel() }
+    monitors = [:]
+  }
+
+  /// Cancels pending event bursts and provider deadlines.
+  private func cancelDeferredTasks() {
+    for entry in changeTasks.values { entry.task.cancel() }
+    for entry in retryTasks.values { entry.task.cancel() }
+    changeTasks = [:]
+    retryTasks = [:]
   }
 
   /// Starts the next still-observed root only when no other task is active.
@@ -112,16 +207,18 @@ public actor DirectoryObservationScheduler {
     while let next = pending.first {
       pending.removeFirst()
       guard roots.contains(next), observed.contains(next) else { continue }
+      retryTasks.removeValue(forKey: next)?.task.cancel()
       activeURL = next
       let identifier = generation
       activeTask = Task(priority: .utility) { [self] in
+        var retryAt: Date?
         do {
           try Task.checkCancellation()
-          try await delegate.directoryObservationScheduler(self, process: next)
+          retryAt = try await delegate.directoryObservationScheduler(self, process: next)
         } catch is CancellationError { logger.debug("Poster processing cancelled") } catch {
           logger.error("Poster processing failed")
         }
-        completed(identifier)
+        completed(identifier, root: next, retryAt: retryAt)
       }
       break
     }
@@ -130,10 +227,46 @@ public actor DirectoryObservationScheduler {
   /// Accepts completion only from the active configuration generation and starts queued work.
   ///
   /// - Parameter identifier: The stable root or generation identifier involved in the operation.
-  private func completed(_ identifier: UUID) {
-    guard generation == identifier else { return }
+  private func completed(_ identifier: UUID, root: URL, retryAt: Date?) {
+    guard generation == identifier, activeURL == root else { return }
     activeTask = .none
     activeURL = .none
+    if let retryAt, !pending.contains(root) { scheduleRetry(for: root, at: retryAt) }
     pump()
+  }
+
+  /// Schedules one continuation at a finite provider deadline while the root remains observed.
+  private func scheduleRetry(for root: URL, at deadline: Date) {
+    guard observed.contains(root), roots.contains(root) else { return }
+    let interval = deadline.timeIntervalSinceNow
+    guard interval.isFinite else { return }
+    if interval <= 0 {
+      guard resumedExpiredDeadlines[root] != deadline else { return }
+      resumedExpiredDeadlines[root] = deadline
+      directoryContentsChanged(root)
+      return
+    }
+    retryTasks.removeValue(forKey: root)?.task.cancel()
+    let retryIdentifier = UUID()
+    let currentGeneration = generation
+    let task = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(interval)) } catch { return }
+      await self?.retryElapsed(
+        for: root, at: deadline, generation: currentGeneration, retryIdentifier: retryIdentifier)
+    }
+    retryTasks[root] = (task, retryIdentifier)
+  }
+
+  /// Rechecks wall-clock deadline and observation membership before retrying.
+  private func retryElapsed(for root: URL, at deadline: Date, generation identifier: UUID, retryIdentifier: UUID) {
+    guard generation == identifier, retryTasks[root]?.identifier == retryIdentifier,
+      !isStopped, roots.contains(root), observed.contains(root) else { return }
+    retryTasks[root] = .none
+    if deadline > Date() {
+      scheduleRetry(for: root, at: deadline)
+    } else {
+      resumedExpiredDeadlines[root] = deadline
+      directoryContentsChanged(root)
+    }
   }
 }

@@ -82,6 +82,13 @@ owns the single configuration window. The host service coordinates authorization
 The Finder layer registers roots and forwards events to an actor scheduler. Reloads cancel and await previous work
 before replacing authorization or processor state. Observations arriving during reload are retained and filtered
 against the new roots; closing and reopening during cancellation queues a replacement without concurrent processing.
+While Finder observes a configured root, the scheduler watches that root directory for filesystem changes and
+coalesces a burst into one additional visit. The event is advisory: the processor inventories immediate children and
+revalidates authorization, root identity, and mutation policy before writing. It does not recursively observe movie
+folders. A provider backoff result schedules one retry at its recorded deadline while that root remains observed.
+Ending observation, changing configuration, or stopping the extension cancels its event source and deferred retry.
+Extension termination does not preserve a timer; a later Finder observation can resume eligible work from durable
+state. Unsupported or unavailable filesystem notifications may delay detection until another Finder visit.
 
 The existing processor preserves unrelated custom icons, caches metadata and posters, and bounds work. Credential
 revision changes use a new processing record namespace so old authentication failures do not suppress a new token.
