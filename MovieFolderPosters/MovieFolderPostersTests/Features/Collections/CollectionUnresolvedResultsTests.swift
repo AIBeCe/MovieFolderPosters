@@ -1,3 +1,4 @@
+import FileSystem
 import Foundation
 import MovieFolderCommon
 import Testing
@@ -34,6 +35,7 @@ struct CollectionUnresolvedResultsTests {
   }
 
   /// Unknown freshness does not erase evidence needed to explain remaining work.
+  /// - Parameter displayState: Saved lifecycle state whose evidence remains readable.
   @Test(arguments: [
     CollectionProcessingDisplayState.stale, .partial, .interrupted
   ])
@@ -55,6 +57,10 @@ struct CollectionUnresolvedResultsTests {
   }
 
   /// Builds an isolated saved projection without services or filesystem access.
+  /// - Parameters:
+  ///   - folders: Saved folder evidence, or `.none` when unavailable.
+  ///   - displayState: Lifecycle state represented by the summary.
+  /// - Returns: An isolated collection summary for projection tests.
   private func summary(
     folders: [FolderProcessingRecord]?,
     displayState: CollectionProcessingDisplayState = .current
