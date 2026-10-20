@@ -161,32 +161,30 @@ Recovery acceptance now has controlled regression coverage for:
   cancellation prevents subsequent unwanted writes without undoing already completed work.
 
 The full remaining issue #4 implementation and subsequent local feature completion were explicitly authorized.
-Recovery is committed as `008a6f3` and integrated into local `develop`; no push or issue #5 implementation is included.
+Recovery is committed as `008a6f3` and integrated into local `develop`; issue #5 was tracked separately below.
 
-## R100-05 point 1 — unresolved-folder projection
+## R100-05 — manual resolution interface and selected retry
 
-Implemented on `feature/manual-resolution` after explicit approval on 2026-10-20.
-The host's `CollectionProcessingSummary.unresolvedFolders()` returns saved folder records in natural name order,
-excluding verified Done, preserved, and suppressed outcomes. All other records retain their identity, reason,
-retry date, and other evidence unchanged, including stale, partial, interrupted, and missing-identity evidence.
-An absent processing state returns no projection; an available state with no unresolved records returns an
-empty list. These display records establish neither current authorization nor action eligibility.
+Implemented on `feature/manual-resolution`, validated, and integrated into `develop` on 2026-10-20.
+The host projects saved unresolved-folder records in natural name order, presents searchable provider results,
+supports explicit movie selection and retry of selected folders, and reports partial, stopped, and cancelled
+work distinctly. Opening the results interface does not start a search. User-requested search, selection, retry,
+and cancellation revalidate folder identity, authorization, suppression, and poster ownership after asynchronous
+provider work and before mutation or cache updates. Successful resolution updates that folder's saved evidence
+without rerunning unrelated folders.
 
-Verification for this bounded point:
+Validation completed against the full issue scope:
 
-- The test-first run failed to compile because the proposed method did not yet exist. After implementation,
-  all three new Swift Testing tests passed, including three parameterized freshness cases.
-- The full host harness passed 143 tests across 21 suites. Existing diagnostics in unrelated tests include
-  unused record results and weak variables that were never mutated; no new-source compiler warning was reported.
-- Independent review returned PASS with no Critical or Important findings.
-- SwiftLint reported zero violations across 140 files. Its first run could not save the external cache;
-  rerunning with `--no-cache` passed without changing rules or exclusions.
-- Git whitespace validation passed.
+- All six package/application coverage suites passed. Required package and Project coverage gates passed;
+  total Project coverage was 90.06% (Host 91.33%, Finder 73.57%; Finder is reported but has no separate gate).
+- Native Xcode Debug `build-for-testing` succeeded for the host, Finder extension, and test targets.
+- SwiftLint reported zero violations across 148 files; the Swift style-guide review found no remaining issues.
+- Independent review passed, including revalidation of safety state after search and artwork awaits.
+- `git diff --check` passed. Validation fixes were committed as `a9b4970` and included in the fast-forward
+  integration into `develop`.
 
-Logs: `/private/tmp/mfp-manual-projection-{red,green,host,lint}.log`.
-The results sheet, Choose Movie routing, selected retry, and cancellation integration remain subsequent
-implementation points requiring their own proposals. This point does not qualify native UI, Finder callbacks,
-live provider requests, or icon persistence; no native build or runtime collection operation was performed.
+Native Finder runtime behavior, live provider interaction, sandbox authorization prompts, and persisted icon
+appearance on physical folders were not exercised by the automated validation run.
 
 ## Implementation ledger
 
@@ -203,6 +201,8 @@ live provider requests, or icon persistence; no native build or runtime collecti
   local `develop` through recovery commit `008a6f3` on 2026-10-20.
 - [x] Remaining issue #4 recovery implementation, independent review, and controlled recovery regressions.
   Final verification and local feature completion are recorded in [Processing recovery](PROCESSING_RECOVERY.md).
+- [x] Issue #5 manual search, result presentation, explicit selection, selected-folder retry, and cancellation
+  integration. Validated and fast-forwarded into `develop` on 2026-10-20; see the R100-05 record above.
 
 ## Implementation evidence
 
