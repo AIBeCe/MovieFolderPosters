@@ -173,5 +173,5 @@ Integration test logs: `/private/tmp/mfp-recovery-integration-common.log` and
 `/private/tmp/mfp-recovery-merged-application.log`. No additional lint or coverage run was triggered by documentation.
 
 The remote was not pushed, and GitHub issue #4 was not modified or closed. Issue #5 remains separately scoped.
-The fully merged local feature branch is retained pending explicit authorization to delete its reference.
+The fully merged local branch `feature/processing-recovery` was deleted after explicit user approval.
 User-specific `.DS_Store` and Xcode `xcuserdata` files remain untracked and were excluded from both commits.
