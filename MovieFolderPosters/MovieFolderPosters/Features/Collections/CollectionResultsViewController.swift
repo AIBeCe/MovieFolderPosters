@@ -54,15 +54,7 @@ final class CollectionResultsViewController: NSViewController {
     tableView.delegate = self
     tableView.dataSource = self
     tableView.setAccessibilityLabel("Unresolved collection folders")
-    let columns = [("folder", "Folder", 230.0), ("state", "State", 110.0),
-                   ("reason", "Reason", 220.0), ("retry", "Retry availability", 230.0)]
-    for (identifier, title, width) in columns {
-      let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
-      column.title = title
-      column.width = width
-      column.minWidth = 80
-      tableView.addTableColumn(column)
-    }
+    configureColumns()
     let scrollView = NSScrollView()
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = true
@@ -99,6 +91,19 @@ final class CollectionResultsViewController: NSViewController {
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
     ])
     render()
+  }
+
+  /// Creates the fixed evidence columns shown by the unresolved-results table.
+  private func configureColumns() {
+    let columns = [("folder", "Folder", 230.0), ("state", "State", 110.0),
+                   ("reason", "Reason", 220.0), ("retry", "Retry availability", 230.0)]
+    for (identifier, title, width) in columns {
+      let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+      column.title = title
+      column.width = width
+      column.minWidth = 80
+      tableView.addTableColumn(column)
+    }
   }
 
   /// Updates controls and restores selection using the model's saved identity evidence.

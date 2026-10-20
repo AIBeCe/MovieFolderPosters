@@ -40,7 +40,12 @@ func selectedRetryRechecksAdmissionAfterSearch(enablesRecovery: Bool) async thro
   if enablesRecovery {
     await #expect(throws: ProcessingRecoveryError.recoveryMode) { try await task.value }
   } else {
-    await #expect(throws: ConfigurationError.configurationChanged) { try await task.value }
+    do {
+      _ = try await task.value
+      Issue.record("The selected retry must stop when the configuration changes")
+    } catch ConfigurationError.configurationChanged {
+      // The current settings generation no longer authorizes this result.
+    }
   }
   let lease = try #require(try scenario.source.fixture.persistence.acquireLease(
     for: MovieFolderProcessor.rootLeaseKey(for: scenario.source.fixture.movies)))
@@ -294,6 +299,64 @@ func selectedRetryHonorsCurrentDeadlines(isRootDeadline: Bool) async throws {
   #expect(try await scenario.retry() == .notEligible)
   #expect(try scenario.snapshot() == before)
   #expect(await scenario.provider.searchCount == 0)
+}
+
+/// A custom icon or suppression added during provider search remains authoritative after the await.
+@Test(arguments: [false, true])
+func selectedRetryPreservesProtectionAddedDuringSearch(addSuppression: Bool) async throws {
+  let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false), delaysSearch: true)
+  let scenario = try SelectedRetryScenario(provider: provider)
+  defer { try? FileManager.default.removeItem(at: scenario.source.fixture.base) }
+  let task = Task { try await scenario.retry() }
+  await provider.waitForSearch()
+  let fileSystem = FileSystemService()
+  if addSuppression {
+    let posterURL = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
+    #expect(try fileSystem.assignPoster(
+      Data(contentsOf: posterURL), toChild: "Dune (2021)", in: scenario.source.fixture.movies) == .assigned)
+    #expect(try fileSystem.removeAssignedPoster(toChild: "Dune (2021)", in: scenario.source.fixture.movies))
+  } else {
+    try scenario.source.fixture.markCustomIcon("Dune (2021)")
+  }
+  await provider.allowSearch()
+
+  guard case .attempted(let summary, _) = try await task.value else {
+    Issue.record("The selected retry should finish after preserving the new protection")
+    return
+  }
+  #expect(summary.examined == 1)
+  let saved = try scenario.snapshot()
+  #expect(saved.folders.first?.state == (addSuppression ? .suppressed : .preserved))
+  #expect(saved.folders.first?.reason == (addSuppression ? .policySuppressed : .existingPosterPreserved))
+  #expect(saved.operation?.state == .completed)
+  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
+  #expect(await provider.searchCount == 1)
+  let lease = try #require(try scenario.source.fixture.persistence.acquireLease(
+    for: MovieFolderProcessor.rootLeaseKey(for: scenario.source.fixture.movies)))
+  #expect(try lease.read() == .none)
+}
+
+/// A custom icon added during artwork download cannot be overwritten or recorded as a completed poster.
+@Test func selectedRetryPreservesCustomIconAddedDuringArtworkDownload() async throws {
+  let provider = CountingProvider(delaysPoster: true)
+  let scenario = try SelectedRetryScenario(provider: provider)
+  defer { try? FileManager.default.removeItem(at: scenario.source.fixture.base) }
+  let task = Task { try await scenario.retry() }
+  await provider.waitForPoster()
+  try scenario.source.fixture.markCustomIcon("Dune (2021)")
+  try await provider.allowPoster()
+
+  guard case .attempted = try await task.value else {
+    Issue.record("The selected retry should finish after preserving the new custom icon")
+    return
+  }
+  let saved = try scenario.snapshot()
+  #expect(saved.folders.first?.state == .preserved)
+  #expect(saved.folders.first?.reason == .existingPosterPreserved)
+  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
+  #expect(try !scenario.cache().folders.keys.contains("Dune (2021)"))
+  #expect(try FileSystemService().readCurrentState(
+    ofChild: "Dune (2021)", in: scenario.source.fixture.movies).hasCustomIcon)
 }
 
 /// A newer authoritative classification wins over a stale selected failure.

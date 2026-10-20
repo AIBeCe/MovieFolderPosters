@@ -34,7 +34,7 @@ def declaration_only(source):
     text = re.sub(r"//[^\n]*", "", text)
     imports = r"(?:\s*import\s+[\w.]+\s*)*"
     modifiers = r"(?:(?:public|internal|private|fileprivate|nonisolated|package)\s+)*"
-    enum = modifiers + r"enum\s+\w+(?:\s*:\s*[\w,\s]+)?\s*\{\s*(?:case\s+[\w,\s]+)*\}\s*"
+    enum = modifiers + r"enum\s+\w+(?:\s*:\s*[\w,\s]+)?\s*\{\s*(?:case\s+[^{}\n]+\s*)*\}\s*"
     # Synthesized Codable/memberwise functions have no source executable lines. Reject defaults,
     # observers, methods, explicit initializers, and computed properties instead of hiding them.
     stored_property = modifiers + r"(?:let|var)\s+\w+\s*:\s*[\w.?]+\s*"

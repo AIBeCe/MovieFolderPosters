@@ -143,7 +143,9 @@ private struct DelegateConfigurationBuilder: ConfigurationCoordinatorBuilding {
       }
     }
 
-    return ConfigurationCoordinator(service: DelegateConfigurationService(), activity: activity, appearance: appearance, retryService: retryService)
+    return ConfigurationCoordinator(
+      service: DelegateConfigurationService(), activity: activity,
+      appearance: appearance, retryService: retryService)
   }
 }
 

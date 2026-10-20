@@ -95,6 +95,8 @@ actor CountingProvider {
   private let search: MovieSearchResult?
   /// Whether a search suspends until the test explicitly releases its continuation.
   private let delaysSearch: Bool
+  /// Whether an image download suspends until the test explicitly releases its continuation.
+  private let delaysPoster: Bool
   /// The configured provider error thrown by a test search.
   private let searchError: TMDbError?
   /// The provider error intentionally raced against task cancellation.
@@ -107,24 +109,31 @@ actor CountingProvider {
   private var searchContinuation: CheckedContinuation<MovieSearchResult, Error>?
   /// Signals that a suspended provider request is ready for test intervention.
   private var searchStarted: CheckedContinuation<Void, Never>?
+  /// The pending image response controlled by the test.
+  private var posterContinuation: CheckedContinuation<Data, Error>?
+  /// Signals that a suspended image request is ready for test intervention.
+  private var posterStarted: CheckedContinuation<Void, Never>?
 
   /// Creates the counting provider from the supplied dependencies and state.
   ///
   /// - Parameters:
   ///   - search: The provider response, including whether further search pages exist.
   ///   - delaysSearch: Whether a search suspends until the test explicitly releases its continuation.
+  ///   - delaysPoster: Whether an image download suspends until the test explicitly releases its continuation.
   ///   - searchError: The configured provider error thrown by a test search.
   ///   - cancellationError: The provider error intentionally raced against task cancellation.
   ///   - failuresRemaining: How many initial provider requests must fail before normal responses resume.
   init(
     search: MovieSearchResult? = .none,
     delaysSearch: Bool = false,
+    delaysPoster: Bool = false,
     searchError: TMDbError? = .none,
     cancellationError: TMDbError? = .none,
     failuresRemaining: Int = .max
   ) {
     self.search = search
     self.delaysSearch = delaysSearch
+    self.delaysPoster = delaysPoster
     self.searchError = searchError
     self.cancellationError = cancellationError
     self.failuresRemaining = failuresRemaining
@@ -178,11 +187,29 @@ actor CountingProvider {
   /// - Parameter path: The provider-relative source poster path.
   /// - Returns: The downloaded source image bytes; decoding is validated by the processing caller.
   /// - Throws: Provider, transport, image-response, or cancellation errors.
-  func downloadPoster(path: String) throws -> Data {
+  func downloadPoster(path: String) async throws -> Data {
     posterCount += 1
-    let encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    if delaysPoster, posterCount == 1 {
+      return try await withCheckedThrowingContinuation { continuation in
+        posterContinuation = continuation
+        posterStarted?.resume()
+        posterStarted = .none
+      }
+    }
 
-    return try XCTUnwrap(Data(base64Encoded: encoded))
+    return try posterData()
+  }
+
+  /// Suspends until the provider has reached its controllable image-download boundary.
+  func waitForPoster() async {
+    if posterContinuation != nil { return }
+    await withCheckedContinuation { continuation in posterStarted = continuation }
+  }
+
+  /// Resumes a suspended image download with a valid fixture image.
+  func allowPoster() throws {
+    posterContinuation?.resume(returning: try posterData())
+    posterContinuation = .none
   }
 
   /// Suspends until the provider has reached its controllable search boundary.
@@ -203,6 +230,13 @@ actor CountingProvider {
         ], hasMorePages: false)
     searchContinuation?.resume(returning: result)
     searchContinuation = .none
+  }
+
+  /// Returns the provider's valid one-pixel image fixture.
+  private func posterData() throws -> Data {
+    let encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+    return try XCTUnwrap(Data(base64Encoded: encoded))
   }
 
   /// Resumes the suspended request with the configured cancellation failure.

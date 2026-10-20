@@ -253,7 +253,7 @@ struct CoordinatorLifecycleTests {
   }
 
   /// Feature delegates and notification subscriptions must not keep abandoned flows alive.
-  @Test func featureOwnersAreReleasedAfterTheirWindowsClose() throws {
+  @Test func featureOwnersAreReleasedAfterTheirWindowsClose() async throws {
     var log: LogCoordinator? = LogCoordinator(activity: ActivityServiceFake())
     let logIsReleased = { [weak log] in log == .none }
     log?.show()
@@ -266,6 +266,9 @@ struct CoordinatorLifecycleTests {
     configuration?.start()
     configuration?.mainWindow?.close()
     configuration = .none
+    for _ in 0..<25 where !configurationIsReleased() {
+      try await Task.sleep(for: .milliseconds(10))
+    }
     #expect(configurationIsReleased())
   }
 
@@ -292,7 +295,8 @@ private final class RetryingConfigurationBuilder: ConfigurationCoordinatorBuildi
     if attemptCount == 1 { throw CocoaError(.fileReadUnknown) }
 
     return ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, retryService: retryService)
+      service: CoordinatorConfigurationService(), activity: activity,
+      appearance: appearance, retryService: retryService)
   }
 }
 
@@ -312,7 +316,9 @@ private struct AvailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
-    ConfigurationCoordinator(service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, retryService: retryService)
+    ConfigurationCoordinator(
+      service: CoordinatorConfigurationService(), activity: activity,
+      appearance: appearance, retryService: retryService)
   }
 }
 

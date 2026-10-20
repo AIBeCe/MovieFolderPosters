@@ -62,6 +62,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   ///   - summaryService: Read-only committed processing projections for Main.
   ///   - appearance: Root-owned preferences shared with Settings.
   ///   - installationService: The provider used to inspect installation evidence.
+  ///   - recovery: Shared recovery admission used by explicit retry and configuration actions.
+  ///   - retryService: Shared bounded retry service used by unresolved results.
   init(
     service: any ConfigurationServicing,
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
@@ -225,6 +227,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow else { return }
     if window === mainWindow?.window {
+      DistributedNotificationCenter.default().removeObserver(self)
+      isObservingProcessing = false
       window.delegate = .none
       closeResults()
     } else if window === resultsWindow {

@@ -83,7 +83,7 @@ private actor ResultsControllerRetry: CollectionRetryServicing {
   private(set) var requestCount = Int.zero
 
   /// Records a retry without accessing production services.
-  func retryFolder(for request: MoviePosterRequest) async throws -> FolderRetryResult {
+  func retryFolder(for request: MoviePosterRequest) throws -> FolderRetryResult {
     requestCount += 1
 
     return .notEligible

@@ -102,6 +102,16 @@ class CoverageReportTests(unittest.TestCase):
             with self.subTest(member=executable_member):
                 self.assertFalse(self.report.declaration_only('struct Entry { ' + executable_member + ' }'))
 
+    def test_enum_with_associated_value_cases_has_no_executable_lines(self):
+        source = '''import Foundation
+        public enum RetryResult: Sendable, Equatable {
+          case attempted(ProcessingSummary, stopSelection: Bool)
+          case notEligible
+          case waiting(until: Date)
+        }
+        '''
+        self.assertTrue(self.report.declaration_only(source))
+
     def test_malformed_coverage_cannot_be_treated_as_empty_success(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

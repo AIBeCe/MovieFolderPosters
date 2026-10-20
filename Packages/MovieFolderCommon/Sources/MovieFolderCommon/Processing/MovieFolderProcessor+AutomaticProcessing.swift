@@ -4,71 +4,6 @@ import Network
 import Persistence
 
 extension MovieFolderProcessor {
-  /// Retries only the selected folder while preserving confirmed outcomes and current retry boundaries.
-  ///
-  /// - Parameters:
-  ///   - root: The authorized collection root containing the selected immediate child.
-  ///   - child: The selected immediate child name, without additional path components.
-  ///   - expectedIdentity: The filesystem identity captured with the selection.
-  ///   - processingContext: The exact authoritative root and settings generation shown to the user.
-  /// - Returns: An attempt summary, an unchanged ineligible outcome, or the current retry deadline.
-  /// - Throws: Cancellation, contention, stale configuration, changed identity, or persistence errors.
-  public func retryEligibleFolder(
-    root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext
-  ) async throws -> FolderRetryResult {
-    try Task.checkCancellation()
-    try recovery?.validateProcessingAllowed()
-    let coordinationLease = try acquireCoordinationLease(for: root)
-    defer { withExtendedLifetime(coordinationLease) {} }
-    guard let lease = try persistence.acquireLease(for: Self.rootLeaseKey(for: root)) else {
-      throw PosterActionError.busy
-    }
-    defer { withExtendedLifetime(lease) {} }
-    guard let snapshot = try processingStore?.read(rootID: processingContext.rootID),
-      snapshot.context == processingContext,
-      let record = snapshot.folders.first(where: { $0.name == child })
-    else { throw CollectionProcessingError.configurationChanged }
-    guard record.identity == expectedIdentity else { throw PosterActionError.changedIdentity }
-    let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
-    guard !record.isVerifiedDone, record.state != .preserved, record.state != .suppressed,
-      !candidate.hasCustomIcon,
-      try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
-    switch record.reason {
-    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication:
-      return .notEligible
-    default: break
-    }
-    let cache = try loadState(from: lease)
-    let prior = cache.folders[child]
-    let sameFingerprint = prior?.fingerprint == candidate.fingerprint
-    if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
-    let needsLegacyReassessment = sameFingerprint && prior?.needsLegacyReassessment == true
-    if !needsLegacyReassessment, let deadline = cache.rootBackoffUntil, deadline > now() {
-      return .waiting(until: deadline)
-    }
-    if !needsLegacyReassessment, prior?.processingReason != .interrupted, record.reason != .interrupted {
-      let cacheDeadline = sameFingerprint ? prior?.retryDate : .none
-      if let deadline = [cacheDeadline, record.retryAt].compactMap({ $0 }).max(), deadline > now() {
-        return .waiting(until: deadline)
-      }
-    }
-    do {
-      let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
-      withExtendedLifetime(settingsLease) {}
-    }
-    var visit = AutomaticProcessingVisit(
-      cache: cache, recording: try recordProcessingStart(context: processingContext, action: .manual, child: child),
-      selectedChild: child)
-    defer { interruptUnfinishedProcessing(&visit.recording, child: child) }
-    if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
-      try !reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) {
-      visit.didStopEarly = try await processCandidate(candidate, root: root, lease: lease, visit: &visit)
-    }
-    try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
-
-    return .attempted(visit.summary, stopSelection: visit.didStopEarly)
-  }
-
   /// Processes immediate child folders with bounded retries, cache reuse, and identity-checked icon writes.
   ///
   /// - Parameters:
@@ -234,7 +169,7 @@ extension MovieFolderProcessor {
   }
 
   /// Records suppression or inspection failures before considering a cached decision.
-  private func shouldSkipCandidate(
+  func shouldSkipCandidate(
     _ candidate: FolderCandidate, root: URL, visit: inout AutomaticProcessingVisit
   ) throws -> Bool {
     do {
@@ -262,7 +197,7 @@ extension MovieFolderProcessor {
   }
 
   /// Reuses unchanged decisions and reports whether this member is already handled.
-  private func reuseCachedDecision(
+  func reuseCachedDecision(
     _ candidate: FolderCandidate, root: URL, lease: PersistenceLease, visit: inout AutomaticProcessingVisit
   ) throws -> Bool {
     let priorRecord = visit.cache.folders[candidate.name]
@@ -330,7 +265,7 @@ extension MovieFolderProcessor {
       throw error
     } catch {
       if Task.isCancelled { throw CancellationError() }
-      try validateSelectedCandidate(candidate, root: root, visit: visit)
+      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
       recordTransientFailure(candidate, in: &visit.cache)
       try saveState(visit.cache, to: lease)
       visit.summary.transientFailures += 1
@@ -339,7 +274,7 @@ extension MovieFolderProcessor {
   }
 
   /// Runs one fresh attempt and reports whether provider backoff must end the visit.
-  private func processCandidate(
+  func processCandidate(
     _ candidate: FolderCandidate, root: URL, lease: PersistenceLease, visit: inout AutomaticProcessingVisit
   ) async throws -> Bool {
     visit.summary.examined += 1
@@ -351,15 +286,15 @@ extension MovieFolderProcessor {
     } catch is CancellationError {
       throw CancellationError()
     } catch let error as ProcessingRecoveryError {
-      try validateSelectedCandidate(candidate, root: root, visit: visit)
+      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
       return try recordRecoveryAdmissionFailure(
         error, candidate: candidate, lease: lease, visit: &visit, attempt: attempt)
     } catch let error as TMDbError {
-      try validateSelectedCandidate(candidate, root: root, visit: visit)
+      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
       return try recordProviderFailure(error, candidate: candidate, lease: lease, visit: &visit, attempt: attempt)
     } catch {
       if Task.isCancelled { throw CancellationError() }
-      try validateSelectedCandidate(candidate, root: root, visit: visit)
+      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
       recordTransientFailure(candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie)
       try saveState(visit.cache, to: lease)
       visit.summary.transientFailures += 1
@@ -459,8 +394,10 @@ extension MovieFolderProcessor {
     }
 
     attempt.stage = .search
-    let search = try await searchMovies(
-      title: parsed.title, year: parsed.year, candidate: candidate, root: root, lease: lease, visit: &visit)
+    guard let search = try await searchMovies(
+      MovieSearchRequest(title: parsed.title, year: parsed.year, candidate: candidate, root: root, lease: lease),
+      visit: &visit)
+    else { return }
 
     let identityResult = matcher.identify(title: parsed.title, year: parsed.year, search: search)
     guard case .matched(let movie) = identityResult, let posterPath = movie.posterPath,
@@ -479,6 +416,7 @@ extension MovieFolderProcessor {
     attempt.stage = .artwork
     let imageData = try await posterBytes(for: posterPath)
 
+    guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
     attempt.stage = .assignPoster
     let result = try assign(imageData, to: candidate, in: root)
     visit.cache.folders[candidate.name] = FolderRecord(
@@ -519,9 +457,13 @@ extension MovieFolderProcessor {
 
   /// Reuses a current search or checkpoints a fresh response before further work.
   private func searchMovies(
-    title: String, year: Int?, candidate: FolderCandidate, root: URL,
-    lease: PersistenceLease, visit: inout AutomaticProcessingVisit
-  ) async throws -> MovieSearchResult {
+    _ request: MovieSearchRequest, visit: inout AutomaticProcessingVisit
+  ) async throws -> MovieSearchResult? {
+    let title = request.title
+    let year = request.year
+    let candidate = request.candidate
+    let root = request.root
+    let lease = request.lease
     let queryKey = Self.queryKey(title: title, year: year)
     if let cached = visit.cache.queries[queryKey],
       now().timeIntervalSince(cached.createdAt) < Self.queryCacheLifetime {
@@ -529,7 +471,7 @@ extension MovieFolderProcessor {
     } else {
       let search = try await provider.searchMovies(title: title, year: year)
       try Task.checkCancellation()
-      try validateSelectedCandidate(candidate, root: root, visit: visit)
+      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return .none }
       visit.cache.queries[queryKey] = CachedSearch(result: search, createdAt: now())
       try saveState(visit.cache, to: lease)
 
@@ -539,14 +481,23 @@ extension MovieFolderProcessor {
 
   /// Rechecks selected admission and identity before an awaited response can persist decisions.
   private func validateSelectedCandidate(
-    _ candidate: FolderCandidate, root: URL, visit: AutomaticProcessingVisit
-  ) throws {
-    guard visit.selectedChild != .none else { return }
+    _ candidate: FolderCandidate, root: URL, visit: inout AutomaticProcessingVisit
+  ) throws -> Bool {
+    guard visit.selectedChild != .none else { return true }
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
     let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
     defer { withExtendedLifetime(settingsLease) {} }
-    _ = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
+    let currentCandidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
+    let currentAssessment = try assessFolderProcessing(
+      currentCandidate, root: root, saved: visit.cache.folders[currentCandidate.name])
+    guard !currentCandidate.hasCustomIcon, currentAssessment.state != .suppressed,
+      currentAssessment.state != .preserved else {
+      try recordFolderProcessing(currentAssessment, in: &visit.recording)
+      return false
+    }
+
+    return true
   }
 
   /// Reuses validated artwork or downloads, validates, and best-effort caches it.
@@ -566,8 +517,22 @@ extension MovieFolderProcessor {
   }
 }
 
+/// The validated identity and access needed by one metadata search.
+private struct MovieSearchRequest {
+  /// Parsed title searched through the metadata provider.
+  let title: String
+  /// Parsed release year used to narrow the provider query.
+  let year: Int?
+  /// Folder whose identity is revalidated after the provider returns.
+  let candidate: FolderCandidate
+  /// Authorized collection root containing the candidate.
+  let root: URL
+  /// Held root lease protecting the operational cache.
+  let lease: PersistenceLease
+}
+
 /// Mutable values owned by one automatic traversal, never shared between actor calls.
-private struct AutomaticProcessingVisit {
+struct AutomaticProcessingVisit {
   /// Operational decisions and query cache, loaded after inventory completes.
   var cache = ProcessingState()
   /// Authoritative result document checkpointed throughout the visit.

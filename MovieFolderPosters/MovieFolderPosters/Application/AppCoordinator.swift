@@ -76,6 +76,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   ///   - configurationBuilder: Deferred configuration construction.
   ///   - posterService: Injected service, or live composition sharing the recorder.
   ///   - appearance: Preferences exposed by Settings and applied by this root.
+  ///   - recoveryLaunch: Launch recovery preparation completed before configuration starts.
   init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
        configurationBuilder: any ConfigurationCoordinatorBuilding = ConfigurationCoordinatorBuilder(),
        posterService: (any MoviePosterActionServicing & CollectionRetryServicing)? = .none,

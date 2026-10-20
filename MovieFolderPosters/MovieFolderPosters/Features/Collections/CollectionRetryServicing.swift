@@ -12,7 +12,7 @@ nonisolated protocol CollectionRetryServicing: Sendable {
 /// Disables poster retries for isolated configuration UI without constructing production storage.
 nonisolated struct UnavailableCollectionRetryService: CollectionRetryServicing {
   /// Rejects a retry without reading directories, configuration, credentials, or saved processing state.
-  func retryFolder(for request: MoviePosterRequest) async throws -> FolderRetryResult {
+  func retryFolder(for request: MoviePosterRequest) throws -> FolderRetryResult {
     throw MoviePosterActionServiceError.directoryUnavailable
   }
 }

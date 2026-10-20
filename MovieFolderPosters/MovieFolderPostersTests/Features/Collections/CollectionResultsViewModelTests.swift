@@ -309,7 +309,7 @@ private actor ResultsSummarySource: CollectionSummaryServicing {
   func set(displayState: CollectionProcessingDisplayState) { self.displayState = displayState }
 
   /// Projects the saved fixture as current-context evidence.
-  func summaries() async -> [UUID: CollectionProcessingSummary] {
+  func summaries() -> [UUID: CollectionProcessingSummary] {
     readCount += 1
     let context = CollectionProcessingContext(
       rootID: rootID, rootIdentity: "root", authorizationVersion: UUID(),
