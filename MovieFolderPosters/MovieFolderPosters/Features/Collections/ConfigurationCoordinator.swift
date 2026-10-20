@@ -47,11 +47,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     summaryService: any CollectionSummaryServicing = EmptyCollectionSummaryService(),
     appearance: AppAppearanceSettings = AppAppearanceSettings(),
-    installationService: any InstallationReadinessServicing = InstallationReadinessService()
+    installationService: any InstallationReadinessServicing = InstallationReadinessService(),
+    recovery: ProcessingRecoveryService? = .none
   ) {
     self.installationService = installationService
     self.appearance = appearance
-    viewModel = ConfigurationViewModel(service: service, activity: activity)
+    viewModel = ConfigurationViewModel(service: service, activity: activity, recovery: recovery)
     summaryViewModel = CollectionSummaryViewModel(service: summaryService)
     super.init()
     viewModel.activityDelegate = self
@@ -85,7 +86,10 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   }
 
   /// Reloads processing states after the app becomes active without rereading settings.
-  func applicationDidBecomeActive() { refreshCollectionProcessingState() }
+  func applicationDidBecomeActive() {
+    refreshCollectionProcessingState()
+    Task { await viewModel.reloadRecoveryMode() }
+  }
 
   /// Requests a summary-only reload after an outcome notification or explicit app activation.
   func refreshCollectionProcessingState() { summaryViewModel.reload() }

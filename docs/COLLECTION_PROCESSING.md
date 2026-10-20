@@ -64,11 +64,12 @@ or polling. Reload on open/activation and explicit refresh. Notifications are no
 
 ## Approved recovery policy — R100-04 and R100-05
 
-Approved 2026-10-18. These are the accepted recovery requirements for issues #4 and #5. Issue #4 point 1 is
-implemented locally: complete-search Not found and Several matches results remain in manual resolution across
-visits, retry-date expiry, and processor restart. The remaining issue #4 behavior and issue #5 interface are
-not implemented. This policy supersedes automatic cooldown-based repetition of confirmed manual-resolution
-results. The R100-02 verification records below remain historical evidence.
+Approved 2026-10-18. Issue #4 recovery behavior is implemented locally as of 2026-10-20, including reason-based
+eligibility, shared provider policy, legacy reassessment, interruption recovery, recovery mode, and separate work
+labels. See [Processing recovery](PROCESSING_RECOVERY.md) for contracts, tests, review, verification, and the explicit
+uncommitted stop boundary. The issue #5 manual-resolution interface remains separately scoped. This policy
+supersedes automatic cooldown-based repetition of confirmed manual-resolution results. The R100-02 records below
+remain historical evidence.
 
 ### Folder state and next action
 
@@ -86,8 +87,8 @@ results. The R100-02 verification records below remain historical evidence.
 These are behavioral and display concepts, not an approved replacement enum or serialized schema.
 Existing states such as failed, deferred, and unresolved require their supporting reason to determine the
 next action. Missing artwork, parsing problems, incomplete searches, authentication, throttling, and
-connectivity must not be collapsed into an interchangeable retry state. R100-04's implementation proposal
-must specify their individual eligibility and recovery conditions. Missing evidence never becomes a
+connectivity must not be collapsed into an interchangeable retry state. The implemented mapping and recovery
+conditions are recorded in [Processing recovery](PROCESSING_RECOVERY.md). Missing evidence never becomes a
 fabricated Not found or Several matches decision.
 
 ### Eligibility, timing, and invocation
@@ -148,7 +149,7 @@ classification, legacy-date revisit, and restart. Independent review passed. The
 passed 44 XCTest tests and 102 Swift Testing tests in 12 suites. Native Finder and manual-resolution UI
 behavior are outside this point and remain unverified.
 
-Remaining recovery verification includes:
+Recovery acceptance now has controlled regression coverage for:
 
 - Configuration reload preserves confirmed Not found and Several matches as manual-resolution outcomes.
 - Eligible temporary failures recover at the next authorized invocation, respect backoff, and preserve Done work.
@@ -159,7 +160,8 @@ Remaining recovery verification includes:
 - User-requested search/selection/retry revalidates identity and authorization after asynchronous work;
   cancellation prevents subsequent unwanted writes without undoing already completed work.
 
-Implementation remains subject to the repository's code-proposal, approval, test, and review workflow.
+The full remaining issue #4 implementation was explicitly authorized. Commit and integration remain withheld
+under the user's stop boundary; no issue #5 implementation is authorized by this recovery completion.
 
 ## Implementation ledger
 
@@ -174,6 +176,8 @@ Implementation remains subject to the repository's code-proposal, approval, test
   retry expiry, and processor restart. Implemented, verified, and independently reviewed; commit approved
   on 2026-10-18. Keep work on `feature/processing-recovery`; integration into `develop` awaits the user's
   explicit instruction to finish the feature.
+- [x] Remaining issue #4 recovery implementation, independent review, and controlled recovery regressions.
+  Final verification and the requested uncommitted stop are recorded in [Processing recovery](PROCESSING_RECOVERY.md).
 
 ## Implementation evidence
 

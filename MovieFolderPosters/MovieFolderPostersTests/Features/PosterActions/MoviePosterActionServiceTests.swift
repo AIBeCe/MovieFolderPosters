@@ -10,6 +10,27 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// A previously composed host service rechecks durable admission before direct manual searches.
+  @Test func cachedManualServiceHonorsRecoveryModeAndExplicitResume() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let provider = ActionProvider()
+    let service = fixture.service(provider: provider)
+    let recovery = try fixture.makeProcessingRecoveryService()
+    try recovery.setRecoveryModeEnabled(true)
+    await #expect(throws: ProcessingRecoveryError.recoveryMode) {
+      try await service.searchMovies(for: fixture.request, query: "Dune", year: .none)
+    }
+    #expect(await provider.searches.isEmpty)
+    await #expect(throws: ProcessingRecoveryError.recoveryMode) {
+      try await service.removePoster(for: fixture.request)
+    }
+    try recovery.setRecoveryModeEnabled(false)
+    #expect(await provider.searches.isEmpty)
+    _ = try await service.searchMovies(for: fixture.request, query: "Dune", year: .none)
+    #expect(await provider.searches == ["Dune:none"])
+  }
+
   /// An authorized empty assignment must remain readable without a credential.
   @Test func readsUnassignedFolderWithoutCredential() async throws {
     let fixture = try PosterActionFixture()

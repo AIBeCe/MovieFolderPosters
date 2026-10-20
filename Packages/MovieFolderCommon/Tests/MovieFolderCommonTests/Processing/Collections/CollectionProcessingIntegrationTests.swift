@@ -31,7 +31,8 @@ struct CollectionProcessingIntegrationTests {
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     let record = try #require(processingState.folders.first)
     #expect(record.state == .failed)
-    #expect(record.reason == .posterFailure)
+    #expect(record.reason == .connectivity)
+    #expect(record.lastFailure?.reason == .connectivity)
     #expect(record.lastFailure?.stage == .artwork)
     #expect(record.movieID == 7)
     #expect(record.movieTitle == "Movie")
@@ -219,6 +220,33 @@ struct CollectionProcessingIntegrationTests {
     #expect(processingState.lastCompletedRun == .none)
     #expect(processingState.folders.contains { $0.state == .pending || $0.state == .deferred })
     #expect(processingState.folders.contains { $0.reason == .authentication })
+  }
+
+  /// Neither a new authentication failure nor cached rejection can fabricate a completed collection run.
+  @Test(arguments: [false, true])
+  func authenticationAdmissionPreservesPartialTraversal(cachedRejection: Bool) async throws {
+    let fixture = try CollectionProcessingFixture(names: ["First (2021)", "Second (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let recovery = ProcessingRecoveryService(
+      store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
+    let provider = RecoveryMovieMetadataProvider(
+      provider: CollectionProcessingMetadataProvider(authenticationFailure: true),
+      recovery: recovery, credential: "token")
+    if cachedRejection {
+      await #expect(throws: TMDbError.authentication) { try await provider.searchMovies(title: "Warmup", year: .none) }
+    }
+    let processor = MovieFolderProcessor(
+      persistence: fixture.processing, provider: provider,
+      cacheDirectory: fixture.base.appendingPathComponent("Posters"),
+      coordinationStore: fixture.coordination, processingStore: fixture.processingStore, recovery: recovery)
+
+    _ = try await processor.process(root: fixture.root, processingContext: fixture.context)
+
+    let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
+    #expect(state.operation?.state == .partial)
+    #expect(state.lastCompletedRun == .none)
+    #expect(state.folders.contains { $0.state == .pending })
+    #expect(state.folders.contains { $0.reason == .authentication })
   }
 }
 

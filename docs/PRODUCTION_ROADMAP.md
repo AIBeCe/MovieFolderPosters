@@ -159,13 +159,16 @@ See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md).
 
 GitHub issue: [#4](https://github.com/AIBeCe/MovieFolderPosters/issues/4); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
-- [ ] Scope: Expose authentication, connectivity, server failure, and provider throttling separately. Coordinate provider backoff across extension processes and persist safe progress. Resume eligible unfinished work only on a later authorized invocation. Add a bounded recovery launch path that prevents new processing in participating processes while configuration and diagnostics remain usable.
-- [ ] Recovery policy: Determine automatic eligibility from persisted state and failure reason; a retry timestamp only gates eligible work. Not found and Several matches require manual resolution and never repeat automatically for the same unchanged folder. Resume eligible temporary failures/interrupted work on a later authorized Finder visit. Reassess legacy records lacking a reason once, bypassing their obsolete retry gate and inconclusive cached decision without clearing unrelated data or repeating verified completed writes.
-- [ ] Presentation: Separate saved-state freshness from processing completion. Show Needs processing, Waiting to retry, Needs manual resolution, and Complete with relevant counts; mixed conditions remain visible together. Current alone must not imply completion. Full rules: [Processing recovery policy](COLLECTION_PROCESSING.md#approved-recovery-policy--r100-04-and-r100-05).
+- [x] Scope: Expose authentication, connectivity, server failure, and provider throttling separately. Coordinate provider backoff across extension processes and persist safe progress. Resume eligible unfinished work only on a later authorized invocation. Add a bounded recovery launch path that prevents new processing in participating processes while configuration and diagnostics remain usable.
+- [x] Recovery policy: Determine automatic eligibility from persisted state and failure reason; a retry timestamp only gates eligible work. Not found and Several matches require manual resolution and never repeat automatically for the same unchanged folder. Resume eligible temporary failures/interrupted work on a later authorized Finder visit. Reassess legacy records lacking a reason once, bypassing their obsolete retry gate and inconclusive cached decision without clearing unrelated data or repeating verified completed writes.
+- [x] Presentation: Separate saved-state freshness from processing completion. Show Needs processing, Waiting to retry, Needs manual resolution, and Complete with relevant counts; mixed conditions remain visible together. Current alone must not imply completion. Full rules: [Processing recovery policy](COLLECTION_PROCESSING.md#approved-recovery-policy--r100-04-and-r100-05).
 - Dependencies: R100-02 and R100-03; no new background process.
 - Acceptance: Controlled tests cover 401/403, 429 with changing Retry-After, server errors, cancellation, process loss, and a later explicit resume without repeating completed writes. A next-eligible time is never presented as a scheduled execution promise. Recovery mode cannot be bypassed by another entry point or stale process.
 - Acceptance: Repeated visits, cooldown expiry, reloads, and process restarts never automatically repeat confirmed Not found/Several matches searches. Eligible retries respect failure policy and shared provider backoff. Legacy reassessment persists its classification and is not repeated after restart; interrupted reassessment resumes safely. Tests cover preserved Done evidence, legacy JSON, and mixed manual/retry/pending collection labels. Manual-resolution controls remain in R100-05; no timer or background scheduler is added.
 - Source ideas: E61, E62, E63, E64, N98.
+
+Implementation is local and intentionally uncommitted. See [Processing recovery](PROCESSING_RECOVERY.md) for
+verification and native limits. Commit, integration, and issue closure remain pending user approval.
 
 <a id="r100-05"></a>
 
@@ -867,6 +870,7 @@ build copies; PluginKit and LaunchServices were verified to contain one current 
 
 R100-03 is committed as `e7d404b` and integrated into `develop`, with the MovieFolderCommon and Log package
 extraction described in [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). GitHub issue #3 remains open.
-On 2026-10-18 the user requested starting R100-04 / issue #4 with documentation reconciliation and a code
-proposal. Its approved recovery requirements are in [Processing results](COLLECTION_PROCESSING.md).
-Product implementation still requires approval of each bounded code proposal; no later issue or publication is authorized.
+R100-04 / issue #4 is implemented and verified locally under the user's subsequent full-feature authorization.
+[Processing recovery](PROCESSING_RECOVERY.md) records the safety policy, controlled tests, independent review,
+coverage, native builds, and remaining platform qualification limits. Recovery changes remain uncommitted;
+integration, issue closure, later issues, and publication are outside the current stop boundary.

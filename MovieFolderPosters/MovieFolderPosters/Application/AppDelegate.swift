@@ -72,6 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       "Storage startup failed: \(failure.domain, privacy: .public), code=\(failure.code)")
     alert.informativeText =
       "The app could not open its settings. Quit and reopen it using a signed build."
+    if let recoveryError = error as? ProcessingRecoveryError {
+      alert.messageText = "Processing is blocked"
+      alert.informativeText = recoveryError.localizedDescription
+    }
     if let storageError = error as? CollectionProcessingStorageNamespaceError,
       storageError == .legacyMigrationRequired {
       alert.messageText = "Processing storage needs migration"

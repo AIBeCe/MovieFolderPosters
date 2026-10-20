@@ -30,8 +30,9 @@ GitHub on 2026-10-18. Issue #2 is closed and the feature branch is deleted. The 
 ledger live in [Processing results](COLLECTION_PROCESSING.md). R100-03 was separately approved on 2026-10-18,
 including the MovieFolderCommon migration and Log service package. See
 [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). Its implementation commit `e7d404b` is now in
-`develop`; GitHub issue #3 remains open. R100-04 / issue #4 is next for a bounded code proposal, with
-product implementation awaiting explicit approval.
+`develop`; GitHub issue #3 remains open. R100-04 / issue #4 is implemented and verified locally; see
+[Processing recovery](PROCESSING_RECOVERY.md). Its changes remain uncommitted at the user's explicit stop boundary.
+No integration, push, or issue closure has been performed for recovery.
 
 - Follow AGENTS.md.
 - Use SOLID principles as much as possible.

@@ -23,7 +23,7 @@ nonisolated struct FolderRecord: Codable {
   /// The persisted outcome determining reuse and retry behavior.
   let status: FolderRecordStatus
   /// The earliest automatic retry time for an unresolved or failed folder.
-  let retryDate: Date?
+  var retryDate: Date?
   /// The explicit or confidently matched TMDb identity, when recorded.
   let matchedMovieID: Int?
   /// The provider-relative source poster path, when available.
@@ -44,6 +44,15 @@ nonisolated struct FolderRecord: Codable {
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
+
+  /// Whether historic unresolved evidence needs a fresh classification rather than a cooldown retry.
+  var needsLegacyReassessment: Bool { status == .unresolved && processingReason == .none }
+
+  /// Whether unchanged evidence requires explicit action or a changed folder before another automatic attempt.
+  var blocksAutomaticRecovery: Bool {
+    requiresManualResolution ||
+      (status == .unresolved && (processingReason == .parsingProblem || processingReason == .missingArtwork))
+  }
 
   /// Whether this unchanged folder has a confirmed result that needs user resolution.
   var requiresManualResolution: Bool {

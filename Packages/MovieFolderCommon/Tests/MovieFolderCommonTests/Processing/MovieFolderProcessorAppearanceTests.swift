@@ -202,7 +202,7 @@ extension MovieFolderProcessorTests {
       posterAssigner: fileSystem)
     _ = try await rawProcessor.process(root: fixture.movies)
     try fixture.addFolder("Arrival (2016)")
-    await provider.failNextSearch(with: .authentication)
+    await provider.failNextSearch(with: .rateLimited(retryAfter: "600"))
     _ = try await rawProcessor.process(root: fixture.movies)
     let styledProcessor = try fixture.processor(
       provider: provider, appearance: .softFinish,

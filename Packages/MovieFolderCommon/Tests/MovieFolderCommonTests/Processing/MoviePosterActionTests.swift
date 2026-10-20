@@ -310,14 +310,20 @@ final class MoviePosterActionTests: XCTestCase {
 
 /// Manual recovery and coordination regression scenarios.
 extension MoviePosterActionTests {
-  /// Verifies manual Selection Clears Root Backoff.
+  /// Manual selection shares provider throttling and cannot authorize unrelated work before its retry boundary.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testManualSelectionClearsRootBackoff() async throws {
+  func testManualSelectionHonorsSharedBackoffBeforeResumingEligibleFolders() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Arrival (2016)")
     try fixture.addFolder("Dune (2021)")
-    let provider = ActionProvider(posterData: fixture.posterData, searchError: .authentication)
-    let processor = fixture.processor(provider: provider)
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let recovery = ProcessingRecoveryService(
+      store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")), now: { clock.now })
+    let provider = ActionProvider(posterData: fixture.posterData, searchError: .rateLimited(retryAfter: "600"))
+    let processor = MovieFolderProcessor(
+      persistence: fixture.persistence,
+      provider: RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: "token"),
+      cacheDirectory: fixture.base.appendingPathComponent("cache"), now: { clock.now }, recovery: recovery)
     let first = try await processor.process(root: fixture.movies)
     XCTAssertNotNil(first.rootBackoffUntil)
     await provider.setSearchError(.none)
@@ -326,6 +332,16 @@ extension MoviePosterActionTests {
       id: 7, title: "Dune", originalTitle: "Dune",
       releaseYear: 2021, posterPath: "/chosen.jpg")
 
+    do {
+      _ = try await processor.applyMoviePoster(
+        selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity)
+      XCTFail("Manual selection must honor shared provider throttling")
+    } catch let error as ProcessingRecoveryError {
+      XCTAssertEqual(error, .providerBackoff(until: clock.now.addingTimeInterval(600), reason: .rateLimited))
+    }
+    let blockedDownloads = await provider.posterPaths
+    XCTAssertTrue(blockedDownloads.isEmpty)
+    clock.advance(by: 601)
     _ = try await processor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )

@@ -53,6 +53,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     target: .none, action: .none)
   /// Displays the latest configuration error when present.
   private let errorLabel = NSTextField(wrappingLabelWithString: "")
+  /// Shows the durable processing gate without coupling it to collection freshness.
+  private let recoveryLabel = NSTextField(wrappingLabelWithString: "")
+  /// Explicitly resumes admission; it never starts processing itself.
+  private let recoveryButton = NSButton(title: "Enable Recovery Mode", target: .none, action: .none)
   /// Receives requests to present other host windows.
   weak var delegate: (any ConfigurationViewControllerDelegate)?
 
@@ -83,11 +87,17 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       action: #selector(showInstallationReadiness))
     errorLabel.textColor = .systemRed
     errorLabel.maximumNumberOfLines = 2
+    recoveryButton.target = self
+    recoveryButton.action = #selector(toggleRecoveryMode)
+    recoveryButton.setAccessibilityIdentifier("processingRecoveryMode")
+    let recovery = NSStackView(views: [recoveryLabel, NSView(), recoveryButton])
+    recovery.orientation = .horizontal
+    recovery.spacing = 10
     let footer = NSStackView(views: [log, installation, errorLabel, NSView(), settings])
     footer.orientation = .horizontal
     footer.alignment = .centerY
     footer.spacing = 10
-    for child in [scrollView, footer] {
+    for child in [scrollView, recovery, footer] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
@@ -95,7 +105,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
       scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
       scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
-      scrollView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -10),
+      scrollView.bottomAnchor.constraint(equalTo: recovery.topAnchor, constant: -10),
+      recovery.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+      recovery.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+      recovery.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -10),
       footer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
       footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
       footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
@@ -208,6 +221,9 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     tableView.isEnabled = !viewModel.isBusy
     errorLabel.stringValue = viewModel.errorMessage ?? ""
     errorLabel.isHidden = viewModel.errorMessage == .none
+    recoveryLabel.stringValue = viewModel.recoveryModeDescription
+    recoveryButton.title = viewModel.isRecoveryModeEnabled ? "Resume Processing" : "Enable Recovery Mode"
+    recoveryButton.isEnabled = !viewModel.isBusy && viewModel.isRecoveryModeAvailable
   }
 
   /// Returns the number of collection rows currently displayed.
@@ -238,7 +254,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short)
     } ?? "never"
 
-    return "Results: \(state) · Last inspected: \(inspected)"
+    return "Results: \(state) · Last inspected: \(inspected) · Work: \(summary.presentation.work.description)"
   }
 
   /// Builds the context menu for a collection row or empty table area.
@@ -308,6 +324,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   @objc private func showSettings() { delegate?.configurationViewControllerDidRequestSettings(self) }
   /// Forwards the Log action to the window coordinator.
   @objc private func showLog() { delegate?.configurationViewControllerDidRequestLog(self) }
+  /// Changes admission only; the next authorized invocation owns any later processing.
+  @objc private func toggleRecoveryMode() {
+    Task { await viewModel.setRecoveryModeEnabled(!viewModel.isRecoveryModeEnabled) }
+  }
   /// Forwards the readiness action to the window coordinator.
   @objc private func showInstallationReadiness() {
     delegate?.configurationViewControllerDidRequestInstallationReadiness(self)

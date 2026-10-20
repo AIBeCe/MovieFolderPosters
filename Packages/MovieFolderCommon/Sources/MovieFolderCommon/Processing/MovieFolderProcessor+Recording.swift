@@ -123,7 +123,7 @@ extension MovieFolderProcessor {
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
       movieIdentitySource: movie == .none ? .none : .conservativeMatch,
       ownership: .none, assessedAt: now(),
-      retryAt: state == .unresolved ? now().addingTimeInterval(Self.unresolvedRetryInterval) : .none,
+      retryAt: reason == .incompleteSearch ? now().addingTimeInterval(Self.unresolvedRetryInterval) : .none,
       fingerprint: candidate.fingerprint)
   }
 
@@ -137,7 +137,8 @@ extension MovieFolderProcessor {
     } else if saved.processingReason == .none {
       record.state = .deferred
     }
-    record.retryAt = saved.requiresManualResolution ? .none : saved.retryDate
+    record.retryAt = saved.blocksAutomaticRecovery || saved.processingReason == .authentication
+      ? .none : saved.retryDate
     record.movieID = saved.matchedMovieID
     record.movieTitle = saved.movieTitle
     record.movieYear = saved.movieYear
@@ -148,16 +149,39 @@ extension MovieFolderProcessor {
 
   /// Records a failure without embedding provider messages or private paths.
   func failedFolderAssessment(
-    _ candidate: FolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = .none
+    _ candidate: FolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = .none,
+    reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
   ) -> FolderProcessingRecord {
     FolderProcessingRecord(
       name: candidate.name, identity: candidate.identity, state: .failed,
-      reason: stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .filesystemFailure),
+      reason: reason ??
+        (stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .filesystemFailure)),
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
       movieIdentitySource: movie == .none ? .none : .conservativeMatch,
-      assessedAt: now(), retryAt: now().addingTimeInterval(Self.transientRetryInterval),
-      lastFailure: FolderProcessingFailure(reason: .unavailable, stage: stage, occurredAt: now()),
+      assessedAt: now(),
+      retryAt: reason == .authentication ? .none : now().addingTimeInterval(Self.transientRetryInterval),
+      lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       fingerprint: candidate.fingerprint)
+  }
+
+  /// Converts provider failures to stable categories without retaining status text or private request details.
+  func providerFailureEvidence(
+    _ error: TMDbError, stage: FolderProcessingStage
+  ) -> (reason: FolderProcessingReason, failureReason: FolderProcessingFailureReason) {
+    switch error {
+    case .authentication, .missingToken, .httpStatus(401), .httpStatus(403):
+      return (.authentication, .authentication)
+    case .rateLimited, .httpStatus(429):
+      return (.rateLimited, .rateLimited)
+    case .transport(let code):
+      return (.connectivity, code == NSURLErrorTimedOut ? .timeout : .connectivity)
+    case .httpStatus(let code) where (500...599).contains(code):
+      return (.serverFailure, .serverFailure)
+    case .malformedResponse, .invalidImage, .invalidPosterPath, .invalidConfiguration, .responseTooLarge:
+      return (.invalidResponse, .invalidResponse)
+    default:
+      return (stage == .artwork ? .posterFailure : .metadataFailure, .unavailable)
+    }
   }
 
   /// Verifies current ownership instead of treating an assignment attempt or cached decision as success.

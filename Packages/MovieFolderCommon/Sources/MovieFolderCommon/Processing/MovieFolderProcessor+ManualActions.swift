@@ -17,6 +17,7 @@ extension MovieFolderProcessor {
     root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = .none
   ) async throws -> Int {
     try Task.checkCancellation()
+    try recovery?.validateProcessingAllowed()
     let coordinationLease = try acquireCoordinationLease(for: root)
     defer { withExtendedLifetime(coordinationLease) {} }
     let lease = try acquireRootLease(for: root)
@@ -70,6 +71,7 @@ extension MovieFolderProcessor {
     processingContext: CollectionProcessingContext? = .none
   ) async throws -> Int {
     try Task.checkCancellation()
+    try recovery?.validateProcessingAllowed()
     let coordinationLease = try acquireCoordinationLease(for: root)
     defer { withExtendedLifetime(coordinationLease) {} }
     let lease = try acquireRootLease(for: root)
@@ -120,6 +122,8 @@ extension MovieFolderProcessor {
   public func removePoster(
     root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = .none
   ) throws -> Bool {
+    try Task.checkCancellation()
+    try recovery?.validateProcessingAllowed()
     let coordinationLease = try acquireCoordinationLease(for: root)
     defer { withExtendedLifetime(coordinationLease) {} }
     let lease = try acquireRootLease(for: root)
@@ -150,6 +154,8 @@ extension MovieFolderProcessor {
     try Task.checkCancellation()
     let removed: Bool
     do {
+      let recoveryLease = try recovery?.acquireMutationLease()
+      defer { withExtendedLifetime(recoveryLease) {} }
       let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
       defer { withExtendedLifetime(settingsLease) {} }
       removed = try fileSystem.removeAssignedPoster(
@@ -263,6 +269,8 @@ extension MovieFolderProcessor {
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   private func replacePoster(_ data: Data, candidate: FolderCandidate, root: URL) throws {
     try Task.checkCancellation()
+    let recoveryLease = try recovery?.acquireMutationLease()
+    defer { withExtendedLifetime(recoveryLease) {} }
     let result: PosterAssignmentResult
     do {
       result = try fileSystem.replaceAssignedPoster(

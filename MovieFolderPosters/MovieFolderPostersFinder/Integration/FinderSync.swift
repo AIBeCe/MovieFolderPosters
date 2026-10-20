@@ -56,6 +56,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       do {
         if let token = try environment.credential() {
           let client = try environment.provider(token: token, configuration: configuration)
+          let recovery = try environment.processingRecoveryService()
           let container = try environment.containerURL()
           let records = container.appendingPathComponent("Processing/\(configuration.credentialRevision)")
           let repository = try environment.configurationRepository()
@@ -64,13 +65,13 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
             roots: updated)
           processor = MovieFolderProcessor(
             persistence: try PersistenceStore(directory: records),
-            provider: client,
+            provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
             cacheDirectory: container.appendingPathComponent("Posters"),
             coordinationStore: try PersistenceStore(
               directory: container.appendingPathComponent("ProcessingLocks")
             ), mutationGuard: mutationGuard,
             appearance: configuration.posterAppearance,
-            processingStore: try environment.processingStore())
+            processingStore: try environment.processingStore(), recovery: recovery)
           processingConfiguration = configuration
           logger.notice("Shared Keychain credential available")
         } else {

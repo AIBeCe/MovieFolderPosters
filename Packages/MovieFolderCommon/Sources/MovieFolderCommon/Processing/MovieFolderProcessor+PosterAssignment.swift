@@ -13,6 +13,8 @@ extension MovieFolderProcessor {
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func assign(_ data: Data, to candidate: FolderCandidate, in root: URL) throws -> PosterAssignmentResult {
     try Task.checkCancellation()
+    let recoveryLease = try recovery?.acquireMutationLease()
+    defer { withExtendedLifetime(recoveryLease) {} }
     let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)
     defer { withExtendedLifetime(settingsLease) {} }
     let current: FolderCandidate
@@ -54,6 +56,8 @@ extension MovieFolderProcessor {
       record.matchedMovieID != .none, let data = cachedPoster(for: posterPath)
     else { return false }
     try Task.checkCancellation()
+    let recoveryLease = try recovery?.acquireMutationLease()
+    defer { withExtendedLifetime(recoveryLease) {} }
     let current = try fileSystem.readCurrentState(ofChild: candidate.name, in: root)
     guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
     let styleLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)

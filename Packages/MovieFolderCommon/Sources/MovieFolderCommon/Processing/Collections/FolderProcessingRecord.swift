@@ -11,6 +11,7 @@ nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseI
   case interrupted, inventoryPending, storageUnavailable, inspectionFailure, metadataFailure
   case posterFailure, filesystemFailure, savedIdentityUnavailable, ownershipChanged
   case capacityExceeded, cachePersistenceFailure, authentication, rateLimited, unknown
+  case connectivity, serverFailure, invalidResponse, recoveryMode
 }
 /// Ownership evidence for the icon currently installed on a folder.
 nonisolated public enum PosterOwnership: String, Codable, Sendable {

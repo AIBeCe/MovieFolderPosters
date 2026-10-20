@@ -27,6 +27,7 @@ nonisolated public struct FolderProcessingFailure: Codable, Sendable, Equatable 
 nonisolated public enum FolderProcessingFailureReason: String, Codable, Sendable {
   case cancelled, unavailable, invalidResponse, authentication, rateLimited, timeout
   case filesystem, ownershipChanged, storage, capacity, unknown
+  case connectivity, serverFailure, recoveryMode
 }
 /// Processing stage associated with the latest safe failure category.
 nonisolated public enum FolderProcessingStage: String, Codable, Sendable {

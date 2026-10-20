@@ -60,6 +60,9 @@ final class CollectionProcessingDetailsViewController: NSViewController {
     var lines = [
       "Collection: \(collectionName)",
       "Result state at last inspection: \(summary.displayState.description)",
+      "Work: \(summary.presentation.work.description)",
+      "Done: \(summary.presentation.work.done); Preserved: \(summary.presentation.work.preserved); "
+        + "Suppressed: \(summary.presentation.work.suppressed)",
       "Last inspected: \(date(processingState.inspectedAt))",
       "Current operation: \(operationDescription(processingState.operation))",
       "Last completed collection run: \(operationDescription(processingState.lastCompletedRun))\(historicalRunNote)",
@@ -208,6 +211,10 @@ private extension FolderProcessingReason {
     case .cachePersistenceFailure: "Processing cache could not be saved"
     case .authentication: "The metadata service rejected authentication"
     case .rateLimited: "The metadata service temporarily limited requests"
+    case .connectivity: "The metadata service could not be reached"
+    case .serverFailure: "The metadata service is temporarily unavailable"
+    case .invalidResponse: "The metadata service returned an invalid response"
+    case .recoveryMode: "Recovery mode pauses processing"
     case .unknown: "The reason was not classified"
     }
   }
@@ -237,6 +244,9 @@ private extension FolderProcessingFailureReason {
     case .invalidResponse: "Invalid service response"
     case .authentication: "Authentication failed"
     case .rateLimited: "Rate limited"
+    case .connectivity: "Connectivity unavailable"
+    case .serverFailure: "Service unavailable"
+    case .recoveryMode: "Recovery mode enabled"
     case .timeout: "Timed out"
     case .filesystem: "Filesystem error"
     case .ownershipChanged: "Ownership changed"

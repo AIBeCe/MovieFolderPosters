@@ -22,6 +22,8 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   func provider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider
   /// Opens authoritative collection outcomes.
   func processingStore() throws -> CollectionProcessingStore
+  /// Opens the durable processing gate within this environment's shared storage.
+  func processingRecoveryService() throws -> ProcessingRecoveryService
   /// Resolves and retains authorization for a transferred or extension-owned bookmark.
   func acquireDirectoryAccess(bookmark: Data, securityScoped: Bool, expectedIdentity: String?) throws
     -> DirectoryAccessLease
@@ -29,6 +31,14 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   func makeDirectoryBookmark(for url: URL) throws -> Data
   /// Publishes the currently authorized roots to Finder.
   @MainActor func register(_ roots: Set<URL>)
+}
+
+/// Keeps test and production admission state in the same container as their existing runtime stores.
+extension FinderRuntimeEnvironment {
+  func processingRecoveryService() throws -> ProcessingRecoveryService {
+    ProcessingRecoveryService(store: try PersistenceStore(
+      directory: containerURL().appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
+  }
 }
 
 /// Adapts the signed extension's system services without adding processing policy.
@@ -70,6 +80,9 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
 
   func processingStore() throws -> CollectionProcessingStore {
     try MovieFolderEnvironment.makeCollectionProcessingStore()
+  }
+  func processingRecoveryService() throws -> ProcessingRecoveryService {
+    try MovieFolderEnvironment.makeProcessingRecoveryService()
   }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?

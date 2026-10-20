@@ -65,6 +65,23 @@ nonisolated public enum MovieFolderEnvironment {
       store: PersistenceStore(directory: locations.appGroupContainerURL().appendingPathComponent("Settings")))
   }
 
+  /// Opens recovery mode and provider policy in their dedicated bounded shared App Group namespace.
+  /// - Returns: A service shared by host and Finder processes, independent of collection roots.
+  /// - Throws: An unavailable container or a failure opening the recovery persistence namespace.
+  public static func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
+    try makeProcessingRecoveryService(locations: SystemMovieFolderStorageLocations())
+  }
+
+  /// Opens recovery policy at supplied process locations without clearing settings, results, or caches.
+  static func makeProcessingRecoveryService(
+    locations: any MovieFolderStorageLocations
+  ) throws -> ProcessingRecoveryService {
+    ProcessingRecoveryService(
+      store: try PersistenceStore(
+        directory: locations.appGroupContainerURL().appendingPathComponent("ProcessingRecovery"),
+        maximumRecordBytes: 8_192))
+  }
+
   /// Opens the versioned collection processing state repository in its dedicated App Group namespace.
   /// - Returns: A state repository using the current shared directory and payload-free change notifier.
   /// - Throws: An unavailable container, required offline migration, or a persistence directory failure.

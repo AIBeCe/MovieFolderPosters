@@ -102,19 +102,23 @@ extension MovieFolderProcessorTests {
     XCTAssertEqual(searchCount, 1)
   }
 
-  /// Verifies authentication Failure Also Persists Root Backoff.
+  /// Authentication remains blocked after time passes rather than inventing a scheduled credential retry.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testAuthenticationFailureAlsoPersistsRootBackoff() async throws {
+  func testAuthenticationRequiresCredentialChangeInsteadOfDateExpiry() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider(searchError: .authentication)
-    let processor = try fixture.processor(provider: provider)
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let processor = try fixture.processor(provider: provider, clock: { clock.now })
 
     let first = try await processor.process(root: fixture.movies)
     let second = try await processor.process(root: fixture.movies)
+    clock.advance(by: 86_401)
+    let third = try await processor.process(root: fixture.movies)
 
-    XCTAssertNotNil(first.rootBackoffUntil)
+    XCTAssertNil(first.rootBackoffUntil)
     XCTAssertEqual(second.rootBackoffUntil, first.rootBackoffUntil)
+    XCTAssertEqual(third.examined, 0)
     let searchCount = await provider.searchCount
     XCTAssertEqual(searchCount, 1)
   }

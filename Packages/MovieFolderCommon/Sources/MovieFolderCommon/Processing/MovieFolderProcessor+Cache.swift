@@ -18,8 +18,7 @@ extension MovieFolderProcessor {
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .unresolved,
-      retryDate: reason == .noSuitableMovie || reason == .ambiguousMovie
-        ? .none : now().addingTimeInterval(Self.unresolvedRetryInterval),
+      retryDate: reason == .incompleteSearch ? now().addingTimeInterval(Self.unresolvedRetryInterval) : .none,
       matchedMovieID: movie?.id,
       posterPath: movie?.posterPath,
       processingReason: reason,
@@ -36,18 +35,20 @@ extension MovieFolderProcessor {
   ///   - state: The root processing state being inspected or updated.
   func recordTransientFailure(
     _ candidate: FolderCandidate, in state: inout ProcessingState,
-    stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none
+    stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none,
+    reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
   ) {
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .transientFailure,
-      retryDate: now().addingTimeInterval(Self.transientRetryInterval),
+      retryDate: reason == .authentication ? .none : now().addingTimeInterval(Self.transientRetryInterval),
       matchedMovieID: movie?.id,
       posterPath: movie?.posterPath,
-      processingReason: stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .processingFailure),
+      processingReason: reason ??
+        (stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .processingFailure)),
       movieTitle: movie?.title,
       movieYear: movie?.releaseYear,
-      lastFailure: FolderProcessingFailure(reason: .unavailable, stage: stage, occurredAt: now()),
+      lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       movieIdentitySource: movie == .none ? .none : .conservativeMatch
     )
   }
@@ -123,15 +124,25 @@ extension MovieFolderProcessor {
   /// - Returns: The retry boundary when the error requires root backoff.
   func rootBackoff(for error: TMDbError) -> Date? {
     switch error {
-    case .authentication:
-      return now().addingTimeInterval(Self.maximumRateLimitInterval)
     case .rateLimited(let retryAfter):
       let interval = Self.retryInterval(from: retryAfter, now: now())
 
       return now().addingTimeInterval(interval)
+    case .httpStatus(429):
+      return now().addingTimeInterval(Self.transientRetryInterval)
     default:
       return .none
     }
+  }
+
+  /// Uses shared validated throttling evidence so a later short response cannot shorten another process's delay.
+  /// - Parameter error: The provider failure establishing root-local throttling evidence.
+  /// - Returns: The shared deadline, or a finite local fallback for isolated callers.
+  /// - Throws: A safe recovery-state error if an injected shared service becomes unreadable.
+  func effectiveRootBackoff(for error: TMDbError) throws -> Date? {
+    guard let fallback = rootBackoff(for: error) else { return .none }
+
+    return try recovery?.read().providerRetryAt ?? fallback
   }
 
   /// Parses seconds or an HTTP date and clamps the provider retry interval to supported bounds.
@@ -154,8 +165,10 @@ extension MovieFolderProcessor {
       requested = .none
     }
 
+    let finite = requested.flatMap { $0.isFinite ? $0 : .none } ?? Self.transientRetryInterval
+
     return min(
-      max(requested ?? Self.transientRetryInterval, Self.minimumRateLimitInterval),
+      max(finite, Self.minimumRateLimitInterval),
       Self.maximumRateLimitInterval)
   }
 

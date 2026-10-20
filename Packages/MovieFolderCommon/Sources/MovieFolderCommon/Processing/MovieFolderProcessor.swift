@@ -36,6 +36,8 @@ public actor MovieFolderProcessor {
   let appearance: PosterAppearance
   /// Commits authoritative results independently of operational caches.
   let processingStore: CollectionProcessingStore?
+  /// Shared recovery admission and mutation fencing, when supplied by production composition.
+  let recovery: ProcessingRecoveryService?
   /// The conservative folder-name parser used before metadata searches.
   let parser = ReleaseNameParser()
   /// The conservative movie matcher used after a complete provider response.
@@ -54,6 +56,7 @@ public actor MovieFolderProcessor {
   ///   - mutationGuard: Optional retained collaborator enforcing live settings authorization.
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - processingStore: Dedicated result storage; production supplies it with a current context for each operation.
+  ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon mutation.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
     persistence: PersistenceStore,
@@ -64,7 +67,8 @@ public actor MovieFolderProcessor {
     coordinationStore: PersistenceStore? = .none,
     mutationGuard: (any MovieFolderMutationGuard)? = .none,
     appearance: PosterAppearance = .softFinish,
-    processingStore: CollectionProcessingStore? = .none
+    processingStore: CollectionProcessingStore? = .none,
+    recovery: ProcessingRecoveryService? = .none
   ) {
     self.fileSystem = fileSystem
     self.persistence = persistence
@@ -76,5 +80,6 @@ public actor MovieFolderProcessor {
     self.mutationGuard = mutationGuard
     self.appearance = appearance
     self.processingStore = processingStore
+    self.recovery = recovery
   }
 }

@@ -41,7 +41,8 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
     #endif
 
     return try ConfigurationCoordinator(
-      service: service, activity: activity, summaryService: CollectionSummaryService.shared(), appearance: appearance)
+      service: service, activity: activity, summaryService: CollectionSummaryService.shared(), appearance: appearance,
+      recovery: try? MovieFolderEnvironment.makeProcessingRecoveryService())
   }
 }
 
@@ -60,6 +61,8 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   private let configurationBuilder: any ConfigurationCoordinatorBuilding
   /// Shared preferences applied to current and future windows through AppKit inheritance.
   private let appearance: AppAppearanceSettings
+  /// Establishes launch-requested recovery before routes can admit processing.
+  private let recoveryLaunch: ProcessingRecoveryLaunchController
 
   /// Creates child flows without opening configuration storage.
   /// - Parameters:
@@ -70,10 +73,12 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
        configurationBuilder: any ConfigurationCoordinatorBuilding = ConfigurationCoordinatorBuilder(),
        posterService: (any MoviePosterActionServicing)? = .none,
-       appearance: AppAppearanceSettings = AppAppearanceSettings()) {
+       appearance: AppAppearanceSettings = AppAppearanceSettings(),
+       recoveryLaunch: ProcessingRecoveryLaunchController = ProcessingRecoveryLaunchController()) {
     self.activity = activity
     self.configurationBuilder = configurationBuilder
     self.appearance = appearance
+    self.recoveryLaunch = recoveryLaunch
     logCoordinator = LogCoordinator(activity: activity)
     posterActionCoordinator = MoviePosterActionCoordinator(
       service: posterService ?? MoviePosterActionService(activity: activity))
@@ -89,21 +94,18 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   }
 
   /// Creates or reopens configuration without recreating successful child flows.
-  /// - Throws: Initialization errors, allowing a later explicit attempt to retry.
+  /// - Throws: Initialization or recovery-gate errors after presenting any available configuration.
   func showConfiguration() throws {
-    if configurationCoordinator == .none {
-      let configuration = try configurationBuilder.makeCoordinator(activity: activity, appearance: appearance)
-      configuration.delegate = self
-      configurationCoordinator = configuration
-    }
-    configurationCoordinator?.start()
+    try presentConfiguration { $0.start() }
   }
 
   /// Presents Settings sharing Main's configuration state.
-  /// - Throws: Initialization errors if configuration has not started.
+  /// - Throws: Initialization or recovery-gate errors after presenting any available settings.
   func showSettings() throws {
-    if configurationCoordinator == .none { try showConfiguration() }
-    configurationCoordinator?.showSettings()
+    try presentConfiguration { configuration in
+      if configuration.mainWindow == .none { configuration.start() }
+      configuration.showSettings()
+    }
   }
 
   /// Routes history directly to its independent owner.
@@ -111,7 +113,27 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
 
   /// Routes an already validated Finder request.
   /// - Parameter request: Bounded action and expected folder identity.
-  func openPosterAction(_ request: MoviePosterRequest) { posterActionCoordinator.start(request) }
+  func openPosterAction(_ request: MoviePosterRequest) {
+    do { try recoveryLaunch.prepare() } catch { return }
+    posterActionCoordinator.start(request)
+  }
+
+  /// Attempts the launch gate before composition, then keeps read-only configuration reachable if it failed.
+  /// - Parameter present: Presentation requested by the current configuration route.
+  /// - Throws: The preparation or configuration error, without admitting processing on preparation failure.
+  private func presentConfiguration(_ present: (ConfigurationCoordinator) -> Void) throws {
+    let preparation = Result { try recoveryLaunch.prepare() }
+    let configuration: ConfigurationCoordinator
+    if let existing = configurationCoordinator {
+      configuration = existing
+    } else {
+      configuration = try configurationBuilder.makeCoordinator(activity: activity, appearance: appearance)
+      configuration.delegate = self
+      configurationCoordinator = configuration
+    }
+    present(configuration)
+    try preparation.get()
+  }
 
   /// Refreshes existing feature projections after activation.
   func applicationDidBecomeActive() {

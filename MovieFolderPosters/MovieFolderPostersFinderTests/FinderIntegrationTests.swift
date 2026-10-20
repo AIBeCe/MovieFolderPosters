@@ -67,6 +67,20 @@ private struct NoMatchesProvider: MovieMetadataProvider {
   func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
 }
 
+/// Counts actual provider admission for a cached Finder runtime across gate changes.
+private actor CountingNoMatchesProvider: MovieMetadataProvider {
+  /// Number of searches that reached the underlying provider.
+  private(set) var searchCount = Int.zero
+
+  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+    searchCount += 1
+
+    return MovieSearchResult(movies: [], hasMorePages: false)
+  }
+
+  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+}
+
 /// Suspends an external response so cancellation and settings changes occur at a known boundary.
 private actor SuspendedFinderProvider: MovieMetadataProvider {
   /// Response continuation resumed explicitly by the test after changing authorization or cancellation.
@@ -235,6 +249,33 @@ struct FinderIntegrationTests {
 
 // MARK: - Configuration and processing
 extension FinderIntegrationTests {
+  /// A cached live runtime must recheck durable mode after composition and resume only on a later visit.
+  @Test @MainActor func cachedRuntimeHonorsDurableRecoveryMode() async throws {
+    let fixture = try FinderFixture()
+    defer { fixture.remove() }
+    _ = try fixture.movie()
+    var environment = IsolatedFinderEnvironment(fixture)
+    let provider = CountingNoMatchesProvider()
+    environment.metadataProvider = provider
+    let runtime = FinderConfigurationRuntime(environment: environment)
+    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
+    let recovery = try environment.processingRecoveryService()
+    try recovery.setRecoveryModeEnabled(true)
+    await #expect(throws: ProcessingRecoveryError.recoveryMode) {
+      try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
+    }
+    #expect(await provider.searchCount == .zero)
+    let paused = try environment.processingStore().read(rootID: fixture.directory.id)
+    #expect(paused?.folders.contains { $0.state == .notFound } != true)
+    try recovery.setRecoveryModeEnabled(false)
+    #expect(try environment.processingStore().read(rootID: fixture.directory.id) == paused)
+    try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
+    let resumed = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
+    #expect(resumed.folders.first?.state == .notFound)
+    #expect(await provider.searchCount == 1)
+  }
+
   /// Verifies authorized processing saves activation evidence and a complete not-found outcome.
   @Test @MainActor func authorizedRootWritesActivationAndAuthoritativeNotFoundOutcome() async throws {
     let fixture = try FinderFixture()

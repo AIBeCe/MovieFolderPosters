@@ -339,6 +339,8 @@ final class MoviePosterActionViewModel {
       case .changedIdentity: "This movie folder changed. Reopen the action and try again."
       case .noPoster: "TMDb does not have a usable poster for this movie."
       }
+    } else if let error = error as? ProcessingRecoveryError {
+      error.localizedDescription
     } else if let error = error as? TMDbError {
       error.description
     } else if let error = error as? MoviePosterActionServiceError {

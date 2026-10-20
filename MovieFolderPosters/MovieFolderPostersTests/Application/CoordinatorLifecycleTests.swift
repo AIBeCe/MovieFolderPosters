@@ -3,6 +3,7 @@ import FileSystem
 import Foundation
 import MovieFolderCommon
 import Network
+import Persistence
 import Testing
 
 @testable import MovieFolderPosters
@@ -10,6 +11,66 @@ import Testing
 /// Exercises actual root routing and reusable AppKit window lifetimes with isolated services.
 @Suite(.serialized) @MainActor
 struct CoordinatorLifecycleTests {
+  /// Recovery is persisted before configuration composition and the first action URL can route safely.
+  @Test func recoveryLaunchPrecedesCompositionAndColdActionRouting() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
+    let builder = RecoveryCheckingConfigurationBuilder(recovery: recovery)
+    let root = AppCoordinator(
+      activity: ActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
+      appearance: try isolatedAppearance(),
+      recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
+    let request = MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: .change)
+    root.openPosterAction(request)
+    defer { root.posterActionCoordinator.windowController?.close() }
+    #expect(try recovery.read().isRecoveryModeEnabled)
+    try root.start()
+    defer { root.configurationCoordinator?.mainWindow?.close() }
+    #expect(builder.observedRecoveryMode == true)
+    try recovery.setRecoveryModeEnabled(false)
+    root.openPosterAction(request)
+    #expect(try !recovery.read().isRecoveryModeEnabled)
+  }
+
+  /// A Settings route before normal startup still persists launch recovery before constructing services.
+  @Test func coldSettingsRoutePreparesRecoveryBeforeComposition() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
+    let builder = RecoveryCheckingConfigurationBuilder(recovery: recovery)
+    let root = AppCoordinator(
+      activity: ActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
+      appearance: try isolatedAppearance(),
+      recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
+
+    try root.showSettings()
+    defer { root.configurationCoordinator?.mainWindow?.close(); root.configurationCoordinator?.settingsWindow?.close() }
+    #expect(builder.observedRecoveryMode == true)
+    #expect(try recovery.read().isRecoveryModeEnabled)
+  }
+
+  /// Failure to persist launch recovery rejects action routing while configuration and Log stay usable.
+  @Test func unavailableLaunchGateKeepsConfigurationAndLogUsable() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
+    let mutation = try recovery.acquireMutationLease()
+    let root = AppCoordinator(
+      activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
+      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance(),
+      recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
+    #expect(throws: ProcessingRecoveryError.busy) { try root.start() }
+    #expect(root.configurationCoordinator != .none)
+    root.showLog()
+    defer { root.configurationCoordinator?.mainWindow?.close(); root.logCoordinator.windowController?.close() }
+    #expect(root.logCoordinator.windowController?.window?.isVisible == true)
+    root.openPosterAction(MoviePosterRequest(
+      rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: .change))
+    #expect(root.posterActionCoordinator.windowController == .none)
+    withExtendedLifetime(mutation) {}
+  }
+
   /// Configuration startup failure must not remove the independent operational Log route.
   @Test func logRemainsReachableAfterConfigurationStartupFails() throws {
     let application = NSApplication.shared
@@ -247,6 +308,33 @@ private struct AvailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
     ConfigurationCoordinator(service: CoordinatorConfigurationService(), activity: activity, appearance: appearance)
+  }
+}
+
+/// Confirms launch recovery is durable before the host composes configuration services.
+@MainActor
+private final class RecoveryCheckingConfigurationBuilder: ConfigurationCoordinatorBuilding {
+  /// Gate read at the precise composition boundary.
+  private(set) var observedRecoveryMode: Bool?
+  /// Isolated shared gate supplied by the lifecycle test.
+  private let recovery: ProcessingRecoveryService
+
+  /// Retains the gate whose state must precede configuration composition.
+  /// - Parameter recovery: Test-owned durable admission service.
+  init(recovery: ProcessingRecoveryService) { self.recovery = recovery }
+
+  /// Captures the gate state before creating an isolated configuration flow.
+  /// - Parameters:
+  ///   - activity: Test-owned activity recorder.
+  ///   - appearance: Root-owned appearance settings.
+  /// - Returns: A configuration owner backed by isolated services.
+  /// - Throws: Recovery state failures that make the observed ordering unavailable.
+  func makeCoordinator(activity: any MovieFolderActivityServicing,
+                       appearance: AppAppearanceSettings) throws -> ConfigurationCoordinator {
+    observedRecoveryMode = try recovery.read().isRecoveryModeEnabled
+
+    return ConfigurationCoordinator(
+      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, recovery: recovery)
   }
 }
 

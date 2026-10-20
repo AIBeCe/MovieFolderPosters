@@ -90,6 +90,16 @@ nonisolated protocol MoviePosterActionEnvironment: Sendable {
   func makePrivateAuthorizationStore() throws -> PersistenceStore
   /// Opens authoritative operation outcomes.
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore
+  /// Opens dedicated admission state in the same environment as the action's existing storage.
+  func makeProcessingRecoveryService() throws -> ProcessingRecoveryService
+}
+
+/// Derives an isolated durable gate from injected storage instead of reaching the real App Group.
+extension MoviePosterActionEnvironment {
+  func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
+    ProcessingRecoveryService(store: try PersistenceStore(
+      directory: appGroupContainerURL().appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
+  }
 }
 
 /// Uses signed application storage for normal host actions.
@@ -106,6 +116,9 @@ nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironmen
   }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
     try MovieFolderEnvironment.makeCollectionProcessingStore()
+  }
+  func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
+    try MovieFolderEnvironment.makeProcessingRecoveryService()
   }
 }
 
@@ -379,7 +392,10 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       throw MoviePosterActionServiceError.credentialUnavailable
     }
     let accessToken = try TMDbAccessToken(token)
-    if let provider { return provider }
+    let recovery = try environment.makeProcessingRecoveryService()
+    if let provider {
+      return RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: token)
+    }
 
     #if DEBUG
       if configuration.usesStubTMDbResponses {
@@ -389,11 +405,13 @@ actor MoviePosterActionService: MoviePosterActionServicing {
         }
         let transport = StubTMDbTransport(posterData: try Data(contentsOf: posterURL))
 
-        return TMDbClient(token: accessToken, transport: transport)
+        return RecoveryMovieMetadataProvider(
+          provider: TMDbClient(token: accessToken, transport: transport), recovery: recovery, credential: token)
       }
     #endif
 
-    return TMDbClient(token: accessToken)
+    return RecoveryMovieMetadataProvider(
+      provider: TMDbClient(token: accessToken), recovery: recovery, credential: token)
   }
 
   /// Captures the already authorized collection generation for authoritative action results.
@@ -434,7 +452,8 @@ actor MoviePosterActionService: MoviePosterActionServicing {
       coordinationStore: try PersistenceStore(directory: coordinationDirectory),
       mutationGuard: mutationGuard,
       appearance: context.configuration.posterAppearance,
-      processingStore: try environment.makeCollectionProcessingStore())
+      processingStore: try environment.makeCollectionProcessingStore(),
+      recovery: try environment.makeProcessingRecoveryService())
 
   }
 }

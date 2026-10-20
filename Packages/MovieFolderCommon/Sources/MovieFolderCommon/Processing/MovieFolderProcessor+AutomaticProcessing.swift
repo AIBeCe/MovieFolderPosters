@@ -16,6 +16,7 @@ extension MovieFolderProcessor {
     root: URL, processingContext: CollectionProcessingContext? = .none
   ) async throws -> ProcessingSummary {
     try Task.checkCancellation()
+    try recovery?.validateProcessingAllowed()
     let rootKey = Self.rootLeaseKey(for: root)
     let coordinationLease: PersistenceLease?
     do {
@@ -41,7 +42,8 @@ extension MovieFolderProcessor {
     let currentTime = now()
     var stateChanged = pruneCache(&visit.cache, candidates: candidates, currentTime: currentTime)
     try assessExistingIcons(candidates, root: root, visit: &visit)
-    if let backoff = visit.cache.rootBackoffUntil, backoff > currentTime {
+    if recovery == nil, !hasLegacyReassessment(candidates, cache: visit.cache),
+      let backoff = visit.cache.rootBackoffUntil, backoff > currentTime {
       if stateChanged { try saveState(visit.cache, to: lease) }
       visit.summary.rootBackoffUntil = backoff
       deferPendingFolderAssessments(&visit.recording, until: backoff)
@@ -54,14 +56,26 @@ extension MovieFolderProcessor {
     if stateChanged { try saveState(visit.cache, to: lease) }
     for candidate in candidates {
       try Task.checkCancellation()
+      try recovery?.validateProcessingAllowed()
       if try shouldSkipCandidate(candidate, root: root, visit: &visit) { continue }
       if try reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) { continue }
-      if try await processCandidate(candidate, root: root, lease: lease, visit: &visit) { break }
+      if try await processCandidate(candidate, root: root, lease: lease, visit: &visit) {
+        visit.didStopEarly = true
+        break
+      }
     }
-    try finishProcessingOperation(
-      &visit.recording, state: visit.summary.rootBackoffUntil == .none ? .completed : .partial)
+    try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
 
     return visit.summary
+  }
+
+  /// Detects unchanged reasonless decisions whose obsolete root delay cannot block their fresh classification.
+  private func hasLegacyReassessment(_ candidates: [FolderCandidate], cache: ProcessingState) -> Bool {
+    candidates.contains {
+      let saved = cache.folders[$0.name]
+
+      return saved?.fingerprint == $0.fingerprint && saved?.needsLegacyReassessment == true
+    }
   }
 
   /// Inventories and checkpoints all immediate members before authorizing writes.
@@ -138,6 +152,8 @@ extension MovieFolderProcessor {
         throw error
       } catch is CancellationError {
         throw CancellationError()
+      } catch let error as ProcessingRecoveryError {
+        throw error
       } catch {
         if Task.isCancelled { throw CancellationError() }
         visit.summary.transientFailures += 1
@@ -187,7 +203,7 @@ extension MovieFolderProcessor {
     let priorRecord = visit.cache.folders[candidate.name]
     let sameFingerprint = priorRecord?.fingerprint == candidate.fingerprint
     if sameFingerprint, let record = priorRecord {
-      if record.requiresManualResolution {
+      if record.blocksAutomaticRecovery || (record.processingReason == .authentication && recovery == nil) {
         visit.summary.unresolved += 1
         try recordFolderProcessing(cachedFolderAssessment(candidate, saved: record), in: &visit.recording)
         return true
@@ -201,10 +217,21 @@ extension MovieFolderProcessor {
           candidate: candidate, root: root, lease: lease, visit: &visit)
         return true
       }
-      if record.status != .processed, let retryDate = record.retryDate, retryDate > now() {
+      if record.status != .processed, !record.needsLegacyReassessment,
+        record.processingReason != .interrupted, let retryDate = record.retryDate, retryDate > now() {
         visit.summary.skippedRetryWindow += 1
         try recordFolderProcessing(cachedFolderAssessment(candidate, saved: record), in: &visit.recording)
         return true
+      }
+      if record.needsLegacyReassessment || record.processingReason == .incompleteSearch,
+        case .parsed(let parsed) = parser.parse(candidate.name) {
+        // A retry must not establish a new classification from the same inconclusive search.
+        visit.cache.queries.removeValue(forKey: Self.queryKey(title: parsed.title, year: parsed.year))
+        visit.cache.folders[candidate.name] = FolderRecord(
+          fingerprint: candidate.fingerprint, status: .transientFailure, retryDate: .none,
+          matchedMovieID: record.matchedMovieID, posterPath: record.posterPath, processingReason: .interrupted,
+          movieTitle: record.movieTitle, movieYear: record.movieYear, movieIdentitySource: record.movieIdentitySource)
+        try saveState(visit.cache, to: lease)
       }
     }
 
@@ -234,6 +261,8 @@ extension MovieFolderProcessor {
       throw error
     } catch is CancellationError {
       throw CancellationError()
+    } catch let error as ProcessingRecoveryError {
+      throw error
     } catch {
       if Task.isCancelled { throw CancellationError() }
       recordTransientFailure(candidate, in: &visit.cache)
@@ -255,24 +284,11 @@ extension MovieFolderProcessor {
       throw error
     } catch is CancellationError {
       throw CancellationError()
+    } catch let error as ProcessingRecoveryError {
+      return try recordRecoveryAdmissionFailure(
+        error, candidate: candidate, lease: lease, visit: &visit, attempt: attempt)
     } catch let error as TMDbError {
-      if Task.isCancelled { throw CancellationError() }
-      if let retryDate = rootBackoff(for: error) {
-        visit.cache.rootBackoffUntil = retryDate
-        try saveState(visit.cache, to: lease)
-        visit.summary.rootBackoffUntil = retryDate
-        var record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie)
-        record.reason = error == .authentication ? .authentication : .rateLimited
-        record.retryAt = retryDate
-        try recordFolderProcessing(record, in: &visit.recording)
-        deferPendingFolderAssessments(&visit.recording, until: retryDate)
-        return true
-      }
-      recordTransientFailure(candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie)
-      try saveState(visit.cache, to: lease)
-      visit.summary.transientFailures += 1
-      let record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie)
-      try recordFolderProcessing(record, in: &visit.recording)
+      return try recordProviderFailure(error, candidate: candidate, lease: lease, visit: &visit, attempt: attempt)
     } catch {
       if Task.isCancelled { throw CancellationError() }
       recordTransientFailure(candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie)
@@ -281,6 +297,80 @@ extension MovieFolderProcessor {
       let record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie)
       try recordFolderProcessing(record, in: &visit.recording)
     }
+
+    return false
+  }
+
+  /// Retains the explicit admission reason without converting paused work into an ordinary retry.
+  private func recordRecoveryAdmissionFailure(
+    _ error: ProcessingRecoveryError, candidate: FolderCandidate, lease: PersistenceLease,
+    visit: inout AutomaticProcessingVisit, attempt: PosterAttempt
+  ) throws -> Bool {
+    let reason: FolderProcessingReason
+    let retryAt: Date?
+    let failure: FolderProcessingFailureReason
+    switch error {
+    case .providerBackoff(let until, let category):
+      reason = category
+      retryAt = until
+      failure = switch category {
+      case .rateLimited: .rateLimited
+      case .connectivity: .connectivity
+      case .serverFailure: .serverFailure
+      case .invalidResponse: .invalidResponse
+      default: .unavailable
+      }
+    case .authenticationRequired:
+      reason = .authentication
+      retryAt = .none
+      failure = .authentication
+    default:
+      throw error
+    }
+    recordTransientFailure(candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie,
+      reason: reason, failureReason: failure)
+    visit.cache.folders[candidate.name]?.retryDate = retryAt
+    try saveState(visit.cache, to: lease)
+    var record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie,
+      reason: reason, failureReason: failure)
+    record.retryAt = retryAt
+    try recordFolderProcessing(record, in: &visit.recording)
+    visit.summary.rootBackoffUntil = retryAt
+    if let retryAt { deferPendingFolderAssessments(&visit.recording, until: retryAt) }
+
+    return true
+  }
+
+  /// Saves typed provider evidence and any root-local delay before ending the current attempt.
+  private func recordProviderFailure(
+    _ error: TMDbError, candidate: FolderCandidate, lease: PersistenceLease,
+    visit: inout AutomaticProcessingVisit, attempt: PosterAttempt
+  ) throws -> Bool {
+    if Task.isCancelled { throw CancellationError() }
+    let evidence = providerFailureEvidence(error, stage: attempt.stage)
+    recordTransientFailure(
+      candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie,
+      reason: evidence.reason, failureReason: evidence.failureReason)
+    if let retryDate = try effectiveRootBackoff(for: error) {
+      visit.cache.rootBackoffUntil = retryDate
+      visit.cache.folders[candidate.name]?.retryDate = retryDate
+      try saveState(visit.cache, to: lease)
+      visit.summary.rootBackoffUntil = retryDate
+      var record = failedFolderAssessment(
+        candidate, stage: attempt.stage, movie: attempt.movie,
+        reason: evidence.reason, failureReason: evidence.failureReason)
+      record.retryAt = retryDate
+      try recordFolderProcessing(record, in: &visit.recording)
+      deferPendingFolderAssessments(&visit.recording, until: retryDate)
+      return true
+    }
+    try saveState(visit.cache, to: lease)
+    visit.summary.transientFailures += 1
+    let record = failedFolderAssessment(
+      candidate, stage: attempt.stage, movie: attempt.movie,
+      reason: evidence.reason, failureReason: evidence.failureReason)
+    try recordFolderProcessing(record, in: &visit.recording)
+    if evidence.reason == .authentication { return true }
 
     return false
   }
@@ -400,6 +490,8 @@ private struct AutomaticProcessingVisit {
   var recording: CollectionProcessingState?
   /// Counts reported to the caller independently of durable outcomes.
   var summary = ProcessingSummary()
+  /// Whether provider admission ended this traversal without a normal collection-wide completion.
+  var didStopEarly = false
 }
 
 /// Evidence retained as a fresh attempt advances across suspension points.

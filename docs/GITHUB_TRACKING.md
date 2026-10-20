@@ -1,6 +1,6 @@
 # GitHub Roadmap Tracking
 
-Updated: 2026-10-18. Tracking was initially created and verified on 2026-10-16.
+Updated: 2026-10-20. Tracking was initially created and verified on 2026-10-16.
 Status: R100-01 and R100-02 are completed; issues #1 and #2 are closed as completed.
 R100-02 implementation commit: `049b74b`. Both features are integrated into `develop`; their feature branches
 were deleted. `develop` was pushed to GitHub through `b48d44d` on 2026-10-18. No release was published.
@@ -8,7 +8,8 @@ See [Processing results](COLLECTION_PROCESSING.md) for verification and native q
 R100-03 is implemented, independently reviewed, and committed as `e7d404b` on 2026-10-18. The commit is
 present in `develop` and the locally recorded `origin/develop` at `fd9eb83`. GitHub issue #3 remains open
 at live read-back on 2026-10-18; implementation integration and tracker closure are separate facts.
-R100-04 / issue #4 is the next proposal. Product implementation awaits approval of its bounded code proposal.
+R100-04 / issue #4 is implemented locally; final validation and its uncommitted stop boundary are recorded in
+[Processing recovery](PROCESSING_RECOVERY.md). Commit, integration, publication, and issue closure remain pending.
 See [Common and Log migration](COMMON_AND_LOG_MIGRATION.md).
 Repository: [AIBeCe/MovieFolderPosters](https://github.com/AIBeCe/MovieFolderPosters).
 Tracker: repository Issues. No separate Projects board is used.
@@ -29,7 +30,8 @@ establish eligibility. Confirmed Not found and Several matches require user acti
 automatically for the same unchanged folder. R100-05 / issue #5 owns the manual search/selection interface
 and bounded user-requested retries. No additional feature issue or background scheduler is introduced.
 The [processing policy](COLLECTION_PROCESSING.md#approved-recovery-policy--r100-04-and-r100-05) defines the
-state/action mapping and acceptance criteria. These are approved requirements, not implemented behavior.
+state/action mapping and acceptance criteria. Issue #4 behavior is implemented locally; the issue #5 manual
+resolution interface remains separately scoped.
 
 There are 10 milestones and 54 coded issues. They represent 176 future-source ideas, not 54 cherry-picked ideas.
 The three delivered baseline ideas need no duplicate issue; conditional E40/C01 remains inactive. Merged source
@@ -68,7 +70,7 @@ release/decision criteria; a supporting issue is not automatically an applicatio
 | R100-01 | [#1 — Verify installation, access, and platform readiness](https://github.com/AIBeCe/MovieFolderPosters/issues/1) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed 2026-10-17 |
 | R100-02 | [#2 — Persist authoritative processing outcomes and collection summaries](https://github.com/AIBeCe/MovieFolderPosters/issues/2) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Completed; issue closed |
 | R100-03 | [#3 — Connect bounded Finder and host activity to Log](https://github.com/AIBeCe/MovieFolderPosters/issues/3) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Committed/integrated; issue remains open |
-| R100-04 | [#4 — Make network failure and interruption recovery predictable](https://github.com/AIBeCe/MovieFolderPosters/issues/4) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
+| R100-04 | [#4 — Make network failure and interruption recovery predictable](https://github.com/AIBeCe/MovieFolderPosters/issues/4) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Implemented locally; uncommitted |
 | R100-05 | [#5 — Resolve and retry specific failed folders](https://github.com/AIBeCe/MovieFolderPosters/issues/5) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-06 | [#6 — Make credential setup and replacement understandable](https://github.com/AIBeCe/MovieFolderPosters/issues/6) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-07 | [#7 — Complete essential native usability and accessibility](https://github.com/AIBeCe/MovieFolderPosters/issues/7) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |

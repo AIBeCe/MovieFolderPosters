@@ -6,6 +6,8 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
   public let state: CollectionProcessingDisplayState
   /// Counts are present only when their supporting evidence is complete.
   public let counts: CollectionProcessingCounts
+  /// Eligibility categories independent of lifecycle and inspection freshness.
+  public let work: CollectionProcessingWorkSummary
   /// Last inspected inventory time, when any inventory has completed.
   public let inspectedAt: Date?
   /// Last fully completed collection-wide automatic run.
@@ -22,6 +24,7 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
   ///   - stateOverride: Lifecycle state established by an authoritative caller check.
   public init(processingState: CollectionProcessingState?, isStale: Bool = false, isBusy: Bool = false,
               stateOverride: CollectionProcessingDisplayState? = .none) {
+    work = CollectionProcessingWorkSummary(processingState: processingState, isStale: isStale)
     guard let processingState else {
       state = .unavailable
       counts = CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)

@@ -16,6 +16,12 @@ struct MovieFolderEnvironmentTests {
     #expect(try reopened.read().usesStubTMDbResponses)
     _ = try MovieFolderEnvironment.makeCollectionProcessingStore(locations: locations)
     _ = try MovieFolderEnvironment.makePrivateAuthorizationStore(locations: locations)
+    let recovery = try MovieFolderEnvironment.makeProcessingRecoveryService(locations: locations)
+    try recovery.setRecoveryModeEnabled(true)
+    let reopenedRecovery = try MovieFolderEnvironment.makeProcessingRecoveryService(locations: locations)
+    #expect(try reopenedRecovery.read().isRecoveryModeEnabled)
+    #expect(try reopened.read().usesStubTMDbResponses)
+    #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("ProcessingRecovery").path))
     #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("Settings").path))
     let authorization = root.appendingPathComponent("MovieFolderPosters/Authorization")
     #expect(FileManager.default.fileExists(atPath: authorization.path))
@@ -32,6 +38,9 @@ struct MovieFolderEnvironmentTests {
     }
     #expect(throws: ConfigurationError.self) {
       try MovieFolderEnvironment.makePrivateAuthorizationStore(locations: locations)
+    }
+    #expect(throws: ConfigurationError.self) {
+      try MovieFolderEnvironment.makeProcessingRecoveryService(locations: locations)
     }
     let recorder = MovieFolderEnvironment.makeActivityRecorder(locations: locations)
     #expect(await recorder.hasObservedWriteFailure)

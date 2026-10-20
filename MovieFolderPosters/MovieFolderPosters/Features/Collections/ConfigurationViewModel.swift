@@ -23,6 +23,8 @@ protocol ConfigurationViewModelActivityDelegate: AnyObject {
 final class ConfigurationViewModel {
   /// Performs configuration reads and mutations outside the view layer.
   private let service: any ConfigurationServicing
+  /// Dedicated durable gate, independent of configuration generation and processing results.
+  private let recovery: ProcessingRecoveryService?
 
   /// Required retained best-effort recorder; weak observers never control persistence.
   private let activity: any MovieFolderActivityServicing
@@ -66,6 +68,18 @@ final class ConfigurationViewModel {
   private(set) var errorMessage: String?
   /// Whether a configuration summary has been loaded successfully.
   private(set) var hasLoadedSummary = false
+  /// Whether durable state currently pauses provider admission and icon mutations.
+  private(set) var isRecoveryModeEnabled = false
+  /// Whether the durable gate was successfully read at the last explicit refresh.
+  private(set) var isRecoveryModeAvailable = false
+  /// Processing admission status, separate from read-only configuration availability.
+  var recoveryModeDescription: String {
+    guard isRecoveryModeAvailable else { return "Processing safety state unavailable. Processing is blocked." }
+
+    return isRecoveryModeEnabled
+      ? "Recovery mode enabled. Processing is paused; configuration and Log remain available."
+      : "Recovery mode off. Processing runs only on an authorized invocation."
+  }
 
   /// Describes the last-loaded setup evidence without triggering another check.
   var installationSetupDescription: String {
@@ -90,10 +104,12 @@ final class ConfigurationViewModel {
   /// - Parameter service: The service used for configuration operations.
   init(
     service: any ConfigurationServicing,
-    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder()
+    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
+    recovery: ProcessingRecoveryService? = .none
   ) {
     self.service = service
     self.activity = activity
+    self.recovery = recovery
   }
 
   /// Loads the latest configuration summary and publishes its state.
@@ -101,6 +117,40 @@ final class ConfigurationViewModel {
     await perform(
       action: .configurationLoaded, failureMessage: "Could not load configuration."
     ) { try await self.service.configurationSummary() }
+    await reloadRecoveryMode()
+  }
+
+  /// Reads the durable gate without triggering a configuration change or processing invocation.
+  func reloadRecoveryMode() async {
+    guard let recovery else { return }
+    do {
+      let snapshot = try await Task.detached { try recovery.read() }.value
+      isRecoveryModeEnabled = snapshot.isRecoveryModeEnabled
+      isRecoveryModeAvailable = true
+    } catch {
+      isRecoveryModeAvailable = false
+    }
+    publish()
+  }
+
+  /// Updates only durable admission; disabling recovery never restarts or replays processing.
+  /// - Parameter enabled: Whether new requests and filesystem mutations must remain paused.
+  func setRecoveryModeEnabled(_ enabled: Bool) async {
+    guard !isBusy, let recovery else { return }
+    isBusy = true
+    errorMessage = .none
+    publish()
+    do {
+      try await Task.detached { try recovery.setRecoveryModeEnabled(enabled) }.value
+      isRecoveryModeEnabled = enabled
+      isRecoveryModeAvailable = true
+    } catch {
+      isRecoveryModeAvailable = false
+      errorMessage = (error as? ProcessingRecoveryError)?.localizedDescription
+        ?? "Could not change processing recovery mode. Try again."
+    }
+    isBusy = false
+    publish()
   }
 
   /// Adds a collection root and refreshes the displayed summary.
