@@ -67,7 +67,7 @@ or polling. Reload on open/activation and explicit refresh. Notifications are no
 Approved 2026-10-18. Issue #4 recovery behavior is implemented locally as of 2026-10-20, including reason-based
 eligibility, shared provider policy, legacy reassessment, interruption recovery, recovery mode, and separate work
 labels. See [Processing recovery](PROCESSING_RECOVERY.md) for contracts, tests, review, verification, and the explicit
-uncommitted stop boundary. The issue #5 manual-resolution interface remains separately scoped. This policy
+local completion in commit `008a6f3`, fast-forwarded into `develop`. The issue #5 interface remains separately scoped. This policy
 supersedes automatic cooldown-based repetition of confirmed manual-resolution results. The R100-02 records below
 remain historical evidence.
 
@@ -160,8 +160,8 @@ Recovery acceptance now has controlled regression coverage for:
 - User-requested search/selection/retry revalidates identity and authorization after asynchronous work;
   cancellation prevents subsequent unwanted writes without undoing already completed work.
 
-The full remaining issue #4 implementation was explicitly authorized. Commit and integration remain withheld
-under the user's stop boundary; no issue #5 implementation is authorized by this recovery completion.
+The full remaining issue #4 implementation and subsequent local feature completion were explicitly authorized.
+Recovery is committed as `008a6f3` and integrated into local `develop`; no push or issue #5 implementation is included.
 
 ## Implementation ledger
 
@@ -174,10 +174,10 @@ under the user's stop boundary; no issue #5 implementation is authorized by this
 - [x] Final independent review, focused/regression verification, signed builds, and explicit native limits.
 - [x] Issue #4 point 1: confirmed Not found and Several matches remain manual-resolution outcomes across visits,
   retry expiry, and processor restart. Implemented, verified, and independently reviewed; commit approved
-  on 2026-10-18. Keep work on `feature/processing-recovery`; integration into `develop` awaits the user's
-  explicit instruction to finish the feature.
+  on 2026-10-18. The user subsequently authorized finishing the feature; it was fast-forwarded into
+  local `develop` through recovery commit `008a6f3` on 2026-10-20.
 - [x] Remaining issue #4 recovery implementation, independent review, and controlled recovery regressions.
-  Final verification and the requested uncommitted stop are recorded in [Processing recovery](PROCESSING_RECOVERY.md).
+  Final verification and local feature completion are recorded in [Processing recovery](PROCESSING_RECOVERY.md).
 
 ## Implementation evidence
 

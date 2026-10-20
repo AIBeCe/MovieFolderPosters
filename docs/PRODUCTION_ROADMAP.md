@@ -167,8 +167,8 @@ GitHub issue: [#4](https://github.com/AIBeCe/MovieFolderPosters/issues/4); miles
 - Acceptance: Repeated visits, cooldown expiry, reloads, and process restarts never automatically repeat confirmed Not found/Several matches searches. Eligible retries respect failure policy and shared provider backoff. Legacy reassessment persists its classification and is not repeated after restart; interrupted reassessment resumes safely. Tests cover preserved Done evidence, legacy JSON, and mixed manual/retry/pending collection labels. Manual-resolution controls remain in R100-05; no timer or background scheduler is added.
 - Source ideas: E61, E62, E63, E64, N98.
 
-Implementation is local and intentionally uncommitted. See [Processing recovery](PROCESSING_RECOVERY.md) for
-verification and native limits. Commit, integration, and issue closure remain pending user approval.
+Recovery commit `008a6f3` was fast-forwarded into local `develop` on 2026-10-20. See
+[Processing recovery](PROCESSING_RECOVERY.md) for verification and native limits. No push or issue closure was performed.
 
 <a id="r100-05"></a>
 
@@ -872,5 +872,5 @@ R100-03 is committed as `e7d404b` and integrated into `develop`, with the MovieF
 extraction described in [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). GitHub issue #3 remains open.
 R100-04 / issue #4 is implemented and verified locally under the user's subsequent full-feature authorization.
 [Processing recovery](PROCESSING_RECOVERY.md) records the safety policy, controlled tests, independent review,
-coverage, native builds, and remaining platform qualification limits. Recovery changes remain uncommitted;
-integration, issue closure, later issues, and publication are outside the current stop boundary.
+coverage, native builds, and remaining platform qualification limits. Recovery commit `008a6f3` is integrated
+into local `develop`; issue closure, later issues, and publication remain outside the completed local work.

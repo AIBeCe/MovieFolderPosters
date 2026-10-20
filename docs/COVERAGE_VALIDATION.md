@@ -1,8 +1,8 @@
 # Coverage validation — point 1
 
 Approved: 2026-10-18. Validated: 2026-10-19.
-Status: Point 1 complete and independently reviewed. Commit approved on 2026-10-19. Stop before point 2
-(SwiftLint cleanup); integration into develop remains separately gated.
+Status: Point 1 complete and independently reviewed; committed as `548d278`. Point 2 subsequently completed.
+Both are integrated into local `develop` through recovery commit `008a6f3` on 2026-10-20. No push was performed.
 
 ## Acceptance and measurement
 

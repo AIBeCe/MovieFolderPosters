@@ -1,7 +1,8 @@
 # SwiftLint validation — point 2
 
 Date: 2026-10-19. Status: Point 2 complete; implementation, independent review, and final validation passed.
-Commit approved on 2026-10-19. Integration remains gated by the user.
+Committed as `df28eea` on 2026-10-19 and integrated into local `develop` through recovery commit `008a6f3`
+on 2026-10-20 when the user finished the feature. No push was performed.
 
 ## Scope and acceptance
 

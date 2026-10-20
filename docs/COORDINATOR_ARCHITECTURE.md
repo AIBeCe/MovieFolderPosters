@@ -2,7 +2,8 @@
 
 Date: 2026-10-18
 Status: Implemented, verified, and independently reviewed; user approved commit on 2026-10-18.
-Integration remains pending the explicit instruction to finish the feature.
+Integrated into local `develop` on 2026-10-20 when the user explicitly finished `feature/processing-recovery`
+through recovery commit `008a6f3`. No push was performed.
 
 ## Approved scope
 

@@ -37,7 +37,8 @@ and their tests. The user authorized implementation and necessary API naming imp
 
 ## Coding-convention follow-up — 2026-10-19
 
-Status: implementation, independent review, and final verification complete. Awaiting user approval to commit.
+Status: implementation, independent review, and final verification complete. Committed as `58e6d33` and
+integrated into local `develop` through recovery commit `008a6f3` on 2026-10-20. No push was performed.
 
 The subsequent audit covered all 127 tracked Swift files, including tests, package manifests, and support probes.
 No source lines exceeded 120 columns. Remaining gaps included unnecessary wrapping, optional spelling, final-return

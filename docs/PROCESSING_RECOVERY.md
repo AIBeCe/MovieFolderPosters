@@ -1,7 +1,9 @@
 # Processing recovery — issue #4
 
 Status: implementation, independent review, and final validation complete on 2026-10-20.
-Recovery changes remain uncommitted; do not integrate, push, or close the issue.
+Recovery was committed as `008a6f3` and fast-forwarded into local `develop` on 2026-10-20.
+The user authorized feature completion and a separate documentation commit on `develop`. No push or issue closure
+was performed; native qualification limits below remain unchanged.
 The preceding style-only changes were committed separately as `58e6d33`.
 
 ## Required behavior
@@ -60,7 +62,7 @@ icon mutation paths hold the recovery lease through their existing synchronous, 
 3. Host/Finder integration and presentation: compose live safeguards, recovery launch/control/error presentation,
    work projection and table/details labels, mixed/unknown tests, and entrypoint safety regressions.
 4. Root: architecture/integration, independent review, complete-source coverage gate above 90%, final SwiftLint,
-   signed native builds, durable documentation, and requested uncommitted stop boundary.
+   signed native builds, durable documentation, and the user-authorized local GitFlow completion.
 
 Apply the Swift style and Swift Testing skills. Use TDD where meaningful; record actual red/green observations.
 Preserve established protocol delegates and weak ownership; do not introduce closure-property callbacks.
@@ -146,7 +148,8 @@ opt-in Common probes remain skipped in this run; the dedicated recovery process 
   Short synchronous provider-test witnesses satisfy the unchanged async protocol; no unsafe isolation suppression
   was introduced. Whitespace and width checks cover all 139 Swift files, including new untracked sources.
 - Independent review: PASS, including re-review of I1–I3. No open Critical/Important findings remain.
-- Final `git diff --check`: PASS. The style commit remains `58e6d33`; recovery is neither staged nor committed.
+- Final `git diff --check`: PASS. Style commit: `58e6d33`; recovery feature commit: `008a6f3`.
+  The verified feature was integrated into local `develop` with `git merge --ff-only`.
 
 Coverage artifacts:
 `/private/var/folders/h0/423hyq0d1mj429_q6zhqkw9r0000gn/T/MovieFolderPosters-Coverage.jkFuCJ`.
@@ -155,3 +158,20 @@ Lint artifacts: `/private/tmp/mfp-recovery-lint-final.json` and `/private/tmp/mf
 
 SwiftLint and the coverage gate belong to final validation or an explicit user request; routine implementation
 edits do not trigger either check. No further run is needed merely because validation documentation changes.
+
+## Local feature completion — 2026-10-20
+
+The user explicitly approved committing recovery, finishing the feature, updating documentation, and committing
+that documentation on `develop`. The feature commit is `008a6f3`. Local `develop` advanced from `fd9eb83` to that
+commit with a fast-forward merge; no merge commit or history rewrite was created. This also integrates the
+previously approved coordinator, coverage, lint, and style commits carried by the feature branch.
+
+Before integration, the Common suite again passed 150 Swift Testing tests and 44 XCTest tests; the application
+suite passed 159 tests across 21 suites. The merged source tree exactly matches the verified feature tree.
+Integration test logs: `/private/tmp/mfp-recovery-integration-common.log` and
+`/private/tmp/mfp-recovery-integration-application.log`. The merged application check is recorded in
+`/private/tmp/mfp-recovery-merged-application.log`. No additional lint or coverage run was triggered by documentation.
+
+The remote was not pushed, and GitHub issue #4 was not modified or closed. Issue #5 remains separately scoped.
+The fully merged local feature branch is retained pending explicit authorization to delete its reference.
+User-specific `.DS_Store` and Xcode `xcuserdata` files remain untracked and were excluded from both commits.
