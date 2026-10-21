@@ -68,6 +68,7 @@ struct Fixture {
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - posterAssigner: The synchronous adapter performing final automatic icon assignment.
   ///   - mutationGuard: Optional retained collaborator enforcing live settings authorization.
+  ///   - configuration: Retry and cache policy supplied to this test processor.
   /// - Returns: The constructed MovieFolderProcessor result.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func processor(
@@ -76,12 +77,14 @@ struct Fixture {
     appearance: PosterAppearance = .softFinish,
     posterAssigner: (any PosterAssigner)? = .none,
     mutationGuard: (any MovieFolderMutationGuard)? = .none,
-    processingStore: CollectionProcessingStore? = .none
+    processingStore: CollectionProcessingStore? = .none,
+    configuration: MovieFolderProcessorConfiguration = .standard
   ) throws -> MovieFolderProcessor {
     MovieFolderProcessor(
       fileSystem: FileSystemService(), persistence: persistence, provider: provider,
       cacheDirectory: cache, posterAssigner: posterAssigner ?? assigner, now: clock,
-      mutationGuard: mutationGuard, appearance: appearance, processingStore: processingStore)
+      mutationGuard: mutationGuard, appearance: appearance, processingStore: processingStore,
+      configuration: configuration)
   }
 }
 

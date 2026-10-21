@@ -6,7 +6,7 @@ trap 'rtk proxy rm -rf "$collection_probe"' EXIT
 rtk proxy mkdir -p "$collection_probe/Sources/CollectionProcessingProbe"
 rtk proxy cp "$common_repository/scripts/test-support/CollectionProcessingProbe/main.swift" \
   "$collection_probe/Sources/CollectionProcessingProbe/"
-for package in MovieFolderCommon Network FileSystem Persistence Log; do
+for package in MovieFolderCommon MovieFolderParsing Network FileSystem Persistence Log; do
   rtk proxy ln -s "$common_repository/Packages/$package" "$collection_probe/$package"
 done
 rtk proxy tee "$collection_probe/Package.swift" >/dev/null <<'SWIFT'

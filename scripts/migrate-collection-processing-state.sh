@@ -18,7 +18,7 @@ trap 'rtk proxy rm -rf "$maintenance_package"' EXIT
 rtk proxy mkdir -p "$maintenance_package/Sources/CollectionProcessingNamespaceMaintenance"
 rtk proxy cp "$common_repository/scripts/test-support/CollectionProcessingNamespaceMaintenance/main.swift" \
   "$maintenance_package/Sources/CollectionProcessingNamespaceMaintenance/"
-for package in MovieFolderCommon Network FileSystem Persistence Log; do
+for package in MovieFolderCommon MovieFolderParsing Network FileSystem Persistence Log; do
   rtk proxy ln -s "$common_repository/Packages/$package" "$maintenance_package/$package"
 done
 rtk proxy tee "$maintenance_package/Package.swift" >/dev/null <<'SWIFT'

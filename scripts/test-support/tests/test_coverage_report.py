@@ -182,7 +182,8 @@ class CoverageReportTests(unittest.TestCase):
     @classmethod
     def fixture_manifest(cls, root):
         components = []
-        for name in ["Host", "Finder", "Network", "FileSystem", "Persistence", "Log", "MovieFolderCommon"]:
+        for name in ["Host", "Finder", "Network", "FileSystem", "Persistence", "Log", "MovieFolderCommon",
+                     "MovieFolderParsing"]:
             source_root = root / name
             source_root.mkdir()
             source = source_root / "Service.swift"
@@ -192,7 +193,8 @@ class CoverageReportTests(unittest.TestCase):
             components.append({"name": name, "source_root": str(source_root), "compiled_root": str(source_root),
                                "export": str(export), "test_exit_code": 0})
         return {"components": components, "required_components": ["Project", "Network", "FileSystem",
-                                                                 "Persistence", "Log", "MovieFolderCommon"]}
+                                                                 "Persistence", "Log", "MovieFolderCommon",
+                                                                 "MovieFolderParsing"]}
 
     @staticmethod
     def file_record(path, covered, total):

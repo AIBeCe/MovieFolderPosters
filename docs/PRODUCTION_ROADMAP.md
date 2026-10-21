@@ -360,6 +360,9 @@ GitHub issue: [#18](https://github.com/AIBeCe/MovieFolderPosters/issues/18); mil
 - Acceptance: Conflicting IDs, malformed NFO, uninformative names, symlinks, and replaced files remain safe. No recursive media scan or sidecar write is introduced; reading movie-adjacent data requires the approved scoped workflow.
 - Source ideas: E18, N11, N12, N13, N19.
 
+The earlier parser fix recognizes bracketed database codes only as suffix metadata. This issue still
+owns provider-validated identifier matching and any use of NFO or video-name evidence.
+
 <a id="r120-05"></a>
 
 ### R120-05 — Remember explicit corrections without renaming
@@ -825,7 +828,8 @@ is authorized by this roadmap.
 | Responsibility | Existing owner / starting locations |
 | --- | --- |
 | Native windows, navigation, presentation | AppCoordinator; feature-owned ConfigurationCoordinator, LogCoordinator, MoviePosterActionCoordinator; their view controllers and view models |
-| Folder policy, outcomes, matching, retries | MovieFolderProcessor, ReleaseNameParser, MovieMatcher, MoviePosterActionService and shared application source |
+| Release-name parsing | Packages/MovieFolderParsing; Foundation-only grammar and tests, no movie identification |
+| Folder policy, outcomes, matching, retries | MovieFolderProcessor, MovieMatcher, MoviePosterActionService and shared application source |
 | Finder integration and invocation | MovieFolderPostersFinder/Integration/FinderSync.swift, shared configuration/request code |
 | HTTP, provider decoding, bounded downloads | Packages/Network; no filesystem writes or movie-match decisions |
 | Scope, identity, icon operations, local images | Packages/FileSystem; no metadata-provider requests |

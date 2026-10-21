@@ -1,6 +1,6 @@
 import Testing
 
-@testable import MovieFolderCommon
+@testable import MovieFolderParsing
 
 /// Regression coverage for conservative release-name parsing.
 struct ReleaseNameParserTests {
@@ -24,6 +24,45 @@ struct ReleaseNameParserTests {
 
   /// Verifies rejects Empty Name.
   @Test func rejectsEmptyName() { #expect(ReleaseNameParser().parse("   ") == .unresolved(.emptyName)) }
+
+  /// Database codes in a suffix do not become part of the search title or establish movie identity.
+  @Test(arguments: [
+    ReleaseFixture("Come and See (1985) [tt0091251]", "Come and See", 1985),
+    ReleaseFixture("Stealth (2005) [imdb-tt0382992]", "Stealth", 2005),
+    ReleaseFixture("Dune (2021) [tmdb-438631]", "Dune", 2021),
+    ReleaseFixture("Dune (2021) [tvdb-12345]", "Dune", 2021),
+    ReleaseFixture("Dune (2021) [wikidata-Q25188]", "Dune", 2021),
+    ReleaseFixture("Dune (2021) [tt1160419] 2160p WEB-DL", "Dune", 2021),
+    ReleaseFixture("Dune (2021) 2160p WEB-DL [tt1160419]", "Dune", 2021),
+    ReleaseFixture("Dune (2021) [tt1160419] [tmdb-438631]", "Dune", 2021)
+  ])
+  func discardsDatabaseIdentifierSuffixes(_ fixture: ReleaseFixture) {
+    let parser = ReleaseNameParser()
+
+    #expect(parser.hasRecognizedDatabaseIdentifierSuffix(fixture.name))
+    #expect(parser.parse(fixture.name) == .parsed(ParsedReleaseName(title: fixture.title, year: fixture.year)))
+  }
+
+  /// Unknown bracketed text and identifiers embedded in titles remain available to conservative parsing.
+  @Test(arguments: [
+    UnresolvedFixture("Dune (2021) [unknown-12345]", .ambiguousMetadata),
+    UnresolvedFixture("Dune (2021) [tt12]", .ambiguousMetadata)
+  ])
+  func doesNotDiscardUnsupportedOrEmbeddedTokens(_ fixture: UnresolvedFixture) {
+    let parser = ReleaseNameParser()
+
+    #expect(!parser.hasRecognizedDatabaseIdentifierSuffix(fixture.name))
+    #expect(parser.parse(fixture.name) == .unresolved(fixture.issue))
+  }
+
+  /// A bracketed code inside a title is not reclassified as suffix metadata.
+  @Test func preservesIdentifierShapedTitleToken() {
+    let name = "Dune [tt1160419] Part Two (2024)"
+    let parser = ReleaseNameParser()
+
+    #expect(!parser.hasRecognizedDatabaseIdentifierSuffix(name))
+    #expect(parser.parse(name) == .parsed(ParsedReleaseName(title: "Dune [tt1160419] Part Two", year: 2024)))
+  }
 
   /// Checks that release annotations are removed without losing the movie title or year.
   ///

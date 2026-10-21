@@ -1,5 +1,6 @@
 import FileSystem
 import Foundation
+import MovieFolderParsing
 import Network
 import Persistence
 import Testing
@@ -31,6 +32,83 @@ func automaticRecoveryKeepsBlockedReasonsUntilFolderEvidenceChanges(reason: Fold
   #expect(first.unresolved == 1)
   #expect(await provider.searchCount == 0)
   #expect(fixture.assigner.assignmentCount == 0)
+}
+
+/// Old unresolved decisions with a newly supported suffix receive fresh matching evidence once.
+@Test(arguments: [FolderProcessingReason.parsingProblem, .noSuitableMovie, .ambiguousMovie])
+func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason) async throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  try fixture.addFolder("Dune (2021) [tt1160419]")
+  let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
+  let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+  let queryKey = MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let staleSearch = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
+  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+    fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
+    matchedMovieID: .none, posterPath: .none, processingReason: reason)],
+    queries: [queryKey: staleSearch, "unrelated": staleSearch]), fixture: fixture)
+  let provider = CountingProvider()
+  let processor = try fixture.processor(provider: provider, clock: { clock.now })
+
+  let first = try await processor.process(root: fixture.movies)
+  let restarted = try fixture.processor(provider: provider, clock: { clock.now })
+  let second = try await restarted.process(root: fixture.movies)
+
+  #expect(first.assigned == 1)
+  #expect(second.examined == 0)
+  #expect(await provider.searchCount == 1)
+  let saved = try readRecoveryCache(fixture)
+  #expect(saved.folders[candidate.name]?.status == .processed)
+  #expect(saved.folders[candidate.name]?.nameParserRevision == ReleaseNameParser.revision)
+  #expect(saved.queries["unrelated"] != nil)
+}
+
+/// A still-unmatched suffix folder is not retried forever after its old parse result is migrated.
+@Test
+func cachedIdentifierSuffixReassessmentStopsAfterCurrentUnresolvedDecision() async throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  try fixture.addFolder("Dune (2021) [tt1160419]")
+  let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
+  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+    fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
+    matchedMovieID: .none, posterPath: .none, processingReason: .parsingProblem)]), fixture: fixture)
+  let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false))
+  let processor = try fixture.processor(provider: provider)
+
+  let first = try await processor.process(root: fixture.movies)
+  let restarted = try fixture.processor(provider: provider)
+  let second = try await restarted.process(root: fixture.movies)
+
+  #expect(first.examined == 1)
+  #expect(second.examined == 0)
+  #expect(await provider.searchCount == 1)
+  let saved = try readRecoveryCache(fixture)
+  #expect(saved.folders[candidate.name]?.processingReason == .noSuitableMovie)
+  #expect(saved.folders[candidate.name]?.nameParserRevision == ReleaseNameParser.revision)
+}
+
+/// An individual processor applies its configured delay to this folder's incomplete search result.
+@Test
+func customConfigurationSetsIncompleteSearchRetryDeadline() async throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  try fixture.addFolder("Dune (2021)")
+  let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+  let configuration = try MovieFolderProcessorConfiguration(
+    incompleteSearchRetryInterval: 45, transientFailureRetryInterval: 15,
+    queryCacheLifetime: 120, minimumProviderRetryInterval: 5,
+    maximumProviderRetryInterval: 300)
+  let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: true))
+  let processor = try fixture.processor(provider: provider, clock: { clock.now }, configuration: configuration)
+
+  let summary = try await processor.process(root: fixture.movies)
+
+  #expect(summary.examined == 1)
+  let saved = try #require(try readRecoveryCache(fixture).folders["Dune (2021)"])
+  #expect(saved.processingReason == .incompleteSearch)
+  #expect(saved.retryDate == clock.now.addingTimeInterval(45))
 }
 
 /// Incomplete cached searches cannot classify a newly eligible retry without fresh provider evidence.

@@ -125,7 +125,8 @@ extension MovieFolderProcessor {
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
       movieIdentitySource: movie == .none ? .none : .conservativeMatch,
       ownership: .none, assessedAt: now(),
-      retryAt: reason == .incompleteSearch ? now().addingTimeInterval(Self.unresolvedRetryInterval) : .none,
+      retryAt: reason == .incompleteSearch
+        ? now().addingTimeInterval(configuration.incompleteSearchRetryInterval) : .none,
       fingerprint: candidate.fingerprint)
   }
 
@@ -161,7 +162,8 @@ extension MovieFolderProcessor {
       movieID: movie?.id, movieTitle: movie?.title, movieYear: movie?.releaseYear,
       movieIdentitySource: movie == .none ? .none : .conservativeMatch,
       assessedAt: now(),
-      retryAt: reason == .authentication ? .none : now().addingTimeInterval(Self.transientRetryInterval),
+      retryAt: reason == .authentication
+        ? .none : now().addingTimeInterval(configuration.transientFailureRetryInterval),
       lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       fingerprint: candidate.fingerprint)
   }

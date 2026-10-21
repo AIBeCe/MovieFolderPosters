@@ -2,7 +2,8 @@
 
 The shared in-process implementation consumed by the Movie Folder Posters AppKit host and Finder extension.
 The `MovieFolderCommon` product contains one module, organized by Activity, Configuration, Processing,
-Development (Debug only), FinderIntegration, and Security. It depends on the local `Network`, `FileSystem`, `Persistence`, and `Log`
+Development (Debug only), FinderIntegration, and Security. It depends on the local `Network`, `FileSystem`,
+`Persistence`, `Log`, and `MovieFolderParsing`
 packages. It requires Swift tools 6.2, Swift 6 language mode, and macOS 26.5 or later.
 
 ## Composition and ownership
@@ -11,10 +12,14 @@ Add `.package(path: "../MovieFolderCommon")` to a sibling package and `"MovieFol
 dependencies, or add the local package product to an Xcode target. Both signed executables import the same
 module rather than compiling copies of its sources.
 
-The package owns parsing, matching, processing decisions, collection processing state, shared configuration models,
+The package consumes `MovieFolderParsing` for release-name parsing and owns matching, processing decisions,
+collection processing state, shared configuration models,
 Finder request/scheduling logic, typed activity, a Keychain adapter, environment setup, and a Debug TMDb stub transport.
 It does not create a separate process.
 The host owns AppKit windows, presentation, and navigation; Finder Sync remains the integration boundary.
+`MovieFolderProcessorConfiguration.standard` preserves the existing retry and search-cache timings. A caller
+may pass a validated immutable configuration to a processor initializer. Each folder still persists its own
+retry deadline; the configuration is captured per processor instance, which may serve multiple collections.
 `MovieFolderEnvironment` resolves App Group directories, opens repositories, and publishes change notifications in
 the calling process. Signed executables retain their App Group/Keychain entitlements and explicit Debug stub
 selection. `StubTMDbTransport` is available only when compiling with `DEBUG`; callers supply poster bytes.

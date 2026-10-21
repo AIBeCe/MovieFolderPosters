@@ -5,7 +5,7 @@ Share movie-folder configuration, processing, Finder integration, and typed acti
 ## Overview
 
 The AppKit host and Finder extension import one common module. It coordinates local Network, FileSystem,
-Persistence, and Log services. The host owns UI and navigation. ``MovieFolderEnvironment`` resolves storage and
+Persistence, Log, and MovieFolderParsing services. The host owns UI and navigation. ``MovieFolderEnvironment`` resolves storage and
 assembles shared services in the calling process; the signed executables retain entitlements and explicit
 Debug stub selection. The package's Development folder contains the Debug-only deterministic TMDb transport.
 Importing the module does not establish filesystem authorization or create background processes.
@@ -50,7 +50,7 @@ cancellation can be recorded without replacing the producer's result. Read and C
 ### Collection processing state
 
 - ``MovieFolderProcessor``
-- ``ReleaseNameParser``
+- ``MovieFolderProcessorConfiguration``
 - ``CollectionProcessingStore``
 - ``CollectionProcessingState``
 - ``CollectionProcessingPresentation``

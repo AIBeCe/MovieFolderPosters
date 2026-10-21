@@ -1,5 +1,6 @@
 import FileSystem
 import Foundation
+import MovieFolderParsing
 import Network
 import Persistence
 

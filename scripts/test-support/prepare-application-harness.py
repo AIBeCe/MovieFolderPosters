@@ -46,7 +46,7 @@ def prepare(repository, directory):
     has_finder_tests = finder_tests.exists() and any(finder_tests.rglob("*.swift"))
     if has_finder_tests:
         shutil.copytree(finder_tests, directory / "Tests/MovieFolderFinderTests")
-    packages = ["MovieFolderCommon", "Network", "FileSystem", "Persistence", "Log"]
+    packages = ["MovieFolderCommon", "MovieFolderParsing", "Network", "FileSystem", "Persistence", "Log"]
     for package in packages:
         link = directory / package
         if not link.exists():

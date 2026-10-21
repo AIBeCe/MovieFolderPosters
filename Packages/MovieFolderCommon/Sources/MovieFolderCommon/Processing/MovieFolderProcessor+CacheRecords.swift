@@ -41,9 +41,12 @@ nonisolated struct FolderRecord: Codable {
     case fingerprint, status, retryDate, matchedMovieID, posterPath, processingReason, movieTitle, movieYear
     case lastFailure = "latestAttempt"
     case movieIdentitySource
+    case nameParserRevision
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
+  /// Parser revision that produced an unresolved decision, absent in older saved records.
+  var nameParserRevision: Int? = .none
 
   /// Whether historic unresolved evidence needs a fresh classification rather than a cooldown retry.
   var needsLegacyReassessment: Bool { status == .unresolved && processingReason == .none }

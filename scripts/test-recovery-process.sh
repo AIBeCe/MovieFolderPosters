@@ -7,7 +7,7 @@ trap 'rtk proxy rm -rf "$recovery_probe"' EXIT
 rtk proxy mkdir -p "$recovery_probe/Sources/RecoveryProcessProbe"
 rtk proxy cp "$common_repository/scripts/test-support/RecoveryProcessProbe/main.swift" \
   "$recovery_probe/Sources/RecoveryProcessProbe/"
-for recovery_package in MovieFolderCommon Network FileSystem Persistence Log; do
+for recovery_package in MovieFolderCommon MovieFolderParsing Network FileSystem Persistence Log; do
   rtk proxy ln -s "$common_repository/Packages/$recovery_package" "$recovery_probe/$recovery_package"
 done
 rtk proxy tee "$recovery_probe/Package.swift" >/dev/null <<'SWIFT'

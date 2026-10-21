@@ -1,21 +1,13 @@
 import FileSystem
 import Foundation
+import MovieFolderParsing
 import Network
 import Persistence
 
 /// Serializes movie-folder processing, caches results, and validates identity before icon writes.
 public actor MovieFolderProcessor {
-  /// How long an unresolved folder waits before automatic matching is retried.
-  static let unresolvedRetryInterval: TimeInterval = 24 * 60 * 60
-  /// The default retry delay following a recoverable provider or processing failure.
-  static let transientRetryInterval: TimeInterval = 10 * 60
-  /// How long a complete or incomplete search response remains reusable.
-  static let queryCacheLifetime: TimeInterval = 24 * 60 * 60
-  /// The lower bound accepted for a provider retry delay.
-  static let minimumRateLimitInterval: TimeInterval = 60
-  /// The upper bound accepted for provider and authentication backoff.
-  static let maximumRateLimitInterval: TimeInterval = 24 * 60 * 60
-
+  /// Immutable timing policy captured for this processor instance.
+  let configuration: MovieFolderProcessorConfiguration
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
   let fileSystem: FileSystemService
   /// The store holding this root generation's processing records.
@@ -57,6 +49,7 @@ public actor MovieFolderProcessor {
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - processingStore: Dedicated result storage; production supplies it with a current context for each operation.
   ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon mutation.
+  ///   - configuration: Validated retry and cache timings for this processor instance.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
     persistence: PersistenceStore,
@@ -68,8 +61,10 @@ public actor MovieFolderProcessor {
     mutationGuard: (any MovieFolderMutationGuard)? = .none,
     appearance: PosterAppearance = .softFinish,
     processingStore: CollectionProcessingStore? = .none,
-    recovery: ProcessingRecoveryService? = .none
+    recovery: ProcessingRecoveryService? = .none,
+    configuration: MovieFolderProcessorConfiguration = .standard
   ) {
+    self.configuration = configuration
     self.fileSystem = fileSystem
     self.persistence = persistence
     self.coordinationStore = coordinationStore

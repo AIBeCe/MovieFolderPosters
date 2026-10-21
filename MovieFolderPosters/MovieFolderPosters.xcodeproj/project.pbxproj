@@ -23,6 +23,7 @@
 		FC0000000000000000000001 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000011 /* MovieFolderCommon */; };
 		FC0000000000000000000002 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000012 /* MovieFolderCommon */; };
 		FC0000000000000000000003 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000013 /* MovieFolderCommon */; };
+		FC0000000000000000000031 /* MovieFolderParsing in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000032 /* MovieFolderParsing */; };
 		FD1000000000000000000001 /* FinderRuntimeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000003 /* FinderRuntimeEnvironment.swift */; };
 		FD1000000000000000000002 /* FinderMenuController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000004 /* FinderMenuController.swift */; };
 /* End PBXBuildFile section */
@@ -115,6 +116,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC0000000000000000000001 /* MovieFolderCommon in Frameworks */,
+				FC0000000000000000000031 /* MovieFolderParsing in Frameworks */,
 				F50000000000000000000050 /* Persistence in Frameworks */,
 				F50000000000000000000046 /* FileSystem in Frameworks */,
 				F40000000000000000000001 /* Network in Frameworks */,
@@ -235,6 +237,7 @@
 			name = MovieFolderPosters;
 			packageProductDependencies = (
 				FC0000000000000000000011 /* MovieFolderCommon */,
+				FC0000000000000000000032 /* MovieFolderParsing */,
 				F50000000000000000000032 /* Persistence */,
 				F50000000000000000000028 /* FileSystem */,
 				F40000000000000000000003 /* Network */,
@@ -350,6 +353,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */,
+				FC0000000000000000000030 /* XCLocalSwiftPackageReference "../Packages/MovieFolderParsing" */,
 				F5000000000000000000001F /* XCLocalSwiftPackageReference "../Packages/Persistence" */,
 				F5000000000000000000001E /* XCLocalSwiftPackageReference "../Packages/FileSystem" */,
 				F40000000000000000000005 /* XCLocalSwiftPackageReference "../Packages/Network" */,
@@ -850,9 +854,18 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/MovieFolderCommon;
 		};
+		FC0000000000000000000030 /* XCLocalSwiftPackageReference "../Packages/MovieFolderParsing" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/MovieFolderParsing;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		FC0000000000000000000032 /* MovieFolderParsing */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0000000000000000000030 /* XCLocalSwiftPackageReference "../Packages/MovieFolderParsing" */;
+			productName = MovieFolderParsing;
+		};
 		F40000000000000000000003 /* Network */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F40000000000000000000005 /* XCLocalSwiftPackageReference "../Packages/Network" */;

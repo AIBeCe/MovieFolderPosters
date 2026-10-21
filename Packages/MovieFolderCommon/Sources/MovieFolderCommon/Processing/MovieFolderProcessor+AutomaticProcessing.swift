@@ -1,5 +1,6 @@
 import FileSystem
 import Foundation
+import MovieFolderParsing
 import Network
 import Persistence
 
@@ -125,7 +126,7 @@ extension MovieFolderProcessor {
     }
     for key in Array(state.queries.keys) {
       guard let cached = state.queries[key] else { continue }
-      if currentTime.timeIntervalSince(cached.createdAt) >= Self.queryCacheLifetime {
+      if currentTime.timeIntervalSince(cached.createdAt) >= configuration.queryCacheLifetime {
         state.queries.removeValue(forKey: key)
         stateChanged = true
       }
@@ -204,7 +205,13 @@ extension MovieFolderProcessor {
     let priorRecord = visit.cache.folders[candidate.name]
     let sameFingerprint = priorRecord?.fingerprint == candidate.fingerprint
     if sameFingerprint, let record = priorRecord {
-      if record.blocksAutomaticRecovery || (record.processingReason == .authentication && recovery == nil) {
+      let needsParserReassessment = record.status == .unresolved
+        && record.nameParserRevision != ReleaseNameParser.revision
+        && (record.processingReason == .parsingProblem || record.processingReason == .noSuitableMovie
+          || record.processingReason == .ambiguousMovie)
+        && parser.hasRecognizedDatabaseIdentifierSuffix(candidate.name)
+      if !needsParserReassessment,
+        record.blocksAutomaticRecovery || (record.processingReason == .authentication && recovery == nil) {
         visit.summary.unresolved += 1
         try recordFolderProcessing(cachedFolderAssessment(candidate, saved: record), in: &visit.recording)
         return true
@@ -218,13 +225,13 @@ extension MovieFolderProcessor {
           candidate: candidate, root: root, lease: lease, visit: &visit)
         return true
       }
-      if record.status != .processed, !record.needsLegacyReassessment,
+      if record.status != .processed, !record.needsLegacyReassessment, !needsParserReassessment,
         record.processingReason != .interrupted, let retryDate = record.retryDate, retryDate > now() {
         visit.summary.skippedRetryWindow += 1
         try recordFolderProcessing(cachedFolderAssessment(candidate, saved: record), in: &visit.recording)
         return true
       }
-      if record.needsLegacyReassessment || record.processingReason == .incompleteSearch,
+      if record.needsLegacyReassessment || record.processingReason == .incompleteSearch || needsParserReassessment,
         case .parsed(let parsed) = parser.parse(candidate.name) {
         // A retry must not establish a new classification from the same inconclusive search.
         visit.cache.queries.removeValue(forKey: Self.queryKey(title: parsed.title, year: parsed.year))
@@ -420,7 +427,7 @@ extension MovieFolderProcessor {
     guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
     attempt.stage = .assignPoster
     let result = try assign(imageData, to: candidate, in: root)
-    visit.cache.folders[candidate.name] = FolderRecord(
+    var completedRecord = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .processed,
       retryDate: .none,
@@ -430,6 +437,8 @@ extension MovieFolderProcessor {
       movieYear: movie.releaseYear,
       movieIdentitySource: .conservativeMatch
     )
+    completedRecord.nameParserRevision = ReleaseNameParser.revision
+    visit.cache.folders[candidate.name] = completedRecord
     try saveAssignedState(visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
     if case .assigned = result { visit.summary.assigned += 1 }
   }
@@ -467,7 +476,7 @@ extension MovieFolderProcessor {
     let lease = request.lease
     let queryKey = Self.queryKey(title: title, year: year)
     if let cached = visit.cache.queries[queryKey],
-      now().timeIntervalSince(cached.createdAt) < Self.queryCacheLifetime {
+      now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {
       return cached.searchResult()
     } else {
       let search = try await provider.searchMovies(title: title, year: year)

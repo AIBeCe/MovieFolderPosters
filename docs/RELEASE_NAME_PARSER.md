@@ -1,68 +1,45 @@
 # Release-name parser
 
-Phase 3 keeps movie-specific parsing in the application target. The parser imports Foundation only and has no
-Finder, AppKit, filesystem, network, or persistence dependencies. Immutable Sendable results and explicit
-nonisolated types allow callers to use it outside the UI actor under Swift 6.
+`Packages/MovieFolderParsing` is a Foundation-only local Swift package. The AppKit host and
+`MovieFolderCommon` import its `ReleaseNameParser`; the parser has no Finder, filesystem, network,
+or persistence dependency. It returns either a title and optional year or an explicit unresolved issue.
+Parsing never establishes movie identity or authorizes poster assignment. `MovieFolderCommon` continues
+to require a conservative TMDb title/year match before assigning an icon.
 
 ## Supported behavior
 
-`ReleaseNameParser.parse(_:)` returns either a title and optional year or an explicit unresolved issue.
-Dots, underscores, and whitespace become word separators. Case, accents, apostrophes, and title hyphens remain.
-Only full folder names are accepted; paths and names containing ellipses are rejected.
+Dots, underscores, and whitespace separate words. Case, accents, apostrophes, and title hyphens remain.
+Only full folder names are accepted; paths and names containing ellipses are rejected. Years are four
+ASCII digits from 1888 through 2099. A leading year-shaped number can be a title, so `1917` stays a title.
+Conflicting explicit years and uncertain metadata remain unresolved.
 
-Years are four ASCII digits from 1888 through 2099. A leading number can be a title, so `1917` stays a title.
-A trailing year can identify the release; multiple unbracketed year candidates remain ambiguous. One bracketed
-release year can disambiguate earlier numbers in the title, such as `Blade.Runner.2049.[2017].2160p.WEB-DL`.
+Technical tokens form a suffix boundary only when context supports that interpretation. Resolution,
+source, codec, HDR, audio, and common edition tags are recognized case-insensitively. These words are
+not removed globally: `The.Remux.Movie.2020` retains `Remux` in the title.
 
-An explicit year without a preceding title is unresolved. Conflicting explicit years anywhere in the name remain
-ambiguous; a year found beyond an earlier technical boundary makes that boundary uncertain.
+Standalone bracketed database-code tokens in a supported suffix position are discarded before title/year
+parsing. Accepted forms include `[tt0091251]`, `[imdb-tt0091251]`, `[tmdb-438631]`, `[tvdb-12345]`,
+and `[wikidata-Q25188]`. A code may be at the end of the name or immediately before a recognized
+technical suffix. It is **not** looked up or used as identity evidence. An unknown or malformed code,
+arbitrary bracketed text, and a code embedded in title words are not silently discarded.
 
-Technical tokens form a suffix boundary when their context supplies evidence of release metadata. Resolution,
-source, codec, HDR, audio, and common edition tags are recognized case-insensitively. These words are not
-removed globally: `The.Remux.Movie.2020` and `The.Dolby.Vision.2020` retain their title words.
-Release-group suffixes are discarded with the technical suffix, not removed from arbitrary titles.
-
-Examples:
-
-| Folder name | Result |
+| Folder name | Parse result |
 | --- | --- |
-| `The.Drama.2026.2160p.WEB-DL.DDP5.1.Atmos.H265-GROUP` | The Drama, 2026 |
-| `North.Star.WEB-DL.x264-GROUP` | North Star, no year |
-| `2001.A.Space.Odyssey.1968.1080p.BluRay` | 2001 A Space Odyssey, 1968 |
+| `Come and See (1985) [tt0091251]` | Come and See, 1985 |
+| `Dune (2021) [tt1160419] 2160p WEB-DL` | Dune, 2021 |
+| `Dune (2021) [unknown-12345]` | Unresolved: ambiguous metadata |
 | `Blade.Runner.2049.2017.2160p.WEB-DL` | Unresolved: ambiguous year |
-| `Movie.2020.Special.Edit.1080p` | Unresolved: ambiguous metadata |
 
-## Limits
+## Existing cached folders
 
-This is a deterministic release-name heuristic, not movie identification. Parsing success does not establish
-that a movie exists or authorize poster assignment. TMDb matching must independently assess confidence.
-Unknown naming conventions may be retained as title text or remain unresolved. Year-shaped title endings and
-technical-looking title endings can be inherently ambiguous without metadata; the supported grammar cannot
-resolve every possible human title. Use the full filesystem name rather than Finder's shortened label.
-
-No parser invocation has been wired into Finder or automatic processing in this phase.
+The processor records `ReleaseNameParser.revision` with new unresolved decisions. An unchanged folder with an
+older unresolved `parsingProblem`, `noSuitableMovie`, or `ambiguousMovie` result is reassessed when its
+name contains a newly recognized database-code suffix. A cached search for the newly parsed title/year
+is evicted before the fresh provider request; unrelated cached searches remain. Once reassessed, the
+current parser revision prevents repeated automatic attempts at the same unchanged unresolved result.
+Existing processed icons are preserved.
 
 ## Verification
 
-Run `rtk proxy scripts/test-parser.sh` from the repository root. It copies the production parser and its actual
-Swift Testing fixtures into a disposable local harness, runs them in Swift 6, and removes the harness afterward.
-It adds no production package or third-party dependency. Xcode target compilation is checked separately:
-
-```sh
-rtk proxy xcodebuild -project MovieFolderPosters/MovieFolderPosters.xcodeproj -scheme MovieFolderPosters \
-    -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/MovieFolderPosters-Phase3 build-for-testing
-```
-
-TDD began with four basic cases: three failed against an empty parser and all four passed after minimal
-implementation. Expanded realistic and ambiguous fixtures then produced 28 assertion issues against that
-minimal implementation before suffix and ambiguity handling were added.
-
-On this development machine, Xcode's hosted test assertions finished, but `xcodebuild test` stalled while
-finalizing its result bundle. The precise cause remains unresolved. The independent harness provides a completed
-command and exit status for these pure parser tests; it does not verify AppKit or Finder behavior.
-
-Final fixture coverage includes 47 cases across seven test functions: four initial cases, 12 full release names,
-16 legitimate-title cases, and 15 unresolved cases. Independent review identified two ambiguity issues; six
-additional regression cases failed before the correction and passed afterward.
-
-Independent review returned PASS after verifying both corrected findings and their regression results.
+Run `rtk proxy scripts/test-parser.sh` from the repository root for the parser package's Swift Testing
+fixtures. The complete package, application, and coverage checks belong to the Validation Phase.

@@ -73,7 +73,8 @@
 - Prefer local Swift Package Manager modules when functionality benefits from
   reuse, independent testing, or a clear ownership boundary.
 - Each module provides an in-process service with a narrow public API and its own tests.
-- Existing service modules are Network, FileSystem, and Persistence.
+- Existing service modules are Network, FileSystem, and Persistence. MovieFolderParsing is a
+  Foundation-only local module for release-name parsing and its tests; it does not identify movies.
 - A service may encapsulate a technology such as Core Data when justified;
   examples do not mandate new modules or a change in persistence technology.
 - The application coordinates services and owns movie-specific decisions and workflows.

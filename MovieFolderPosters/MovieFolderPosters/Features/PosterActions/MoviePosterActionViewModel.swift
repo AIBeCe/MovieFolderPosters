@@ -1,5 +1,6 @@
 import Foundation
 import MovieFolderCommon
+import MovieFolderParsing
 import Network
 
 /// Receives presentation-state changes from a poster action.

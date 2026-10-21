@@ -8,7 +8,8 @@ import re
 import sys
 
 
-REQUIRED_COMPONENTS = {"Project", "Network", "FileSystem", "Persistence", "Log", "MovieFolderCommon"}
+REQUIRED_COMPONENTS = {"Project", "Network", "FileSystem", "Persistence", "Log", "MovieFolderCommon",
+                       "MovieFolderParsing"}
 
 
 def coverage_failures(results, required_components):

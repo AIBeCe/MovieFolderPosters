@@ -26,6 +26,8 @@ nonisolated public enum ReleaseNameParseResult: Equatable, Sendable {
 
 /// Conservatively separates movie identity from release-format annotations.
 nonisolated public struct ReleaseNameParser: Sendable {
+  /// Revision of this grammar used to reconsider decisions saved by an older parser.
+  public static let revision = 2
   /// Technical video-size tags recognized at a supported release metadata boundary.
   private static let resolutions: Set<String> = [
     "480p", "576p", "720p", "1080p", "1080i", "1440p", "2160p", "4320p",
@@ -58,7 +60,8 @@ nonisolated public struct ReleaseNameParser: Sendable {
     guard !folderName.contains("/"), !folderName.contains("\\") else { return .unresolved(.invalidName) }
     guard !folderName.contains("…"), !folderName.contains("...") else { return .unresolved(.truncatedName) }
     let normalized = folderName.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "_", with: " ")
-    let words = normalized.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    let words = removingDatabaseIdentifierSuffixes(
+      from: normalized.split(whereSeparator: { $0.isWhitespace }).map(String.init))
     guard !words.isEmpty else { return .unresolved(.emptyName) }
 
     // Check explicit years before discarding metadata; a suffix must not hide contradictory evidence.
@@ -74,6 +77,38 @@ nonisolated public struct ReleaseNameParser: Sendable {
     guard !titleWords.isEmpty else { return .unresolved(.missingTitle) }
 
     return parseTitleWords(titleWords, hasTechnicalSuffix: boundary < words.count)
+  }
+
+  /// Whether a folder name contains a supported database-code suffix that this parser discards.
+  ///
+  /// - Parameter folderName: The full folder name to inspect without accessing movie contents.
+  /// - Returns: Whether this parser recognizes a suffix that can change a previously cached parse.
+  public func hasRecognizedDatabaseIdentifierSuffix(_ folderName: String) -> Bool {
+    let normalized = folderName.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "_", with: " ")
+    let words = normalized.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+
+    return removingDatabaseIdentifierSuffixes(from: words).count != words.count
+  }
+
+  /// Discards only standalone bracketed database codes at a supported suffix position.
+  private func removingDatabaseIdentifierSuffixes(from words: [String]) -> [String] {
+    words.enumerated().compactMap { index, token -> String? in
+      guard index > 0, isDatabaseIdentifierSuffix(token),
+        index == words.count - 1 || isTechnical(words[index + 1]) || isDatabaseIdentifierSuffix(words[index + 1])
+      else { return token }
+
+      return .none
+    }
+  }
+
+  /// Recognizes bounded IMDb, TMDb, TVDb, and Wikidata suffix forms without accepting arbitrary brackets.
+  private func isDatabaseIdentifierSuffix(_ token: String) -> Bool {
+    guard token.hasPrefix("["), token.hasSuffix("]") else { return false }
+    let value = String(token.dropFirst().dropLast())
+
+    return value.range(
+      of: #"^(?:tt[0-9]{7,}|imdb[-:]?tt[0-9]{7,}|(?:tmdb|tvdb)[-:]?[0-9]+|wikidata[-:]?Q[0-9]+)$"#,
+      options: [.regularExpression, .caseInsensitive]) != .none
   }
 
   /// Selects a release year only when the retained title tokens provide unambiguous evidence.

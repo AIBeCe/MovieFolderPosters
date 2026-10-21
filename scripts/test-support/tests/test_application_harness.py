@@ -61,7 +61,7 @@ class ApplicationHarnessTests(unittest.TestCase):
         finder_tests = repository / "MovieFolderPosters/MovieFolderPostersFinderTests"
         finder_tests.mkdir(parents=True)
         (finder_tests / "FinderTests.swift").write_text("import Testing\n")
-        for name in ["MovieFolderCommon", "Network", "FileSystem", "Persistence", "Log"]:
+        for name in ["MovieFolderCommon", "MovieFolderParsing", "Network", "FileSystem", "Persistence", "Log"]:
             (repository / "Packages" / name).mkdir(parents=True)
         return repository
 

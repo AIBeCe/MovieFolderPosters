@@ -2,6 +2,7 @@ import CryptoKit
 import FileSystem
 import Foundation
 import ImageIO
+import MovieFolderParsing
 import Network
 import Persistence
 
@@ -15,10 +16,11 @@ extension MovieFolderProcessor {
     _ candidate: FolderCandidate, in state: inout ProcessingState,
     reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = .none
   ) {
-    state.folders[candidate.name] = FolderRecord(
+    var record = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .unresolved,
-      retryDate: reason == .incompleteSearch ? now().addingTimeInterval(Self.unresolvedRetryInterval) : .none,
+      retryDate: reason == .incompleteSearch
+        ? now().addingTimeInterval(configuration.incompleteSearchRetryInterval) : .none,
       matchedMovieID: movie?.id,
       posterPath: movie?.posterPath,
       processingReason: reason,
@@ -26,6 +28,8 @@ extension MovieFolderProcessor {
       movieYear: movie?.releaseYear,
       movieIdentitySource: movie == .none ? .none : .conservativeMatch
     )
+    record.nameParserRevision = ReleaseNameParser.revision
+    state.folders[candidate.name] = record
   }
 
   /// Stores a recoverable failure with its shorter retry delay.
@@ -41,7 +45,8 @@ extension MovieFolderProcessor {
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .transientFailure,
-      retryDate: reason == .authentication ? .none : now().addingTimeInterval(Self.transientRetryInterval),
+      retryDate: reason == .authentication
+        ? .none : now().addingTimeInterval(configuration.transientFailureRetryInterval),
       matchedMovieID: movie?.id,
       posterPath: movie?.posterPath,
       processingReason: reason ??
@@ -125,11 +130,11 @@ extension MovieFolderProcessor {
   func rootBackoff(for error: TMDbError) -> Date? {
     switch error {
     case .rateLimited(let retryAfter):
-      let interval = Self.retryInterval(from: retryAfter, now: now())
+      let interval = retryInterval(from: retryAfter, now: now())
 
       return now().addingTimeInterval(interval)
     case .httpStatus(429):
-      return now().addingTimeInterval(Self.transientRetryInterval)
+      return now().addingTimeInterval(configuration.transientFailureRetryInterval)
     default:
       return .none
     }
@@ -151,7 +156,7 @@ extension MovieFolderProcessor {
   ///   - retryAfter: The provider Retry-After value in seconds or HTTP-date form.
   ///   - now: The clock used for retry and cache expiry decisions.
   /// - Returns: The bounded delay in seconds.
-  private static func retryInterval(from retryAfter: String?, now: Date) -> TimeInterval {
+  private func retryInterval(from retryAfter: String?, now: Date) -> TimeInterval {
     let requested: TimeInterval?
     if let retryAfter, let seconds = TimeInterval(retryAfter) {
       requested = seconds
@@ -165,11 +170,12 @@ extension MovieFolderProcessor {
       requested = .none
     }
 
-    let finite = requested.flatMap { $0.isFinite ? $0 : .none } ?? Self.transientRetryInterval
+    let finite = requested.flatMap { $0.isFinite ? $0 : .none }
+      ?? configuration.transientFailureRetryInterval
 
     return min(
-      max(finite, Self.minimumRateLimitInterval),
-      Self.maximumRateLimitInterval)
+      max(finite, configuration.minimumProviderRetryInterval),
+      configuration.maximumProviderRetryInterval)
   }
 
   /// Hashes the normalized title/year pair into a filesystem-independent cache key.

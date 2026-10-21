@@ -9,13 +9,15 @@ let package = Package(
     .package(path: "../Network"),
     .package(path: "../FileSystem"),
     .package(path: "../Persistence"),
-    .package(path: "../Log")
+    .package(path: "../Log"),
+    .package(path: "../MovieFolderParsing")
   ],
   targets: [
-    .target(name: "MovieFolderCommon", dependencies: ["Network", "FileSystem", "Persistence", "Log"],
+    .target(name: "MovieFolderCommon",
+            dependencies: ["Network", "FileSystem", "Persistence", "Log", "MovieFolderParsing"],
             swiftSettings: [.enableUpcomingFeature("NonisolatedNonsendingByDefault")]),
     .testTarget(name: "MovieFolderCommonTests",
-                dependencies: ["MovieFolderCommon", "Network", "FileSystem", "Persistence"],
+                dependencies: ["MovieFolderCommon", "MovieFolderParsing", "Network", "FileSystem", "Persistence"],
                 resources: [.process("Resources")],
                 swiftSettings: [.enableUpcomingFeature("NonisolatedNonsendingByDefault")])
   ],

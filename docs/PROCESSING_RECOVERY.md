@@ -92,8 +92,9 @@ require separate native observations. Unit tests and builds must not be presente
   credentials or disabling recovery mode cannot clear exhaustion; a maintenance reset requires separate review.
 - The JSON payload is bounded to 4 KiB within an 8 KiB persistence envelope. Corrupt, oversized, unsupported,
   inconsistent, unreadable, or contended state never becomes an implicitly disabled recovery gate.
-- Provider deadlines handle numeric and HTTP-date Retry-After, reject nonfinite input, and clamp to 60 seconds
-  through 24 hours with a 10-minute malformed/missing fallback. Already admitted responses cannot shorten a later
+- Provider deadlines handle numeric and HTTP-date Retry-After, reject nonfinite input, and use the processor's
+  immutable configuration. The standard configuration clamps to 60 seconds through 24 hours with a 10-minute
+  malformed/missing fallback. Already admitted responses cannot shorten a later
   shared deadline. Processor cache checkpoints use that validated shared boundary too.
 - Authentication stops and provider-admission stops explicitly mark partial traversal; an absent retry date never
   fabricates a completed collection run or replaces the previous completed-run evidence.
