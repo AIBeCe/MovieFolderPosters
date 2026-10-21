@@ -28,6 +28,8 @@ final class CollectionResultsViewController: NSViewController {
   private let retryButton = NSButton(title: "Retry Selected", target: .none, action: .none)
   /// Cancels the currently owned retry task.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
+  /// Dismisses the results sheet independently of the action footer.
+  private let closeButton = NSButton(title: "Close", target: .none, action: .none)
   /// Guards table-selection feedback during presentation reloads.
   private var isRendering = false
 
@@ -68,25 +70,31 @@ final class CollectionResultsViewController: NSViewController {
     retryButton.action = #selector(retrySelected)
     cancelButton.target = self
     cancelButton.action = #selector(cancel)
+    closeButton.target = self
+    closeButton.action = #selector(close)
+    closeButton.keyEquivalent = "\u{1b}"
+    closeButton.setContentCompressionResistancePriority(.required, for: .vertical)
     let reloadButton = NSButton(title: "Reload", target: self, action: #selector(reload))
     let doneButton = NSButton(title: "Done", target: self, action: #selector(done))
     doneButton.keyEquivalent = "\r"
     let actions = NSStackView(views: [chooseButton, retryButton, cancelButton, reloadButton, doneButton])
     actions.orientation = .horizontal
     actions.spacing = 8
-    for child in [scrollView, statusLabel, actions] {
+    for child in [closeButton, scrollView, statusLabel, actions] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
     NSLayoutConstraint.activate([
-      statusLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+      closeButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+      closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      statusLabel.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
       statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
       statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       scrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 12),
       scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
       scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       scrollView.bottomAnchor.constraint(equalTo: actions.topAnchor, constant: -12),
-      scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 220),
+      scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
       actions.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
     ])
@@ -130,6 +138,8 @@ final class CollectionResultsViewController: NSViewController {
   @objc private func cancel() { viewModel.cancelCurrentOperation() }
   /// Reads only saved summaries.
   @objc private func reload() { viewModel.reload() }
+  /// Uses the same cancellation and dismissal path as Done.
+  @objc private func close() { done() }
   /// Cancels work before delegating sheet dismissal to the flow owner.
   @objc private func done() {
     viewModel.cancelCurrentOperation()

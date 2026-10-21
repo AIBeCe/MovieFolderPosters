@@ -28,7 +28,10 @@ struct ConfigurationCoordinatorCoverageTests {
     #expect(sheet.sheetParent === window)
     #expect(sheet.title == "Unresolved Results — Movies")
     let results = try #require(sheet.contentViewController as? CollectionResultsViewController)
-    coordinator.collectionResultsViewControllerDidRequestClose(results)
+    let closeButton = try #require(descendants(results.view).compactMap { $0 as? NSButton }
+      .first { $0.title == "Close" })
+    #expect(closeButton.isEnabled && !closeButton.isHidden)
+    closeButton.performClick(.none)
     #expect(coordinator.resultsWindow == .none)
     #expect(window.attachedSheet == .none)
     #expect(await service.mutationCount == .zero)
@@ -85,7 +88,6 @@ struct ConfigurationCoordinatorCoverageTests {
 
     let detailsWindow = try #require(
       NSApplication.shared.windows.first { !existingWindows.contains(ObjectIdentifier($0)) })
-    defer { detailsWindow.close() }
     #expect(detailsWindow.title == "Processing Details — Movies")
     let details = try #require(detailsWindow.contentViewController as? CollectionProcessingDetailsViewController)
     let textView = try #require(descendants(details.view).compactMap { $0 as? NSTextView }.first)
@@ -94,6 +96,11 @@ struct ConfigurationCoordinatorCoverageTests {
     #expect(textView.string.contains("No committed processing outcome is available"))
     #expect(await summaryService.callCount == 1)
     #expect(await service.mutationCount == 0)
+    let closeButton = try #require(descendants(details.view).compactMap { $0 as? NSButton }
+      .first { $0.title == "Close" })
+    #expect(closeButton.isEnabled && !closeButton.isHidden)
+    closeButton.performClick(.none)
+    #expect(window.attachedSheet == .none)
   }
 
   /// Verifies that activation and explicit refresh each request a fresh committed summary.

@@ -1,15 +1,27 @@
 import AppKit
 import MovieFolderCommon
 
+/// Receives the user's request to dismiss the processing-details sheet.
+@MainActor
+protocol CollectionProcessingDetailsViewControllerDelegate: AnyObject {
+  /// Asks the owning coordinator to end the sheet attachment.
+  func collectionProcessingDetailsViewControllerDidRequestClose(
+    _ controller: CollectionProcessingDetailsViewController)
+}
+
 /// Displays committed collection outcome evidence without offering retry or correction actions.
 @MainActor
 final class CollectionProcessingDetailsViewController: NSViewController {
+  /// Flow owner responsible for dismissing the sheet.
+  weak var delegate: (any CollectionProcessingDetailsViewControllerDelegate)?
   /// The read-only result projection for the collection.
   private let summary: CollectionProcessingSummary
   /// Root name shown in the sheet title and accessibility description.
   private let collectionName: String
   /// Displays selectable outcome details for assistive technology and copying.
   private let detailsView = NSTextView()
+  /// Provides an explicit close action because the sheet has no usable title-bar close control.
+  private let closeButton = NSButton(title: "Close", target: .none, action: .none)
 
   /// Creates a details sheet for the supplied persisted result.
   /// - Parameters:
@@ -28,6 +40,9 @@ final class CollectionProcessingDetailsViewController: NSViewController {
   /// Builds a read-only, scrollable report of collection and folder evidence.
   override func loadView() {
     view = NSView()
+    closeButton.target = self
+    closeButton.action = #selector(close)
+    closeButton.keyEquivalent = "\u{1b}"
     let scrollView = NSScrollView()
     scrollView.hasVerticalScroller = true
     scrollView.borderType = .bezelBorder
@@ -42,15 +57,22 @@ final class CollectionProcessingDetailsViewController: NSViewController {
     detailsView.setAccessibilityLabel("Collection processing outcome details")
     detailsView.string = reportText
     scrollView.documentView = detailsView
-    scrollView.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(scrollView)
+    for child in [closeButton, scrollView] {
+      child.translatesAutoresizingMaskIntoConstraints = false
+      view.addSubview(child)
+    }
     NSLayoutConstraint.activate([
+      closeButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+      closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
       scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
       scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-      scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+      scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 12),
       scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
     ])
   }
+
+  /// Forwards dismissal to the coordinator that owns the sheet.
+  @objc private func close() { delegate?.collectionProcessingDetailsViewControllerDidRequestClose(self) }
 
   /// Formats the processing state's committed operation and per-folder evidence for display.
   private var reportText: String {

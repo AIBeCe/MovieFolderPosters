@@ -28,7 +28,8 @@ extension ConfigurationCoordinatorDelegate {
 /// Owns collection configuration, Settings, and their related picker and report presentations.
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
-  ConfigurationViewModelActivityDelegate, CollectionResultsViewControllerDelegate, NSWindowDelegate {
+  ConfigurationViewModelActivityDelegate, CollectionProcessingDetailsViewControllerDelegate,
+  CollectionResultsViewControllerDelegate, NSWindowDelegate {
   /// Root router; the root retains this child for its flow lifetime.
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.
@@ -49,6 +50,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private var checkingInstallation = false
   /// Shared host admission service used by selected retries.
   private let retryService: any CollectionRetryServicing
+  /// Processing-details sheet retained until explicit dismissal or parent closure.
+  private var detailsWindow: NSWindow?
   /// Results presentation retained until explicit dismissal or parent closure.
   private(set) var resultsWindow: NSWindow?
   /// Owns selected retry lifetime independently of view rendering.
@@ -181,12 +184,24 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     let controller = CollectionProcessingDetailsViewController(
       collectionName: URL(fileURLWithPath: directory.path).lastPathComponent,
       summary: summary)
+    controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
     sheet.title = "Processing Details — \(URL(fileURLWithPath: directory.path).lastPathComponent)"
     sheet.styleMask = [.titled, .closable, .resizable]
     sheet.setContentSize(NSSize(width: 680, height: 520))
     sheet.minSize = NSSize(width: 560, height: 360)
+    sheet.delegate = self
+    detailsWindow = sheet
     window.beginSheet(sheet, completionHandler: .none)
+  }
+
+  /// Ends the processing-details sheet when its Close action or parent window dismisses it.
+  private func closeDetails() {
+    guard let sheet = detailsWindow else { return }
+    detailsWindow = .none
+    if let parent = sheet.sheetParent { parent.endSheet(sheet) }
+    sheet.delegate = .none
+    sheet.close()
   }
 
   /// Opens a finite results sheet; reading its evidence never requests provider work.
@@ -230,11 +245,19 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       DistributedNotificationCenter.default().removeObserver(self)
       isObservingProcessing = false
       window.delegate = .none
+      closeDetails()
       closeResults()
+    } else if window === detailsWindow {
+      closeDetails()
     } else if window === resultsWindow {
       closeResults()
     }
   }
+
+  /// Dismisses the details sheet through its owning coordinator.
+  func collectionProcessingDetailsViewControllerDidRequestClose(
+    _ controller: CollectionProcessingDetailsViewController
+  ) { closeDetails() }
 
   /// Forwards an explicit row action to the application-owned Choose Movie flow.
   func collectionResultsViewController(
