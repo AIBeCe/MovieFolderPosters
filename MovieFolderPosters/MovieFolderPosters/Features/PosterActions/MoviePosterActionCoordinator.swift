@@ -10,10 +10,19 @@ protocol MoviePosterActionCoordinatorDelegate: AnyObject {
   func moviePosterActionCoordinatorDidFinishOperation(_ coordinator: MoviePosterActionCoordinator)
 }
 
+/// Receives explicit dismissal requests from the poster-action presentation.
+@MainActor
+protocol MoviePosterActionViewControllerDelegate: AnyObject {
+  /// Closes the currently owned action window or sheet.
+  /// - Parameter window: The presentation requesting dismissal.
+  func moviePosterActionViewControllerDidRequestClose(_ window: NSWindow)
+}
+
 /// Owns the lifetime of a Finder-requested poster action window.
 @MainActor
 final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
-  MoviePosterActionViewModelNavigationDelegate, MoviePosterActionViewModelOperationDelegate {
+  MoviePosterActionViewModelNavigationDelegate, MoviePosterActionViewModelOperationDelegate,
+  MoviePosterActionViewControllerDelegate {
   /// The application root owns both this flow and its results consumers.
   weak var delegate: (any MoviePosterActionCoordinatorDelegate)?
   /// Service used by the action model to search or change a poster.
@@ -53,6 +62,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
 
     let viewModel = MoviePosterActionViewModel(service: service, request: request)
     let content = MoviePosterActionViewController(viewModel: viewModel)
+    content.delegate = self
     let window = NSWindow(contentViewController: content)
     window.title = "\(request.action.title) — \(request.childName)"
     window.setContentSize(NSSize(width: 620, height: request.action == .change ? 330 : 260))
@@ -106,6 +116,12 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     window.close()
   }
 
+  /// Dismisses only the action presentation that owns the requesting Done button.
+  func moviePosterActionViewControllerDidRequestClose(_ window: NSWindow) {
+    guard window === windowController?.window else { return }
+    closeCurrentPresentation()
+  }
+
   func moviePosterActionViewModelDidFinishOperation(_ viewModel: MoviePosterActionViewModel) {
     delegate?.moviePosterActionCoordinatorDidFinishOperation(self)
   }
@@ -125,6 +141,8 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
 @MainActor
 private final class MoviePosterActionViewController: NSViewController,
   MoviePosterActionViewModelDelegate {
+  /// Coordinator retaining this action's window and sheet lifetime.
+  weak var delegate: (any MoviePosterActionViewControllerDelegate)?
   /// Supplies action state and handles user operations.
   private let viewModel: MoviePosterActionViewModel
   /// Search title entry field.
@@ -361,6 +379,9 @@ private final class MoviePosterActionViewController: NSViewController,
   @objc private func openMoviePage() { viewModel.openMoviePage() }
   /// Requests cancellation while leaving the active operation visible until it returns.
   @objc private func cancelPosterOperation() { viewModel.cancelCurrentOperation() }
-  /// Closes through the coordinator's existing window-lifetime callbacks.
-  @objc private func closePresentation() { view.window?.performClose(.none) }
+  /// Requests dismissal through the coordinator's window-lifetime path.
+  @objc private func closePresentation() {
+    guard let window = view.window else { return }
+    delegate?.moviePosterActionViewControllerDidRequestClose(window)
+  }
 }

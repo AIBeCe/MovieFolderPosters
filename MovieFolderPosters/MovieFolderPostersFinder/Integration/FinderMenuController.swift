@@ -54,18 +54,22 @@ final class FinderMenuController: NSObject {
     super.init()
   }
 
-  /// Offers explicit poster actions for one validated immediate movie folder.
-  func menu(for menuKind: FIMenuKind) -> NSMenu? {
+  /// Offers explicit poster actions owned by the Finder extension's principal object.
+  /// - Parameters:
+  ///   - menuKind: The Finder context-menu location being requested.
+  ///   - actionTarget: The principal object that receives Finder's menu action.
+  func menu(for menuKind: FIMenuKind, actionTarget: AnyObject) -> NSMenu? {
+    guard menuKind == .contextualMenuForItems else { return .none }
     menuRequests.removeAll()
-    guard menuKind == .contextualMenuForItems, let selection = selectedMovieFolder(),
+    guard let selection = selectedMovieFolder(),
       nextMenuTag <= Int.max - MoviePosterAction.allCases.count
     else { return .none }
     let menu = NSMenu(title: "Movie Poster")
     for action in MoviePosterAction.allCases {
       let item = NSMenuItem(
         title: "Movie Poster: \(action.title)",
-        action: #selector(openPosterAction(_:)), keyEquivalent: "")
-      item.target = self
+        action: #selector(FinderSync.openPosterAction(_:)), keyEquivalent: "")
+      item.target = actionTarget
       item.tag = nextMenuTag
       nextMenuTag += 1
       menuRequests[item.tag] = MoviePosterRequest(

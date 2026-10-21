@@ -187,6 +187,22 @@ private final class IsolatedMenuPlatform: FinderMenuPlatform {
   func open(_ request: MoviePosterRequest) { opened.append(request) }
 }
 
+/// Stands in for Finder's principal object while forwarding its menu selector to the request owner.
+private final class FinderMenuActionTarget: NSObject {
+  /// Controller that retains validated requests for the current menu generation.
+  private let controller: FinderMenuController
+
+  /// Retains the controller used by the isolated Finder menu test.
+  /// - Parameter controller: Owner of the captured menu requests.
+  init(controller: FinderMenuController) {
+    self.controller = controller
+    super.init()
+  }
+
+  /// Routes the same selector implemented by the production Finder principal object.
+  @objc func openPosterAction(_ sender: NSMenuItem) { controller.openPosterAction(sender) }
+}
+
 /// Exercises Finder menu capture, runtime authorization, and persisted processing boundaries.
 @Suite("Finder integration")
 struct FinderIntegrationTests {
@@ -197,8 +213,11 @@ struct FinderIntegrationTests {
     let child = try fixture.movie()
     let platform = IsolatedMenuPlatform(repository: fixture.repository, selection: [child])
     let controller = FinderMenuController(platform: platform)
-    let first = try #require(controller.menu(for: .contextualMenuForItems))
+    let actionTarget = FinderMenuActionTarget(controller: controller)
+    let first = try #require(controller.menu(for: .contextualMenuForItems, actionTarget: actionTarget))
     #expect(first.items.count == MoviePosterAction.allCases.count)
+    #expect(first.items.allSatisfy { $0.target === actionTarget })
+    #expect(controller.menu(for: .contextualMenuForContainer, actionTarget: actionTarget) == .none)
     for item in first.items {
       let target = try #require(item.target as? NSObject)
       let action = try #require(item.action)
@@ -211,13 +230,13 @@ struct FinderIntegrationTests {
     #expect(platform.opened.allSatisfy { $0.identity == identity })
     let secondChild = try fixture.movie("Dune (2021)")
     platform.selection = [secondChild]
-    let second = try #require(controller.menu(for: .contextualMenuForItems))
+    let second = try #require(controller.menu(for: .contextualMenuForItems, actionTarget: actionTarget))
     controller.openPosterAction(try #require(first.items.first))
     #expect(platform.opened.count == MoviePosterAction.allCases.count)
     controller.openPosterAction(try #require(second.items.first))
     #expect(platform.opened.last?.childName == "Dune (2021)")
     platform.selection = []
-    #expect(controller.menu(for: .contextualMenuForItems) == .none)
+    #expect(controller.menu(for: .contextualMenuForItems, actionTarget: actionTarget) == .none)
     controller.openPosterAction(try #require(second.items.first))
     #expect(platform.opened.count == MoviePosterAction.allCases.count + 1)
   }
@@ -236,13 +255,14 @@ struct FinderIntegrationTests {
     let controller = FinderMenuController(platform: platform)
     for selection in [.none, [], [movie, hidden], [hidden], [fixture.root], [nested], [file]] as [[URL]?] {
       platform.selection = selection
-      #expect(controller.menu(for: .contextualMenuForItems) == .none)
+      #expect(controller.menu(for: .contextualMenuForItems, actionTarget: controller) == .none)
     }
     platform.selection = [movie]
-    #expect(controller.menu(for: .contextualMenuForContainer) == .none)
-    #expect(FinderMenuController(platform: platform, firstMenuTag: Int.max).menu(for: .contextualMenuForItems) == .none)
+    #expect(controller.menu(for: .contextualMenuForContainer, actionTarget: controller) == .none)
+    #expect(FinderMenuController(platform: platform, firstMenuTag: Int.max)
+      .menu(for: .contextualMenuForItems, actionTarget: controller) == .none)
     try fixture.repository.update { $0.directories = [] }
-    #expect(controller.menu(for: .contextualMenuForItems) == .none)
+    #expect(controller.menu(for: .contextualMenuForItems, actionTarget: controller) == .none)
   }
 
 }

@@ -292,7 +292,12 @@ final class FinderSync: FIFinderSync {
     Task { await scheduler.end(url) }
   }
 
-  override func menu(for menuKind: FIMenuKind) -> NSMenu? { menuController.menu(for: menuKind) }
+  override func menu(for menuKind: FIMenuKind) -> NSMenu? {
+    menuController.menu(for: menuKind, actionTarget: self)
+  }
+
+  /// Routes Finder's principal-object menu action to the validated request captured for that menu.
+  @objc func openPosterAction(_ sender: NSMenuItem) { menuController.openPosterAction(sender) }
 
   deinit {
     DistributedNotificationCenter.default().removeObserver(self)

@@ -26,6 +26,29 @@ struct MoviePosterActionCoordinatorCoverageTests {
     #expect(parent.attachedSheet == .none)
   }
 
+  /// Done ends a nested selection sheet after applying a movie and preserves the already completed action.
+  @Test func doneDismissesNestedSelectionAfterApply() async throws {
+    let coordinator = MoviePosterActionCoordinator(service: WindowPosterService())
+    let parent = NSWindow(contentViewController: NSViewController())
+    parent.makeKeyAndOrderFront(.none)
+    defer { parent.close() }
+    coordinator.start(request(.change), attachedTo: parent)
+    let child = try #require(coordinator.windowController?.window)
+    let model = try #require(coordinator.viewModel)
+    let controls = descendants(of: try #require(child.contentView))
+    try button("Search TMDb", in: controls).performClick(.none)
+    await waitForIdle(model)
+    let picker = try #require(controls.compactMap { $0 as? NSPopUpButton }.first)
+    picker.selectItem(withTag: 42)
+    picker.sendAction(picker.action, to: picker.target)
+    try button("Apply Selected Movie", in: controls).performClick(.none)
+    await waitForIdle(model)
+    #expect(model.statusMessage == "Poster updated from TMDb movie 42.")
+    try button("Done", in: controls).performClick(.none)
+    #expect(coordinator.windowController == .none)
+    #expect(parent.attachedSheet == .none)
+  }
+
   /// Editing fields, searching, choosing and applying must update the actual presentation model and controls.
   @Test func searchSelectionAndApplyRenderTheChosenResult() async throws {
     let coordinator = MoviePosterActionCoordinator(service: WindowPosterService())
@@ -61,6 +84,8 @@ struct MoviePosterActionCoordinatorCoverageTests {
     await waitForIdle(model)
     #expect(fields.contains { $0.stringValue.contains("Poster updated from TMDb movie 42.") })
     #expect(picker.selectedTag() == 42)
+    try button("Done", in: controls).performClick(.none)
+    #expect(coordinator.windowController == .none)
   }
 
   /// Each Finder action presents and invokes the correct primary operation.
