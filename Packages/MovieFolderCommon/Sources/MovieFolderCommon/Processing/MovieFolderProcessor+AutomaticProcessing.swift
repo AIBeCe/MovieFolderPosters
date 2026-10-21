@@ -253,7 +253,7 @@ extension MovieFolderProcessor {
   ) throws {
     do {
       let result = try assign(assignment.bytes, to: candidate, in: root)
-      visit.cache.folders[candidate.name] = FolderRecord(
+      var cachedRecord = FolderRecord(
         fingerprint: candidate.fingerprint,
         status: .processed,
         retryDate: .none,
@@ -263,6 +263,8 @@ extension MovieFolderProcessor {
         movieYear: assignment.record.movieYear,
         movieIdentitySource: assignment.record.movieIdentitySource ?? .savedDecision
       )
+      cachedRecord.nameParserRevision = assignment.record.nameParserRevision
+      visit.cache.folders[candidate.name] = cachedRecord
       try saveAssignedState(visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
       if case .assigned = result { visit.summary.assigned += 1 }
     } catch let error as CollectionProcessingError {

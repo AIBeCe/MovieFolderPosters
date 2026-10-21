@@ -70,10 +70,7 @@ final class CollectionResultsViewController: NSViewController {
     retryButton.action = #selector(retrySelected)
     cancelButton.target = self
     cancelButton.action = #selector(cancel)
-    closeButton.target = self
-    closeButton.action = #selector(close)
-    closeButton.keyEquivalent = "\u{1b}"
-    closeButton.setContentCompressionResistancePriority(.required, for: .vertical)
+    configureCloseButton()
     let reloadButton = NSButton(title: "Reload", target: self, action: #selector(reload))
     let doneButton = NSButton(title: "Done", target: self, action: #selector(done))
     doneButton.keyEquivalent = "\r"
@@ -99,6 +96,14 @@ final class CollectionResultsViewController: NSViewController {
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
     ])
     render()
+  }
+
+  /// Connects the independent sheet dismissal control and its Escape key equivalent.
+  private func configureCloseButton() {
+    closeButton.target = self
+    closeButton.action = #selector(close)
+    closeButton.keyEquivalent = "\u{1b}"
+    closeButton.setContentCompressionResistancePriority(.required, for: .vertical)
   }
 
   /// Creates the fixed evidence columns shown by the unresolved-results table.

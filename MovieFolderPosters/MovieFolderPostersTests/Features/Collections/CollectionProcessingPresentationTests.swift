@@ -55,7 +55,8 @@ import Testing
   #expect(text.string.contains("Last completed collection run:"))
   #expect(text.string.contains("previous processing context") == false)
   #expect(!text.string.contains("folder-identity"))
-  #expect(!views.contains { $0 is NSButton })
+  let buttonTitles = views.compactMap { ($0 as? NSButton)?.title }
+  #expect(buttonTitles == ["Close"])
 }
 
 /// Labels a last completed run as historical when it belongs to a prior saved context.
