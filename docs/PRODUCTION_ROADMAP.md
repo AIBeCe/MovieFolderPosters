@@ -178,12 +178,17 @@ Recovery commit `008a6f3` was fast-forwarded into local `develop` on 2026-10-20.
 
 GitHub issue: [#5](https://github.com/AIBeCe/MovieFolderPosters/issues/5); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
-- [ ] Scope: Expose a focused unresolved-results sheet from Main, reuse the existing Choose Movie flow, and allow a bounded selected retry with cancellation. Keep Finder as the browser; there is no persistent movie grid.
-- [ ] Manual-resolution policy: Not found opens an explicit manual search; Several matches opens explicit movie selection. Neither state is an automatic retry candidate. Selected retries are user-initiated and use R100-04 eligibility/backoff rules; manually requested searches are explicit actions, never scheduled repeats.
+- [x] Scope: Expose a focused unresolved-results sheet from Main, reuse the existing Choose Movie flow, and allow a bounded selected retry with cancellation. Keep Finder as the browser; there is no persistent movie grid.
+- [x] Manual-resolution policy: Not found opens an explicit manual search; Several matches opens explicit movie selection. Neither state is an automatic retry candidate. Selected retries are user-initiated and use R100-04 eligibility/backoff rules; manually requested searches are explicit actions, never scheduled repeats.
 - Dependencies: R100-02 through R100-04; reuse MoviePosterActionCoordinator and service boundaries.
 - Acceptance: A real unresolved result can open selection, apply an explicit match, or retry. Cancellation prevents later unwanted writes without undoing already completed work. Selection, permissions, and folder identity are revalidated after asynchronous work.
 - Acceptance: Manual-required results remain visible until resolved by an explicit action or invalidated by changed folder identity. Opening the sheet and ordinary Finder visits issue no repeated search for those results. Successful manual resolution updates saved state and collection counts without reprocessing unrelated folders.
 - Source ideas: E2, E21, E25, E67.
+
+The manual-resolution implementation and its 2026-10-22 observed-processing, parsing, and action-presentation
+follow-up are integrated into `develop`. Automated tests, coverage, lint, style, signed builds, and signatures
+passed. Live Finder behavior on the user's collections remains unqualified; see
+[observed collection validation](OBSERVED_COLLECTION_VALIDATION.md).
 
 <a id="r100-06"></a>
 

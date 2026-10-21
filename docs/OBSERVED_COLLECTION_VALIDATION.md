@@ -58,7 +58,8 @@ The current `bugfix/observed-processing-resume` branch includes the observed-roo
 database-code suffix parsing and cached-decision migration, dismissible Processing Details and Unresolved Results
 sheets, and Finder menu/Choose Movie dismissal repairs. Validation found and corrected a cached-poster rewrite that
 discarded the parser revision, an overlong results-view function, and a test assertion that still forbade the newly
-required Processing Details Close button. These three corrections remain uncommitted pending Validation Phase approval.
+required Processing Details Close button. The approved validation corrections were committed as `1b55de9` and
+fast-forwarded into `develop` on 2026-10-22.
 
 - Verification: The real temporary-root directory event test, retry-deadline and cancellation tests, cached parser
   migration tests, AppKit sheet/control tests, and Finder menu target/dispatch tests passed. The disposable recovery

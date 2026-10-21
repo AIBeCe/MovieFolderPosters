@@ -189,6 +189,18 @@ Validation completed against the full issue scope:
 Native Finder runtime behavior, live provider interaction, sandbox authorization prompts, and persisted icon
 appearance on physical folders were not exercised by the automated validation run.
 
+The 2026-10-22 follow-up bugfix is integrated into `develop` through `1b55de9`. A root-only filesystem event
+monitor now revisits an observed collection after a direct child changes, and a one-shot continuation resumes
+eligible deferred work at its recorded deadline while Finder still observes the root. Bracketed IMDb, TMDb,
+TVDb, and Wikidata codes in supported suffix positions are parsed as annotations; they do not establish movie
+identity. Older unresolved decisions with such suffixes receive one fresh classification. Processing Details and
+Unresolved Results have explicit Close controls; Finder poster menu actions route through the extension's
+principal object, and Done dismisses the nested Choose Movie sheet through its coordinator. The latest automated
+validation passed all package and host/Finder harness tests, the 90% project coverage gate, SwiftLint, signed
+Debug/Release builds, and strict signature verification. See
+[observed collection validation](OBSERVED_COLLECTION_VALIDATION.md) for counts and
+live Finder limits.
+
 ## Implementation ledger
 
 - [x] 1. Shared state, reason, operation, snapshot, validation, and counting models with behavioral tests.
@@ -205,7 +217,8 @@ appearance on physical folders were not exercised by the automated validation ru
 - [x] Remaining issue #4 recovery implementation, independent review, and controlled recovery regressions.
   Final verification and local feature completion are recorded in [Processing recovery](PROCESSING_RECOVERY.md).
 - [x] Issue #5 manual search, result presentation, explicit selection, selected-folder retry, and cancellation
-  integration. Validated and fast-forwarded into `develop` on 2026-10-20; see the R100-05 record above.
+  integration. Validated and fast-forwarded into `develop` on 2026-10-20; the 2026-10-22 follow-up bugfix is
+  integrated as `1b55de9`. See the R100-05 record above.
 
 ## Implementation evidence
 
