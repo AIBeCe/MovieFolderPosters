@@ -15,7 +15,7 @@ public protocol DirectoryObservationSchedulerDelegate: AnyObject, Sendable {
   /// - Parameters:
   ///   - scheduler: The scheduler requesting configuration or root processing.
   ///   - url: The observed collection root URL.
-  /// - Returns: The provider-wide retry deadline, if this visit stopped during backoff.
+  /// - Returns: The next eligible retry deadline while this root remains observed.
   /// - Throws: Cancellation or a failure reported by the configured processing collaborator.
   func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws -> Date?
 }
@@ -38,7 +38,7 @@ public actor DirectoryObservationScheduler {
   private var monitors: [URL: (source: any DispatchSourceFileSystemObject, identifier: UUID)] = [:]
   /// Short delays that combine bursts of directory changes into one visit per root.
   private var changeTasks: [URL: (task: Task<Void, Never>, identifier: UUID)] = [:]
-  /// One-shot retry tasks for observed roots stopped by provider backoff.
+  /// One-shot retry tasks for observed roots with deferred eligible work.
   private var retryTasks: [URL: (task: Task<Void, Never>, identifier: UUID)] = [:]
   /// Expired deadlines already given an immediate continuation, preventing a stale-result loop.
   private var resumedExpiredDeadlines: [URL: Date] = [:]
@@ -193,7 +193,7 @@ public actor DirectoryObservationScheduler {
     monitors = [:]
   }
 
-  /// Cancels pending event bursts and provider deadlines.
+  /// Cancels pending event bursts and eligible retry deadlines.
   private func cancelDeferredTasks() {
     for entry in changeTasks.values { entry.task.cancel() }
     for entry in retryTasks.values { entry.task.cancel() }
@@ -235,7 +235,7 @@ public actor DirectoryObservationScheduler {
     pump()
   }
 
-  /// Schedules one continuation at a finite provider deadline while the root remains observed.
+  /// Schedules one continuation at a finite eligible deadline while the root remains observed.
   private func scheduleRetry(for root: URL, at deadline: Date) {
     guard observed.contains(root), roots.contains(root) else { return }
     let interval = deadline.timeIntervalSinceNow

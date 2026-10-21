@@ -96,8 +96,8 @@ extension MovieFolderProcessorTests {
     let second = try await processor.process(root: fixture.movies)
 
     XCTAssertEqual(first.examined, 1)
-    XCTAssertEqual(first.rootBackoffUntil, clock.now.addingTimeInterval(86_400))
-    XCTAssertEqual(second.rootBackoffUntil, first.rootBackoffUntil)
+    XCTAssertEqual(first.providerRetryAt, clock.now.addingTimeInterval(86_400))
+    XCTAssertEqual(second.providerRetryAt, first.providerRetryAt)
     let searchCount = await provider.searchCount
     XCTAssertEqual(searchCount, 1)
   }
@@ -116,8 +116,8 @@ extension MovieFolderProcessorTests {
     clock.advance(by: 86_401)
     let third = try await processor.process(root: fixture.movies)
 
-    XCTAssertNil(first.rootBackoffUntil)
-    XCTAssertEqual(second.rootBackoffUntil, first.rootBackoffUntil)
+    XCTAssertNil(first.providerRetryAt)
+    XCTAssertEqual(second.providerRetryAt, first.providerRetryAt)
     XCTAssertEqual(third.examined, 0)
     let searchCount = await provider.searchCount
     XCTAssertEqual(searchCount, 1)

@@ -42,7 +42,7 @@ extension MovieFolderProcessor {
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
     if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
     let needsLegacyReassessment = sameFingerprint && prior?.needsLegacyReassessment == true
-    if !needsLegacyReassessment, let deadline = cache.rootBackoffUntil, deadline > now() {
+    if !needsLegacyReassessment, let deadline = cache.providerRetryAt, deadline > now() {
       return .waiting(until: deadline)
     }
     if !needsLegacyReassessment, prior?.processingReason != .interrupted, record.reason != .interrupted {

@@ -100,8 +100,9 @@ cooldown expiry, configuration reloads, and process restarts. A replaced folder 
 different identity rather than inheriting an old assessment blindly.
 
 An eligible retry or resume occurs on a later authorized invocation, including a Finder visit. While Finder keeps a
-configured collection root under observation, a one-shot retry at the recorded provider deadline may provide that
-invocation. A root-directory change may also queue a coalesced visit. Both triggers stop with observation or extension
+configured collection root under observation, a one-shot retry at the earliest eligible folder or provider deadline
+may provide that invocation. Conclusive and admission-blocked outcomes do not arm this retry. A root-directory change
+may also queue a coalesced visit. Both triggers stop with observation or extension
 lifetime; there is no polling, daemon, persistent scheduler, or guarantee of execution at a displayed eligibility time.
 Retry paths preserve shared provider backoff and existing authorization, identity, ownership, suppression,
 cancellation, and recovery-mode safeguards.

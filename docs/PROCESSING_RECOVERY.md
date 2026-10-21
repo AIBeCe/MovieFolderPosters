@@ -23,8 +23,9 @@ The preceding style-only changes were committed separately as `58e6d33`.
   Already-admitted requests may finish; their responses cannot authorize later writes while recovery mode is enabled.
   Enabling the gate serializes with synchronous icon mutations. Disabling it authorizes no automatic replay.
 - Issue #4 introduced no watcher, timer, polling loop, daemon, new package, or movie-content mutation. The later
-  observed-collection fix adds a root-directory event source and a one-shot provider retry only while Finder continues
-  observing that configured root; the recovery service and its admission rules are unchanged.
+  observed-collection fix adds a root-directory event source and a one-shot retry for eligible folder or provider
+  deadlines only while Finder continues observing that configured root; the recovery service and its admission rules
+  are unchanged.
 
 ## Integration contracts
 

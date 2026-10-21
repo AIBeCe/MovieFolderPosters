@@ -49,7 +49,7 @@ extension MovieFolderProcessor {
     refreshedRecord.movieYear = selection.movieYear
     refreshedRecord.movieIdentitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
     state.folders[child] = refreshedRecord
-    state.rootBackoffUntil = .none
+    state.providerRetryAt = .none
     try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
     try finishProcessingOperation(&processingState, state: .completed)
 
@@ -103,7 +103,7 @@ extension MovieFolderProcessor {
     selectedRecord.movieYear = movie.releaseYear
     selectedRecord.movieIdentitySource = .explicitSelection
     state.folders[child] = selectedRecord
-    state.rootBackoffUntil = .none
+    state.providerRetryAt = .none
     try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
     try finishProcessingOperation(&processingState, state: .completed)
 

@@ -325,7 +325,7 @@ extension MoviePosterActionTests {
       provider: RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: "token"),
       cacheDirectory: fixture.base.appendingPathComponent("cache"), now: { clock.now }, recovery: recovery)
     let first = try await processor.process(root: fixture.movies)
-    XCTAssertNotNil(first.rootBackoffUntil)
+    XCTAssertNotNil(first.providerRetryAt)
     await provider.setSearchError(.none)
     let identity = try fixture.identity(of: "Dune (2021)")
     let selected = MovieMetadata(
@@ -348,7 +348,7 @@ extension MoviePosterActionTests {
     let next = try await processor.process(root: fixture.movies)
 
     let searchCount = await provider.searchCount
-    XCTAssertNil(next.rootBackoffUntil)
+    XCTAssertNil(next.providerRetryAt)
     XCTAssertEqual(searchCount, 2)
   }
 

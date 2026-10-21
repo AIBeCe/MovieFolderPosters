@@ -169,6 +169,17 @@ extension MovieFolderProcessorTests {
     XCTAssertNil(dune["lastFailure"])
   }
 
+  /// The clearer Swift name retains the existing on-disk provider deadline field.
+  func testProviderRetryDatePreservesSavedCacheKey() throws {
+    let deadline = Date(timeIntervalSince1970: 20_000)
+    let data = try JSONEncoder().encode(ProcessingState(providerRetryAt: deadline))
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+    XCTAssertNotNil(object["rootBackoffUntil"])
+    XCTAssertNil(object["providerRetryAt"])
+    XCTAssertEqual(try JSONDecoder().decode(ProcessingState.self, from: data).providerRetryAt, deadline)
+  }
+
   /// Verifies enumeration Skips Hidden Folders Symlinks And Nested Folders.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func testEnumerationSkipsHiddenFoldersSymlinksAndNestedFolders() async throws {
@@ -240,7 +251,7 @@ extension MovieFolderProcessorTests {
 
     let retry = try await processor.process(root: fixture.movies)
     XCTAssertEqual(retry.assigned, 1)
-    XCTAssertNil(retry.rootBackoffUntil)
+    XCTAssertNil(retry.providerRetryAt)
     let searchCount = await provider.searchCount
     XCTAssertEqual(searchCount, 2)
   }

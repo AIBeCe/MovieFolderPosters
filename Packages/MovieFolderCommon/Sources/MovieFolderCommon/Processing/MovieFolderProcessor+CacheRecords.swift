@@ -67,7 +67,12 @@ nonisolated struct ProcessingState: Codable {
   /// Cached provider responses keyed by normalized query digest.
   var queries: [String: CachedSearch] = [:]
   /// The provider-wide retry boundary saved for this root, when present.
-  var rootBackoffUntil: Date?
+  var providerRetryAt: Date?
+  /// Preserves the existing cache field name when reading or writing saved processing state.
+  private enum CodingKeys: String, CodingKey {
+    case folders, queries
+    case providerRetryAt = "rootBackoffUntil"
+  }
 }
 
 /// Codable search results with their completeness evidence and creation time.

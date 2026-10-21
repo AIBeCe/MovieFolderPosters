@@ -119,7 +119,9 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
   /// Whether another operation already held the collection processing lease.
   public var rootLeaseUnavailable: Bool
   /// The provider-wide retry boundary saved for this root, when present.
-  public var rootBackoffUntil: Date?
+  public var providerRetryAt: Date?
+  /// Earliest eligible folder-level retry deadline from the completed collection visit.
+  public var nextAutomaticRetryAt: Date?
 
   /// Creates visit counts and retry evidence; omitted counts begin at zero.
   ///
@@ -133,7 +135,8 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
   ///   - skippedPreviouslyProcessed: The number of previously completed folders skipped.
   ///   - skippedRetryWindow: The number of folders deferred by retry state.
   ///   - rootLeaseUnavailable: Whether a competing operation prevented the root visit.
-  ///   - rootBackoffUntil: The provider-wide retry boundary, if present.
+  ///   - providerRetryAt: The provider-wide retry boundary, if present.
+  ///   - nextAutomaticRetryAt: The earliest eligible folder-level retry deadline, if present.
   public init(
     examined: Int = .zero,
     assigned: Int = .zero,
@@ -144,7 +147,8 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     skippedPreviouslyProcessed: Int = .zero,
     skippedRetryWindow: Int = .zero,
     rootLeaseUnavailable: Bool = false,
-    rootBackoffUntil: Date? = .none
+    providerRetryAt: Date? = .none,
+    nextAutomaticRetryAt: Date? = .none
   ) {
     self.examined = examined
     self.assigned = assigned
@@ -155,7 +159,8 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     self.skippedPreviouslyProcessed = skippedPreviouslyProcessed
     self.skippedRetryWindow = skippedRetryWindow
     self.rootLeaseUnavailable = rootLeaseUnavailable
-    self.rootBackoffUntil = rootBackoffUntil
+    self.providerRetryAt = providerRetryAt
+    self.nextAutomaticRetryAt = nextAutomaticRetryAt
   }
 }
 

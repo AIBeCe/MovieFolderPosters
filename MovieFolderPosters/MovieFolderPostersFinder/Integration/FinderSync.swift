@@ -148,7 +148,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// - Parameters:
   ///   - scheduler: The scheduler requesting configuration or root processing.
   ///   - url: The observed collection root URL.
-  /// - Returns: The provider backoff deadline for a deferred observed-root continuation.
+  /// - Returns: The next eligible retry deadline for a deferred observed-root continuation.
   /// - Throws: Configuration contention or changes, bookmark access failures, persistence failures, or a root identity
   /// mismatch.
   func directoryObservationScheduler(
@@ -175,7 +175,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         operationID: operationID, collectionID: root.directory.id))
       logger.notice("Processing returned: examined=\(result.examined), assigned=\(result.assigned)")
 
-      return result.rootBackoffUntil
+      return result.providerRetryAt ?? result.nextAutomaticRetryAt
     } catch {
       await activity.record(MovieFolderActivityEvent(
         action: .automaticProcessing, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,

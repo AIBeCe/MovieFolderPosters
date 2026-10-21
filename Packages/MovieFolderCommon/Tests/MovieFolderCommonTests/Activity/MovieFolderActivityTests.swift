@@ -43,7 +43,7 @@ struct MovieFolderActivityTests {
     #expect(
       MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(skippedRetryWindow: 1)) == .partial)
     #expect(
-      MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(rootBackoffUntil: Date())) == .partial)
+      MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(providerRetryAt: Date())) == .partial)
     let blockedSummary = ProcessingSummary(rootLeaseUnavailable: true)
     #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: blockedSummary) == .unavailable)
   }

@@ -213,7 +213,7 @@ extension MovieFolderProcessorTests {
     let appearance = try fileSystem.assignedPosterAppearance(
       toChild: "Dune (2021)", in: fixture.movies
     )
-    XCTAssertNotNil(summary.rootBackoffUntil)
+    XCTAssertNotNil(summary.providerRetryAt)
     XCTAssertEqual(summary.restyled, 1)
     XCTAssertEqual(appearance, .softFinish)
   }

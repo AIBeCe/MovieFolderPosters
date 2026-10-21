@@ -73,7 +73,7 @@ func legacyUnresolvedRecoveryReassessesFreshAndPersistsClassification() async th
     fingerprint: candidate.fingerprint, status: .unresolved,
     retryDate: clock.now.addingTimeInterval(86_400), matchedMovieID: .none, posterPath: .none)],
     queries: [queryKey: incomplete, "unrelated": incomplete],
-    rootBackoffUntil: clock.now.addingTimeInterval(86_400)), fixture: fixture)
+    providerRetryAt: clock.now.addingTimeInterval(86_400)), fixture: fixture)
   let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false))
   let processor = try fixture.processor(provider: provider, clock: { clock.now })
 
@@ -164,11 +164,11 @@ func wrappedRateLimitRecoveryUsesFinitePersistedDeadline(header: String) async t
 
   let summary = try await processor.process(root: fixture.movies)
 
-  #expect(summary.rootBackoffUntil == clock.now.addingTimeInterval(600))
+  #expect(summary.providerRetryAt == clock.now.addingTimeInterval(600))
   let record = try #require(try readRecoveryCache(fixture).folders["Dune (2021)"])
   #expect(record.processingReason == .rateLimited)
-  #expect(record.retryDate == summary.rootBackoffUntil)
-  #expect(try recovery.read().providerRetryAt == summary.rootBackoffUntil)
+  #expect(record.retryDate == summary.providerRetryAt)
+  #expect(try recovery.read().providerRetryAt == summary.providerRetryAt)
 }
 
 /// Seeds the real operational store with historic evidence without touching movie contents.

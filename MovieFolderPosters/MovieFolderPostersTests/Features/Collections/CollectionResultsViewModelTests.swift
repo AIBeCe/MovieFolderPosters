@@ -172,7 +172,7 @@ struct CollectionResultsViewModelTests {
     fixture.model.selectRows(IndexSet(integersIn: 0..<2))
     fixture.model.retrySelected()
     await settle()
-    await fixture.retry.release(.attempted(ProcessingSummary(rootBackoffUntil: .none), stopSelection: true))
+    await fixture.retry.release(.attempted(ProcessingSummary(providerRetryAt: .none), stopSelection: true))
     await settle()
     #expect(await fixture.retry.requests.count == 1)
     #expect(await fixture.source.readCount > readsBefore)

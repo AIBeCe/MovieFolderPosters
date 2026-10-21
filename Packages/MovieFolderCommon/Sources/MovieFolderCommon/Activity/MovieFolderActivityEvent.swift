@@ -47,7 +47,7 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
   /// - Returns: Availability, partial completion, or completion derived without folder names.
   public static func automaticProcessingStatus(for summary: ProcessingSummary) -> Status {
     if summary.rootLeaseUnavailable { return .unavailable }
-    if summary.rootBackoffUntil != .none || summary.skippedRetryWindow > 0 || summary.transientFailures > 0 {
+    if summary.providerRetryAt != .none || summary.skippedRetryWindow > 0 || summary.transientFailures > 0 {
       return .partial
     }
 

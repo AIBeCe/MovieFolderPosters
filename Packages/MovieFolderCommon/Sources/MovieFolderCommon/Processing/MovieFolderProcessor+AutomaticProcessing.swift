@@ -43,16 +43,16 @@ extension MovieFolderProcessor {
     var stateChanged = pruneCache(&visit.cache, candidates: candidates, currentTime: currentTime)
     try assessExistingIcons(candidates, root: root, visit: &visit)
     if recovery == nil, !hasLegacyReassessment(candidates, cache: visit.cache),
-      let backoff = visit.cache.rootBackoffUntil, backoff > currentTime {
+      let backoff = visit.cache.providerRetryAt, backoff > currentTime {
       if stateChanged { try saveState(visit.cache, to: lease) }
-      visit.summary.rootBackoffUntil = backoff
+      visit.summary.providerRetryAt = backoff
       deferPendingFolderAssessments(&visit.recording, until: backoff)
       try finishProcessingOperation(&visit.recording, state: .partial)
 
       return visit.summary
     }
-    if visit.cache.rootBackoffUntil != .none { stateChanged = true }
-    visit.cache.rootBackoffUntil = .none
+    if visit.cache.providerRetryAt != .none { stateChanged = true }
+    visit.cache.providerRetryAt = .none
     if stateChanged { try saveState(visit.cache, to: lease) }
     for candidate in candidates {
       try Task.checkCancellation()
@@ -65,6 +65,7 @@ extension MovieFolderProcessor {
       }
     }
     try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
+    visit.summary.nextAutomaticRetryAt = visit.recording?.folders.compactMap(\.automaticRetryAt).min()
 
     return visit.summary
   }
@@ -339,7 +340,7 @@ extension MovieFolderProcessor {
       reason: reason, failureReason: failure)
     record.retryAt = retryAt
     try recordFolderProcessing(record, in: &visit.recording)
-    visit.summary.rootBackoffUntil = retryAt
+    visit.summary.providerRetryAt = retryAt
     if let retryAt { deferPendingFolderAssessments(&visit.recording, until: retryAt, child: visit.selectedChild) }
 
     return true
@@ -356,10 +357,10 @@ extension MovieFolderProcessor {
       candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
     if let retryDate = try effectiveRootBackoff(for: error) {
-      visit.cache.rootBackoffUntil = retryDate
+      visit.cache.providerRetryAt = retryDate
       visit.cache.folders[candidate.name]?.retryDate = retryDate
       try saveState(visit.cache, to: lease)
-      visit.summary.rootBackoffUntil = retryDate
+      visit.summary.providerRetryAt = retryDate
       var record = failedFolderAssessment(
         candidate, stage: attempt.stage, movie: attempt.movie,
         reason: evidence.reason, failureReason: evidence.failureReason)

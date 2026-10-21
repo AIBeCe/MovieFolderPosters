@@ -134,7 +134,7 @@ private struct SelectedRetryScenario {
       "Deleted (2010)": FolderRecord(
         fingerprint: "unrelated-cache", status: .unresolved, retryDate: .none,
         matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)
-    ], rootBackoffUntil: rootDeadline)
+    ], providerRetryAt: rootDeadline)
     let lease = try #require(try source.fixture.persistence.acquireLease(
       for: MovieFolderProcessor.rootLeaseKey(for: source.fixture.movies)))
     try lease.write(JSONEncoder().encode(state))
@@ -196,7 +196,7 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
   let saved = try scenario.snapshot()
   #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
   #expect(saved.operation?.state == .partial)
-  if case .authentication = error { #expect(summary.rootBackoffUntil == .none) }
+  if case .authentication = error { #expect(summary.providerRetryAt == .none) }
 }
 
 /// Cancellation may mark the selected work interrupted but must never rewrite unrelated pending members.
@@ -255,7 +255,7 @@ func selectedRetryHonorsCurrentDeadlines(isRootDeadline: Bool) async throws {
   #expect(await scenario.provider.searchCount == 0)
   let cache = try scenario.cache()
   #expect(cache.folders["Deleted (2010)"]?.fingerprint == "unrelated-cache")
-  #expect(isRootDeadline ? cache.rootBackoffUntil == deadline : cache.folders["Dune (2021)"]?.retryDate == deadline)
+  #expect(isRootDeadline ? cache.providerRetryAt == deadline : cache.folders["Dune (2021)"]?.retryDate == deadline)
 }
 
 /// An interrupted attempt can resume without waiting on an obsolete folder cooldown.
@@ -285,7 +285,7 @@ func selectedRetryHonorsCurrentDeadlines(isRootDeadline: Bool) async throws {
   }
   #expect(summary.assigned == 1)
   let cache = try scenario.cache()
-  #expect(cache.rootBackoffUntil == deadline)
+  #expect(cache.providerRetryAt == deadline)
   #expect(cache.folders["Deleted (2010)"]?.fingerprint == "unrelated-cache")
 }
 

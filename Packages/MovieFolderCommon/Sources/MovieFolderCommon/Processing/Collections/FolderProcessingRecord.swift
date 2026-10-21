@@ -102,4 +102,18 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
     state == .done && ownership == .owned && (movieID ?? .zero) > .zero &&
       identity?.isEmpty == false && assessedAt != .none
   }
+
+  /// Retry deadline for an automatically recoverable outcome, excluding conclusive and admission-blocked reasons.
+  var automaticRetryAt: Date? {
+    guard state != .done, state != .notFound, state != .severalMatches,
+      state != .preserved, state != .suppressed,
+      let reason, let retryAt else { return .none }
+    switch reason {
+    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
+         .authentication, .recoveryMode, .unknown:
+      return .none
+    default:
+      return retryAt
+    }
+  }
 }

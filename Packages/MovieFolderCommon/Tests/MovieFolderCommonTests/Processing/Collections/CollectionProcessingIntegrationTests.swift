@@ -27,7 +27,8 @@ struct CollectionProcessingIntegrationTests {
     let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let provider = CollectionProcessingMetadataProvider(posterData: Data([1]), shouldFailPoster: true)
-    _ = try await fixture.processor(provider: provider).process(root: fixture.root, processingContext: fixture.context)
+    let summary = try await fixture.processor(provider: provider).process(
+      root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     let record = try #require(processingState.folders.first)
     #expect(record.state == .failed)
@@ -36,6 +37,7 @@ struct CollectionProcessingIntegrationTests {
     #expect(record.lastFailure?.stage == .artwork)
     #expect(record.movieID == 7)
     #expect(record.movieTitle == "Movie")
+    #expect(summary.nextAutomaticRetryAt == record.retryAt)
     #expect(processingState.calculateCounts().notFound == 0)
   }
 
@@ -183,16 +185,27 @@ struct CollectionProcessingIntegrationTests {
     let fixture = try CollectionProcessingFixture(names: ["Missing (2021)", "Ambiguous (2021)", "Incomplete (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let processor = fixture.processor(provider: CollectionProcessingMetadataProvider())
-    _ = try await processor.process(root: fixture.root, processingContext: fixture.context)
+    let summary = try await processor.process(root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     let records = Dictionary(uniqueKeysWithValues: processingState.folders.map { ($0.name, $0) })
     #expect(records["Missing (2021)"]?.state == .notFound)
     #expect(records["Ambiguous (2021)"]?.state == .severalMatches)
     #expect(records["Incomplete (2021)"]?.reason == .incompleteSearch)
+    #expect(summary.nextAutomaticRetryAt == records["Incomplete (2021)"]?.retryAt)
     #expect(processingState.calculateCounts().total == 3)
     #expect(processingState.calculateCounts().notFound == 1)
     #expect(processingState.calculateCounts().severalMatches == 1)
     #expect(processingState.operation?.state == .completed)
+  }
+
+  /// Conclusive negative and ambiguous matches never arm an automatic retry.
+  @Test func conclusiveResultsDoNotScheduleAutomaticRetry() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Missing (2021)", "Ambiguous (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let summary = try await fixture.processor(provider: CollectionProcessingMetadataProvider()).process(
+      root: fixture.root, processingContext: fixture.context)
+
+    #expect(summary.nextAutomaticRetryAt == .none)
   }
 
   /// An established empty inventory is different from a missing summary.
