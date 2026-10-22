@@ -237,8 +237,10 @@ private struct CredentialServiceFixture {
   init(credentials: CredentialTestStore = CredentialTestStore(),
        transport: any HTTPTransport = CredentialTestTransport()) throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    repository = ConfigurationRepository(store: try PersistenceStore(directory: root.appendingPathComponent("Settings")))
-    recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: root.appendingPathComponent("Recovery")))
+    repository = ConfigurationRepository(
+      store: try PersistenceStore(directory: root.appendingPathComponent("Settings")))
+    recovery = ProcessingRecoveryService(
+      store: try PersistenceStore(directory: root.appendingPathComponent("Recovery")))
     self.credentials = credentials
     service = DirectoryConfigurationService(repository: repository,
       authorizations: try PersistenceStore(directory: root.appendingPathComponent("Authorization")),

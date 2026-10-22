@@ -1,8 +1,8 @@
 # Credential setup and replacement — R100-06
 
 Status: Combined proposal approved on 2026-10-22; implementation complete and independently reviewed on
-`feature/credential-setup`. Implementation review, commit approval, formal validation,
-and feature completion remain separate gates. No live credential entry is authorized
+`feature/credential-setup`. Implementation commit `c5f8024` is approved; formal validation
+is complete pending user review. Feature completion remains a separate gate. No live credential entry is authorized
 for the agent; the user performs native entry for live qualification.
 
 ## Approved requirements
@@ -74,10 +74,9 @@ func recordCredentialTestFailure(_ error: any Error) throws
 - [x] Shared schema/cache/recovery test-first implementation and focused package checks.
 - [x] Host service and UI implementation with focused host-harness tests.
 - [x] Independent review and fixes; final PASS with no open findings.
-- [ ] Implementation report for user review; do not commit before approval.
-- [ ] Formal Validation Phase (requires explicit authorization): verification, complete relevant
-  unit suites, SwiftLint with repository configuration, installed Swift style guide.
-- [ ] User approval, validation commit if necessary, then wait for “Finish the feature”.
+- [x] Implementation report reviewed and approved; implementation commit `c5f8024` created.
+- [x] Formal Validation Phase authorized; requirements, focused tests, SwiftLint, and Swift style reviewed.
+- [ ] User approval of validation; commit validation changes if approved, then wait for “Finish the feature”.
 
 ## Review focus
 
@@ -184,3 +183,32 @@ Focused Common environment/revision checks passed (10 tests; see
 `/tmp/mfp-r100-06-environment-common.log`). The host/Finder check passed 145 tests in 16 suites
 (`/tmp/mfp-r100-06-environment-host.log`). Independent follow-up review returned PASS with no
 open findings; `git diff --check` passed. Commit and formal-validation gates remain unchanged.
+
+## Formal validation — 2026-10-22
+
+- Requirement verification: reviewed the approved credential, generation-fencing, cache
+  preservation, configuration API, and notification changes against their implementation
+  and focused behavioral tests. No requirement mismatch was found.
+- Unit tests: MovieFolderCommon passed 182 tests across 18 suites; Network passed 30 tests.
+  The host harness passed 61 selected tests across six credential/configuration suites,
+  including cancellation, stale reads, replacement/removal, help actions, previews, and
+  safe error presentation. The host harness compiled its broader targets; compiler warnings
+  came from existing unrelated Finder/installation tests. No test failed.
+- SwiftLint 0.65.1: ran with `.swiftlint.yml` on all 12 Swift files modified during
+  validation. It reported three `async_without_await` warnings: the test transport's async
+  protocol witness (`CredentialServiceTests.swift:303`) and two async service protocol
+  witnesses (`DirectoryConfigurationService.swift:325,369`). These signatures satisfy
+  async protocol contracts; no other lint findings appeared.
+- Swift style guide: reviewed the modified Swift files for the repository's 120-character
+  limit, naming, access control, declaration organization, and Swift 6 concurrency conventions.
+  No style deviations requiring changes were found.
+- Validation support: the coverage-report helper's immutable notification declaration
+  classification was regression-tested (15 tests passed); `git diff --check` passed.
+- Coverage limitation: the last broad coverage snapshot before final focused additions reported
+  89.55% aggregate coverage, below the repository's >90% gate. A fresh project-wide coverage
+  run was not performed in this validation scope; therefore aggregate coverage remains
+  unverified for the final diff. No signed build, live TMDb credential entry, or installed
+  Finder qualification was performed.
+- No blocking test failures remain. The lint warnings above are contract-required, and the
+  coverage/native qualification limits are reported explicitly. User approved validation and
+  feature completion; validation changes are ready to commit.

@@ -185,6 +185,7 @@ struct ConfigurationCoordinatorCoverageTests {
 
   /// Returns a view and all descendants for assertions against actual AppKit presentation.
   private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+
 }
 
 /// Provides a deterministic configuration summary and counts initial reads.
@@ -212,7 +213,9 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   func removeDirectory(_ identifier: UUID) throws { mutationCount += 1 }
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws { mutationCount += 1 }
   /// Returns the isolated fixture's non-secret credential state.
-  func credentialState() -> CredentialState { CredentialState(isConfigured: summary.credentialConfigured, revision: .none) }
+  func credentialState() -> CredentialState {
+    CredentialState(isConfigured: summary.credentialConfigured, revision: .none)
+  }
   /// Accepts explicit tests without contacting the provider.
   func testCredential(expectedRevision: UUID?) throws {}
   func saveCredential(_ value: String, expectedRevision: UUID?) throws { mutationCount += 1 }

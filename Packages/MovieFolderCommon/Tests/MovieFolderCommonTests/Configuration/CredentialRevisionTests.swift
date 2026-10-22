@@ -41,7 +41,8 @@ struct CredentialRevisionTests {
       #expect(current.directories == [configured])
       let processor = MovieFolderProcessor(persistence: store, provider: provider, cacheDirectory: directory,
         credentialRevision: current.credentialRevision)
-      #expect(try await processor.matchedMovieID(root: root, child: child, expectedIdentity: candidate.identity) == 4242)
+      #expect(try await processor.matchedMovieID(
+        root: root, child: child, expectedIdentity: candidate.identity) == 4242)
     }
     #expect(await provider.searchCount == 0)
     #expect(await provider.posterCount == 0)

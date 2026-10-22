@@ -74,6 +74,19 @@ class CoverageReportTests(unittest.TestCase):
             self.assertEqual(result["declaration_only_sources"], [str(enum)])
             self.assertEqual(result["executable_lines"], 0)
 
+    def test_notification_name_constants_are_accounted_for_as_declarations(self):
+        source = '''import Foundation
+        public extension Notification.Name {
+          static let movieFolderChanged = Notification.Name("MovieFolder.Changed")
+          static let activityChanged = Notification.Name(
+            "MovieFolder.ActivityChanged")
+        }
+        '''
+        self.assertTrue(self.report.declaration_only(source))
+        self.assertFalse(self.report.declaration_only(source.replace(
+            'static let activityChanged = Notification.Name(\n            "MovieFolder.ActivityChanged")',
+            'static let activityChanged: Notification.Name { Notification.Name("MovieFolder.ActivityChanged") }')))
+
     def test_duplicate_records_are_not_added_twice_and_conflicting_duplicates_fail(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

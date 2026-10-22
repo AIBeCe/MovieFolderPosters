@@ -4,7 +4,7 @@ import Testing
 
 /// Guards on-disk field names and bytes while public Swift model names evolve.
 struct PersistedModelNamingCompatibilityTests {
-  /// Renamed configuration flags retain the original version-one JSON key and canonical bytes.
+  /// Version-one settings retain their legacy fixture key and initialize the cache namespace on decode.
   /// - Throws: Fixture JSON encoding or configuration decoding errors.
   @Test func configurationRetainsLegacyFixtureFlagKeyAndBytes() throws {
     let legacy = try JSONSerialization.data(withJSONObject: [
@@ -16,9 +16,14 @@ struct PersistedModelNamingCompatibilityTests {
     ], options: [.sortedKeys])
     let decoded = try JSONDecoder().decode(DirectoryConfiguration.self, from: legacy)
     #expect(decoded.usesStubTMDbResponses)
+    #expect(decoded.processingCacheRevision == decoded.credentialRevision)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    #expect(try encoder.encode(decoded) == legacy)
+    let migrated = try encoder.encode(decoded)
+    let migratedObject = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
+    #expect(migratedObject["version"] as? Int == 1)
+    #expect(migratedObject["developmentFixtures"] as? Bool == true)
+    #expect(migratedObject["processingCacheRevision"] as? String == "11111111-1111-1111-1111-111111111111")
   }
 
   /// Captured processing generations retain the original fixture flag key and all legacy context fields.

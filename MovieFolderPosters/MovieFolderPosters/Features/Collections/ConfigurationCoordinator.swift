@@ -29,7 +29,7 @@ extension ConfigurationCoordinatorDelegate {
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
   ConfigurationViewModelActivityDelegate, CollectionProcessingDetailsViewControllerDelegate,
-  CollectionResultsViewControllerDelegate, CredentialSettingsDelegate, NSWindowDelegate {
+  CollectionResultsViewControllerDelegate, NSWindowDelegate {
   /// Root router; the root retains this child for its flow lifetime.
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.
@@ -148,42 +148,6 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       show(window)
     }
     Task { await viewModel.load() }
-  }
-
-  /// Confirms replacement while the candidate stays exclusively in the pane's secure field.
-  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState) {
-    guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
-    let alert = NSAlert()
-    alert.messageText = "Replace the saved TMDb token?"
-    alert.informativeText = "The candidate will be tested first. The saved token changes only if testing succeeds "
-      + "and credential state is still current. Collections, confirmed movie decisions, and posters are preserved."
-    alert.addButton(withTitle: "Test and Replace")
-    alert.addButton(withTitle: "Cancel")
-    alert.beginSheetModal(for: window) { [weak self, weak sender] response in
-      guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
-      sender?.saveEnteredCredential(expectedState: state)
-    }
-  }
-
-  /// Confirms removal against a frozen generation without changing roots or installed icons.
-  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestRemoval state: CredentialState) {
-    guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
-    let alert = NSAlert()
-    alert.messageText = "Remove the saved TMDb token?"
-    alert.informativeText = "Movie lookups need a token. Collections, saved movie decisions, and installed posters "
-      + "remain. A changed credential will not be removed using this confirmation."
-    alert.addButton(withTitle: "Remove Token")
-    alert.addButton(withTitle: "Cancel")
-    alert.beginSheetModal(for: window) { [weak self, weak sender] response in
-      guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
-      sender?.removeSavedCredential(expectedState: state)
-    }
-  }
-
-  /// Opens only the fixed public setup page, never a credential-bearing URL.
-  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) {
-    guard let url = URL(string: "https://www.themoviedb.org/settings/api") else { return }
-    NSWorkspace.shared.open(url)
   }
 
   /// Checks installation evidence and presents the report in a sheet.
@@ -432,5 +396,43 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
         }
       }
     }
+  }
+}
+
+extension ConfigurationCoordinator: CredentialSettingsDelegate {
+  /// Confirms replacement while the candidate stays exclusively in the pane's secure field.
+  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState) {
+    guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
+    let alert = NSAlert()
+    alert.messageText = "Replace the saved TMDb token?"
+    alert.informativeText = "The candidate will be tested first. The saved token changes only if testing succeeds "
+      + "and credential state is still current. Collections, confirmed movie decisions, and posters are preserved."
+    alert.addButton(withTitle: "Test and Replace")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: window) { [weak self, weak sender] response in
+      guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
+      sender?.saveEnteredCredential(expectedState: state)
+    }
+  }
+
+  /// Confirms removal against a frozen generation without changing roots or installed icons.
+  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestRemoval state: CredentialState) {
+    guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
+    let alert = NSAlert()
+    alert.messageText = "Remove the saved TMDb token?"
+    alert.informativeText = "Movie lookups need a token. Collections, saved movie decisions, and installed posters "
+      + "remain. A changed credential will not be removed using this confirmation."
+    alert.addButton(withTitle: "Remove Token")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: window) { [weak self, weak sender] response in
+      guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
+      sender?.removeSavedCredential(expectedState: state)
+    }
+  }
+
+  /// Opens only the fixed public setup page, never a credential-bearing URL.
+  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) {
+    guard let url = URL(string: "https://www.themoviedb.org/settings/api") else { return }
+    NSWorkspace.shared.open(url)
   }
 }

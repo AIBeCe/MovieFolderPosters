@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 @testable import Network
 
 /// An actor-backed transport that returns queued responses and records submitted requests.
-private actor ScriptedTransport: HTTPTransport {
+actor ScriptedTransport: HTTPTransport {
   /// Responses returned in request order.
   private var responses: [Result<HTTPResponse, Error>]
   /// Requests received by the test subject.
@@ -31,115 +31,8 @@ private actor ScriptedTransport: HTTPTransport {
 }
 
 /// Creates a JSON HTTP response with the requested status code.
-private func response(_ json: String, status: Int = 200) -> HTTPResponse {
+func response(_ json: String, status: Int = 200) -> HTTPResponse {
   HTTPResponse(data: Data(json.utf8), statusCode: status, contentType: "application/json")
-}
-
-/// Checks that credential validation uses only the TMDb authentication endpoint.
-@Test func credentialValidationSendsAuthenticatedAuthenticationRequest() async throws {
-  let transport = ScriptedTransport([
-    .success(HTTPResponse(
-      data: Data("{\"success\":true}".utf8), statusCode: 200,
-      contentType: "Application/JSON; charset=utf-8"))
-  ])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  try await client.validateCredential()
-
-  let requests = await transport.capturedRequests()
-  let request = try #require(requests.first)
-  let url = try #require(request.url)
-  let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
-  #expect(requests.count == 1)
-  #expect(request.httpMethod == "GET")
-  #expect(components.scheme == "https")
-  #expect(components.host == "api.themoviedb.org")
-  #expect(components.path == "/3/authentication")
-  #expect(components.queryItems == .none || components.queryItems?.isEmpty == true)
-  #expect(request.httpBody == .none)
-  #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer credential-secret")
-  #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
-}
-
-/// Checks that invalid authentication payloads fail without exposing their contents.
-@Test(arguments: [
-  ("not-json", "application/json"),
-  ("{}", "application/json"),
-  ("{\"success\":false,\"message\":\"private response\"}", "application/json"),
-  ("{\"success\":\"true\"}", "application/json"),
-  ("{\"success\":true}", "text/plain")
-])
-func credentialValidationRejectsMalformedOrUntrustedResponses(json: String, contentType: String) async throws {
-  let transport = ScriptedTransport([
-    .success(HTTPResponse(
-      data: Data(json.utf8), statusCode: 200, contentType: contentType))
-  ])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  do {
-    try await client.validateCredential()
-    Issue.record("Expected credential validation to reject the response")
-  } catch let error as TMDbError {
-    #expect(error == .malformedResponse)
-    #expect(!String(describing: error).contains("credential-secret"))
-    #expect(!String(describing: error).contains("private response"))
-  }
-}
-
-/// Checks that credential validation applies common status, transport, and size handling.
-@Test(arguments: [401, 403])
-func credentialValidationMapsAuthenticationStatus(status: Int) async throws {
-  let transport = ScriptedTransport([
-    .success(HTTPResponse(data: Data("private body".utf8), statusCode: status, contentType: "text/plain"))
-  ])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  await #expect(throws: TMDbError.authentication) { try await client.validateCredential() }
-}
-
-/// Checks that credential validation preserves rate-limit retry metadata.
-@Test func credentialValidationPreservesRateLimitRetryAfter() async throws {
-  let transport = ScriptedTransport([
-    .success(
-      HTTPResponse(
-        data: Data("private body".utf8), statusCode: 429,
-        contentType: "text/plain", retryAfter: "45"))
-  ])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  await #expect(throws: TMDbError.rateLimited(retryAfter: "45")) {
-    try await client.validateCredential()
-  }
-}
-
-/// Checks that unexpected successful statuses and server errors preserve status classification.
-@Test(arguments: [204, 500, 503])
-func credentialValidationRejectsUnexpectedStatus(status: Int) async throws {
-  let transport = ScriptedTransport([.success(response("{\"success\":true}", status: status))])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  await #expect(throws: TMDbError.httpStatus(status)) { try await client.validateCredential() }
-}
-
-/// Checks that offline failures remain typed and do not reveal credentials.
-@Test func credentialValidationHandlesOfflineFailureWithoutLeakingToken() async throws {
-  let transport = ScriptedTransport([.failure(URLError(.notConnectedToInternet))])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  await #expect(throws: TMDbError.transport(code: URLError.notConnectedToInternet.rawValue)) {
-    try await client.validateCredential()
-  }
-}
-
-/// Checks that oversized authentication responses are rejected by the shared send boundary.
-@Test func credentialValidationRejectsOversizedResponse() async throws {
-  let oversized = Data(repeating: 0x61, count: 10 * 1_024 * 1_024 + 1)
-  let transport = ScriptedTransport([
-    .success(HTTPResponse(data: oversized, statusCode: 200, contentType: "application/json"))
-  ])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-
-  await #expect(throws: TMDbError.responseTooLarge) { try await client.validateCredential() }
 }
 
 /// Makes a known-valid URL available to synchronous URLProtocol fixtures.
@@ -422,7 +315,7 @@ func untrustedImageConfigurationIsRejected(baseURL: String) async throws {
 }
 
 /// Holds a request until the test releases it, allowing cancellation timing to be controlled.
-private actor BlockingTransport: HTTPTransport {
+actor BlockingTransport: HTTPTransport {
   /// Suspended request continuation resumed with the controlled test response.
   private var responseContinuation: CheckedContinuation<HTTPResponse, Never>?
   /// Suspended waiter resumed once a request has reached the transport.
@@ -461,32 +354,6 @@ private actor BlockingTransport: HTTPTransport {
   await transport.waitUntilStarted()
   task.cancel()
   await transport.resume(with: response("{\"page\":1,\"total_pages\":0,\"results\":[]}"))
-  await #expect(throws: CancellationError.self) { try await task.value }
-}
-
-/// Checks that credential validation observes cancellation before sending.
-@Test func credentialValidationHonorsCancellationBeforeSending() async throws {
-  let transport = ScriptedTransport([])
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-  let task = Task { @Sendable in
-    withUnsafeCurrentTask { $0?.cancel() }
-
-    try await client.validateCredential()
-  }
-
-  await #expect(throws: CancellationError.self) { try await task.value }
-  #expect(await transport.capturedRequests().isEmpty)
-}
-
-/// Checks that credential validation observes cancellation while transport is suspended.
-@Test func credentialValidationHonorsCancellationDuringTransport() async throws {
-  let transport = BlockingTransport()
-  let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
-  let task = Task { try await client.validateCredential() }
-  await transport.waitUntilStarted()
-  task.cancel()
-  await transport.resume(with: response("{\"success\":true}"))
-
   await #expect(throws: CancellationError.self) { try await task.value }
 }
 

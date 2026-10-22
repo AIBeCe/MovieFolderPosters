@@ -217,6 +217,94 @@ final class ConfigurationViewModel {
     }
   }
 
+  /// Saves the poster appearance, reverting the optimistic selection if saving fails.
+  ///
+  /// - Parameter appearance: The poster finish selected in Settings.
+  func setPosterAppearance(_ appearance: PosterAppearance) async {
+    guard !isBusy, appearance != posterAppearance else { return }
+    let previousAppearance = posterAppearance
+    posterAppearance = appearance
+    await perform(
+      action: .posterAppearanceSaved, failureMessage: "Could not save the poster appearance.",
+      onFailure: { self.posterAppearance = previousAppearance },
+      operation: {
+        try await self.service.setPosterAppearance(appearance)
+
+        return try await self.service.configurationSummary()
+      }
+    )
+  }
+
+  /// Serializes an operation, updates presentation state, and records its outcome.
+  ///
+  /// - Parameters:
+  ///   - action: Typed operation recorded after success or failure.
+  ///   - collectionID: Optional collection correlation, never a path.
+  ///   - failureMessage: Safe fallback text shown if the operation fails.
+  ///   - onFailure: Local state restoration performed after failure.
+  ///   - operation: The service request whose summary becomes the new model state.
+  private func perform(
+    action: MovieFolderActivityEvent.Action,
+    collectionID: UUID? = .none,
+    failureMessage: String,
+    onFailure: @MainActor () -> Void = {},
+    operation: @MainActor () async throws -> ConfigurationSummary
+  ) async {
+    guard !isBusy else { return }
+
+    isBusy = true
+    errorMessage = .none
+    publish()
+
+    do {
+      apply(try await operation())
+      await recordActivity(action: action, status: .succeeded, collectionID: collectionID)
+    } catch {
+      onFailure()
+      let explanation: String
+      switch error {
+      case ConfigurationError.overlappingDirectory:
+        explanation = "This folder overlaps another collection. Choose separate collection roots."
+      case ConfigurationError.duplicateDirectory:
+        explanation = "This collection is already configured."
+      default:
+        explanation = failureMessage
+      }
+      errorMessage = explanation
+      await recordActivity(action: action, status: .failed, collectionID: collectionID)
+    }
+
+    isBusy = false
+    publish()
+  }
+
+  /// Persists only typed evidence and reports logging failure separately from configuration results.
+  private func recordActivity(
+    action: MovieFolderActivityEvent.Action, status: MovieFolderActivityEvent.Status, collectionID: UUID?
+  ) async {
+    let event = MovieFolderActivityEvent(action: action, status: status, collectionID: collectionID)
+    let saved = await activity.record(event)
+    activityDelegate?.configurationViewModel(self, didRecordActivity: event, saved: saved)
+  }
+
+  /// Replaces the view-model state with values from a successful service summary.
+  ///
+  /// - Parameter summary: The latest configuration state returned by the service.
+  private func apply(_ summary: ConfigurationSummary) {
+    hasLoadedSummary = true
+    directories = summary.directories
+    credentialConfigured = summary.credentialConfigured
+    posterAppearance = summary.posterAppearance
+  }
+
+  /// Notifies all currently retained observers of the latest state.
+  private func publish() {
+    delegates.removeAll { $0.value == nil }
+    for delegate in delegates.compactMap(\.value) { delegate.configurationViewModelDidChange(self) }
+  }
+}
+
+extension ConfigurationViewModel {
   /// Reloads only credential presence, without refreshing folder authorization or processing.
   /// - Parameter clearResult: Whether an earlier diagnostic result should be discarded.
   func reloadCredentialState(clearResult: Bool = true) async {
@@ -384,91 +472,5 @@ final class ConfigurationViewModel {
       return action == .credentialRemoved ? "Could not remove the API credential."
         : action == .credentialSaved ? "Could not save the API credential." : "Could not test the token. Try again."
     }
-  }
-
-  /// Saves the poster appearance, reverting the optimistic selection if saving fails.
-  ///
-  /// - Parameter appearance: The poster finish selected in Settings.
-  func setPosterAppearance(_ appearance: PosterAppearance) async {
-    guard !isBusy, appearance != posterAppearance else { return }
-    let previousAppearance = posterAppearance
-    posterAppearance = appearance
-    await perform(
-      action: .posterAppearanceSaved, failureMessage: "Could not save the poster appearance.",
-      onFailure: { self.posterAppearance = previousAppearance },
-      operation: {
-        try await self.service.setPosterAppearance(appearance)
-
-        return try await self.service.configurationSummary()
-      }
-    )
-  }
-
-  /// Serializes an operation, updates presentation state, and records its outcome.
-  ///
-  /// - Parameters:
-  ///   - action: Typed operation recorded after success or failure.
-  ///   - collectionID: Optional collection correlation, never a path.
-  ///   - failureMessage: Safe fallback text shown if the operation fails.
-  ///   - onFailure: Local state restoration performed after failure.
-  ///   - operation: The service request whose summary becomes the new model state.
-  private func perform(
-    action: MovieFolderActivityEvent.Action,
-    collectionID: UUID? = .none,
-    failureMessage: String,
-    onFailure: @MainActor () -> Void = {},
-    operation: @MainActor () async throws -> ConfigurationSummary
-  ) async {
-    guard !isBusy else { return }
-
-    isBusy = true
-    errorMessage = .none
-    publish()
-
-    do {
-      apply(try await operation())
-      await recordActivity(action: action, status: .succeeded, collectionID: collectionID)
-    } catch {
-      onFailure()
-      let explanation: String
-      switch error {
-      case ConfigurationError.overlappingDirectory:
-        explanation = "This folder overlaps another collection. Choose separate collection roots."
-      case ConfigurationError.duplicateDirectory:
-        explanation = "This collection is already configured."
-      default:
-        explanation = failureMessage
-      }
-      errorMessage = explanation
-      await recordActivity(action: action, status: .failed, collectionID: collectionID)
-    }
-
-    isBusy = false
-    publish()
-  }
-
-  /// Persists only typed evidence and reports logging failure separately from configuration results.
-  private func recordActivity(
-    action: MovieFolderActivityEvent.Action, status: MovieFolderActivityEvent.Status, collectionID: UUID?
-  ) async {
-    let event = MovieFolderActivityEvent(action: action, status: status, collectionID: collectionID)
-    let saved = await activity.record(event)
-    activityDelegate?.configurationViewModel(self, didRecordActivity: event, saved: saved)
-  }
-
-  /// Replaces the view-model state with values from a successful service summary.
-  ///
-  /// - Parameter summary: The latest configuration state returned by the service.
-  private func apply(_ summary: ConfigurationSummary) {
-    hasLoadedSummary = true
-    directories = summary.directories
-    credentialConfigured = summary.credentialConfigured
-    posterAppearance = summary.posterAppearance
-  }
-
-  /// Notifies all currently retained observers of the latest state.
-  private func publish() {
-    delegates.removeAll { $0.value == nil }
-    for delegate in delegates.compactMap(\.value) { delegate.configurationViewModelDidChange(self) }
   }
 }

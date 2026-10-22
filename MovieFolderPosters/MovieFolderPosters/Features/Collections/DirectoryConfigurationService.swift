@@ -371,95 +371,6 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     try commitCredential(expectedRevision: expectedRevision) { try credentials.remove() }
   }
 
-  /// Reads Keychain while the settings generation remains exclusively leased.
-  /// - Returns: Only the token and revision needed after the lease has been released.
-  /// - Throws: Safe configuration or credential-store failures.
-  private func credentialSnapshot() throws -> (token: String?, revision: UUID?, configuration: DirectoryConfiguration?) {
-    do {
-      let (configuration, lease) = try repository.readIfPresentHoldingLease()
-      let token = try withExtendedLifetime(lease) { try credentials.read() }
-
-      return (token, configuration?.credentialRevision, configuration)
-    } catch {
-      throw safeCredentialError(error)
-    }
-  }
-
-  /// Preserves the existing bounded startup retry without retaining a lease during any wait.
-  /// - Returns: A coherent credential/configuration read within eight attempts.
-  /// - Throws: Cancellation, sustained contention, or the original non-contention storage failure.
-  private func credentialSnapshotWhenAvailable() async throws -> (
-    token: String?, revision: UUID?, configuration: DirectoryConfiguration?
-  ) {
-    for attempt in 0..<8 {
-      try Task.checkCancellation()
-      do {
-        return try credentialSnapshot()
-      } catch ConfigurationError.busy {
-        if attempt == 7 { throw ConfigurationError.busy }
-        try await Task.sleep(for: .milliseconds(20))
-      }
-    }
-    throw ConfigurationError.busy
-  }
-
-  /// Rejects unsafe or oversized bearer input before any external work.
-  /// - Parameter value: User-entered candidate token.
-  /// - Returns: Printable ASCII token without whitespace.
-  /// - Throws: Invalid credential for empty, oversized, or non-header-safe input.
-  private func normalizedCredential(_ value: String) throws -> String {
-    let token = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !token.isEmpty, token.utf8.count <= 4_096,
-      token.utf8.allSatisfy({ (33...126).contains($0) }) else { throw ConfigurationError.invalidCredential }
-
-    return token
-  }
-
-  /// Performs admission and HTTP outside settings leases; authentication diagnostics never poison processing.
-  /// - Parameter token: Locally validated or previously saved bearer token.
-  /// - Throws: Safe admission, provider, or cancellation failures.
-  private func validateCredential(_ token: String) async throws {
-    guard let recovery else { throw ProcessingRecoveryError.unavailable }
-    try Task.checkCancellation()
-    try recovery.validateCredentialTestAllowed()
-    do {
-      let accessToken = try TMDbAccessToken(normalizedCredential(token))
-      try await TMDbClient(token: accessToken, transport: credentialTransport).validateCredential()
-    } catch {
-      let safeError = safeCredentialError(error)
-      if !(safeError is CancellationError) { try recovery.recordCredentialTestFailure(safeError) }
-      throw safeError
-    }
-  }
-
-  /// Publishes committed revision changes even when the subsequent Keychain mutation fails.
-  /// - Parameters:
-  ///   - expectedRevision: Generation confirmed by the user.
-  ///   - mutation: Synchronous Keychain operation after the durable revision write.
-  /// - Throws: Safe configuration or credential-storage failures.
-  private func commitCredential(expectedRevision: UUID?, mutation: () throws -> Void) throws {
-    var committed = false
-    defer { if committed { notifier.configurationDidChange() } }
-    do {
-      try repository.updateCredential(expectedRevision: expectedRevision) {
-        committed = true
-        try mutation()
-      }
-    } catch {
-      throw safeCredentialError(error)
-    }
-  }
-
-  /// Keeps arbitrary storage and transport diagnostics from reaching presentation.
-  /// - Parameter error: Failure raised by a credential dependency.
-  /// - Returns: Existing allowlisted product errors or a generic storage failure.
-  private func safeCredentialError(_ error: any Error) -> any Error {
-    switch error {
-    case is ConfigurationError, is ProcessingRecoveryError, is TMDbError, is CancellationError: error
-    default: ConfigurationError.credentialStorage(-1)
-    }
-  }
-
   #if DEBUG
     /// Enables or disables opt-in development fixtures for Debug builds.
     ///
@@ -527,5 +438,96 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// - Returns: A key that changes whenever its authorization version changes.
   private func authorizationKey(_ directory: MonitoredDirectory) -> String {
     "host-\(directory.id)-\(directory.authorizationVersion)"
+  }
+}
+
+private extension DirectoryConfigurationService {
+  /// Reads Keychain while the settings generation remains exclusively leased.
+  /// - Returns: Only the token and revision needed after the lease has been released.
+  /// - Throws: Safe configuration or credential-store failures.
+  func credentialSnapshot() throws -> (token: String?, revision: UUID?, configuration: DirectoryConfiguration?) {
+    do {
+      let (configuration, lease) = try repository.readIfPresentHoldingLease()
+      let token = try withExtendedLifetime(lease) { try credentials.read() }
+
+      return (token, configuration?.credentialRevision, configuration)
+    } catch {
+      throw safeCredentialError(error)
+    }
+  }
+
+  /// Preserves the existing bounded startup retry without retaining a lease during any wait.
+  /// - Returns: A coherent credential/configuration read within eight attempts.
+  /// - Throws: Cancellation, sustained contention, or the original non-contention storage failure.
+  func credentialSnapshotWhenAvailable() async throws -> (
+    token: String?, revision: UUID?, configuration: DirectoryConfiguration?
+  ) {
+    for attempt in 0..<8 {
+      try Task.checkCancellation()
+      do {
+        return try credentialSnapshot()
+      } catch ConfigurationError.busy {
+        if attempt == 7 { throw ConfigurationError.busy }
+        try await Task.sleep(for: .milliseconds(20))
+      }
+    }
+    throw ConfigurationError.busy
+  }
+
+  /// Rejects unsafe or oversized bearer input before any external work.
+  /// - Parameter value: User-entered candidate token.
+  /// - Returns: Printable ASCII token without whitespace.
+  /// - Throws: Invalid credential for empty, oversized, or non-header-safe input.
+  func normalizedCredential(_ value: String) throws -> String {
+    let token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !token.isEmpty, token.utf8.count <= 4_096,
+      token.utf8.allSatisfy({ (33...126).contains($0) }) else { throw ConfigurationError.invalidCredential }
+
+    return token
+  }
+
+  /// Performs admission and HTTP outside settings leases; authentication diagnostics never poison processing.
+  /// - Parameter token: Locally validated or previously saved bearer token.
+  /// - Throws: Safe admission, provider, or cancellation failures.
+  func validateCredential(_ token: String) async throws {
+    guard let recovery else { throw ProcessingRecoveryError.unavailable }
+    try Task.checkCancellation()
+    try recovery.validateCredentialTestAllowed()
+    do {
+      let accessToken = try TMDbAccessToken(normalizedCredential(token))
+      try await TMDbClient(token: accessToken, transport: credentialTransport).validateCredential()
+    } catch {
+      let safeError = safeCredentialError(error)
+      if !(safeError is CancellationError) { try recovery.recordCredentialTestFailure(safeError) }
+      throw safeError
+    }
+  }
+
+  /// Publishes committed revision changes even when the subsequent Keychain mutation fails.
+  /// - Parameters:
+  ///   - expectedRevision: Generation confirmed by the user.
+  ///   - mutation: Synchronous Keychain operation after the durable revision write.
+  /// - Throws: Safe configuration or credential-storage failures.
+  func commitCredential(expectedRevision: UUID?, mutation: () throws -> Void) throws {
+    var committed = false
+    defer { if committed { notifier.configurationDidChange() } }
+    do {
+      try repository.updateCredential(expectedRevision: expectedRevision) {
+        committed = true
+        try mutation()
+      }
+    } catch {
+      throw safeCredentialError(error)
+    }
+  }
+
+  /// Keeps arbitrary storage and transport diagnostics from reaching presentation.
+  /// - Parameter error: Failure raised by a credential dependency.
+  /// - Returns: Existing allowlisted product errors or a generic storage failure.
+  func safeCredentialError(_ error: any Error) -> any Error {
+    switch error {
+    case is ConfigurationError, is ProcessingRecoveryError, is TMDbError, is CancellationError: error
+    default: ConfigurationError.credentialStorage(-1)
+    }
   }
 }

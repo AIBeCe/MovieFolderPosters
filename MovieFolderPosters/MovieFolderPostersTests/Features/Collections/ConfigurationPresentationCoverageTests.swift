@@ -95,6 +95,42 @@ struct ConfigurationPresentationCoverageTests {
     #expect(await service.savedCredential == "replacement-fixture")
   }
 
+  /// Saved-token tests and removals route through explicit controls with the loaded credential generation.
+  @Test func savedTestRemovalAndHelpActionsUseCredentialDelegate() async throws {
+    let service = PresentationConfigurationService(
+      summary: ConfigurationSummary(directories: [], credentialConfigured: true))
+    let model = ConfigurationViewModel(service: service, activity: PresentationActivityService())
+    await model.reloadCredentialState()
+    let controller = try makeSettingsController(model: model)
+    let confirmation = CredentialConfirmationProbe()
+    controller.credentialDelegate = confirmation
+    let pane = try #require(controller.tabViewItems[1].viewController)
+    let buttons = descendants(pane.view).compactMap { $0 as? NSButton }
+    let test = try #require(buttons.first { $0.title == "Test Saved Token" })
+    let remove = try #require(buttons.first { $0.title == "Remove Token…" })
+    let help = try #require(buttons.first { $0.title == "Open TMDb API Settings…" })
+
+    test.performClick(.none)
+    #expect(await service.waitForCredentialTestCount(1))
+    #expect(await service.credentialTestCount == 1)
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(2))
+    while model.isBusy, clock.now < deadline { await Task.yield() }
+    #expect(!model.isBusy)
+
+    remove.performClick(.none)
+    #expect(confirmation.removalState?.isConfigured == true)
+    #expect(confirmation.removalState?.revision == model.credentialState?.revision)
+    let confirmedState = try #require(confirmation.removalState)
+    confirmation.sender?.removeSavedCredential(expectedState: confirmedState)
+    #expect(await service.waitForRemovalCount(1))
+    #expect(await service.removalCount == 1)
+    help.performClick(.none)
+    #expect(confirmation.helpRequestCount == 1)
+
+    pane.viewDidDisappear()
+  }
+
   /// Parsing preview is local and exposes supported fields without submitting credentials.
   @Test func localPreviewUsesParserWithoutSavingOrSearching() async throws {
     let service = PresentationConfigurationService()
@@ -113,6 +149,16 @@ struct ConfigurationPresentationCoverageTests {
     pane.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: sample))
     #expect(descendants(pane.view).compactMap { $0 as? NSTextField }
       .contains { $0.stringValue.contains("cannot be parsed confidently") })
+    sample.stringValue = ""
+    pane.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: sample))
+    #expect(descendants(pane.view).compactMap { $0 as? NSTextField }
+      .contains { $0.stringValue.contains("Enter a folder name to preview") })
+    let tokenField = try #require(descendants(pane.view).compactMap { $0 as? NSSecureTextField }.first)
+    tokenField.stringValue = "temporary-entry"
+    sample.stringValue = "temporary-preview"
+    pane.viewDidDisappear()
+    #expect(tokenField.stringValue.isEmpty)
+    #expect(sample.stringValue.isEmpty)
   }
 
   /// Verifies that collection-window buttons forward their actions without opening system pickers.
@@ -232,6 +278,8 @@ private final class CredentialConfirmationProbe: CredentialSettingsDelegate {
   private(set) var replacementState: CredentialState?
   /// Non-secret state frozen before a removal alert.
   private(set) var removalState: CredentialState?
+  /// Number of explicit token-help navigation requests.
+  private(set) var helpRequestCount = 0
   func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState) {
     self.sender = sender
     replacementState = state
@@ -240,7 +288,7 @@ private final class CredentialConfirmationProbe: CredentialSettingsDelegate {
     self.sender = sender
     removalState = state
   }
-  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) {}
+  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) { helpRequestCount += 1 }
 }
 
 /// Implements the local configuration service with in-memory state for Settings interactions.
@@ -249,6 +297,10 @@ private actor PresentationConfigurationService: ConfigurationServicing {
   private var summary: ConfigurationSummary
   /// Most recent token supplied by the Settings pane.
   private(set) var savedCredential: String?
+  /// Number of explicit saved-token provider checks.
+  private(set) var credentialTestCount = 0
+  /// Number of removals explicitly submitted after confirmation.
+  private(set) var removalCount = 0
   /// Poster appearance values explicitly saved through the Settings pane.
   private var savedAppearances: [PosterAppearance] = []
 
@@ -266,9 +318,11 @@ private actor PresentationConfigurationService: ConfigurationServicing {
 
   /// Captures a token in the test service and marks credential presence in its summary.
   /// Returns the isolated fixture's non-secret credential state.
-  func credentialState() -> CredentialState { CredentialState(isConfigured: summary.credentialConfigured, revision: .none) }
+  func credentialState() -> CredentialState {
+    CredentialState(isConfigured: summary.credentialConfigured, revision: .none)
+  }
   /// Accepts explicit tests without contacting the provider.
-  func testCredential(expectedRevision: UUID?) throws {}
+  func testCredential(expectedRevision: UUID?) throws { credentialTestCount += 1 }
   func saveCredential(_ value: String, expectedRevision: UUID?) throws {
     savedCredential = value
     summary = ConfigurationSummary(
@@ -278,6 +332,7 @@ private actor PresentationConfigurationService: ConfigurationServicing {
 
   /// Clears credential presence in the isolated summary.
   func removeCredential(expectedRevision: UUID?) throws {
+    removalCount += 1
     savedCredential = .none
     summary = ConfigurationSummary(
       directories: summary.directories, credentialConfigured: false,
@@ -299,6 +354,24 @@ private actor PresentationConfigurationService: ConfigurationServicing {
     while savedCredential == .none, clock.now < deadline { await Task.yield() }
 
     return savedCredential != .none
+  }
+
+  /// Yields until the requested number of saved-token tests reaches the service.
+  func waitForCredentialTestCount(_ count: Int) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(2))
+    while credentialTestCount < count, clock.now < deadline { await Task.yield() }
+
+    return credentialTestCount >= count
+  }
+
+  /// Yields until the requested number of confirmed removals reaches the service.
+  func waitForRemovalCount(_ count: Int) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(2))
+    while removalCount < count, clock.now < deadline { await Task.yield() }
+
+    return removalCount >= count
   }
 
   /// Yields until the selected poster finish reaches the isolated service.

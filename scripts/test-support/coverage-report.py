@@ -30,18 +30,22 @@ def coverage_failures(results, required_components):
 
 
 def declaration_only(source):
-    """Recognize enums and stored-property records without explicit executable code."""
+    """Recognize declarations whose Swift source emits no instrumentable code."""
     text = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", "", text)
     imports = r"(?:\s*import\s+[\w.]+\s*)*"
     modifiers = r"(?:(?:public|internal|private|fileprivate|nonisolated|package)\s+)*"
     enum = modifiers + r"enum\s+\w+(?:\s*:\s*[\w,\s]+)?\s*\{\s*(?:case\s+[^{}\n]+\s*)*\}\s*"
+    notification_names = (
+        r"public\s+extension\s+Notification\.Name\s*\{\s*"
+        r"(?:static\s+let\s+\w+\s*=\s*Notification\.Name\(\s*\"[^\"]*\"\s*\)\s*)+\}\s*"
+    )
     # Synthesized Codable/memberwise functions have no source executable lines. Reject defaults,
     # observers, methods, explicit initializers, and computed properties instead of hiding them.
     stored_property = modifiers + r"(?:let|var)\s+\w+\s*:\s*[\w.?]+\s*"
     record = (modifiers + r"struct\s+\w+(?:\s*<[\w\s:,&]+>)?(?:\s*:\s*[\w,\s]+)?\s*\{\s*"
               + "(?:" + stored_property + ")+" + r"\}\s*")
-    return re.fullmatch(imports + "(?:" + enum + "|" + record + ")+", text.strip()) is not None
+    return re.fullmatch(imports + "(?:" + enum + "|" + record + "|" + notification_names + ")+", text.strip()) is not None
 
 
 def component_coverage(export_path, source_root, compiled_root):
