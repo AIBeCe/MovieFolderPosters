@@ -23,6 +23,7 @@ extension MovieFolderProcessor {
     } catch {
       throw ProcessingFailure.changedIdentity
     }
+
     guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
 
     return try posterAssigner.assignPoster(
@@ -44,6 +45,7 @@ extension MovieFolderProcessor {
         toChild: candidate.name, in: root,
         expectedIdentity: candidate.identity)
     else { return false }
+
     guard
       try fileSystem.assignedPosterAppearance(
         toChild: candidate.name, in: root,
@@ -51,15 +53,19 @@ extension MovieFolderProcessor {
     else {
       return false
     }
+
     guard let record = state.folders[candidate.name], record.fingerprint == candidate.fingerprint,
       record.status == .processed, let posterPath = record.posterPath,
       record.matchedMovieID != .none, case .valid(let data) = cachedPoster(for: posterPath)
     else { return false }
+
     try Task.checkCancellation()
     let recoveryLease = try recovery?.acquireMutationLease()
     defer { withExtendedLifetime(recoveryLease) {} }
     let current = try fileSystem.readCurrentState(ofChild: candidate.name, in: root)
+
     guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
+
     let styleLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
     defer { withExtendedLifetime(styleLease) {} }
     let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)

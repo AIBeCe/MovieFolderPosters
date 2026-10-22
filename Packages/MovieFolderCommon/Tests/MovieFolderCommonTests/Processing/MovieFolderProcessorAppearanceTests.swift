@@ -173,6 +173,8 @@ extension MovieFolderProcessorTests {
     let cacheKey = SHA256.hash(data: Data("/dune.jpg".utf8))
       .map { String(format: "%02x", $0) }.joined()
     try FileManager.default.removeItem(at: fixture.cache.appendingPathComponent("poster-\(cacheKey)"))
+    let initialSearchCount = await provider.searchCount
+    let initialPosterCount = await provider.posterCount
     let styledProcessor = try fixture.processor(
       provider: provider, appearance: .softFinish,
       posterAssigner: fileSystem)
@@ -186,8 +188,8 @@ extension MovieFolderProcessorTests {
     let posterCount = await provider.posterCount
     XCTAssertEqual(summary.restyled, 0)
     XCTAssertEqual(appearance, .raw)
-    XCTAssertEqual(searchCount, 0)
-    XCTAssertEqual(posterCount, 1)
+    XCTAssertEqual(searchCount, initialSearchCount)
+    XCTAssertEqual(posterCount, initialPosterCount + 1)
   }
 
   /// Verifies cached Restyle Runs Before Root Backoff Network Failure.

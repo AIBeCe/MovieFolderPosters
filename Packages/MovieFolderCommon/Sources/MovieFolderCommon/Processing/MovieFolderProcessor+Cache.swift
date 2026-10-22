@@ -131,7 +131,9 @@ extension MovieFolderProcessor {
   /// - Returns: The cache state after complete-image validation.
   func cachedPoster(for path: String) -> CachedPosterRead {
     let name = Self.posterCacheName(path)
+
     guard let data = try? fileSystem.readData(named: name, in: cacheDirectory) else { return .missing }
+
     guard Self.isValidPoster(data) else { return .invalid }
 
     return .valid(data)
@@ -221,7 +223,8 @@ extension MovieFolderProcessor {
   /// - Parameter data: The encoded record or image bytes consumed by this operation.
   /// - Returns: Whether the bytes contain a complete image that ImageIO can decode into a thumbnail.
   static func isValidPoster(_ data: Data) -> Bool {
-    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+    guard let source = CGImageSourceCreateWithData(data as CFData, .none) else { return false }
+
     guard CGImageSourceGetStatus(source) == .statusComplete,
       CGImageSourceGetCount(source) > 0,
       CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete

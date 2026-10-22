@@ -19,24 +19,32 @@ extension MovieFolderProcessor {
     try recovery?.validateProcessingAllowed()
     let coordinationLease = try acquireCoordinationLease(for: root)
     defer { withExtendedLifetime(coordinationLease) {} }
+
     guard let lease = try persistence.acquireLease(for: Self.rootLeaseKey(for: root)) else {
       throw PosterActionError.busy
     }
+
     defer { withExtendedLifetime(lease) {} }
+
     guard let snapshot = try processingStore?.read(rootID: processingContext.rootID),
       snapshot.context == processingContext,
       let record = snapshot.folders.first(where: { $0.name == child })
     else { throw CollectionProcessingError.configurationChanged }
+
     guard record.identity == expectedIdentity else { throw PosterActionError.changedIdentity }
+
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
+
     guard !record.isVerifiedDone, record.state != .preserved, record.state != .suppressed,
       !candidate.hasCustomIcon,
       try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
+
     switch record.reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication:
       return .notEligible
     default: break
     }
+
     let cache = try loadState(from: lease)
     let prior = cache.folders[child]
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
@@ -51,18 +59,22 @@ extension MovieFolderProcessor {
         return .waiting(until: deadline)
       }
     }
+
     do {
       let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
       withExtendedLifetime(settingsLease) {}
     }
+
     var visit = AutomaticProcessingVisit(
       cache: cache, recording: try recordProcessingStart(context: processingContext, action: .manual, child: child),
       selectedChild: child)
     defer { interruptUnfinishedProcessing(&visit.recording, child: child) }
+
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
       try await !reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) {
       visit.didStopEarly = try await processCandidate(candidate, root: root, lease: lease, visit: &visit)
     }
+
     try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
 
     return .attempted(visit.summary, stopSelection: visit.didStopEarly)

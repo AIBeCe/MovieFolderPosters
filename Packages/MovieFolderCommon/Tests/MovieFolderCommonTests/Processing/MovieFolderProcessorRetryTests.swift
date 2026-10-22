@@ -310,22 +310,28 @@ extension MovieFolderProcessorTests {
     let summary = try await processor.process(root: fixture.movies)
     let searchCount = await failedProvider.searchCount
     let posterCount = await failedProvider.posterCount
+
     XCTAssertEqual(summary.transientFailures, 1)
     XCTAssertEqual(searchCount, 0)
     XCTAssertEqual(posterCount, 1)
     do {
       let rootKey = MovieFolderProcessor.rootLeaseKey(for: fixture.movies)
+
       guard let lease = try fixture.persistence.acquireLease(for: rootKey) else {
         XCTFail("Expected the saved processing state lease")
         return
       }
+
       defer { withExtendedLifetime(lease) {} }
+
       guard let data = try lease.read() else {
         XCTFail("Expected the saved processing state")
         return
       }
+
       let state = try JSONDecoder().decode(ProcessingState.self, from: data)
       let record = state.folders["Dune (2021)"]
+
       XCTAssertEqual(record?.matchedMovieID, 42)
       XCTAssertEqual(record?.posterPath, "/dune.jpg")
       XCTAssertEqual(record?.processingReason, .connectivity)
@@ -374,10 +380,12 @@ extension MovieFolderProcessorTests {
     XCTAssertEqual(posterCount, 1)
     XCTAssertEqual(savedBytes, corruptBytes)
     XCTAssertEqual(fixture.assigner.assignmentCount, 1)
+
     let lease = try XCTUnwrap(try fixture.persistence.acquireLease(
       for: MovieFolderProcessor.rootLeaseKey(for: fixture.movies)))
     defer { withExtendedLifetime(lease) {} }
     let state = try JSONDecoder().decode(ProcessingState.self, from: try XCTUnwrap(lease.read()))
+
     XCTAssertEqual(state.folders["Dune (2021)"]?.matchedMovieID, 42)
     XCTAssertEqual(state.folders["Dune (2021)"]?.posterPath, "/dune.jpg")
     XCTAssertEqual(state.folders["Dune (2021)"]?.processingReason, .invalidResponse)
@@ -397,14 +405,18 @@ extension MovieFolderProcessorTests {
     let rootKey = MovieFolderProcessor.rootLeaseKey(for: fixture.movies)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
+
     do {
       guard let lease = try fixture.persistence.acquireLease(for: rootKey) else {
         XCTFail("Expected the saved processing state lease")
         return
       }
+
       defer { withExtendedLifetime(lease) {} }
+
       var state = try JSONDecoder().decode(ProcessingState.self, from: try XCTUnwrap(lease.read()))
       let saved = try XCTUnwrap(state.folders["Dune (2021)"])
+
       state.folders["Dune (2021)"] = FolderRecord(
         fingerprint: saved.fingerprint, status: .transientFailure, retryDate: .none,
         matchedMovieID: saved.matchedMovieID, posterPath: saved.posterPath,
@@ -416,8 +428,10 @@ extension MovieFolderProcessorTests {
 
       var reconciled = try JSONDecoder().decode(ProcessingState.self, from: try XCTUnwrap(lease.read()))
       reconciled.reconcileCredentialRevision(UUID())
+
       #expect(reconciled.folders["Dune (2021)"]?.lastFailure == .none)
       #expect(reconciled.folders["Dune (2021)"]?.movieIdentitySource == .explicitSelection)
+
       try lease.write(encoder.encode(reconciled))
     }
 
@@ -425,15 +439,19 @@ extension MovieFolderProcessorTests {
     let summary = try await fixture.processor(provider: provider, clock: { clock.now }).process(root: fixture.movies)
     let searchCount = await provider.searchCount
     let posterCount = await provider.posterCount
+
     XCTAssertEqual(summary.assigned, 1)
     XCTAssertEqual(searchCount, 0)
     XCTAssertEqual(posterCount, 1)
+
     guard let finalLease = try fixture.persistence.acquireLease(for: rootKey) else {
       XCTFail("Expected the final processing state lease")
       return
     }
+
     defer { withExtendedLifetime(finalLease) {} }
     let finalState = try JSONDecoder().decode(ProcessingState.self, from: try XCTUnwrap(finalLease.read()))
+
     XCTAssertEqual(finalState.folders["Dune (2021)"]?.movieIdentitySource, .explicitSelection)
   }
 
@@ -456,6 +474,7 @@ extension MovieFolderProcessorTests {
       .process(root: fixture.movies)
     let repairSearchCount = await repairProvider.searchCount
     let repairPosterCount = await repairProvider.posterCount
+
     XCTAssertEqual(repairSummary.transientFailures, 1)
     XCTAssertEqual(repairSearchCount, 0)
     XCTAssertEqual(repairPosterCount, 1)
@@ -466,13 +485,16 @@ extension MovieFolderProcessorTests {
       .process(root: fixture.movies)
     let retrySearchCount = await retryProvider.searchCount
     let retryPosterCount = await retryProvider.posterCount
+
     XCTAssertEqual(retrySummary.assigned, 1)
     XCTAssertEqual(retrySearchCount, 0)
     XCTAssertEqual(retryPosterCount, 0)
+
     let lease = try XCTUnwrap(try fixture.persistence.acquireLease(
       for: MovieFolderProcessor.rootLeaseKey(for: fixture.movies)))
     defer { withExtendedLifetime(lease) {} }
     let state = try JSONDecoder().decode(ProcessingState.self, from: try XCTUnwrap(lease.read()))
+
     XCTAssertEqual(state.folders["Dune (2021)"]?.matchedMovieID, 42)
     XCTAssertEqual(state.folders["Dune (2021)"]?.movieIdentitySource, .conservativeMatch)
   }
@@ -489,6 +511,7 @@ extension MovieFolderProcessorTests {
     let cacheKey = SHA256.hash(data: Data("/dune.jpg".utf8))
       .map { String(format: "%02x", $0) }.joined()
     try FileSystemService().writeData(Data([0x01]), named: "poster-\(cacheKey)", in: fixture.cache)
+
     let assignmentCount = fixture.assigner.assignmentCount
     let provider = CountingProvider()
     let processor = try fixture.processor(provider: provider)
@@ -511,9 +534,11 @@ extension MovieFolderProcessorTests {
     let fileSystem = FileSystemService()
     let initialProcessor = try fixture.processor(provider: CountingProvider(), posterAssigner: fileSystem)
     _ = try await initialProcessor.process(root: fixture.movies)
+
     let cacheKey = SHA256.hash(data: Data("/dune.jpg".utf8))
       .map { String(format: "%02x", $0) }.joined()
     try FileSystemService().writeData(Data([0x01]), named: "poster-\(cacheKey)", in: fixture.cache)
+
     let recordingAssigner = RecordingAssigner()
     let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false))
     let processor = try fixture.processor(provider: provider, posterAssigner: recordingAssigner)

@@ -79,9 +79,12 @@ nonisolated struct ProcessingState: Codable {
   /// - Parameter revision: Captured production credential generation; absence preserves isolated legacy callers.
   mutating func reconcileCredentialRevision(_ revision: UUID?) {
     guard let revision, credentialRevision != revision else { return }
+
     queries.removeAll()
+
     for name in Array(folders.keys) {
       guard var record = folders[name] else { continue }
+
       if record.processingReason == .authentication {
         record.processingReason = .none
         record.retryDate = .none
@@ -90,6 +93,7 @@ nonisolated struct ProcessingState: Codable {
         record.lastFailure = .none
         record.retryDate = .none
       }
+
       folders[name] = record
     }
   }
