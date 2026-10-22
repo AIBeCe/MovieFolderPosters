@@ -247,6 +247,11 @@ GitHub issue: [#9](https://github.com/AIBeCe/MovieFolderPosters/issues/9); miles
 - Acceptance: Fresh-install and upgrade smoke checks pass on declared supported systems. Debug and Release use the correct transport; live TMDb and native icon persistence are verified independently. No open Critical/Important findings remain. Signing, notarization, user-facing documentation, and attribution are checked.
 - Source ideas: E75, E78, E79.
 
+The implementation and scoped validation record is in [R100-09 release readiness](RELEASE_READINESS.md). Commit
+`a08c070` is integrated into local `develop`; its release-package workflow has not yet been run with Developer ID
+signing and notarization credentials. Native release qualification remains incomplete, so the 1.0.0 release gate
+and issue #9 remain open.
+
 ### 1.0.0 release gate
 
 All R100 deliverables must pass; later-release ideas do not block 1.0. No new capability is inferred from a
