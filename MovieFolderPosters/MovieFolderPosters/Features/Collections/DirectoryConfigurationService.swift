@@ -322,7 +322,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// Reads credential presence and its persisted generation under the same short settings lease.
   /// - Returns: Non-secret availability and first-run-aware revision.
   /// - Throws: Safe storage or configuration errors.
-  func credentialState() async throws -> CredentialState {
+  func credentialState() throws -> CredentialState {
     let snapshot = try credentialSnapshot()
 
     return CredentialState(isConfigured: snapshot.token != .none, revision: snapshot.revision)
@@ -366,7 +366,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// Removes the saved token under the revision captured before confirmation.
   /// - Parameter expectedRevision: Generation whose removal the user confirmed.
   /// - Throws: Safe cancellation, stale-state, or storage errors.
-  func removeCredential(expectedRevision: UUID?) async throws {
+  func removeCredential(expectedRevision: UUID?) throws {
     try Task.checkCancellation()
     try commitCredential(expectedRevision: expectedRevision) { try credentials.remove() }
   }

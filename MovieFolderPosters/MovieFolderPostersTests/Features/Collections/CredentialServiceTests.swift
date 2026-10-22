@@ -300,7 +300,7 @@ private final class CredentialRaceTransport: HTTPTransport {
   func setOperation(_ operation: @escaping @Sendable () throws -> Void) {
     self.operation.withLock { $0 = operation }
   }
-  func send(_ request: URLRequest) async throws -> HTTPResponse {
+  func send(_ request: URLRequest) throws -> HTTPResponse {
     let callback = operation.withLock { $0 }
     try callback?()
 
