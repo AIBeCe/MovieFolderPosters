@@ -8,7 +8,8 @@ An additional [100 new feature concepts](NEW_FEATURE_IDEAS.md) explores optional
 ## Purpose and boundaries
 
 Improve the reliability, clarity, and presentation of movie poster folder icons while Finder remains the movie browser.
-The 80 ideas below extend existing behavior or suggest new capabilities. They are not promises or implementation tasks.
+The original 80 ideas below extend existing behavior or suggest new capabilities. Later additions are marked
+separately so the historical catalogue and its numbering remain clear. Ideas are not promises or implementation tasks.
 Each selected idea requires investigation, a focused proposal, and approval before product changes.
 Preserve AppKit, MVVM-C, local in-process SPM services, configured directory scope, and movie contents.
 Do not introduce permanent services, filesystem watchers, or periodic scans through these suggestions.
@@ -129,6 +130,13 @@ and [Apple materials guidance](https://developer.apple.com/design/human-interfac
 78. **Privacy-conscious diagnostic export.** Export useful failure evidence with deliberate redaction of tokens, bookmarks, and user paths.
 79. **Signed and notarized installer.** Prepare a distribution package with verified signing, notarization, and clear installation instructions.
 80. **Window lifecycle regressions.** Add meaningful checks for view loading, resizing, reopening, and appearance changes to catch startup/layout failures.
+
+## Later additions
+
+81. **Finder folder hover status (research).** Investigate whether Finder-supported UI can reveal poster or processing
+   status when a user hovers over a movie folder. Compare static custom icons, Finder Sync badges and menus, and
+   selected-folder details; document platform limits before proposing any implementation. Hover behavior is not
+   established, and this idea does not authorize product changes.
 
 ## Suggested first shortlist
 

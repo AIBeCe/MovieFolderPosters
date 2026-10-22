@@ -5,7 +5,7 @@ Status: Recorded versioned planning decisions; no implementation authorization.
 
 ## Reading this index
 
-E1–E80 are the numbered entries in [Enhancement ideas](ENHANCEMENT_IDEAS.md).
+E1–E80 are the original numbered entries in [Enhancement ideas](ENHANCEMENT_IDEAS.md).
 N1–N100 are the numbered entries in [New feature ideas](NEW_FEATURE_IDEAS.md).
 Each appears exactly once below, retaining its original title and one primary destination. A deliverable may
 implement several related ideas; this does not erase their distinct requirements. Later refinements can name
@@ -23,6 +23,15 @@ Original catalogues remain unchanged historical sources. There are no permanent 
 versioned plan: previously excluded 1.0 concepts are retained in later releases, research, or conditional work.
 A later rejected candidate must keep its row and record the evidence/reason instead of disappearing.
 The original 40-deliverable/143-retained proposal is superseded; it is not the scope of 1.0 or the current total.
+
+## Later idea candidates
+
+These additions follow the original 180-idea coverage set and do not change its counts or imply a release commitment.
+They remain research-only until separately triaged and approved.
+
+| ID | Candidate | Decision | Notes |
+| --- | --- | --- | --- |
+| E81 | Finder folder hover status | Research | Investigate feasible Finder-native cues and platform limits; no implementation is authorized. |
 
 ## GitHub issue mapping
 

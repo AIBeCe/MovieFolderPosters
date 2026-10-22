@@ -5,8 +5,9 @@ Status: 100 brainstorming concepts; no implementation is authorized by this docu
 
 ## Relationship to the enhancement catalogue
 
-This document adds 100 new capability concepts to the existing
-[80 enhancement ideas](ENHANCEMENT_IDEAS.md). The first catalogue improves existing behavior, reliability, and UI.
+This document adds 100 new capability concepts to the original
+80 [enhancement ideas](ENHANCEMENT_IDEAS.md). That catalogue may contain clearly marked later additions. The first
+catalogue improves existing behavior, reliability, and UI.
 This catalogue explores additional workflows, operating modes, inputs, integrations, and tools.
 Some concepts share a domain with an enhancement, but describe an additional capability rather than repeat its title.
 Related concepts are alternatives or may be combined; they do not necessarily justify separate implementations.
