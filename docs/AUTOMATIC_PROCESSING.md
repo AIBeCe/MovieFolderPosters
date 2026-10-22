@@ -30,6 +30,10 @@ folder errors wait ten minutes; authentication failures defer the root for 24 ho
 Retry-After with a one-minute to 24-hour bound. Removed folder records and expired queries are pruned during
 observation. Poster files remain cached; no periodic eviction is introduced. Cache validation uses bounded
 thumbnails. A missing icon can be restored from its cached poster while failures remain isolated to that folder.
+When a saved movie decision has missing or invalid source artwork, R100-08 repairs it from the saved provider
+path on a later processing visit. The repair is limited to one download attempt per poster path per visit,
+validates bytes before replacing cache data, preserves the saved match on failure, and does not rewrite an
+already-owned folder icon when only its source cache needs repair. See [Cached artwork repair](CACHED_ARTWORK_REPAIR.md).
 
 ## Development integration
 

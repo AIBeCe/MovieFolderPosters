@@ -226,10 +226,15 @@ Native keyboard, VoiceOver, contrast, and window-resizing checks remain pending;
 
 GitHub issue: [#8](https://github.com/AIBeCe/MovieFolderPosters/issues/8); milestone: [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2).
 
-- [ ] Scope: Expose invalid/missing cache artwork as recoverable conditions. Reuse the existing validation and ownership mechanisms; distinguish source-cache repair from rewriting folder icons.
+- [x] Scope: Expose invalid/missing cache artwork as recoverable conditions. Reuse the existing validation and ownership mechanisms; distinguish source-cache repair from rewriting folder icons.
 - Dependencies: R100-02 and R100-04.
-- Acceptance: Corrupt/truncated image tests and missing-source cases cannot produce repeated invalid writes, silent match loss, or foreign-icon replacement. Repair remains bounded and explicitly invoked.
+- [x] Acceptance: Corrupt/truncated image tests and missing-source cases cannot produce repeated invalid writes, silent match loss, or foreign-icon replacement. Repair runs only during an explicit processing visit and is bounded to one attempt per poster path in that visit.
 - Source ideas: E70.
+
+R100-08 is implemented and validated in `9229177` and `e9be774`, then fast-forwarded into `develop`.
+The scoped test, SwiftLint, style, and independent review results—and the unperformed native qualification—are
+recorded in [Cached artwork repair](CACHED_ARTWORK_REPAIR.md). The GitHub issue remains open; its state was not
+changed as part of this local integration.
 
 <a id="r100-09"></a>
 
