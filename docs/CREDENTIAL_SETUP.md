@@ -1,9 +1,9 @@
 # Credential setup and replacement — R100-06
 
-Status: Combined proposal approved on 2026-10-22; implementation complete and independently reviewed on
-`feature/credential-setup`. Implementation commit `c5f8024` is approved; formal validation
-is complete pending user review. Feature completion remains a separate gate. No live credential entry is authorized
-for the agent; the user performs native entry for live qualification.
+Status: R100-06 was implemented and independently reviewed on `feature/credential-setup`,
+validated, and fast-forwarded to `develop` on 2026-10-22. Implementation and validation
+commits are `c5f8024` and `2d02b56`. The live credential and installed Finder qualification
+limits below remain. No live credential entry was performed by the agent.
 
 ## Approved requirements
 
@@ -74,9 +74,9 @@ func recordCredentialTestFailure(_ error: any Error) throws
 - [x] Shared schema/cache/recovery test-first implementation and focused package checks.
 - [x] Host service and UI implementation with focused host-harness tests.
 - [x] Independent review and fixes; final PASS with no open findings.
-- [x] Implementation report reviewed and approved; implementation commit `c5f8024` created.
-- [x] Formal Validation Phase authorized; requirements, focused tests, SwiftLint, and Swift style reviewed.
-- [ ] User approval of validation; commit validation changes if approved, then wait for “Finish the feature”.
+- [x] Implementation approved and committed as `c5f8024`.
+- [x] Formal validation approved; validation changes committed as `2d02b56`.
+- [x] Feature completion authorized; commits fast-forwarded to `develop` and this delivery record updated.
 
 ## Review focus
 
@@ -182,7 +182,8 @@ change entitlements or register an extension.
 Focused Common environment/revision checks passed (10 tests; see
 `/tmp/mfp-r100-06-environment-common.log`). The host/Finder check passed 145 tests in 16 suites
 (`/tmp/mfp-r100-06-environment-host.log`). Independent follow-up review returned PASS with no
-open findings; `git diff --check` passed. Commit and formal-validation gates remain unchanged.
+open findings; `git diff --check` passed. These were implementation-phase checks; formal
+validation results are recorded below.
 
 ## Formal validation — 2026-10-22
 
@@ -209,6 +210,5 @@ open findings; `git diff --check` passed. Commit and formal-validation gates rem
   run was not performed in this validation scope; therefore aggregate coverage remains
   unverified for the final diff. No signed build, live TMDb credential entry, or installed
   Finder qualification was performed.
-- No blocking test failures remain. The lint warnings above are contract-required, and the
-  coverage/native qualification limits are reported explicitly. User approved validation and
-  feature completion; validation changes are ready to commit.
+- No blocking test failures remained at approval. The lint warnings above are contract-required,
+  and the coverage/native qualification limits are reported explicitly.
