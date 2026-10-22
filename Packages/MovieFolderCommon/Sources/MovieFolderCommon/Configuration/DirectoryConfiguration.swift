@@ -119,6 +119,23 @@ nonisolated public struct ConfigurationSummary: Sendable, Equatable {
   }
 }
 
+/// Shared credential availability and the persisted generation captured with it.
+nonisolated public struct CredentialState: Equatable, Sendable {
+  /// Whether Keychain contains a credential.
+  public let isConfigured: Bool
+  /// Persisted settings generation, or absence before the first settings commit.
+  public let revision: UUID?
+
+  /// Captures availability and the matching settings generation.
+  /// - Parameters:
+  ///   - isConfigured: Whether a saved credential exists.
+  ///   - revision: The persisted generation, or absence on first run.
+  public init(isConfigured: Bool, revision: UUID?) {
+    self.isConfigured = isConfigured
+    self.revision = revision
+  }
+}
+
 /// Reads collection status and performs explicit configuration changes.
 nonisolated public protocol ConfigurationServicing: Sendable {
   /// Reads saved settings and assesses current collection access for presentation.
@@ -142,14 +159,25 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   ///   - directory: The authorized collection root.
   /// - Throws: Storage, authorization, contention, or validation failures from the requested configuration operation.
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) async throws
-  /// Stores a validated TMDb credential and advances its processing generation.
+  /// Reads credential availability and generation together under the settings lease.
+  /// - Returns: Saved availability and persisted revision, including first-run absence.
+  /// - Throws: Storage or settings failures.
+  func credentialState() async throws -> CredentialState
+  /// Tests the saved credential without changing processing restrictions.
+  /// - Parameter expectedRevision: The generation captured before the explicit test.
+  /// - Throws: Stale configuration, admission, credential, or provider failures.
+  func testCredential(expectedRevision: UUID?) async throws
+  /// Validates and stores a TMDb credential while advancing its authentication generation.
   ///
-  /// - Parameter value: The TMDb read access token to validate and store.
+  /// - Parameters:
+  ///   - value: The TMDb read access token to validate and store.
+  ///   - expectedRevision: The persisted generation captured before testing or confirmation.
   /// - Throws: Storage, authorization, contention, or validation failures from the requested configuration operation.
-  func saveCredential(_ value: String) async throws
-  /// Removes the shared TMDb credential and advances its processing generation.
+  func saveCredential(_ value: String, expectedRevision: UUID?) async throws
+  /// Removes the shared TMDb credential and advances its authentication generation.
+  /// - Parameter expectedRevision: The persisted generation captured before confirmation.
   /// - Throws: Storage, authorization, contention, or validation failures from the requested configuration operation.
-  func removeCredential() async throws
+  func removeCredential(expectedRevision: UUID?) async throws
   /// Persists the selected rendering finish for owned posters.
   ///
   /// - Parameter appearance: The rendering finish selected for the assigned poster.
@@ -217,18 +245,20 @@ nonisolated public struct ExtensionReadinessReceipt: Codable, Sendable, Equatabl
 /// Versioned shared settings read by the host and Finder extension.
 nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// The version of the serialized settings or activated extension, as appropriate to the payload.
-  public var version = 1
+  public var version = 2
   /// The configured roots in their saved presentation order.
   public var directories: [MonitoredDirectory] = []
-  /// The generation separating processing records after credential changes.
+  /// Authentication generation used to reject stale credential operations and mutation authorizations.
   public var credentialRevision = UUID()
+  /// Stable namespace preserving decisions across production credential changes.
+  public var processingCacheRevision: UUID
   /// Whether Debug builds explicitly opt in to deterministic metadata responses.
   public var usesStubTMDbResponses = false
   /// The poster finish applied to new or restyled owned icons.
   public var posterAppearance: PosterAppearance = .softFinish
 
   /// Creates empty settings with a fresh credential generation and the default poster finish.
-  public init() {}
+  public init() { processingCacheRevision = credentialRevision }
 
   /// Compares configured roots and collects identifiers with shared identity or overlapping paths.
   /// - Returns: Every root participating in at least one identity or ancestor-path overlap.
@@ -259,7 +289,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
 
   /// Stable field names for decoding persisted settings.
   private enum CodingKeys: String, CodingKey {
-    case version, directories, credentialRevision, posterAppearance
+    case version, directories, credentialRevision, processingCacheRevision, posterAppearance
     case usesStubTMDbResponses = "developmentFixtures"
   }
 
@@ -270,8 +300,13 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)
+    guard version == 1 || version == 2 else {
+      throw DecodingError.dataCorruptedError(forKey: .version, in: values, debugDescription: "Unsupported schema")
+    }
     directories = try values.decode([MonitoredDirectory].self, forKey: .directories)
     credentialRevision = try values.decode(UUID.self, forKey: .credentialRevision)
+    processingCacheRevision = version == 1 ? credentialRevision
+      : try values.decode(UUID.self, forKey: .processingCacheRevision)
     usesStubTMDbResponses = try values.decode(Bool.self, forKey: .usesStubTMDbResponses)
     posterAppearance = try values.decodeIfPresent(PosterAppearance.self, forKey: .posterAppearance) ?? .softFinish
   }

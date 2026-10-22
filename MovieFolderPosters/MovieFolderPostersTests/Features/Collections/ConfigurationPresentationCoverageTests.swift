@@ -56,10 +56,12 @@ struct ConfigurationPresentationCoverageTests {
   @Test func tokenSaveClearsFieldAndCallsInjectedConfigurationService() async throws {
     let service = PresentationConfigurationService()
     let model = ConfigurationViewModel(service: service, activity: PresentationActivityService())
+    await model.reloadCredentialState()
     let controller = try makeSettingsController(model: model)
     let pane = try #require(controller.tabViewItems[1].viewController)
     let field = try #require(descendants(pane.view).compactMap { $0 as? NSSecureTextField }.first)
-    let save = try #require(descendants(pane.view).compactMap { $0 as? NSButton }.first { $0.title == "Save Token" })
+    let save = try #require(
+      descendants(pane.view).compactMap { $0 as? NSButton }.first { $0.title == "Test and Save Token" })
     field.stringValue = "isolated-test-token"
 
     save.performClick(.none)
@@ -67,6 +69,50 @@ struct ConfigurationPresentationCoverageTests {
     #expect(field.stringValue.isEmpty)
     #expect(await service.waitForSavedCredential())
     #expect(await service.savedCredential == "isolated-test-token")
+  }
+
+  /// Replacement captures a generation and does not submit the secure entry before confirmation.
+  @Test func replacementWaitsForCoordinatorConfirmation() async throws {
+    let service = PresentationConfigurationService(summary:
+      ConfigurationSummary(directories: [], credentialConfigured: true))
+    let model = ConfigurationViewModel(service: service, activity: PresentationActivityService())
+    await model.reloadCredentialState()
+    let controller = try makeSettingsController(model: model)
+    let confirmation = CredentialConfirmationProbe()
+    controller.credentialDelegate = confirmation
+    let pane = try #require(controller.tabViewItems[1].viewController)
+    let field = try #require(descendants(pane.view).compactMap { $0 as? NSSecureTextField }.first)
+    let save = try #require(descendants(pane.view).compactMap { $0 as? NSButton }
+      .first { $0.title == "Test and Replace Token…" })
+    field.stringValue = "replacement-fixture"
+    save.performClick(.none)
+    #expect(await service.savedCredential == .none)
+    #expect(field.stringValue == "replacement-fixture")
+    let captured = try #require(confirmation.replacementState)
+    confirmation.sender?.saveEnteredCredential(expectedState: captured)
+    #expect(field.stringValue.isEmpty)
+    #expect(await service.waitForSavedCredential())
+    #expect(await service.savedCredential == "replacement-fixture")
+  }
+
+  /// Parsing preview is local and exposes supported fields without submitting credentials.
+  @Test func localPreviewUsesParserWithoutSavingOrSearching() async throws {
+    let service = PresentationConfigurationService()
+    let model = ConfigurationViewModel(service: service, activity: PresentationActivityService())
+    await model.reloadCredentialState()
+    let pane = TMDbPane(viewModel: model)
+    let sample = try #require(descendants(pane.view).compactMap { $0 as? NSTextField }
+      .first { $0.placeholderString?.hasPrefix("Example:") == true })
+    sample.stringValue = "Alien.1979.1080p.BluRay"
+    pane.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: sample))
+    let labels = descendants(pane.view).compactMap { $0 as? NSTextField }.map(\.stringValue)
+    #expect(labels.contains { $0.contains("title ‘Alien’; year: 1979") })
+    #expect(await service.savedCredential == .none)
+    #expect(!model.isBusy)
+    sample.stringValue = "Alien (1979) (1980)"
+    pane.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: sample))
+    #expect(descendants(pane.view).compactMap { $0 as? NSTextField }
+      .contains { $0.stringValue.contains("cannot be parsed confidently") })
   }
 
   /// Verifies that collection-window buttons forward their actions without opening system pickers.
@@ -177,6 +223,26 @@ struct ConfigurationPresentationCoverageTests {
   private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 }
 
+/// Captures confirmation requests without opening a native alert or receiving a token.
+@MainActor
+private final class CredentialConfirmationProbe: CredentialSettingsDelegate {
+  /// Submission target retained by the Settings controller, not by this observer.
+  weak var sender: (any CredentialSettingsSubmitting)?
+  /// Non-secret state frozen before the replacement alert.
+  private(set) var replacementState: CredentialState?
+  /// Non-secret state frozen before a removal alert.
+  private(set) var removalState: CredentialState?
+  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState) {
+    self.sender = sender
+    replacementState = state
+  }
+  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestRemoval state: CredentialState) {
+    self.sender = sender
+    removalState = state
+  }
+  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) {}
+}
+
 /// Implements the local configuration service with in-memory state for Settings interactions.
 private actor PresentationConfigurationService: ConfigurationServicing {
   /// Saved state returned to the view model.
@@ -199,7 +265,11 @@ private actor PresentationConfigurationService: ConfigurationServicing {
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {}
 
   /// Captures a token in the test service and marks credential presence in its summary.
-  func saveCredential(_ value: String) throws {
+  /// Returns the isolated fixture's non-secret credential state.
+  func credentialState() -> CredentialState { CredentialState(isConfigured: summary.credentialConfigured, revision: .none) }
+  /// Accepts explicit tests without contacting the provider.
+  func testCredential(expectedRevision: UUID?) throws {}
+  func saveCredential(_ value: String, expectedRevision: UUID?) throws {
     savedCredential = value
     summary = ConfigurationSummary(
       directories: summary.directories, credentialConfigured: true,
@@ -207,7 +277,7 @@ private actor PresentationConfigurationService: ConfigurationServicing {
   }
 
   /// Clears credential presence in the isolated summary.
-  func removeCredential() throws {
+  func removeCredential(expectedRevision: UUID?) throws {
     savedCredential = .none
     summary = ConfigurationSummary(
       directories: summary.directories, credentialConfigured: false,

@@ -19,6 +19,20 @@ struct MoviePosterActionViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
+  /// Catches a disclosure diverging from normalized inputs or triggering remote work on edits.
+  @Test func identificationPreviewMatchesTheExplicitSearch() async {
+    let service = ActionServiceStub()
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("  Alien  ")
+    viewModel.setYear(" 1979 ")
+    #expect(viewModel.identificationPreview == "Sent to TMDb: title ‘Alien’; year: 1979.")
+    #expect(await service.callCounts.search == 0)
+    viewModel.search()
+    await waitForIdle(viewModel)
+    #expect(await service.lastSearchTitle == "Alien")
+    #expect(await service.lastSearchYear == 1979)
+  }
+
   /// Verifies that posterless result cannot be selected or applied.
   @Test func posterlessResultCannotBeSelectedOrApplied() async {
     let service = ActionServiceStub()
@@ -212,6 +226,10 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   private(set) var callCounts = CallCounts()
   /// Identifier of the last movie assigned by the fake service.
   private(set) var lastAppliedMovieID: Int?
+  /// Last normalized title crossing the real model's service boundary.
+  private(set) var lastSearchTitle: String?
+  /// Last normalized release year crossing the real model's service boundary.
+  private(set) var lastSearchYear: Int?
   /// Search results returned by the fake.
   private var searchResult = MovieSearchResult(movies: [], hasMorePages: false)
   /// Delay used to exercise in-flight cancellation behavior.
@@ -232,6 +250,8 @@ private actor ActionServiceStub: MoviePosterActionServicing {
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws -> MovieSearchResult {
     callCounts.search += 1
+    lastSearchTitle = query
+    lastSearchYear = year
     if searchShouldFail { throw TMDbError.authentication }
     try await Task.sleep(for: searchDelay)
 

@@ -58,7 +58,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
           let client = try environment.provider(token: token, configuration: configuration)
           let recovery = try environment.processingRecoveryService()
           let container = try environment.containerURL()
-          let records = container.appendingPathComponent("Processing/\(configuration.credentialRevision)")
+          let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
           let repository = try environment.configurationRepository()
           let mutationGuard = FinderMutationGuard(
             repository: repository, configuration: configuration,
@@ -71,7 +71,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
               directory: container.appendingPathComponent("ProcessingLocks")
             ), mutationGuard: mutationGuard,
             appearance: configuration.posterAppearance,
-            processingStore: try environment.processingStore(), recovery: recovery)
+            processingStore: try environment.processingStore(), recovery: recovery,
+            credentialRevision: configuration.credentialRevision)
           processingConfiguration = configuration
           logger.notice("Shared Keychain credential available")
         } else {
@@ -268,7 +269,7 @@ final class FinderSync: FIFinderSync {
     scheduler = DirectoryObservationScheduler(delegate: FinderConfigurationRuntime())
     super.init()
     DistributedNotificationCenter.default().addObserver(
-      self, selector: #selector(configurationChanged), name: MovieFolderEnvironment.configurationChanged, object: .none)
+      self, selector: #selector(configurationChanged), name: .movieFolderConfigurationChanged, object: .none)
     let scheduler = scheduler
     Task { await scheduler.reload() }
     logger.notice("Initialized; pid=\(ProcessInfo.processInfo.processIdentifier)")

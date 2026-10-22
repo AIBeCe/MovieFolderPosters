@@ -201,6 +201,10 @@ GitHub issue: [#6](https://github.com/AIBeCe/MovieFolderPosters/issues/6); miles
 - Acceptance: Invalid/offline/valid tests have distinct safe results. Replacement preserves roots and confirmed matches. Credentials never enter URLs, exported diagnostics, snapshots, or UI errors. Native credential entry is performed by the user for live verification.
 - Source ideas: E38, E39, N53, N57.
 
+The combined R100-06 proposal was approved on 2026-10-22. Its implementation and focused-check ledger are in
+[credential setup and replacement](CREDENTIAL_SETUP.md). Implementation review and formal validation are separate
+gates; this entry does not claim completed release qualification.
+
 <a id="r100-07"></a>
 
 ### R100-07 — Complete essential native usability and accessibility

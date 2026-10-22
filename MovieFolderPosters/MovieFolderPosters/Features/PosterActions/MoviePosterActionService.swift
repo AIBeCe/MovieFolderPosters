@@ -147,7 +147,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - environment: Storage locations preserving the host authorization policy.
   ///   - provider: Optional metadata provider used after credential validation.
   init(
-    credentials: any CredentialStoring = KeychainCredentialStore(accessGroup: MovieFolderEnvironment.groupIdentifier),
+    credentials: any CredentialStoring = KeychainCredentialStore(
+      accessGroup: MovieFolderEnvironment.env(.groupIdentifier)),
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     environment: any MoviePosterActionEnvironment = LiveMoviePosterActionEnvironment(),
     provider: (any MovieMetadataProvider)? = .none
@@ -487,7 +488,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ) throws -> MovieFolderProcessor {
     let container = try environment.appGroupContainerURL()
     let recordDirectory = container.appendingPathComponent(
-      "Processing/\(context.configuration.credentialRevision)")
+      "Processing/\(context.configuration.processingCacheRevision)")
     let coordinationDirectory = container.appendingPathComponent("ProcessingLocks")
     let mutationGuard = PosterActionMutationGuard(
       repository: try environment.makeConfigurationRepository(),
@@ -503,7 +504,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       mutationGuard: mutationGuard,
       appearance: context.configuration.posterAppearance,
       processingStore: try environment.makeCollectionProcessingStore(),
-      recovery: try environment.makeProcessingRecoveryService())
+      recovery: try environment.makeProcessingRecoveryService(),
+      credentialRevision: context.configuration.credentialRevision)
 
   }
 }

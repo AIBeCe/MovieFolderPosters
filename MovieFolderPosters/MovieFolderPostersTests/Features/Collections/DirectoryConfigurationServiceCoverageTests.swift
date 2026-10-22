@@ -81,10 +81,15 @@ struct DirectoryConfigurationServiceCoverageTests {
     let enabled = try fixture.repository.read()
     #expect(enabled.usesStubTMDbResponses)
     #expect(enabled.credentialRevision != before.credentialRevision)
+    #expect(enabled.processingCacheRevision != before.processingCacheRevision)
+    try await fixture.service.setStubTMDbResponsesEnabled(true)
+    #expect(try fixture.repository.read().credentialRevision == enabled.credentialRevision)
+    #expect(try fixture.repository.read().processingCacheRevision == enabled.processingCacheRevision)
     try await fixture.service.setStubTMDbResponsesEnabled(false)
     let disabled = try fixture.repository.read()
     #expect(!disabled.usesStubTMDbResponses)
     #expect(disabled.credentialRevision != enabled.credentialRevision)
+    #expect(disabled.processingCacheRevision != enabled.processingCacheRevision)
   }
   #endif
 

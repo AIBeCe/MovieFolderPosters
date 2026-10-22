@@ -9,13 +9,24 @@ No background daemon, filesystem watcher, or periodic scan is installed.
 1. Build and sign both targets with the same development team and registered App Group.
 2. Run the host application and enable Movie Folder Posters in macOS Finder extension settings.
 3. Choose **Add Folder** and select a movie collection directory in the native folder picker.
-4. Enter a TMDb **API read access token**, then choose **Save Token**.
+4. In Settings → TMDb, enter a TMDb **API Read Access Token**, then choose **Test and Save Token**.
 5. Open the configured collection in Finder. Only immediate child folders are candidates.
 
+Settings links to the TMDb API settings page and explains the required token. **Test Saved Token** explicitly
+checks provider access without changing credentials or refreshing collections. Its safe result distinguishes
+rejected credentials, connectivity, provider failures, and shared backoff. **Cancel** requests cancellation and
+keeps overlapping actions disabled until the request returns. Viewing Settings does not itself test a token.
+
 The token input clears after submission. The window reports whether a credential is configured, never its value.
-**Remove Token** deletes the shared credential. Without a token, configured roots remain registered, but processing
+**Test and Replace Token…** confirms replacement, tests the candidate, then saves only if the captured credential
+generation is still current. **Remove Token…** confirms deletion of that same captured generation. Without a token,
+configured roots remain registered, but processing
 makes no metadata requests or icon changes. Removing a configured folder unregisters it and cancels its active work;
 existing poster icons remain on disk.
+
+The identification-data preview parses an entered example folder name locally. Choose Movie also shows the exact
+normalized title and optional year that its explicit search will send. Neither preview initiates a search.
+See [Credential setup and replacement](CREDENTIAL_SETUP.md) for migration, recovery, and qualification limits.
 
 **Refresh Status** checks access and renews the host-to-extension handoff. If access needs restoration, select the
 entry and choose **Locate Folder** to authorize it again. Unavailable directories remain configured so unmounted
@@ -43,7 +54,7 @@ development Mac. Production distribution must provision the group for its chosen
 signing credentials. Automatic signing can refresh profiles with `xcodebuild -allowProvisioningUpdates`.
 
 Both targets are sandboxed and have user-selected read/write access, app-scoped bookmarks, and the shared App Group.
-Only the Finder extension needs outgoing network access. SPM modules do not independently acquire entitlements.
+Both the host and Finder extension use outgoing network access. SPM modules do not independently acquire entitlements.
 The temporary hardcoded TestMovies path exception has been removed.
 
 An App Group shares configuration; it does not grant access to arbitrary movie directories. Each process keeps its
@@ -90,8 +101,12 @@ Ending observation, changing configuration, or stopping the extension cancels it
 Extension termination does not preserve a timer; a later Finder observation can resume eligible work from durable
 state. Unsupported or unavailable filesystem notifications may delay detection until another Finder visit.
 
-The existing processor preserves unrelated custom icons, caches metadata and posters, and bounds work. Credential
-revision changes use a new processing record namespace so old authentication failures do not suppress a new token.
+The existing processor preserves unrelated custom icons, caches metadata and posters, and bounds work. Version-2
+settings retain a separate processing-cache revision across credential changes, preserving usable saved movie
+decisions. Version-1 settings anchor this namespace to their existing credential revision. Operational caches carry
+the captured credential generation; a changed generation discards cached queries and authentication-specific
+failures while retaining decisions, manual-required classifications, and provider throttling. Fixture-mode changes
+rotate both generations to separate fixture decisions from live work. Older builds reject version-2 settings.
 Native custom icons persist independently of host or extension lifetime. Movie files and names are unchanged.
 
 ## Development and verification

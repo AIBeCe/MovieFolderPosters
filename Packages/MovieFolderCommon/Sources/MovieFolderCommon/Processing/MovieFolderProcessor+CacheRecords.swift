@@ -71,9 +71,31 @@ nonisolated struct ProcessingState: Codable {
   var queries: [String: CachedSearch] = [:]
   /// The provider-wide retry boundary saved for this root, when present.
   var providerRetryAt: Date?
+  /// Credential generation captured by the processor that last saved this operational state.
+  var credentialRevision: UUID? = .none
+
+  /// Discards credential-sensitive evidence while retaining folder identities and explicit decisions.
+  /// - Parameter revision: Captured production credential generation; absence preserves isolated legacy callers.
+  mutating func reconcileCredentialRevision(_ revision: UUID?) {
+    guard let revision, credentialRevision != revision else { return }
+    queries.removeAll()
+    for name in Array(folders.keys) {
+      guard var record = folders[name] else { continue }
+      if record.processingReason == .authentication {
+        record.processingReason = .none
+        record.retryDate = .none
+      }
+      if record.lastFailure?.reason == .authentication {
+        record.lastFailure = .none
+        record.retryDate = .none
+      }
+      folders[name] = record
+    }
+  }
+
   /// Preserves the existing cache field name when reading or writing saved processing state.
   private enum CodingKeys: String, CodingKey {
-    case folders, queries
+    case folders, queries, credentialRevision
     case providerRetryAt = "rootBackoffUntil"
   }
 }

@@ -103,7 +103,18 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
     }
   }
 
-  func saveCredential(_ value: String) async throws {
+  /// Reads credential presence without recording a collection-summary operation.
+  func credentialState() -> CredentialState {
+    lock.withLock { CredentialState(isConfigured: currentSummary.credentialConfigured, revision: .none) }
+  }
+
+  /// Supplies a deterministic diagnostic result without external requests.
+  func testCredential(expectedRevision: UUID?) async throws {
+    await gate?.block()
+    try Task.checkCancellation()
+  }
+
+  func saveCredential(_ value: String, expectedRevision: UUID?) async throws {
     try await prepare(.saveCredential(value))
     lock.withLock {
       currentSummary = ConfigurationSummary(
@@ -125,7 +136,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
     }
   }
 
-  func removeCredential() async throws {
+  func removeCredential(expectedRevision: UUID?) async throws {
     try await prepare(.removeCredential)
     lock.withLock {
       currentSummary = ConfigurationSummary(

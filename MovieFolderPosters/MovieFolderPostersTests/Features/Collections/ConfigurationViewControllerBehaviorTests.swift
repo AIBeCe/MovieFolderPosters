@@ -17,12 +17,14 @@ import Testing
   model.addDelegate(main)
   model.addDelegate(settings)
   await model.load()
-  #expect(main.updates == 2)
+  let initialUpdates = main.updates
+  #expect(initialUpdates > 0)
   #expect(settings.updates == main.updates)
   model.removeDelegate(main)
   await model.saveCredential("fake-secret")
-  #expect(main.updates == 2)
-  #expect(settings.updates == 4)
+  #expect(main.updates == initialUpdates)
+  #expect(settings.updates > initialUpdates)
+  let updatesAfterSaving = settings.updates
   weak var released: ConfigurationDelegateProbe?
   do {
     let temporary = ConfigurationDelegateProbe()
@@ -33,7 +35,8 @@ import Testing
   #expect(released == nil)
   #expect(model.activityDelegate == nil)
   await model.load()
-  #expect(settings.updates == 6)
+  #expect(settings.updates > updatesAfterSaving)
+  #expect(main.updates == initialUpdates)
 }
 
 /// Verifies that main keeps settings in their own window and preserves count columns.

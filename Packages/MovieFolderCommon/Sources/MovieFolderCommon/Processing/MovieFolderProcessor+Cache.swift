@@ -66,7 +66,10 @@ extension MovieFolderProcessor {
   func loadState(from lease: PersistenceLease) throws -> ProcessingState {
     guard let data = try lease.read() else { return ProcessingState() }
 
-    return try JSONDecoder().decode(ProcessingState.self, from: data)
+    var state = try JSONDecoder().decode(ProcessingState.self, from: data)
+    state.reconcileCredentialRevision(credentialRevision)
+
+    return state
   }
 
   /// Keeps a verified icon outcome distinct from failure to persist its operational cache.
@@ -99,6 +102,8 @@ extension MovieFolderProcessor {
   ///   - lease: The already-held persistence lease used throughout this operation.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func saveState(_ state: ProcessingState, to lease: PersistenceLease) throws {
+    var state = state
+    state.credentialRevision = credentialRevision
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     do {

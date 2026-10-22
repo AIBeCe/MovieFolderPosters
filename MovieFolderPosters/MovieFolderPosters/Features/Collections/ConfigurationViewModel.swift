@@ -1,6 +1,7 @@
 import FileSystem
 import Foundation
 import MovieFolderCommon
+import Network
 
 /// Receives changes to collection and credential presentation state.
 @MainActor
@@ -60,6 +61,28 @@ final class ConfigurationViewModel {
   private(set) var directories: [ConfiguredDirectoryStatus] = []
   /// Whether a TMDb credential was present at the last successful load.
   private(set) var credentialConfigured = false
+  /// Last explicitly loaded credential presence and generation; never contains token text.
+  private(set) var credentialState: CredentialState?
+  /// Safe status of the latest credential action, independent of unrelated settings errors.
+  private(set) var credentialMessage: String?
+  /// Whether the credential status represents a failed operation.
+  private(set) var isCredentialError = false
+  /// Whether a credential service operation is still running or draining cancellation.
+  private(set) var isCredentialOperationRunning = false
+  /// Whether cancellation has been requested for the current credential operation.
+  private(set) var isCancellingCredentialOperation = false
+  /// Retains the actual service call until it has finished, including cancellation cleanup.
+  private var credentialTask: Task<Void, any Error>?
+  /// Whether the active credential operation only tests the saved token.
+  private var isTestingSavedCredential = false
+  /// Rejects success presentation after configuration invalidated an outstanding test.
+  private var isCredentialTestInvalidated = false
+  /// Identifies the latest presence read so older responses cannot overwrite newer state.
+  private var credentialReadID = UUID()
+  /// Distinguishes temporary diagnostic evidence from a mutation's completion feedback.
+  private var hasCredentialDiagnosticResult = false
+  /// Associates mutation feedback with the generation read after its operation returned.
+  private var credentialResultState: CredentialState?
   /// The appearance used when processing posters.
   private(set) var posterAppearance: PosterAppearance = .softFinish
   /// Whether a configuration operation is currently running.
@@ -117,6 +140,7 @@ final class ConfigurationViewModel {
     await perform(
       action: .configurationLoaded, failureMessage: "Could not load configuration."
     ) { try await self.service.configurationSummary() }
+    await reloadCredentialState()
     await reloadRecoveryMode()
   }
 
@@ -193,27 +217,172 @@ final class ConfigurationViewModel {
     }
   }
 
-  /// Saves a TMDb read access token and refreshes the displayed summary.
-  ///
-  /// - Parameter credential: The token entered in Settings.
-  func saveCredential(_ credential: String) async {
-    await perform(
-      action: .credentialSaved, failureMessage: "Could not save the API credential."
-    ) {
-      try await self.service.saveCredential(credential)
-
-      return try await self.service.configurationSummary()
+  /// Reloads only credential presence, without refreshing folder authorization or processing.
+  /// - Parameter clearResult: Whether an earlier diagnostic result should be discarded.
+  func reloadCredentialState(clearResult: Bool = true) async {
+    guard !isCredentialOperationRunning else { return }
+    let readID = UUID()
+    credentialReadID = readID
+    if clearResult {
+      credentialMessage = .none
+      credentialResultState = .none
+      isCredentialError = false
     }
+    do {
+      let state = try await service.credentialState()
+      guard credentialReadID == readID, !isCredentialOperationRunning else { return }
+      if let resultState = credentialResultState, resultState != state {
+        credentialMessage = .none
+        credentialResultState = .none
+      }
+      credentialState = state
+      credentialConfigured = state.isConfigured
+    } catch {
+      guard credentialReadID == readID, !isCredentialOperationRunning else { return }
+      credentialState = .none
+      if clearResult {
+        credentialMessage = "Could not read credential state. Reopen Settings to try again."
+        isCredentialError = true
+      }
+    }
+    publish()
   }
 
-  /// Removes the saved TMDb credential and refreshes the displayed summary.
-  func removeCredential() async {
-    await perform(
-      action: .credentialRemoved, failureMessage: "Could not remove the API credential."
-    ) {
-      try await self.service.removeCredential()
+  /// Invalidates temporary test evidence after a shared configuration notification.
+  func invalidateCredentialState() {
+    credentialReadID = UUID()
+    credentialState = .none
+    if hasCredentialDiagnosticResult { credentialMessage = .none }
+    if isTestingSavedCredential {
+      isCredentialTestInvalidated = true
+      cancelCredentialOperation()
+    }
+    publish()
+  }
 
-      return try await self.service.configurationSummary()
+  /// Explicitly tests the last-loaded saved credential without refreshing collections.
+  func testSavedCredential() async {
+    guard let state = credentialState, state.isConfigured else { return }
+    let service = service
+    await performCredentialOperation(
+      status: "Testing saved token…", success: "TMDb accepted the saved token.", action: .none,
+      operation: { try await service.testCredential(expectedRevision: state.revision) })
+  }
+
+  /// Tests the candidate before saving it against the generation approved by the user.
+  /// - Parameters:
+  ///   - credential: The operation-local candidate entered in the secure field.
+  ///   - expectedState: The generation captured before confirmation, or the last-loaded state.
+  func saveCredential(_ credential: String, expectedState: CredentialState? = .none) async {
+    guard !isBusy else { return }
+    if credentialState == .none, expectedState == .none { await reloadCredentialState() }
+    guard let state = expectedState ?? credentialState else { return }
+    let service = service
+    await performCredentialOperation(
+      status: "Testing candidate token…", success: "Token saved after a successful test.", action: .credentialSaved,
+      operation: { try await service.saveCredential(credential, expectedRevision: state.revision) })
+  }
+
+  /// Removes the credential against the state captured before the user's confirmation.
+  /// - Parameter expectedState: The generation approved for removal, or the last-loaded state.
+  func removeCredential(expectedState: CredentialState? = .none) async {
+    guard !isBusy else { return }
+    if credentialState == .none, expectedState == .none { await reloadCredentialState() }
+    guard let state = expectedState ?? credentialState else { return }
+    let service = service
+    await performCredentialOperation(
+      status: "Removing saved token…", success: "Saved token removed.", action: .credentialRemoved,
+      operation: { try await service.removeCredential(expectedRevision: state.revision) })
+  }
+
+  /// Requests cancellation while retaining admission until the service call actually returns.
+  func cancelCredentialOperation() {
+    guard isCredentialOperationRunning else { return }
+    isCancellingCredentialOperation = true
+    credentialTask?.cancel()
+    credentialMessage = "Cancelling…"
+    publish()
+  }
+
+  /// Serializes credential actions and publishes only fixed, credential-free presentation state.
+  /// - Parameters:
+  ///   - status: Safe progress copy shown before the service call.
+  ///   - success: Safe completion copy, independent of credential contents.
+  ///   - action: Mutation activity to record, or no activity for a diagnostic.
+  ///   - operation: The service call owned and cancelled by this finite action.
+  private func performCredentialOperation(
+    status: String, success: String, action: MovieFolderActivityEvent.Action?,
+    operation: @escaping @Sendable () async throws -> Void
+  ) async {
+    guard !isBusy else { return }
+    isBusy = true
+    isCredentialOperationRunning = true
+    isCancellingCredentialOperation = false
+    isTestingSavedCredential = action == .none
+    isCredentialTestInvalidated = false
+    credentialReadID = UUID()
+    hasCredentialDiagnosticResult = action == .none
+    credentialResultState = .none
+    isCredentialError = false
+    errorMessage = .none
+    credentialMessage = status
+    publish()
+    let task = Task { try await operation() }
+    credentialTask = task
+    do {
+      try await task.value
+      if isCredentialTestInvalidated {
+        credentialMessage = "Credential state changed. Test the current token again."
+      } else {
+        credentialMessage = success
+      }
+      if let action { await recordActivity(action: action, status: .succeeded, collectionID: .none) }
+    } catch is CancellationError {
+      credentialMessage = action == .none
+        ? "Credential test cancelled." : "Credential action cancelled before completion. Reloaded current state."
+      if let action { await recordActivity(action: action, status: .cancelled, collectionID: .none) }
+    } catch {
+      isCredentialError = true
+      credentialMessage = credentialFailureMessage(error, action: action)
+      errorMessage = credentialMessage
+      if let action { await recordActivity(action: action, status: .failed, collectionID: .none) }
+    }
+    credentialTask = .none
+    isCredentialOperationRunning = false
+    isTestingSavedCredential = false
+    isCancellingCredentialOperation = false
+    await reloadCredentialState(clearResult: false)
+    if action != .none { credentialResultState = credentialState }
+    isBusy = false
+    publish()
+  }
+
+  /// Maps credential failures to fixed corrective guidance without rendering underlying error content.
+  private func credentialFailureMessage(_ error: any Error, action: MovieFolderActivityEvent.Action?) -> String {
+    switch error {
+    case TMDbError.authentication:
+      return "TMDb rejected the token. Check the API Read Access Token and try again."
+    case TMDbError.missingToken, ConfigurationError.invalidCredential:
+      return "Enter a valid API Read Access Token without the Bearer prefix."
+    case TMDbError.transport(let code) where code == URLError.notConnectedToInternet.rawValue:
+      return "You appear to be offline. The token was not verified."
+    case TMDbError.transport:
+      return "Could not reach TMDb. The token was not verified."
+    case TMDbError.rateLimited, ProcessingRecoveryError.providerBackoff:
+      return "TMDb requests are temporarily deferred. Try again after the provider retry time."
+    case ConfigurationError.configurationChanged:
+      return "Credential state changed. Review the current state and try again."
+    case ConfigurationError.credentialStorage:
+      return "Could not access secure credential storage. The current state has been reloaded."
+    case ConfigurationError.busy, ProcessingRecoveryError.busy:
+      return "Settings or recovery state is busy. Try again shortly."
+    case ProcessingRecoveryError.unavailable:
+      return "Credential testing is unavailable because recovery state could not be read."
+    case TMDbError.httpStatus, TMDbError.malformedResponse, TMDbError.responseTooLarge:
+      return "TMDb did not return a usable response. The token was not verified."
+    default:
+      return action == .credentialRemoved ? "Could not remove the API credential."
+        : action == .credentialSaved ? "Could not save the API credential." : "Could not test the token. Try again."
     }
   }
 

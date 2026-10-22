@@ -249,6 +249,28 @@ public struct TMDbClient: Sendable {
     self.transport = transport
   }
 
+  /// Validates the configured token with TMDb's authentication endpoint.
+  ///
+  /// - Throws: ``TMDbError`` for rejected responses, transport failures, or cancellation.
+  public func validateCredential() async throws {
+    guard let apiBase = Self.apiBase else { throw TMDbError.invalidConfiguration }
+    let request = authenticatedRequest(url: apiBase.appending(path: "authentication"))
+    let response = try await send(request)
+    try validateStatus(response)
+    guard response.statusCode == 200 else { throw TMDbError.httpStatus(response.statusCode) }
+    guard let contentType = response.contentType?.split(separator: ";").first?
+      .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), contentType == "application/json"
+    else { throw TMDbError.malformedResponse }
+    do {
+      let authentication = try JSONDecoder().decode(AuthenticationResponse.self, from: response.data)
+      guard authentication.success else { throw TMDbError.malformedResponse }
+    } catch let error as TMDbError {
+      throw error
+    } catch {
+      throw TMDbError.malformedResponse
+    }
+  }
+
   /// Searches the first TMDb movie-result page by title and optional release year.
   ///
   /// - Parameters:
@@ -520,6 +542,12 @@ private struct SearchPage: Decodable {
     case page, results
     case totalPages = "total_pages"
   }
+}
+
+/// Minimal response contract for TMDb's credential authentication endpoint.
+private struct AuthenticationResponse: Decodable {
+  /// Whether TMDb accepted the supplied credential.
+  let success: Bool
 }
 
 /// The subset of a TMDb search result used by the application.

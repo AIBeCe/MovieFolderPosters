@@ -24,7 +24,7 @@ final class LogCoordinator: NSObject {
   func show() {
     if !isObservingActivity {
       DistributedNotificationCenter.default().addObserver(
-        self, selector: #selector(activityChanged(_:)), name: MovieFolderEnvironment.activityChanged, object: .none)
+        self, selector: #selector(activityChanged(_:)), name: .movieFolderActivityChanged, object: .none)
       isObservingActivity = true
     }
     if windowController == .none {

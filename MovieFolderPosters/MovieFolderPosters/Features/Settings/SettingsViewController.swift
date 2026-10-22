@@ -8,6 +8,12 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
   private let viewModel: ConfigurationViewModel
   /// Supplies the host app's independent color appearance choice.
   private let appearanceSettings: AppAppearanceSettings
+  /// Credential pane whose confirmations are routed by the owning coordinator.
+  private let credentialPane: TMDbPane
+  /// Owns external navigation and deliberate credential confirmations.
+  weak var credentialDelegate: (any CredentialSettingsDelegate)? {
+    didSet { credentialPane.delegate = credentialDelegate }
+  }
 
   /// Creates the three settings tabs using the supplied state collaborators.
   /// - Parameters:
@@ -16,6 +22,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
   init(viewModel: ConfigurationViewModel, appearanceSettings: AppAppearanceSettings) {
     self.viewModel = viewModel
     self.appearanceSettings = appearanceSettings
+    credentialPane = TMDbPane(viewModel: viewModel)
     super.init(nibName: .none, bundle: .none)
     tabStyle = .toolbar
     addTab(
@@ -23,7 +30,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
       image: NSImage(systemSymbolName: "rectangle.portrait", accessibilityDescription: .none)
     ) { PosterLayoutPane(viewModel: viewModel) }
     addTab(label: "TMDb", image: NSImage(systemSymbolName: "key", accessibilityDescription: .none)) {
-      TMDbPane(viewModel: viewModel)
+      self.credentialPane
     }
     addTab(
       label: "Appearance",
@@ -76,7 +83,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
 
 /// Provides shared layout helpers for the settings panes.
 @MainActor
-private class SettingsPaneController: NSViewController {
+class SettingsPaneController: NSViewController {
   /// Refreshes pane content when it becomes visible or its model changes.
   func updatePresentation() {}
 
@@ -222,87 +229,6 @@ private final class PosterLayoutPane: SettingsPaneController {
       self.updatePresentation()
     }
     updatePresentation()
-  }
-}
-
-/// Lets the user save or remove the TMDb read access token.
-@MainActor
-private final class TMDbPane: SettingsPaneController {
-  /// Model used to persist credential state and operations.
-  private let viewModel: ConfigurationViewModel
-  /// Secure field containing the token entered by the user.
-  private let tokenField = NSSecureTextField()
-  /// Saves the entered token.
-  private let saveButton = NSButton(title: "Save Token", target: .none, action: .none)
-  /// Removes the stored token.
-  private let removeButton = NSButton(title: "Remove Token", target: .none, action: .none)
-  /// Shows whether a token was present at the last configuration load.
-  private let statusLabel = NSTextField(labelWithString: "Not configured")
-  /// Displays a safe credential-operation failure.
-  private let errorLabel = NSTextField(wrappingLabelWithString: " ")
-
-  /// Creates the token pane backed by the configuration model.
-  /// - Parameter viewModel: Model that stores credential state.
-  init(viewModel: ConfigurationViewModel) {
-    self.viewModel = viewModel
-    super.init(nibName: .none, bundle: .none)
-  }
-
-  /// Storyboard and archive construction are unsupported; create this view programmatically.
-  @available(*, unavailable)
-  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-
-  /// Builds the secure token field, status, and credential actions.
-  override func loadView() {
-    tokenField.placeholderString = "TMDb API read access token"
-    tokenField.setAccessibilityLabel("TMDb API read access token")
-    tokenField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    tokenField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    tokenField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
-    saveButton.target = self
-    saveButton.action = #selector(saveCredential)
-    removeButton.target = self
-    removeButton.action = #selector(removeCredential)
-    statusLabel.setContentHuggingPriority(.required, for: .horizontal)
-    errorLabel.textColor = .systemRed
-    errorLabel.maximumNumberOfLines = 2
-
-    let actions = NSStackView(views: [saveButton, removeButton, statusLabel])
-    actions.orientation = .horizontal
-    actions.alignment = .centerY
-    actions.spacing = 8
-    let row = NSStackView(views: [tokenField, actions])
-    row.orientation = .horizontal
-    row.alignment = .centerY
-    row.spacing = 10
-    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 560).isActive = true
-    _ = makeContent(
-      heading("TMDb", detail: "Store the read access token used to look up movie posters.") + [
-        row, errorLabel
-      ])
-    updatePresentation()
-  }
-
-  /// Reflects the current token state and operation availability in the pane.
-  override func updatePresentation() {
-    statusLabel.stringValue = viewModel.credentialConfigured ? "Configured" : "Not configured"
-    errorLabel.stringValue = viewModel.errorMessage ?? " "
-    tokenField.isEnabled = !viewModel.isBusy
-    saveButton.isEnabled = !viewModel.isBusy
-    removeButton.isEnabled = !viewModel.isBusy && viewModel.credentialConfigured
-  }
-
-  /// Saves the entered token and clears the secure field immediately.
-  @objc private func saveCredential() {
-    let credential = tokenField.stringValue
-    guard !credential.isEmpty else { return }
-    tokenField.stringValue = ""
-    Task { await viewModel.saveCredential(credential) }
-  }
-
-  /// Removes the currently stored token.
-  @objc private func removeCredential() {
-    Task { await viewModel.removeCredential() }
   }
 }
 

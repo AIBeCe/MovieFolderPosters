@@ -30,6 +30,8 @@ public actor MovieFolderProcessor {
   let processingStore: CollectionProcessingStore?
   /// Shared recovery admission and mutation fencing, when supplied by production composition.
   let recovery: ProcessingRecoveryService?
+  /// Credential generation captured at composition, never refreshed by an in-flight operation.
+  let credentialRevision: UUID?
   /// The conservative folder-name parser used before metadata searches.
   let parser = ReleaseNameParser()
   /// The conservative movie matcher used after a complete provider response.
@@ -49,6 +51,7 @@ public actor MovieFolderProcessor {
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - processingStore: Dedicated result storage; production supplies it with a current context for each operation.
   ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon mutation.
+  ///   - credentialRevision: Production credential generation stamped on every saved operational state.
   ///   - configuration: Validated retry and cache timings for this processor instance.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
@@ -62,8 +65,10 @@ public actor MovieFolderProcessor {
     appearance: PosterAppearance = .softFinish,
     processingStore: CollectionProcessingStore? = .none,
     recovery: ProcessingRecoveryService? = .none,
+    credentialRevision: UUID? = .none,
     configuration: MovieFolderProcessorConfiguration = .standard
   ) {
+    self.credentialRevision = credentialRevision
     self.configuration = configuration
     self.fileSystem = fileSystem
     self.persistence = persistence

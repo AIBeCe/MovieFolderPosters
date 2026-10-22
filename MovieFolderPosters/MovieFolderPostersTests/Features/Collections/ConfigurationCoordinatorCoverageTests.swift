@@ -211,8 +211,12 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   func addDirectory(_ directory: URL) throws { mutationCount += 1 }
   func removeDirectory(_ identifier: UUID) throws { mutationCount += 1 }
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws { mutationCount += 1 }
-  func saveCredential(_ value: String) throws { mutationCount += 1 }
-  func removeCredential() throws { mutationCount += 1 }
+  /// Returns the isolated fixture's non-secret credential state.
+  func credentialState() -> CredentialState { CredentialState(isConfigured: summary.credentialConfigured, revision: .none) }
+  /// Accepts explicit tests without contacting the provider.
+  func testCredential(expectedRevision: UUID?) throws {}
+  func saveCredential(_ value: String, expectedRevision: UUID?) throws { mutationCount += 1 }
+  func removeCredential(expectedRevision: UUID?) throws { mutationCount += 1 }
   func setPosterAppearance(_ appearance: PosterAppearance) throws { mutationCount += 1 }
 
   /// Yields until the requested number of configuration reads has completed.

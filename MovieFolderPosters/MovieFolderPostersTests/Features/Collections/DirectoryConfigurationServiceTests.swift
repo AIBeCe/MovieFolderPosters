@@ -1,6 +1,7 @@
 import FileSystem
 import Foundation
 @testable import MovieFolderCommon
+import Network
 import Persistence
 import Synchronization
 import Testing
@@ -240,7 +241,7 @@ struct DirectoryConfigurationServiceTests {
     let held = try #require(
       try fixture.repository.store.acquireLease(for: ConfigurationRepository.recordKey))
     do {
-      try await fixture.service.saveCredential("new-fixture")
+      try await fixture.service.saveCredential("new-fixture", expectedRevision: .none)
       Issue.record("A contended settings lease must prevent credential mutation")
     } catch ConfigurationError.busy {}
     #expect(fixture.credentials.read() == "existing-fixture")
@@ -251,7 +252,7 @@ struct DirectoryConfigurationServiceTests {
   @Test func savesAndRemovesCredentialWithoutStoringItInSettings() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
-    try await fixture.service.saveCredential("fixture-secret-value")
+    try await fixture.service.saveCredential("fixture-secret-value", expectedRevision: .none)
     #expect(try await fixture.service.configurationSummary().credentialConfigured)
     let settings = try #require(
       try fixture.repository.store.acquireLease(for: ConfigurationRepository.recordKey))
@@ -265,9 +266,9 @@ struct DirectoryConfigurationServiceTests {
   @Test func removingCredentialUpdatesStateAndRevision() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
-    try await fixture.service.saveCredential("fixture-value")
+    try await fixture.service.saveCredential("fixture-value", expectedRevision: .none)
     let previous = try fixture.repository.read().credentialRevision
-    try await fixture.service.removeCredential()
+    try await fixture.service.removeCredential(expectedRevision: previous)
     #expect(!(try await fixture.service.configurationSummary().credentialConfigured))
     #expect(try fixture.repository.read().credentialRevision != previous)
   }
@@ -299,7 +300,9 @@ private struct ConfigurationServiceFixture {
       repository: repository,
       authorizations: authorizations,
       credentials: credentials, notifier: SilentConfigurationNotifier(),
-      authorization: authorization)
+      authorization: authorization, credentialTransport: CredentialTestTransport(),
+      recovery: ProcessingRecoveryService(
+        store: try PersistenceStore(directory: root.appendingPathComponent("Recovery"))))
   }
 
   /// Removes all persistence records created by this fixture.

@@ -11,6 +11,7 @@ import Testing
 @MainActor
 @Test func mainAndSettingsReceiveSharedModelUpdatesAcrossVisibilityChanges() async throws {
   let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+  await model.reloadCredentialState()
   let main = ConfigurationViewController(viewModel: model)
   let table = try #require(nativeViews(in: main.view).compactMap { $0 as? NSTableView }.first)
   let settings = SettingsViewController(
@@ -19,20 +20,20 @@ import Testing
   settings.selectedTabViewItemIndex = 1
   let pane = try #require(settings.tabViewItems[1].viewController)
   let labels = nativeViews(in: pane.view).compactMap { $0 as? NSTextField }
-  let status = try #require(labels.first { $0.stringValue == "Not configured" })
+  let status = try #require(labels.first { $0.stringValue == "No token saved." })
   settings.viewWillAppear()
   settings.viewWillAppear()
   await model.addDirectory(URL(fileURLWithPath: "/Movies"))
   await model.saveCredential("fake-secret")
   #expect(table.numberOfRows == 1)
-  #expect(status.stringValue == "Configured")
+  #expect(status.stringValue == "Saved token present. Use Test Saved Token to verify access.")
   settings.viewDidDisappear()
   await model.removeCredential()
-  #expect(status.stringValue == "Configured")
+  #expect(status.stringValue == "Saved token present. Use Test Saved Token to verify access.")
   settings.viewWillAppear()
   await model.saveCredential("another-fake-secret")
   await model.removeCredential()
-  #expect(status.stringValue == "Not configured")
+  #expect(status.stringValue == "No token saved.")
 }
 
 /// Verifies that log controller refreshes for append and clear.

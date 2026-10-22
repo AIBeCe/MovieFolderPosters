@@ -130,6 +130,16 @@ Follow the global static analysis policy defined in `~/.codex/AGENTS.md`.
 - Prefer readable single lines up to that limit; avoid unnecessarily narrow wrapping.
 - Use programmatic AppKit for new UI.
 - Prefer Swift 6 language mode and complete concurrency checking.
+- Keep immutable environment configuration behind a public, closed `EnvironmentKey` enum whose raw values
+  are the configured strings, and expose them through `MovieFolderEnvironment.env(_:)`. Keep the enum's
+  value accessor non-public; do not add mutable static environment state or an actor solely to hold constants.
+  Static environment functions must select values through `MovieFolderEnvironment.env(...)`, with explicit
+  type qualification when accessing configuration from a static function.
+- Declare all new application-defined notification names as `static let` members of a focused
+  `Notification.Name` extension, normally in `Notification.Name+MovieFolder.swift`. Use descriptive,
+  application-specific member names and reference them through `Notification.Name` or contextual shorthand.
+  Do not declare notification-name constants on environment, service, coordinator, or view-model types.
+  Preserve existing raw notification strings when moving declarations so cross-process observers remain compatible.
 - Keep UI work on the main actor and callbacks responsive.
 - Perform networking and potentially expensive filesystem work away from UI callbacks.
 - Bound concurrent work, deduplicate requests, and handle cancellation.

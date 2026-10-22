@@ -29,7 +29,7 @@ extension ConfigurationCoordinatorDelegate {
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
   ConfigurationViewModelActivityDelegate, CollectionProcessingDetailsViewControllerDelegate,
-  CollectionResultsViewControllerDelegate, NSWindowDelegate {
+  CollectionResultsViewControllerDelegate, CredentialSettingsDelegate, NSWindowDelegate {
   /// Root router; the root retains this child for its flow lifetime.
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.
@@ -91,15 +91,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 
   /// Creates or presents the main configuration window.
   func start() {
-    if !isObservingProcessing {
-      isObservingProcessing = true
-      DistributedNotificationCenter.default().addObserver(
-        self, selector: #selector(processingChanged(_:)),
-        name: MovieFolderEnvironment.collectionProcessingStateChanged, object: .none)
-      DistributedNotificationCenter.default().addObserver(
-        self, selector: #selector(resultsConfigurationChanged(_:)),
-        name: MovieFolderEnvironment.configurationChanged, object: .none)
-    }
+    observeConfigurationChanges()
     if let mainWindow {
       mainWindow.window?.delegate = self
       refreshCollectionProcessingState()
@@ -117,6 +109,19 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     show(window)
   }
 
+  /// Observes shared invalidations while either Main or Settings uses this retained flow.
+  private func observeConfigurationChanges() {
+    if !isObservingProcessing {
+      isObservingProcessing = true
+      DistributedNotificationCenter.default().addObserver(
+        self, selector: #selector(processingChanged(_:)),
+        name: .movieFolderCollectionProcessingStateChanged, object: .none)
+      DistributedNotificationCenter.default().addObserver(
+        self, selector: #selector(resultsConfigurationChanged(_:)),
+        name: .movieFolderConfigurationChanged, object: .none)
+    }
+  }
+
   /// Reloads processing states after the app becomes active without rereading settings.
   func applicationDidBecomeActive() {
     refreshCollectionProcessingState()
@@ -128,18 +133,57 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 
   /// Creates or presents Settings and refreshes the displayed configuration.
   func showSettings() {
+    observeConfigurationChanges()
     if let settingsWindow {
       show(settingsWindow)
     } else {
       let controller = SettingsViewController(viewModel: viewModel, appearanceSettings: appearance)
+      controller.credentialDelegate = self
       let window = makeWindow(
         title: "Settings", controller: controller,
-        size: NSSize(width: 640, height: 420), minimum: NSSize(width: 640, height: 420))
+        size: NSSize(width: 700, height: 650), minimum: NSSize(width: 700, height: 650))
       window.window?.toolbarStyle = .preference
+      window.window?.delegate = self
       settingsWindow = window
       show(window)
     }
     Task { await viewModel.load() }
+  }
+
+  /// Confirms replacement while the candidate stays exclusively in the pane's secure field.
+  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState) {
+    guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
+    let alert = NSAlert()
+    alert.messageText = "Replace the saved TMDb token?"
+    alert.informativeText = "The candidate will be tested first. The saved token changes only if testing succeeds "
+      + "and credential state is still current. Collections, confirmed movie decisions, and posters are preserved."
+    alert.addButton(withTitle: "Test and Replace")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: window) { [weak self, weak sender] response in
+      guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
+      sender?.saveEnteredCredential(expectedState: state)
+    }
+  }
+
+  /// Confirms removal against a frozen generation without changing roots or installed icons.
+  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestRemoval state: CredentialState) {
+    guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
+    let alert = NSAlert()
+    alert.messageText = "Remove the saved TMDb token?"
+    alert.informativeText = "Movie lookups need a token. Collections, saved movie decisions, and installed posters "
+      + "remain. A changed credential will not be removed using this confirmation."
+    alert.addButton(withTitle: "Remove Token")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: window) { [weak self, weak sender] response in
+      guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
+      sender?.removeSavedCredential(expectedState: state)
+    }
+  }
+
+  /// Opens only the fixed public setup page, never a credential-bearing URL.
+  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) {
+    guard let url = URL(string: "https://www.themoviedb.org/settings/api") else { return }
+    NSWorkspace.shared.open(url)
   }
 
   /// Checks installation evidence and presents the report in a sheet.
@@ -242,11 +286,19 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow else { return }
     if window === mainWindow?.window {
-      DistributedNotificationCenter.default().removeObserver(self)
-      isObservingProcessing = false
+      if settingsWindow?.window?.isVisible != true {
+        DistributedNotificationCenter.default().removeObserver(self)
+        isObservingProcessing = false
+      }
       window.delegate = .none
       closeDetails()
       closeResults()
+    } else if window === settingsWindow?.window {
+      viewModel.cancelCredentialOperation()
+      if mainWindow?.window?.isVisible != true {
+        DistributedNotificationCenter.default().removeObserver(self)
+        isObservingProcessing = false
+      }
     } else if window === detailsWindow {
       closeDetails()
     } else if window === resultsWindow {
@@ -350,6 +402,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     Task { @MainActor [weak self] in
       self?.resultsViewModel?.configurationDidChange()
       self?.summaryViewModel.reload()
+      self?.viewModel.invalidateCredentialState()
+      await self?.viewModel.reloadCredentialState(clearResult: false)
     }
   }
 

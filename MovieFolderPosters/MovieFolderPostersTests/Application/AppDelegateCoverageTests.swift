@@ -157,8 +157,12 @@ private actor DelegateConfigurationService: ConfigurationServicing {
   func addDirectory(_ directory: URL) throws {}
   func removeDirectory(_ identifier: UUID) throws {}
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {}
-  func saveCredential(_ value: String) throws {}
-  func removeCredential() throws {}
+  /// Returns the isolated fixture's non-secret credential state.
+  func credentialState() -> CredentialState { CredentialState(isConfigured: false, revision: .none) }
+  /// Accepts explicit tests without contacting the provider.
+  func testCredential(expectedRevision: UUID?) throws {}
+  func saveCredential(_ value: String, expectedRevision: UUID?) throws {}
+  func removeCredential(expectedRevision: UUID?) throws {}
   func setPosterAppearance(_ appearance: PosterAppearance) throws {}
 }
 

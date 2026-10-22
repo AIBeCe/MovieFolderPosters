@@ -70,7 +70,9 @@ Clear changes only activity history. Search/category/severity controls remain is
 ## Implementation decisions
 
 MovieFolderEnvironment in MovieFolderCommon/Configuration supplies caller-process App Group locations and payload-free
-invalidation notifications. StubTMDbTransport in MovieFolderCommon/Development supplies Debug-only stub
+invalidation notifications. Its immutable configuration values use the closed `EnvironmentKey` enum, whose string raw
+values are retrieved through `env(_:)`; the public API does not expose standalone mutable configuration storage.
+StubTMDbTransport in MovieFolderCommon/Development supplies Debug-only stub
 responses; explicit selection remains at the existing executable entry points. These implementations originally
 remained in Shared during extraction; the follow-up migration removes that unnecessary source-sharing boundary.
 MovieFolderCommon's Keychain adapter accepts its access group from shared environment setup; no package

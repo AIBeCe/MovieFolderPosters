@@ -42,7 +42,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     DistributedNotificationCenter.default().addObserver(
       self,
       selector: #selector(configurationChanged(_:)),
-      name: MovieFolderEnvironment.configurationChanged,
+      name: .movieFolderConfigurationChanged,
       object: .none
     )
   }
@@ -65,7 +65,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     content.delegate = self
     let window = NSWindow(contentViewController: content)
     window.title = "\(request.action.title) — \(request.childName)"
-    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 330 : 260))
+    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 400 : 260))
     window.styleMask = parent == .none ? [.titled, .closable, .miniaturizable] : [.titled, .closable]
     window.isReleasedWhenClosed = false
     window.delegate = self
@@ -140,7 +140,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
 /// Renders controls and progress for one movie-folder poster action.
 @MainActor
 private final class MoviePosterActionViewController: NSViewController,
-  MoviePosterActionViewModelDelegate {
+  MoviePosterActionViewModelDelegate, NSTextFieldDelegate {
   /// Coordinator retaining this action's window and sheet lifetime.
   weak var delegate: (any MoviePosterActionViewControllerDelegate)?
   /// Supplies action state and handles user operations.
@@ -149,6 +149,8 @@ private final class MoviePosterActionViewController: NSViewController,
   private let queryField = NSTextField()
   /// Optional release-year entry field.
   private let yearField = NSTextField()
+  /// Discloses the current normalized search inputs before an explicit remote request.
+  private let identificationLabel = NSTextField(wrappingLabelWithString: "")
   /// Displays poster-bearing movie results.
   private let resultPicker = NSPopUpButton()
   /// Displays progress or success feedback.
@@ -201,6 +203,9 @@ private final class MoviePosterActionViewController: NSViewController,
     stack.addArrangedSubview(descriptionLabel)
     if viewModel.action == .change {
       stack.addArrangedSubview(makeSearchControls())
+      identificationLabel.textColor = .secondaryLabelColor
+      identificationLabel.maximumNumberOfLines = 3
+      stack.addArrangedSubview(identificationLabel)
       stack.addArrangedSubview(makeResultPicker())
     }
     stack.addArrangedSubview(statusLabel)
@@ -260,12 +265,14 @@ private final class MoviePosterActionViewController: NSViewController,
     queryField.placeholderString = "Movie title"
     queryField.setAccessibilityLabel("Movie title")
     queryField.target = self
+    queryField.delegate = self
     queryField.action = #selector(queryChanged)
     queryField.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
 
     yearField.placeholderString = "Year (optional)"
     yearField.setAccessibilityLabel("Release year, optional")
     yearField.target = self
+    yearField.delegate = self
     yearField.action = #selector(yearChanged)
     yearField.widthAnchor.constraint(equalToConstant: 115).isActive = true
 
@@ -292,6 +299,7 @@ private final class MoviePosterActionViewController: NSViewController,
   private func render() {
     guard isViewLoaded else { return }
     let busy = viewModel.isBusy
+    identificationLabel.stringValue = viewModel.identificationPreview
     searchButton.isEnabled = viewModel.canStartOperation
     resultPicker.isEnabled = !busy && !viewModel.movies.isEmpty
     primaryButton.isEnabled = viewModel.canStartOperation
@@ -354,6 +362,12 @@ private final class MoviePosterActionViewController: NSViewController,
 
   /// Copies the title field into the model.
   @objc private func queryChanged() { viewModel.setQuery(queryField.stringValue) }
+  /// Keeps the local request disclosure current while the user edits either search field.
+  func controlTextDidChange(_ notification: Notification) {
+    guard let field = notification.object as? NSTextField else { return }
+    if field === queryField { viewModel.setQuery(field.stringValue) }
+    if field === yearField { viewModel.setYear(field.stringValue) }
+  }
   /// Copies the year field into the model.
   @objc private func yearChanged() { viewModel.setYear(yearField.stringValue) }
   /// Updates the model's query fields and starts a search.

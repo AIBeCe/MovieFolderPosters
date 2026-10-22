@@ -49,8 +49,10 @@ network requests or filesystem-icon changes.
 
 ![Native poster settings](images/native-appkit/settings-window.png)
 
-TMDb retains secure token entry, Save Token, Remove Token, and configured state. Tokens are never read back into
-the text field, echoed into errors, or included in activity messages:
+R100-06 extends TMDb with setup guidance, explicit saved-token testing, confirmed test-before-replacement and
+removal, cancellation, and local identification preview. Tokens are never read back into the text field, echoed
+into errors, or included in activity messages. See [credential setup](CREDENTIAL_SETUP.md) for current behavior and
+qualification status. The following screenshot records the earlier baseline controls:
 
 ![Native credential settings](images/native-appkit/settings-tmdb.png)
 

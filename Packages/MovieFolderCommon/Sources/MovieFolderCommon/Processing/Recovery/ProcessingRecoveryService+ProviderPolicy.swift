@@ -3,6 +3,23 @@ import Foundation
 import Network
 
 nonisolated extension ProcessingRecoveryService {
+  /// Admits an explicit credential diagnostic while preserving processing restrictions.
+  /// - Throws: Busy/unavailable recovery state or active shared provider backoff.
+  public func validateCredentialTestAllowed() throws {
+    let record = try readRecord(lease: acquireLease())
+    if let until = record.providerRetryAt, until > now(), let reason = record.providerFailureReason {
+      throw ProcessingRecoveryError.providerBackoff(until: until, reason: reason)
+    }
+  }
+
+  /// Persists safe non-authentication provider failures without recording candidate credentials.
+  /// - Parameter error: In-memory diagnostic failure; raw content is never persisted.
+  /// - Throws: Safe recovery storage failures if allowlisted evidence cannot be committed.
+  public func recordCredentialTestFailure(_ error: any Error) throws {
+    guard let failure = Self.providerFailure(error), failure.reason != .authentication else { return }
+    try recordProviderFailure(error, credentialDigest: "")
+  }
+
   /// Validates each request against mode, shared backoff, and rejected credential evidence.
   /// - Parameter credentialDigest: Normalized credential SHA-256 digest; never raw credential text.
   /// - Throws: A safe admission failure before the underlying provider is called.

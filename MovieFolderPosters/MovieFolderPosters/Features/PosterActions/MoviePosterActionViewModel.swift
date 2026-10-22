@@ -91,6 +91,12 @@ final class MoviePosterActionViewModel {
   var action: MoviePosterAction { request.action }
   /// The child folder name associated with the request.
   var childName: String { request.childName }
+  /// Exact normalized search fields, computed locally without contacting the provider.
+  var identificationPreview: String {
+    do { return try MovieIdentificationRequest(title: query, yearText: yearText).disclosure } catch {
+      return (error as? MovieIdentificationRequest.InputError)?.message ?? "Review the search fields."
+    }
+  }
 
   /// The selected result, if it still appears in the current poster-bearing results.
   private var selectedMovie: MovieMetadata? {
@@ -135,19 +141,11 @@ final class MoviePosterActionViewModel {
   /// Searches TMDb using the current title and optional valid release year.
   func search() {
     guard request.action == .change, canStartOperation else { return }
-    let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleanQuery.isEmpty else {
-      setError("Enter a movie title to search.")
-      return
-    }
-    let yearInput = yearText.trimmingCharacters(in: .whitespacesAndNewlines)
-    let year: Int?
-    if yearInput.isEmpty {
-      year = .none
-    } else if let parsedYear = Int(yearInput), (1888...2099).contains(parsedYear) {
-      year = parsedYear
-    } else {
-      setError("Enter a release year from 1888 through 2099, or leave it blank.")
+    let identification: MovieIdentificationRequest
+    do {
+      identification = try MovieIdentificationRequest(title: query, yearText: yearText)
+    } catch {
+      setError((error as? MovieIdentificationRequest.InputError)?.message ?? "Review the search fields.")
       return
     }
 
@@ -158,7 +156,9 @@ final class MoviePosterActionViewModel {
     let request = request
     perform(
       "Searching TMDb…",
-      operation: { try await service.searchMovies(for: request, query: cleanQuery, year: year) },
+      operation: {
+        try await service.searchMovies(for: request, query: identification.title, year: identification.year)
+      },
       completion: { [weak self] result in
         self?.searchResult = result
         self?.selectedMovieID = .none

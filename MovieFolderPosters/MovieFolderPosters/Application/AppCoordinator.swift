@@ -24,10 +24,11 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
+    let recovery = try? MovieFolderEnvironment.makeProcessingRecoveryService()
     let service = try DirectoryConfigurationService(
       repository: MovieFolderEnvironment.makeConfigurationRepository(),
       authorizations: MovieFolderEnvironment.makePrivateAuthorizationStore(),
-      processingCleanup: processingStore, activity: activity)
+      processingCleanup: processingStore, activity: activity, recovery: recovery)
     Task.detached {
       do {
         _ = try processingStore.pruneToConfiguredRoots()
@@ -45,7 +46,7 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
 
     return try ConfigurationCoordinator(
       service: service, activity: activity, summaryService: CollectionSummaryService.shared(), appearance: appearance,
-      recovery: try? MovieFolderEnvironment.makeProcessingRecoveryService(), retryService: retryService)
+      recovery: recovery, retryService: retryService)
   }
 }
 

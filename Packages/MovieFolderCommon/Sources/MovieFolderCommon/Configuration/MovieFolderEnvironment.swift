@@ -7,16 +7,20 @@ import Persistence
 /// App Group and private authorization locations use the calling process's identity and entitlements.
 /// Importing this module grants no filesystem authorization or cross-process runtime ownership.
 nonisolated public enum MovieFolderEnvironment {
-  /// The App Group shared by the signed host and Finder extension.
-  public static let groupIdentifier = "group.dag.fikios.MovieFolderPosters"
-  /// The distributed notification announcing committed settings changes.
-  public static let configurationChanged = Notification.Name("dag.fikios.MovieFolderPosters.ConfigurationChanged")
-  /// The distributed notification announcing committed collection processing state changes.
-  public static let collectionProcessingStateChanged = Notification.Name(
-    "dag.fikios.MovieFolderPosters.CollectionProcessingStateChanged")
+  /// Stores configuration values without exposing their storage as public API.
+  public enum EnvironmentKey: String {
+    /// The App Group shared by the signed host and Finder extension.
+    case groupIdentifier = "group.dag.fikios.MovieFolderPosters"
 
-  /// Payload-free invalidation announcing a committed activity append or Clear.
-  public static let activityChanged = Notification.Name("dag.fikios.MovieFolderPosters.ActivityChanged")
+    var value: String { rawValue }
+  }
+
+  /// Resolves an immutable configuration value selected from the supported keys.
+  /// - Parameter key: The configuration value requested by the caller.
+  /// - Returns: The configured string value, independent of actor or instance state.
+  public static func env(_ key: EnvironmentKey) -> String {
+    key.value
+  }
 
   /// Creates a best-effort activity service without making logging a startup requirement.
   /// - Returns: A shared-container recorder, or an unavailable service when the caller cannot resolve its container.
@@ -43,7 +47,7 @@ nonisolated public enum MovieFolderEnvironment {
   public static func appGroupContainerURL() throws -> URL {
     guard
       let url = FileManager.default.containerURL(
-        forSecurityApplicationGroupIdentifier: groupIdentifier
+        forSecurityApplicationGroupIdentifier: MovieFolderEnvironment.env(.groupIdentifier)
       )
     else { throw ConfigurationError.unavailableContainer }
 
@@ -120,14 +124,14 @@ nonisolated public enum MovieFolderEnvironment {
   /// Announces a committed configuration change to other signed processes.
   public static func notifyConfigurationChanged() {
     DistributedNotificationCenter.default().postNotificationName(
-      configurationChanged, object: .none,
+      .movieFolderConfigurationChanged, object: .none,
       userInfo: .none, deliverImmediately: true)
   }
 
   /// Announces committed collection processing state writes so host summary views can reload persisted state.
   static func notifyCollectionProcessingStateChanged() {
     DistributedNotificationCenter.default().postNotificationName(
-      collectionProcessingStateChanged, object: .none,
+      .movieFolderCollectionProcessingStateChanged, object: .none,
       userInfo: .none, deliverImmediately: true)
   }
 }
@@ -142,7 +146,7 @@ nonisolated private struct SharedCollectionProcessingStateChangeNotifier: Collec
 nonisolated private struct SharedActivityChangeNotifier: MovieFolderActivityChangeNotifying {
   func movieFolderActivityDidChange() {
     DistributedNotificationCenter.default().postNotificationName(
-      MovieFolderEnvironment.activityChanged, object: .none, userInfo: .none, deliverImmediately: true)
+      .movieFolderActivityChanged, object: .none, userInfo: .none, deliverImmediately: true)
   }
 }
 
