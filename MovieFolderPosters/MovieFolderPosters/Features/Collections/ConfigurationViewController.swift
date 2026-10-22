@@ -53,6 +53,9 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   private let tableView = CollectionTableView()
   /// Scroll container for the collection table.
   private let scrollView = NSScrollView()
+  /// Explains how to add the first collection when the table is empty.
+  private let emptyStateLabel = NSTextField(
+    wrappingLabelWithString: "No collections yet. Select Add Collection to choose a movie folder.")
   /// Starts the folder picker for a new collection.
   private let addButton = NSButton(
     image: NSImage(systemSymbolName: "plus", accessibilityDescription: .none) ?? NSImage(),
@@ -93,6 +96,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       action: #selector(showInstallationReadiness))
     errorLabel.textColor = .systemRed
     errorLabel.maximumNumberOfLines = 2
+    emptyStateLabel.alignment = .center
+    emptyStateLabel.setAccessibilityLabel(
+      "No collections configured. Use Add Collection to choose a movie folder.")
+    emptyStateLabel.isHidden = true
     recoveryButton.target = self
     recoveryButton.action = #selector(toggleRecoveryMode)
     recoveryButton.setAccessibilityIdentifier("processingRecoveryMode")
@@ -103,7 +110,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     footer.orientation = .horizontal
     footer.alignment = .centerY
     footer.spacing = 10
-    for child in [scrollView, recovery, footer] {
+    for child in [scrollView, emptyStateLabel, recovery, footer] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
@@ -112,6 +119,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
       scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
       scrollView.bottomAnchor.constraint(equalTo: recovery.topAnchor, constant: -10),
+      emptyStateLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+      emptyStateLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+      emptyStateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: scrollView.leadingAnchor, constant: 20),
+      emptyStateLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor, constant: -20),
       recovery.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
       recovery.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
       recovery.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -10),
@@ -225,6 +236,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     }
     addButton.isEnabled = !viewModel.isBusy
     tableView.isEnabled = !viewModel.isBusy
+    emptyStateLabel.isHidden = !presentedDirectories.isEmpty || viewModel.isBusy
     errorLabel.stringValue = viewModel.errorMessage ?? ""
     errorLabel.isHidden = viewModel.errorMessage == .none
     recoveryLabel.stringValue = viewModel.recoveryModeDescription
@@ -316,18 +328,18 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   func collectionSummaryViewModelDidChange(_ viewModel: CollectionSummaryViewModel) { refresh() }
 
   /// Returns the context menu requested by the table.
-  fileprivate func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int) -> NSMenu? {
+  func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int) -> NSMenu? {
     contextMenu(row: row)
   }
 
   /// Removes the selected collection after a keyboard action.
-  fileprivate func collectionTableViewDidRequestSelectionRemoval(_ tableView: CollectionTableView) {
+  func collectionTableViewDidRequestSelectionRemoval(_ tableView: CollectionTableView) {
     guard presentedDirectories.indices.contains(tableView.selectedRow) else { return }
     removeCollection(presentedDirectories[tableView.selectedRow].id)
   }
 
   /// Removes the collection represented by an accessible row action.
-  fileprivate func collectionRowViewDidRequestRemoval(_ rowView: CollectionRowView) {
+  func collectionRowViewDidRequestRemoval(_ rowView: CollectionRowView) {
     guard let identifier = rowView.directoryIdentifier else { return }
     removeCollection(identifier)
   }
@@ -401,7 +413,6 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     delegate?.configurationViewController(self, didRequestDirectorySelection: identifier)
   }
 }
-
 /// Renders collection identity, access evidence, and processing count cells.
 extension ConfigurationViewController {
   /// Creates a cell for the requested collection column.
@@ -525,135 +536,5 @@ private extension CollectionProcessingDisplayState {
     case .failed: "Failed"
     case .current: "Current"
     }
-  }
-}
-
-/// Receives context-menu and keyboard-removal requests from the collection table.
-@MainActor
-private protocol CollectionTableViewActionDelegate: AnyObject {
-  /// Requests a context menu for a row.
-  func collectionTableView(_ tableView: CollectionTableView, menuForRow row: Int) -> NSMenu?
-  /// Requests removal of the currently selected collection.
-  func collectionTableViewDidRequestSelectionRemoval(_ tableView: CollectionTableView)
-}
-
-/// Adds context menus and Delete-key handling to the collection table.
-@MainActor
-private final class CollectionTableView: NSTableView {
-  /// Receives row menu and selected-row removal requests.
-  weak var actionDelegate: (any CollectionTableViewActionDelegate)?
-
-  /// Builds the context menu for the row under the pointer.
-  override func menu(for event: NSEvent) -> NSMenu? {
-    actionDelegate?.collectionTableView(
-      self, menuForRow: row(at: convert(event.locationInWindow, from: .none)))
-  }
-
-  /// Routes Delete and Forward Delete to selected-row removal.
-  override func keyDown(with event: NSEvent) {
-    if event.keyCode == 51 || event.keyCode == 117 {
-      actionDelegate?.collectionTableViewDidRequestSelectionRemoval(self)
-    } else {
-      super.keyDown(with: event)
-    }
-  }
-}
-
-/// Receives accessible removal requests from a collection row.
-@MainActor
-private protocol CollectionRowViewDelegate: AnyObject {
-  /// Requests removal of the collection represented by a row.
-  func collectionRowViewDidRequestRemoval(_ rowView: CollectionRowView)
-}
-
-/// Adds hover and accessibility removal controls to a collection table row.
-@MainActor
-private final class CollectionRowView: NSTableRowView {
-  /// Receives removal actions initiated from this row.
-  weak var removalDelegate: (any CollectionRowViewDelegate)?
-  /// Identifier of the collection represented by this reusable row.
-  var directoryIdentifier: UUID?
-  /// The button revealed while the pointer is over the row.
-  private let removeButton = NSButton(
-    image: NSImage(systemSymbolName: "minus.circle", accessibilityDescription: .none) ?? NSImage(),
-    target: .none,
-    action: .none
-  )
-  /// Tracks pointer entry and exit for the hover affordance.
-  private var tracking: NSTrackingArea?
-
-  /// Creates the row and installs removal and accessibility actions.
-  override init(frame frameRect: NSRect) {
-    super.init(frame: frameRect)
-    removeButton.isBordered = false
-    removeButton.target = self
-    removeButton.action = #selector(remove)
-    removeButton.setAccessibilityLabel("Remove collection")
-    removeButton.alphaValue = 0
-    removeButton.setAccessibilityHidden(true)
-    removeButton.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(removeButton)
-    NSLayoutConstraint.activate([
-      removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-      removeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-      removeButton.widthAnchor.constraint(equalToConstant: 22),
-      removeButton.heightAnchor.constraint(equalToConstant: 22)
-    ])
-    setAccessibilityCustomActions([
-      NSAccessibilityCustomAction(
-        name: "Remove collection",
-        handler: { [weak self] in
-          self?.remove()
-
-          return true
-        })
-    ])
-  }
-
-  /// Storyboard and archive construction are unsupported; create this view programmatically.
-  @available(*, unavailable)
-  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-
-  /// Rebuilds the pointer tracking area after layout changes.
-  override func updateTrackingAreas() {
-    super.updateTrackingAreas()
-    if let tracking { removeTrackingArea(tracking) }
-    let area = NSTrackingArea(
-      rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-      owner: self, userInfo: .none)
-    addTrackingArea(area)
-    tracking = area
-  }
-
-  /// Reveals the removal button when the pointer enters the row.
-  override func mouseEntered(with event: NSEvent) { setHovered(true) }
-  /// Hides the removal button after the pointer leaves the row.
-  override func mouseExited(with event: NSEvent) { setHovered(false) }
-
-  /// Updates visibility and accessibility exposure for the remove button.
-  /// - Parameter hovered: Whether the pointer is currently over this row.
-  private func setHovered(_ hovered: Bool) {
-    removeButton.alphaValue = hovered ? 1 : 0
-    removeButton.setAccessibilityHidden(!hovered)
-  }
-
-  /// Forwards the remove-button action to the row delegate.
-  @objc private func remove() { removalDelegate?.collectionRowViewDidRequestRemoval(self) }
-}
-
-/// Includes the collection-add button in the table header's accessibility children.
-@MainActor
-private final class CollectionHeaderView: NSTableHeaderView {
-  /// The add button positioned within this header.
-  weak var addButton: NSButton?
-
-  /// Adds the button to the accessibility tree when it is not already present.
-  override func accessibilityChildren() -> [Any]? {
-    var children = super.accessibilityChildren() ?? []
-    if let addButton, !children.contains(where: { ($0 as? NSButton) === addButton }) {
-      children.append(addButton)
-    }
-
-    return children
   }
 }

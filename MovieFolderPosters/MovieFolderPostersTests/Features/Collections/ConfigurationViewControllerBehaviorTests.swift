@@ -39,6 +39,34 @@ import Testing
   #expect(main.updates == initialUpdates)
 }
 
+/// Verifies that an actionable empty state appears only when no collection is configured.
+@MainActor
+@Test func mainShowsAccessibleEmptyStateOnlyForAnEmptyCollectionList() async throws {
+  let emptyModel = ConfigurationViewModel(service: ConfigurationServiceFake())
+  await emptyModel.load()
+  let emptyController = ConfigurationViewController(viewModel: emptyModel)
+  let emptyViews = nativeViews(in: emptyController.view)
+  let emptyLabel = try #require(emptyViews.compactMap { $0 as? NSTextField }.first {
+    $0.stringValue.contains("No collections yet")
+  })
+  #expect(!emptyLabel.isHidden)
+  #expect(emptyLabel.accessibilityLabel() ==
+    "No collections configured. Use Add Collection to choose a movie folder.")
+
+  let populatedModel = ConfigurationViewModel(
+    service: ConfigurationServiceFake(
+      summary: ConfigurationSummary(
+        directories: [.init(id: UUID(), path: "/Movies/Comedy", availability: .available)],
+        credentialConfigured: false
+      )))
+  await populatedModel.load()
+  let populatedController = ConfigurationViewController(viewModel: populatedModel)
+  let populatedLabel = try #require(nativeViews(in: populatedController.view).compactMap {
+    $0 as? NSTextField
+  }.first { $0.stringValue.contains("No collections yet") })
+  #expect(populatedLabel.isHidden)
+}
+
 /// Verifies that main keeps settings in their own window and preserves count columns.
 @MainActor
 @Test func mainKeepsSettingsInTheirOwnWindowAndPreservesCountColumns() async throws {
