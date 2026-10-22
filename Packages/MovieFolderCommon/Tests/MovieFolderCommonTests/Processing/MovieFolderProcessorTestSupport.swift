@@ -102,6 +102,10 @@ actor CountingProvider {
   private let delaysPoster: Bool
   /// The configured provider error thrown by a test search.
   private let searchError: TMDbError?
+  /// The configured provider error thrown by a test artwork download.
+  private let posterError: TMDbError?
+  /// Optional image bytes returned instead of the valid default poster fixture.
+  private let posterResponse: Data?
   /// The provider error intentionally raced against task cancellation.
   private let cancellationError: TMDbError?
   /// How many initial provider requests must fail before normal responses resume.
@@ -131,6 +135,8 @@ actor CountingProvider {
     delaysSearch: Bool = false,
     delaysPoster: Bool = false,
     searchError: TMDbError? = .none,
+    posterError: TMDbError? = .none,
+    posterResponse: Data? = .none,
     cancellationError: TMDbError? = .none,
     failuresRemaining: Int = .max
   ) {
@@ -138,6 +144,8 @@ actor CountingProvider {
     self.delaysSearch = delaysSearch
     self.delaysPoster = delaysPoster
     self.searchError = searchError
+    self.posterError = posterError
+    self.posterResponse = posterResponse
     self.cancellationError = cancellationError
     self.failuresRemaining = failuresRemaining
   }
@@ -192,6 +200,8 @@ actor CountingProvider {
   /// - Throws: Provider, transport, image-response, or cancellation errors.
   func downloadPoster(path: String) async throws -> Data {
     posterCount += 1
+    if let posterError { throw posterError }
+    if let posterResponse { return posterResponse }
     if delaysPoster, posterCount == 1 {
       return try await withCheckedThrowingContinuation { continuation in
         posterContinuation = continuation

@@ -55,11 +55,13 @@ extension MovieFolderProcessor {
     if visit.cache.providerRetryAt != .none { stateChanged = true }
     visit.cache.providerRetryAt = .none
     if stateChanged { try saveState(visit.cache, to: lease) }
+    try await repairExistingIconArtwork(candidates, root: root, lease: lease, visit: &visit)
     for candidate in candidates {
+      if visit.didStopEarly { break }
       try Task.checkCancellation()
       try recovery?.validateProcessingAllowed()
       if try shouldSkipCandidate(candidate, root: root, visit: &visit) { continue }
-      if try reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) { continue }
+      if try await reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) { continue }
       if try await processCandidate(candidate, root: root, lease: lease, visit: &visit) {
         visit.didStopEarly = true
         break
@@ -201,7 +203,7 @@ extension MovieFolderProcessor {
   /// Reuses unchanged decisions and reports whether this member is already handled.
   func reuseCachedDecision(
     _ candidate: FolderCandidate, root: URL, lease: PersistenceLease, visit: inout AutomaticProcessingVisit
-  ) throws -> Bool {
+  ) async throws -> Bool {
     let priorRecord = visit.cache.folders[candidate.name]
     let sameFingerprint = priorRecord?.fingerprint == candidate.fingerprint
     if sameFingerprint, let record = priorRecord {
@@ -216,13 +218,26 @@ extension MovieFolderProcessor {
         try recordFolderProcessing(cachedFolderAssessment(candidate, saved: record), in: &visit.recording)
         return true
       }
-      if record.status == .processed,
-        let movieID = record.matchedMovieID,
-        let posterPath = record.posterPath,
-        let cached = cachedPoster(for: posterPath) {
-        try assignCachedPoster(
-          CachedPosterAssignment(bytes: cached, movieID: movieID, posterPath: posterPath, record: record),
-          candidate: candidate, root: root, lease: lease, visit: &visit)
+      let canReuseSavedArtwork = record.status == .processed ||
+        (record.status == .transientFailure &&
+          (record.lastFailure?.stage == .artwork || record.lastFailure?.stage == .assignPoster)
+          && (record.retryDate ?? .distantPast) <= now()) ||
+        (record.status == .transientFailure && record.matchedMovieID != .none && record.posterPath != .none
+          && record.lastFailure == .none && record.processingReason == .none)
+      if canReuseSavedArtwork, let movieID = record.matchedMovieID, let posterPath = record.posterPath {
+        let assignment: CachedPosterAssignment
+        switch cachedPoster(for: posterPath) {
+        case .valid(let bytes):
+          assignment = CachedPosterAssignment(bytes: bytes, movieID: movieID, posterPath: posterPath, record: record)
+        case .missing, .invalid:
+          let movie = MovieMetadata(
+            id: movieID, title: record.movieTitle ?? "", originalTitle: record.movieTitle ?? "",
+            releaseYear: record.movieYear, posterPath: posterPath)
+          return try await repairCachedPoster(
+            movieID: movieID, posterPath: posterPath, record: record, movie: movie,
+            candidate: candidate, root: root, lease: lease, visit: &visit)
+        }
+        try assignCachedPoster(assignment, candidate: candidate, root: root, lease: lease, visit: &visit)
         return true
       }
       if record.status != .processed, !record.needsLegacyReassessment, !needsParserReassessment,
@@ -276,10 +291,132 @@ extension MovieFolderProcessor {
     } catch {
       if Task.isCancelled { throw CancellationError() }
       guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
-      recordTransientFailure(candidate, in: &visit.cache)
+      let movie = MovieMetadata(
+        id: assignment.movieID, title: assignment.record.movieTitle ?? "",
+        originalTitle: assignment.record.movieTitle ?? "", releaseYear: assignment.record.movieYear,
+        posterPath: assignment.posterPath)
+      recordTransientFailure(candidate, in: &visit.cache, stage: .assignPoster, movie: movie)
+      visit.cache.folders[candidate.name]?.movieIdentitySource = assignment.record.movieIdentitySource
       try saveState(visit.cache, to: lease)
       visit.summary.transientFailures += 1
-      try recordFolderProcessing(failedFolderAssessment(candidate, stage: .assignPoster), in: &visit.recording)
+      var failureRecord = failedFolderAssessment(candidate, stage: .assignPoster, movie: movie)
+      failureRecord.movieIdentitySource = assignment.record.movieIdentitySource
+      try recordFolderProcessing(failureRecord, in: &visit.recording)
+    }
+  }
+
+  /// Repairs missing or invalid source artwork once while retaining the saved movie decision on failure.
+  private func repairCachedPoster(
+    movieID: Int, posterPath: String, record: FolderRecord, movie: MovieMetadata,
+    candidate: FolderCandidate, root: URL, lease: PersistenceLease, visit: inout AutomaticProcessingVisit
+  ) async throws -> Bool {
+    do {
+      let bytes = try await posterBytes(for: posterPath, visit: &visit)
+      try assignCachedPoster(
+        CachedPosterAssignment(bytes: bytes, movieID: movieID, posterPath: posterPath, record: record),
+        candidate: candidate, root: root, lease: lease, visit: &visit)
+    } catch {
+      visit.didStopEarly = try recordArtworkRepairFailure(
+        error, movie: movie, candidate: candidate, root: root,
+        identitySource: record.movieIdentitySource, lease: lease, visit: &visit)
+      return true
+    }
+
+    return true
+  }
+
+  /// Stores a recoverable repair failure without discarding the confirmed provider movie.
+  private func recordArtworkRepairFailure(
+    _ error: any Error, movie: MovieMetadata, candidate: FolderCandidate, root: URL,
+    identitySource: MovieIdentitySource?, lease: PersistenceLease, visit: inout AutomaticProcessingVisit
+  ) throws -> Bool {
+    if Task.isCancelled { throw CancellationError() }
+    guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return true }
+    if let error = error as? CollectionProcessingError { throw error }
+    if error is CancellationError { throw CancellationError() }
+    if let error = error as? ProcessingRecoveryError {
+      return try recordRecoveryAdmissionFailure(
+        error, candidate: candidate, lease: lease, visit: &visit,
+        attempt: PosterAttempt(stage: .artwork, movie: movie), identitySource: identitySource)
+    }
+    if let error = error as? TMDbError {
+      return try recordProviderFailure(
+        error, candidate: candidate, lease: lease, visit: &visit,
+        attempt: PosterAttempt(stage: .artwork, movie: movie), identitySource: identitySource)
+    }
+
+    let evidence: (reason: FolderProcessingReason, failureReason: FolderProcessingFailureReason) =
+      if case ProcessingFailure.invalidPoster = error { (.invalidResponse, .invalidResponse) }
+      else if case ProcessingFailure.cacheWriteFailed = error { (.posterFailure, .storage) }
+      else { (.posterFailure, .unavailable) }
+    recordTransientFailure(
+      candidate, in: &visit.cache, stage: .artwork, movie: movie,
+      reason: evidence.reason, failureReason: evidence.failureReason)
+    if let identitySource { visit.cache.folders[candidate.name]?.movieIdentitySource = identitySource }
+    try saveState(visit.cache, to: lease)
+    visit.summary.transientFailures += 1
+    var failureRecord = failedFolderAssessment(
+      candidate, stage: .artwork, movie: movie,
+      reason: evidence.reason, failureReason: evidence.failureReason)
+    failureRecord.movieIdentitySource = identitySource
+    try recordFolderProcessing(failureRecord, in: &visit.recording)
+
+    return false
+  }
+
+  /// Repairs source artwork for verified existing icons without rewriting those folder icons.
+  private func repairExistingIconArtwork(
+    _ candidates: [FolderCandidate], root: URL, lease: PersistenceLease,
+    visit: inout AutomaticProcessingVisit
+  ) async throws {
+    for candidate in candidates where candidate.hasCustomIcon {
+      guard let record = visit.cache.folders[candidate.name], record.fingerprint == candidate.fingerprint,
+        let movieID = record.matchedMovieID, let posterPath = record.posterPath
+      else { continue }
+      let retryIsDue = record.retryDate.map { $0 <= now() } ?? true
+      guard record.status == .processed ||
+        (record.status == .transientFailure && retryIsDue &&
+          (record.lastFailure?.stage == .artwork ||
+            (record.matchedMovieID != .none && record.posterPath != .none && record.lastFailure == .none
+              && record.processingReason == .none))),
+        !(record.processingReason == .authentication && recovery == nil)
+      else { continue }
+      guard try !fileSystem.isPosterSuppressed(toChild: candidate.name, in: root),
+        try fileSystem.hasAssignedPoster(
+          toChild: candidate.name, in: root, expectedIdentity: candidate.identity)
+      else { continue }
+      switch cachedPoster(for: posterPath) {
+      case .valid: continue
+      case .missing, .invalid: break
+      }
+
+      let movie = MovieMetadata(
+        id: movieID, title: record.movieTitle ?? "", originalTitle: record.movieTitle ?? "",
+        releaseYear: record.movieYear, posterPath: posterPath)
+      do {
+        let bytes = try await downloadAndCachePoster(
+          for: posterPath, visit: &visit, requireCacheWrite: true)
+        guard case .valid(let cachedBytes) = cachedPoster(for: posterPath), cachedBytes == bytes else {
+          throw ProcessingFailure.cacheWriteFailed
+        }
+      } catch {
+        if try recordArtworkRepairFailure(
+          error, movie: movie, candidate: candidate, root: root,
+          identitySource: record.movieIdentitySource, lease: lease, visit: &visit) {
+          visit.didStopEarly = true
+          return
+        }
+        continue
+      }
+      var repairedRecord = FolderRecord(
+        fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
+        matchedMovieID: movieID, posterPath: posterPath, movieTitle: record.movieTitle,
+        movieYear: record.movieYear, movieIdentitySource: record.movieIdentitySource ?? .savedDecision)
+      repairedRecord.nameParserRevision = record.nameParserRevision
+      repairedRecord.lastFailure = .none
+      visit.cache.folders[candidate.name] = repairedRecord
+      try saveAssignedState(
+        visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
     }
   }
 
@@ -318,7 +455,8 @@ extension MovieFolderProcessor {
   /// Retains the explicit admission reason without converting paused work into an ordinary retry.
   private func recordRecoveryAdmissionFailure(
     _ error: ProcessingRecoveryError, candidate: FolderCandidate, lease: PersistenceLease,
-    visit: inout AutomaticProcessingVisit, attempt: PosterAttempt
+    visit: inout AutomaticProcessingVisit, attempt: PosterAttempt,
+    identitySource: MovieIdentitySource? = nil
   ) throws -> Bool {
     let reason: FolderProcessingReason
     let retryAt: Date?
@@ -343,11 +481,13 @@ extension MovieFolderProcessor {
     }
     recordTransientFailure(candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie,
       reason: reason, failureReason: failure)
+    if let identitySource { visit.cache.folders[candidate.name]?.movieIdentitySource = identitySource }
     visit.cache.folders[candidate.name]?.retryDate = retryAt
     try saveState(visit.cache, to: lease)
     var record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie,
       reason: reason, failureReason: failure)
     record.retryAt = retryAt
+    if let identitySource { record.movieIdentitySource = identitySource }
     try recordFolderProcessing(record, in: &visit.recording)
     visit.summary.providerRetryAt = retryAt
     if let retryAt { deferPendingFolderAssessments(&visit.recording, until: retryAt, child: visit.selectedChild) }
@@ -358,13 +498,15 @@ extension MovieFolderProcessor {
   /// Saves typed provider evidence and any root-local delay before ending the current attempt.
   private func recordProviderFailure(
     _ error: TMDbError, candidate: FolderCandidate, lease: PersistenceLease,
-    visit: inout AutomaticProcessingVisit, attempt: PosterAttempt
+    visit: inout AutomaticProcessingVisit, attempt: PosterAttempt,
+    identitySource: MovieIdentitySource? = nil
   ) throws -> Bool {
     if Task.isCancelled { throw CancellationError() }
     let evidence = providerFailureEvidence(error, stage: attempt.stage)
     recordTransientFailure(
       candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
+    if let identitySource { visit.cache.folders[candidate.name]?.movieIdentitySource = identitySource }
     if let retryDate = try effectiveRootBackoff(for: error) {
       visit.cache.providerRetryAt = retryDate
       visit.cache.folders[candidate.name]?.retryDate = retryDate
@@ -374,15 +516,17 @@ extension MovieFolderProcessor {
         candidate, stage: attempt.stage, movie: attempt.movie,
         reason: evidence.reason, failureReason: evidence.failureReason)
       record.retryAt = retryDate
+      if let identitySource { record.movieIdentitySource = identitySource }
       try recordFolderProcessing(record, in: &visit.recording)
       deferPendingFolderAssessments(&visit.recording, until: retryDate, child: visit.selectedChild)
       return true
     }
     try saveState(visit.cache, to: lease)
     visit.summary.transientFailures += 1
-    let record = failedFolderAssessment(
+    var record = failedFolderAssessment(
       candidate, stage: attempt.stage, movie: attempt.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
+    if let identitySource { record.movieIdentitySource = identitySource }
     try recordFolderProcessing(record, in: &visit.recording)
     if evidence.reason == .authentication { return true }
 
@@ -424,7 +568,7 @@ extension MovieFolderProcessor {
 
     attempt.movie = movie
     attempt.stage = .artwork
-    let imageData = try await posterBytes(for: posterPath)
+    let imageData = try await posterBytes(for: posterPath, visit: &visit)
 
     guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
     attempt.stage = .assignPoster
@@ -513,18 +657,44 @@ extension MovieFolderProcessor {
   }
 
   /// Reuses validated artwork or downloads, validates, and best-effort caches it.
-  private func posterBytes(for posterPath: String) async throws -> Data {
-    if let cached = cachedPoster(for: posterPath) {
-      return cached
-    } else {
-      let imageData = try await provider.downloadPoster(path: posterPath)
-      try Task.checkCancellation()
-      guard Self.isValidPoster(imageData) else { throw ProcessingFailure.invalidPoster }
-      try? fileSystem.writeData(
-        imageData, named: Self.posterCacheName(posterPath),
-        in: cacheDirectory)
+  private func posterBytes(
+    for posterPath: String, visit: inout AutomaticProcessingVisit
+  ) async throws -> Data {
+    switch cachedPoster(for: posterPath) {
+    case .valid(let cached): return cached
+    case .missing, .invalid: return try await downloadAndCachePoster(for: posterPath, visit: &visit)
+    }
+  }
 
-      return imageData
+  /// Downloads a complete source image and caches it without assigning a folder icon.
+  private func downloadAndCachePoster(
+    for posterPath: String, visit: inout AutomaticProcessingVisit, requireCacheWrite: Bool = false
+  ) async throws -> Data {
+    guard visit.attemptedPosterPaths.insert(posterPath).inserted else {
+      if case .valid(let cached) = cachedPoster(for: posterPath) { return cached }
+      throw ProcessingFailure.invalidPoster
+    }
+    let imageData = try await provider.downloadPoster(path: posterPath)
+    try Task.checkCancellation()
+    guard Self.isValidPoster(imageData) else { throw ProcessingFailure.invalidPoster }
+    if requireCacheWrite {
+      try fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
+    } else {
+      try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
+    }
+
+    return imageData
+  }
+
+  /// Restores explicit identity provenance after generic artwork-failure recording.
+  private func preserveMovieIdentitySource(
+    _ source: MovieIdentitySource?, candidate: FolderCandidate,
+    visit: inout AutomaticProcessingVisit
+  ) {
+    guard let source else { return }
+    visit.cache.folders[candidate.name]?.movieIdentitySource = source
+    if let index = visit.recording?.folders.firstIndex(where: { $0.name == candidate.name }) {
+      visit.recording?.folders[index].movieIdentitySource = source
     }
   }
 }
@@ -553,6 +723,8 @@ struct AutomaticProcessingVisit {
   var summary = ProcessingSummary()
   /// Whether provider admission ended this traversal without a normal collection-wide completion.
   var didStopEarly = false
+  /// Limits each provider poster path to one download attempt during this traversal.
+  var attemptedPosterPaths = Set<String>()
   /// Restricts result deferral and interruption to one member for an explicit retry.
   var selectedChild: String? = .none
 }

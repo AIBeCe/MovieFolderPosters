@@ -7,6 +7,7 @@ import Persistence
 nonisolated enum ProcessingFailure: Error {
   case changedIdentity
   case invalidPoster
+  case cacheWriteFailed
 }
 
 /// The last persisted outcome used to decide whether and when a folder should be retried.

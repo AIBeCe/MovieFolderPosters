@@ -60,7 +60,7 @@ extension MovieFolderProcessor {
       selectedChild: child)
     defer { interruptUnfinishedProcessing(&visit.recording, child: child) }
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
-      try !reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) {
+      try await !reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) {
       visit.didStopEarly = try await processCandidate(candidate, root: root, lease: lease, visit: &visit)
     }
     try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)

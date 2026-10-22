@@ -186,7 +186,7 @@ extension MovieFolderProcessorTests {
     let posterCount = await provider.posterCount
     XCTAssertEqual(summary.restyled, 0)
     XCTAssertEqual(appearance, .raw)
-    XCTAssertEqual(searchCount, 1)
+    XCTAssertEqual(searchCount, 0)
     XCTAssertEqual(posterCount, 1)
   }
 

@@ -53,7 +53,7 @@ extension MovieFolderProcessor {
     }
     guard let record = state.folders[candidate.name], record.fingerprint == candidate.fingerprint,
       record.status == .processed, let posterPath = record.posterPath,
-      record.matchedMovieID != .none, let data = cachedPoster(for: posterPath)
+      record.matchedMovieID != .none, case .valid(let data) = cachedPoster(for: posterPath)
     else { return false }
     try Task.checkCancellation()
     let recoveryLease = try recovery?.acquireMutationLease()

@@ -6,6 +6,16 @@ import MovieFolderParsing
 import Network
 import Persistence
 
+/// Result of reading one provider-artwork source cache entry.
+nonisolated enum CachedPosterRead: Sendable {
+  /// Encoded image data that passed complete ImageIO validation.
+  case valid(Data)
+  /// No cache file exists for the provider path.
+  case missing
+  /// A cache file exists but does not contain a complete supported image.
+  case invalid
+}
+
 extension MovieFolderProcessor {
   /// Stores an unresolved outcome with the conservative retry delay.
   ///
@@ -115,17 +125,16 @@ extension MovieFolderProcessor {
     }
   }
 
-  /// Returns source image bytes only when the cached file still decodes as a complete image.
+  /// Reads source image bytes and distinguishes absent entries from invalid image data.
   ///
   /// - Parameter path: The provider-relative source poster path.
-  /// - Returns: The validated cached bytes when available.
-  func cachedPoster(for path: String) -> Data? {
+  /// - Returns: The cache state after complete-image validation.
+  func cachedPoster(for path: String) -> CachedPosterRead {
     let name = Self.posterCacheName(path)
-    guard let data = try? fileSystem.readData(named: name, in: cacheDirectory),
-      Self.isValidPoster(data)
-    else { return .none }
+    guard let data = try? fileSystem.readData(named: name, in: cacheDirectory) else { return .missing }
+    guard Self.isValidPoster(data) else { return .invalid }
 
-    return data
+    return .valid(data)
   }
 
   /// Selects a bounded provider-wide retry boundary for authentication or rate-limit errors.
