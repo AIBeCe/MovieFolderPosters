@@ -1,6 +1,6 @@
 # GitHub Roadmap Tracking
 
-Updated: 2026-10-20. Tracking was initially created and verified on 2026-10-16.
+Updated: 2026-10-22. Tracking was initially created and verified on 2026-10-16.
 Status: R100-01 and R100-02 are completed; issues #1 and #2 are closed as completed.
 R100-02 implementation commit: `049b74b`. Both features are integrated into `develop`; their feature branches
 were deleted. `develop` was pushed to GitHub through `b48d44d` on 2026-10-18. No release was published.
@@ -74,7 +74,7 @@ release/decision criteria; a supporting issue is not automatically an applicatio
 | R100-04 | [#4 — Make network failure and interruption recovery predictable](https://github.com/AIBeCe/MovieFolderPosters/issues/4) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Committed/integrated locally; not pushed |
 | R100-05 | [#5 — Resolve and retry specific failed folders](https://github.com/AIBeCe/MovieFolderPosters/issues/5) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Implemented and validated; live Finder qualification pending |
 | R100-06 | [#6 — Make credential setup and replacement understandable](https://github.com/AIBeCe/MovieFolderPosters/issues/6) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
-| R100-07 | [#7 — Complete essential native usability and accessibility](https://github.com/AIBeCe/MovieFolderPosters/issues/7) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
+| R100-07 | [#7 — Complete essential native usability and accessibility](https://github.com/AIBeCe/MovieFolderPosters/issues/7) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Accessible empty state integrated; native qualification pending; issue remains open |
 | R100-08 | [#8 — Handle corrupt cached artwork safely](https://github.com/AIBeCe/MovieFolderPosters/issues/8) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R100-09 | [#9 — Qualify and distribute the first production release](https://github.com/AIBeCe/MovieFolderPosters/issues/9) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R110-01 | [#10 — Simplify collection setup and naming](https://github.com/AIBeCe/MovieFolderPosters/issues/10) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Planned delivery |

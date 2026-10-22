@@ -216,6 +216,10 @@ GitHub issue: [#7](https://github.com/AIBeCe/MovieFolderPosters/issues/7); miles
 - Acceptance: Automated state/lifecycle checks and native keyboard/VoiceOver checks cover all core workflows, light/dark, increased contrast, resizing, reopening, and asynchronous updates. Status remains understandable without color. UI work for earlier deliverables must already follow these rules.
 - Source ideas: E32, E33, E36, E37, E71, E72, E73, E74, E80.
 
+The R100-07 implementation point delivered an accessible Main empty state. Focused presentation and credential-service
+tests passed, and repository-wide SwiftLint passed. Commits `1c9e2b0` and `85c348d` are integrated in `develop`.
+Native keyboard, VoiceOver, contrast, and window-resizing checks remain pending; this issue is not fully qualified.
+
 <a id="r100-08"></a>
 
 ### R100-08 — Handle corrupt cached artwork safely
