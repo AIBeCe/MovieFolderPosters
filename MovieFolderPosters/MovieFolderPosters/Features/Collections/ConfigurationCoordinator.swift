@@ -1,6 +1,7 @@
 import AppKit
 import FinderSync
 import MovieFolderCommon
+import UniformTypeIdentifiers
 
 /// Requests routing to an independent sibling flow.
 @MainActor
@@ -42,6 +43,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private(set) var mainWindow: NSWindowController?
   /// The settings window, when it has been created.
   private(set) var settingsWindow: NSWindowController?
+  /// Retained history provider used only after an explicit diagnostic export request.
+  private let activity: any MovieFolderActivityServicing
   /// Checks installation evidence when the user requests a readiness report.
   private let installationService: any InstallationReadinessServicing
   /// Whether processing invalidations are registered for this presented flow.
@@ -77,6 +80,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     retryService: any CollectionRetryServicing = UnavailableCollectionRetryService()
   ) {
     self.installationService = installationService
+    self.activity = activity
     self.appearance = appearance
     self.retryService = retryService
     viewModel = ConfigurationViewModel(service: service, activity: activity, recovery: recovery)
@@ -148,34 +152,6 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       show(window)
     }
     Task { await viewModel.load() }
-  }
-
-  /// Checks installation evidence and presents the report in a sheet.
-  private func showInstallationReadiness() {
-    guard !checkingInstallation, !viewModel.isBusy, let window = mainWindow?.window,
-      window.attachedSheet == .none
-    else { return }
-    checkingInstallation = true
-    Task { [weak self] in
-      guard let self else { return }
-      guard !viewModel.isBusy else {
-        checkingInstallation = false
-        return
-      }
-      let report = await installationReport()
-      checkingInstallation = false
-      guard window.isVisible, window.attachedSheet == .none else { return }
-      let reportController = InstallationReadinessViewController(report: report)
-      let alert = NSAlert()
-      alert.messageText = "Installation Readiness"
-      alert.informativeText = "Checks describe current evidence. Unknown states require further verification."
-      alert.accessoryView = reportController.view
-      alert.addButton(withTitle: "Done")
-      alert.addButton(withTitle: "Open Extension Settings")
-      alert.beginSheetModal(for: window) { response in
-        if response == .alertSecondButtonReturn { FIFinderSyncController.showExtensionManagementInterface() }
-      }
-    }
   }
 
   /// Shows the selected collection's read-only persisted details as a window sheet.
@@ -393,6 +369,73 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
           await self.viewModel.reauthorizeDirectory(identifier, with: url)
         } else {
           await self.viewModel.addDirectory(url)
+        }
+      }
+    }
+  }
+}
+
+private extension ConfigurationCoordinator {
+  /// Checks installation evidence and presents the report in a sheet.
+  func showInstallationReadiness() {
+    guard !checkingInstallation, !viewModel.isBusy, let window = mainWindow?.window,
+      window.attachedSheet == .none
+    else { return }
+    checkingInstallation = true
+    Task { [weak self] in
+      guard let self else { return }
+      guard !viewModel.isBusy else {
+        checkingInstallation = false
+        return
+      }
+      let report = await installationReport()
+      checkingInstallation = false
+      guard window.isVisible, window.attachedSheet == .none else { return }
+      let reportController = InstallationReadinessViewController(report: report)
+      let alert = NSAlert()
+      alert.messageText = "Installation Readiness"
+      alert.informativeText = "Checks describe current evidence. Unknown states require further verification."
+      alert.accessoryView = reportController.view
+      alert.addButton(withTitle: "Done")
+      alert.addButton(withTitle: "Open Extension Settings")
+      alert.addButton(withTitle: "Export Diagnostics…")
+      alert.beginSheetModal(for: window) { response in
+        if response == .alertSecondButtonReturn { FIFinderSyncController.showExtensionManagementInterface() }
+        if response == .alertThirdButtonReturn {
+          self.exportDiagnostics(report: report, attachedTo: window)
+        }
+      }
+    }
+  }
+
+  /// Lets the user choose a destination before reading retained activity or writing a diagnostic file.
+  /// - Parameters:
+  ///   - report: The readiness snapshot projected through the export's fixed status vocabulary.
+  ///   - window: The configuration window that owns the save panel and any sanitized failure alert.
+  func exportDiagnostics(report: InstallationReadinessReport, attachedTo window: NSWindow) {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.plainText]
+    panel.nameFieldStringValue = "MovieFolderPosters-Diagnostics.txt"
+    panel.title = "Export Diagnostics"
+    panel.message = "Exports readiness statuses and up to 50 recent activity timestamps and actions. "
+      + "Folder paths, credentials, identifiers, and error details are excluded."
+    panel.beginSheetModal(for: window) { response in
+      guard response == .OK, let destination = panel.url else { return }
+
+      Task {
+        let entries = try? await self.activity.entries()
+        let text = InstallationDiagnosticsExport.format(report: report, entries: entries)
+        do {
+          try await Task.detached(priority: .utility) {
+            try text.write(to: destination, atomically: true, encoding: .utf8)
+          }.value
+        } catch {
+          guard window.isVisible, window.attachedSheet == .none else { return }
+
+          let alert = NSAlert()
+          alert.messageText = "Diagnostics could not be saved"
+          alert.informativeText = "Choose another destination and try again. Error details are excluded."
+          _ = await alert.beginSheetModal(for: window)
         }
       }
     }

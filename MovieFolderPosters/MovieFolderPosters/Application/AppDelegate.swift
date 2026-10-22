@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let coordinator: AppCoordinator
   /// Platform presentation boundary, independent of failure content and routing.
   private let alerts: any AppDelegateAlertPresenting
+  /// Retains the application's attribution window across close and reopen.
+  private var aboutWindowController: NSWindowController?
 
   /// Builds the live root for AppKit's normal launch path.
   override convenience init() { self.init(coordinator: AppCoordinator()) }
@@ -53,11 +55,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// - Parameter notification: The launch notification supplied by AppKit.
   func applicationDidFinishLaunching(_ notification: Notification) {
     installMenu()
+    configureApplicationIcon()
     do {
       try coordinator.start()
     } catch {
       presentConfigurationFailure(error)
     }
+  }
+
+  /// Applies the bundled product artwork to the Dock tile for this running application.
+  private func configureApplicationIcon() {
+    guard let icon = NSImage(named: "MovieFolderPostersIcon") else { return }
+
+    NSApplication.shared.applicationIconImage = icon
   }
 
   /// Presents a configuration-specific failure without removing independent feature routes.
@@ -98,6 +108,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Opens Log even if configuration storage could not initialize.
   @objc private func showLog() { coordinator.showLog() }
+
+  /// Presents the product's About and required TMDb attribution.
+  @objc private func showAbout() {
+    if let aboutWindowController {
+      aboutWindowController.showWindow(.none)
+      aboutWindowController.window?.makeKeyAndOrderFront(.none)
+      return
+    }
+
+    let window = NSWindow(contentViewController: AboutViewController())
+    window.title = "About Movie Folder Posters"
+    window.styleMask = [.titled, .closable]
+    window.setContentSize(NSSize(width: 640, height: 400))
+    window.isReleasedWhenClosed = false
+    window.center()
+    aboutWindowController = NSWindowController(window: window)
+    aboutWindowController?.showWindow(.none)
+  }
 
   /// Refreshes committed outcome projections when the host returns to the foreground.
   func applicationDidBecomeActive(_ notification: Notification) { coordinator.applicationDidBecomeActive() }
@@ -140,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let applicationMenu = NSMenu()
     applicationMenu.addItem(
       withTitle: "About Movie Folder Posters",
-      action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+      action: #selector(showAbout), keyEquivalent: "").target = self
     applicationMenu.addItem(.separator())
     applicationMenu.addItem(
       withTitle: "Quit Movie Folder Posters", action: #selector(NSApplication.terminate(_:)),
@@ -165,5 +193,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     menu.addItem(editItem)
     menu.addItem(windowItem)
     NSApplication.shared.mainMenu = menu
+  }
+}
+
+/// Presents product identity prominently with compact required TMDb attribution.
+@MainActor
+final class AboutViewController: NSViewController {
+  /// The notice TMDb requires applications to display prominently.
+  static let requiredNotice = "This product uses the TMDB API but is not endorsed or certified by TMDB."
+
+  /// Storyboard and archive construction are unsupported; create this view programmatically.
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+  /// Creates an attribution view without storyboard or archive construction.
+  init() { super.init(nibName: .none, bundle: .none) }
+
+  /// Builds an accessible product-first About view with a compact TMDb attribution footer.
+  override func loadView() {
+    let appIcon = makeProductIcon()
+    let hero = makeProductHero(icon: appIcon)
+    let (divider, attribution) = makeAttributionSection()
+    let stack = NSStackView(views: [hero, divider, attribution])
+    stack.orientation = NSUserInterfaceLayoutOrientation.vertical
+    stack.alignment = NSLayoutConstraint.Attribute.leading
+    stack.spacing = 24
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    view = NSView()
+    view.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+      stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+      stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+      appIcon.widthAnchor.constraint(equalToConstant: 148),
+      appIcon.heightAnchor.constraint(equalToConstant: 148),
+      divider.widthAnchor.constraint(equalTo: stack.widthAnchor)
+    ])
+  }
+
+  /// Creates the icon view using the product artwork from the asset catalog.
+  private func makeProductIcon() -> NSImageView {
+    let image = NSImage(named: "MovieFolderPostersIcon")
+      ?? NSApplication.shared.applicationIconImage
+      ?? NSImage(size: NSSize(width: 148, height: 148))
+    let icon = NSImageView(image: image)
+    icon.imageScaling = NSImageScaling.scaleProportionallyUpOrDown
+    icon.wantsLayer = true
+    icon.layer?.cornerRadius = 24
+    icon.layer?.cornerCurve = .continuous
+    icon.layer?.masksToBounds = true
+    icon.setAccessibilityLabel("Movie Folder Posters app icon")
+    icon.setAccessibilityIdentifier("MovieFolderPostersAppIcon")
+
+    return icon
+  }
+
+  /// Creates the product icon and identity row.
+  private func makeProductHero(icon: NSImageView) -> NSStackView {
+    let heading = NSTextField(labelWithString: "Movie Folder Posters")
+    heading.font = .systemFont(ofSize: 27, weight: .semibold)
+    heading.setAccessibilityIdentifier("AboutProductName")
+    let tagline = NSTextField(labelWithString: "Movie artwork, right where you browse.")
+    tagline.font = .systemFont(ofSize: 15)
+    tagline.textColor = .secondaryLabelColor
+    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    let versionLabel = NSTextField(labelWithString: version.isEmpty ? "" : "Version \(version)")
+    versionLabel.font = .systemFont(ofSize: 12)
+    versionLabel.textColor = .tertiaryLabelColor
+
+    let details = NSStackView(views: [heading, tagline, versionLabel])
+    details.orientation = NSUserInterfaceLayoutOrientation.vertical
+    details.alignment = NSLayoutConstraint.Attribute.leading
+    details.spacing = 8
+    let hero = NSStackView(views: [icon, details])
+    hero.orientation = NSUserInterfaceLayoutOrientation.horizontal
+    hero.alignment = NSLayoutConstraint.Attribute.centerY
+    hero.spacing = 28
+
+    return hero
+  }
+
+  /// Creates the divider and compact TMDb attribution section.
+  private func makeAttributionSection() -> (NSBox, NSStackView) {
+    let divider = NSBox()
+    divider.boxType = .separator
+    let notice = NSTextField(wrappingLabelWithString: Self.requiredNotice)
+    notice.font = .systemFont(ofSize: 12)
+    notice.textColor = .secondaryLabelColor
+    notice.setAccessibilityIdentifier("TMDbAttributionNotice")
+    let image = NSImage(named: "TMDbLogo") ?? NSImage(size: NSSize(width: 88, height: 38))
+    let logo = NSImageView(image: image)
+    logo.imageScaling = NSImageScaling.scaleProportionallyUpOrDown
+    logo.setAccessibilityLabel("TMDb logo")
+    logo.setAccessibilityIdentifier("TMDbLogo")
+    let link = NSButton(title: "Visit TMDB", target: self, action: #selector(openTMDb))
+    link.bezelStyle = .rounded
+    link.setAccessibilityLabel("Visit The Movie Database website")
+    link.setAccessibilityIdentifier("TMDbWebsiteLink")
+
+    let details = NSStackView(views: [notice, link])
+    details.orientation = NSUserInterfaceLayoutOrientation.vertical
+    details.alignment = NSLayoutConstraint.Attribute.leading
+    details.spacing = 8
+    let section = NSStackView(views: [logo, details])
+    section.orientation = NSUserInterfaceLayoutOrientation.horizontal
+    section.alignment = NSLayoutConstraint.Attribute.centerY
+    section.spacing = 18
+    NSLayoutConstraint.activate([
+      logo.widthAnchor.constraint(equalToConstant: 88),
+      logo.heightAnchor.constraint(equalToConstant: 38)
+    ])
+
+    return (divider, section)
+  }
+
+  /// Opens TMDb's canonical website.
+  @objc private func openTMDb() {
+    guard let url = URL(string: "https://www.themoviedb.org") else { return }
+
+    NSWorkspace.shared.open(url)
   }
 }

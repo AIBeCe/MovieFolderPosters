@@ -10,6 +10,41 @@ import Testing
 /// Tests the application's actual lifecycle and menu routing with isolated feature dependencies.
 @Suite(.serialized) @MainActor
 struct AppDelegateCoverageTests {
+  /// The About menu leads with product identity and keeps TMDb attribution compact.
+  @Test func aboutPanelDisplaysRequiredTMDbAttribution() throws {
+    let fixture = try DelegateFixture()
+    defer { fixture.cleanup() }
+    let delegate = AppDelegate(coordinator: fixture.root)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    #expect(NSApplication.shared.applicationIconImage?.size == NSSize(width: 1254, height: 1254))
+
+    let applicationMenu = try #require(NSApplication.shared.mainMenu?.items.first?.submenu)
+    let aboutItem = try #require(applicationMenu.items.first { $0.title == "About Movie Folder Posters" })
+    #expect(NSApplication.shared.sendAction(try #require(aboutItem.action), to: aboutItem.target, from: aboutItem))
+
+    let window = try #require(NSApplication.shared.windows.first { $0.title == "About Movie Folder Posters" })
+    defer { window.close() }
+    let controller = try #require(window.contentViewController as? AboutViewController)
+    let content = controller.view
+
+    func allSubviews(of view: NSView) -> [NSView] {
+      view.subviews + view.subviews.flatMap(allSubviews)
+    }
+
+    let views = allSubviews(of: content)
+    let appIcon = try #require(
+      views.first { $0.accessibilityIdentifier() == "MovieFolderPostersAppIcon" } as? NSImageView)
+    let logo = try #require(views.first { $0.accessibilityIdentifier() == "TMDbLogo" } as? NSImageView)
+    let notice = try #require(views.first { $0.accessibilityIdentifier() == "TMDbAttributionNotice" } as? NSTextField)
+    let link = try #require(views.first { $0.accessibilityIdentifier() == "TMDbWebsiteLink" } as? NSButton)
+    #expect(appIcon.image != .none)
+    #expect(appIcon.image?.size == NSSize(width: 1254, height: 1254))
+    #expect(logo.image != .none)
+    #expect(notice.stringValue == AboutViewController.requiredNotice)
+    #expect(link.title == "Visit TMDB")
+    #expect(link.accessibilityLabel() == "Visit The Movie Database website")
+  }
+
   /// Launch must install actionable feature menus; reopening reuses the configuration flow.
   @Test func launchMenusRouteToRetainedWindows() throws {
     let fixture = try DelegateFixture()
@@ -100,6 +135,8 @@ private struct DelegateFixture {
   let appearance: NSAppearance?
   /// Existing menu restored so tests do not alter the surrounding process.
   let menu: NSMenu?
+  /// Existing Dock icon restored after lifecycle assertions.
+  let applicationIconImage: NSImage?
 
   /// Builds an isolated feature root with an optional deterministic startup failure.
   init(failure: DelegateConfigurationBuilder.Failure? = .none) throws {
@@ -107,6 +144,7 @@ private struct DelegateFixture {
     defaults = try #require(UserDefaults(suiteName: suite))
     appearance = NSApplication.shared.appearance
     menu = NSApplication.shared.mainMenu
+    applicationIconImage = NSApplication.shared.applicationIconImage
     root = AppCoordinator(
       activity: ActivityServiceFake(), configurationBuilder: DelegateConfigurationBuilder(failure: failure),
       posterService: DelegatePosterService(), appearance: AppAppearanceSettings(defaults: defaults))
@@ -121,6 +159,7 @@ private struct DelegateFixture {
     defaults.removePersistentDomain(forName: suite)
     NSApplication.shared.appearance = appearance
     NSApplication.shared.mainMenu = menu
+    NSApplication.shared.applicationIconImage = applicationIconImage
   }
 }
 

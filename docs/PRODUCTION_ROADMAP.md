@@ -252,6 +252,26 @@ GitHub issue: [#9](https://github.com/AIBeCe/MovieFolderPosters/issues/9); miles
 All R100 deliverables must pass; later-release ideas do not block 1.0. No new capability is inferred from a
 checked document box: attach current test, build, review, and native-observation evidence to its feature record.
 
+#### Supported-platform and qualification matrix
+
+As of 2026-10-22, the project configures macOS 26.5 as its deployment target. This is a build setting, not a
+declared or qualified support matrix. No broader macOS version, hardware, or filesystem support claim is established
+by the current records. Keep the supported-system declaration open until the release owner selects it using
+compatibility evidence; do not infer it from the deployment target or from tests on one development host.
+
+| Release claim | Evidence recorded so far | Required 1.0 qualification |
+| --- | --- | --- |
+| macOS and hardware support | macOS 26.5 deployment target; prior builds and tests ran on one development environment. | Declare supported macOS versions and hardware explicitly; run fresh-install and upgrade smoke checks on each declared system. |
+| Filesystem support | Native APFS and HFS+ inspection and isolated bookmark handoff checks are documented. exFAT could not be mounted for testing; physical-device reconnect and reboot are untested. | State filesystem support and limits from evidence. Qualify any filesystem or reconnect claim that the release documentation makes; preserve unknown status otherwise. |
+| Debug and Release behavior | Prior signed Debug build-for-testing and Release build passed; XCUITest execution and current-candidate smoke checks are not established by those builds. | On the release candidate, verify Debug fixture transport and Release live transport separately; run the applicable smoke checks. |
+| Live provider access | Controlled TMDb fixtures cover provider behavior; they do not establish live account/token access. | Verify live TMDb access independently with an authorized test account/token and record the result without storing credentials. |
+| Native icon persistence | Automated and isolated filesystem checks do not establish Finder custom-icon persistence. | Verify icon assignment and persistence through app/extension termination and Finder restart independently of provider verification. |
+| Installation and upgrade | A production clean install and upgrade smoke check are not recorded. | Perform both checks on every declared supported system, preserving existing user data during upgrade verification. |
+| Signing and notarization | Earlier signed builds and strict signature checks are recorded; notarization and Gatekeeper assessment of a release package are not. | Verify the release package signature, notarization, and first-open behavior on the declared systems. |
+
+This matrix records current evidence and remaining release work; it does not mark any release gate as passed or waive
+unperformed checks. Reconcile it with fresh release-candidate evidence before making user-facing compatibility claims.
+
 - [ ] Core automatic and explicit correction workflows pass with real TMDb access on an isolated collection.
 - [ ] Network fixtures cover authentication, backoff, cancellation, corruption, and offline/server failure.
 - [ ] App and extension instances cannot bypass configuration changes or duplicate unsafe mutations.
