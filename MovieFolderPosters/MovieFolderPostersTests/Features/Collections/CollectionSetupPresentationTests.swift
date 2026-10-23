@@ -101,6 +101,30 @@ import Testing
   #expect(buttons.first(where: { $0.title == "Compare TMDb original titles" })?.isEnabled == false)
 }
 
+/// Setup controls form an explicit keyboard loop independent of AppKit's stack-view loop recalculation.
+@Test @MainActor func collectionSetupDefinesKeyboardNavigationLoop() throws {
+  let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
+    applicationPolicy: IdentificationPolicy(), appearance: .softFinish)
+  let controller = CollectionSetupViewController(viewModel: model)
+  let views = nativeViews(in: controller.view)
+  let buttons = views.compactMap { $0 as? NSButton }
+  let chooseButton = try #require(buttons.first { $0.title == "Choose…" })
+  let nameField = try #require(views.compactMap { $0 as? NSTextField }
+    .first { $0.placeholderString == "Root folder name" })
+  let inheritButton = try #require(buttons.first { $0.title == "Use application identification settings" })
+  let yearButton = try #require(buttons.first { $0.title == "Require a release year for automatic identification" })
+  let originalButton = try #require(buttons.first { $0.title == "Compare TMDb original titles" })
+  let appearanceButton = try #require(views.compactMap { $0 as? NSPopUpButton }.first)
+  let cancelButton = try #require(buttons.first { $0.title == "Cancel" })
+  let addButton = try #require(buttons.first { $0.title == "Add Collection" })
+  let controls: [NSView] = [chooseButton, nameField, inheritButton, yearButton, originalButton,
+    appearanceButton, cancelButton, addButton]
+
+  for (current, next) in zip(controls, controls.dropFirst() + [controls[0]]) {
+    #expect(current.nextKeyView === next)
+  }
+}
+
 /// The native settings toolbar must retain its established layout and insert Identification in order.
 @Test @MainActor func identificationPaneUsesNativeToolbarPosition() throws {
   let controller = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),

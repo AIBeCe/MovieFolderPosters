@@ -76,6 +76,7 @@ import MovieFolderCommon
     let actions = NSStackView(views: [NSView(), cancelButton, addButton])
     actions.spacing = 8
     installForm(folderRow: folderRow, drop: drop, actions: actions)
+    configureKeyViewLoop()
     updatePresentation()
   }
 
@@ -141,6 +142,19 @@ import MovieFolderCommon
     }
     for child in content.arrangedSubviews where child is NSTextField || child is NSBox {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+    }
+  }
+
+  /// Gives every keyboard-operable setup control a stable forward and reverse traversal order.
+  private func configureKeyViewLoop() {
+    let controls: [NSView] = [
+      chooseButton, nameField, inheritButton, yearButton, originalButton,
+      appearanceButton, cancelButton, addButton
+    ]
+    let wrappedControls = controls.dropFirst() + [controls[0]]
+
+    for (current, next) in zip(controls, wrappedControls) {
+      current.nextKeyView = next
     }
   }
 
