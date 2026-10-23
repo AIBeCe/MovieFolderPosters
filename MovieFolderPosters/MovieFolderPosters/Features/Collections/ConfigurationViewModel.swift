@@ -85,6 +85,8 @@ final class ConfigurationViewModel {
   private var credentialResultState: CredentialState?
   /// The appearance used when processing posters.
   private(set) var posterAppearance: PosterAppearance = .softFinish
+  /// Application defaults shown by Settings and copied into new setup drafts.
+  private(set) var identificationPolicy = IdentificationPolicy()
   /// Whether a configuration operation is currently running.
   private(set) var isBusy = false
   /// A user-facing explanation for the latest failed operation, if any.
@@ -235,6 +237,31 @@ final class ConfigurationViewModel {
     )
   }
 
+  /// Persists the two automatic identification defaults and refreshes presentation.
+  /// - Parameter policy: Current checkbox choices from Settings.
+  func setIdentificationPolicy(_ policy: IdentificationPolicy) async {
+    await perform(action: .identificationPolicySaved, failureMessage: "Could not save identification settings.") {
+      try await self.service.setIdentificationPolicy(policy)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Saves a collection name without changing processing policy or authorization.
+  func renameCollection(_ identifier: UUID, displayName: String) async {
+    await perform(action: .collectionRenamed, collectionID: identifier,
+      failureMessage: "Could not rename this collection.") {
+      try await self.service.renameCollection(identifier, displayName: displayName)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
+  /// Creates an independent setup draft; changing it does not alter persisted application preferences.
+  func makeCollectionSetupViewModel() -> CollectionSetupViewModel {
+    CollectionSetupViewModel(service: service, applicationPolicy: identificationPolicy, appearance: posterAppearance)
+  }
+
   /// Serializes an operation, updates presentation state, and records its outcome.
   ///
   /// - Parameters:
@@ -295,6 +322,7 @@ final class ConfigurationViewModel {
     directories = summary.directories
     credentialConfigured = summary.credentialConfigured
     posterAppearance = summary.posterAppearance
+    identificationPolicy = summary.identificationPolicy
   }
 
   /// Notifies all currently retained observers of the latest state.

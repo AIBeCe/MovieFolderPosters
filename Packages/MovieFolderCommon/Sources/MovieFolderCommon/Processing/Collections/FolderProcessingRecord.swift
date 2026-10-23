@@ -12,6 +12,7 @@ nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseI
   case posterFailure, filesystemFailure, savedIdentityUnavailable, ownershipChanged
   case capacityExceeded, cachePersistenceFailure, authentication, rateLimited, unknown
   case connectivity, serverFailure, invalidResponse, recoveryMode
+  case manualIdentificationRequired
 }
 /// Ownership evidence for the icon currently installed on a folder.
 nonisolated public enum PosterOwnership: String, Codable, Sendable {
@@ -110,7 +111,7 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
       let reason, let retryAt else { return .none }
     switch reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-         .authentication, .recoveryMode, .unknown:
+         .authentication, .recoveryMode, .unknown, .manualIdentificationRequired:
       return .none
     default:
       return retryAt

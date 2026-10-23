@@ -21,6 +21,10 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
   /// Requests folder selection for a new root or authorization replacement.
   func configurationViewController(
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?)
+  /// Requests setup using a single local directory dropped on Main.
+  func configurationViewController(_ controller: ConfigurationViewController, didDrop directory: URL)
+  /// Requests a presentation-only rename for one configured collection.
+  func configurationViewController(_ controller: ConfigurationViewController, didRequestRename identifier: UUID)
 }
 
 /// Provides no-op defaults for delegate actions a host may choose not to present.
@@ -35,6 +39,10 @@ extension ConfigurationViewControllerDelegate {
   /// Ignores folder selection when the host does not present configuration navigation.
   func configurationViewController(
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?) {}
+  /// Ignores setup drops in hosts that do not present configuration flows.
+  func configurationViewController(_ controller: ConfigurationViewController, didDrop directory: URL) {}
+  /// Ignores rename in read-only hosts.
+  func configurationViewController(_ controller: ConfigurationViewController, didRequestRename identifier: UUID) {}
 }
 
 /// Displays configured movie collections and their latest processing status.
@@ -153,6 +161,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     tableView.usesAlternatingRowBackgroundColors = true
     tableView.rowHeight = 50
     tableView.dataSource = self
+    tableView.registerForDraggedTypes([.fileURL])
     tableView.delegate = self
     tableView.doubleAction = #selector(showSelectedProcessingDetails)
     tableView.columnAutoresizingStyle = .noColumnAutoresizing
@@ -248,6 +257,27 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// - Returns: The count of the current directory processing state.
   func numberOfRows(in tableView: NSTableView) -> Int { presentedDirectories.count }
 
+  /// Accepts only one local directory, proposing a collection drop rather than a row insertion.
+  func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo,
+    proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+    guard !viewModel.isBusy, CollectionFolderDrop.directory(from: info.draggingPasteboard) != .none else { return [] }
+
+    tableView.setDropRow(-1, dropOperation: .on)
+
+    return .copy
+  }
+
+  /// Opens the same setup flow used by Add Collection after validating the complete drag again.
+  func tableView(_ tableView: NSTableView, acceptDrop info: any NSDraggingInfo,
+    row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
+    guard !viewModel.isBusy, let directory = CollectionFolderDrop.directory(from: info.draggingPasteboard)
+    else { return false }
+
+    delegate?.configurationViewController(self, didDrop: directory)
+
+    return true
+  }
+
   /// Creates the row view that owns hover and accessibility removal controls.
   /// - Returns: The configured row, or `nil` for an invalid row index.
   func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -297,6 +327,11 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
       remove.representedObject = directory.id
       remove.isEnabled = !viewModel.isBusy
       menu.addItem(remove)
+      let rename = NSMenuItem(title: "Rename Collection…", action: #selector(renameCollection(_:)), keyEquivalent: "")
+      rename.target = self
+      rename.representedObject = directory.id
+      rename.isEnabled = !viewModel.isBusy
+      menu.addItem(rename)
       let details = NSMenuItem(
         title: "Processing Details…", action: #selector(showProcessingDetails(_:)), keyEquivalent: "")
       details.target = self
@@ -385,6 +420,13 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   /// Opens the folder picker for a new collection root.
   @objc private func addDirectory() { chooseDirectory(identifier: .none) }
 
+  /// Routes friendly-name editing through the owning coordinator.
+  @objc private func renameCollection(_ sender: NSMenuItem) {
+    guard let identifier = sender.representedObject as? UUID else { return }
+
+    delegate?.configurationViewController(self, didRequestRename: identifier)
+  }
+
   /// Opens the folder picker to restore access for an existing collection.
   /// - Parameter sender: Context-menu item containing the collection identifier.
   @objc private func locateFolder(_ sender: NSMenuItem) {
@@ -462,9 +504,7 @@ private extension ConfigurationViewController {
   ///   - label: Primary path label retained by the table cell.
   ///   - directory: Saved root and current access status.
   func configureCollectionCell(_ cell: NSTableCellView, label: NSTextField, directory: ConfiguredDirectoryStatus) {
-    let url = URL(fileURLWithPath: directory.path)
-    label.stringValue =
-      url.deletingLastPathComponent().lastPathComponent + " / " + url.lastPathComponent
+    label.stringValue = directory.effectiveDisplayName
     label.toolTip = directory.path + "\n" + availabilityDescription(directory.availability)
       + "\n" + collectionProcessingDescription(summaryViewModel.summary(for: directory.id))
     let folder = NSImageView(image: NSWorkspace.shared.icon(for: .folder))

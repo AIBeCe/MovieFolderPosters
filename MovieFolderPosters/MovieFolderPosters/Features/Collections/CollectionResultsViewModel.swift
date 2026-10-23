@@ -289,7 +289,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     }
     switch folder.reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged:
+      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged, .manualIdentificationRequired:
       return false
     default: return true
     }

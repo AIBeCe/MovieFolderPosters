@@ -17,8 +17,8 @@ import Testing
   let settings = SettingsViewController(
     viewModel: model, appearanceSettings: AppAppearanceSettings())
   _ = settings.view
-  settings.selectedTabViewItemIndex = 1
-  let pane = try #require(settings.tabViewItems[1].viewController)
+  settings.selectedTabViewItemIndex = 2
+  let pane = try #require(settings.tabViewItems.first(where: { $0.label == "TMDb" })?.viewController)
   let labels = nativeViews(in: pane.view).compactMap { $0 as? NSTextField }
   let status = try #require(labels.first { $0.stringValue == "No token saved." })
   settings.viewWillAppear()

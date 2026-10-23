@@ -43,11 +43,14 @@ nonisolated struct FolderRecord: Codable {
     case lastFailure = "latestAttempt"
     case movieIdentitySource
     case nameParserRevision
+    case requiresAutomaticReassessment
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
   /// Parser revision that produced an unresolved decision, absent in older saved records.
   var nameParserRevision: Int? = .none
+  /// Retains historical installed-poster evidence while preventing assignment from an obsolete automatic decision.
+  var requiresAutomaticReassessment: Bool? = .none
 
   /// Whether historic unresolved evidence needs a fresh classification rather than a cooldown retry.
   var needsLegacyReassessment: Bool { status == .unresolved && processingReason == .none }
@@ -55,7 +58,8 @@ nonisolated struct FolderRecord: Codable {
   /// Whether unchanged evidence requires explicit action or a changed folder before another automatic attempt.
   var blocksAutomaticRecovery: Bool {
     requiresManualResolution ||
-      (status == .unresolved && (processingReason == .parsingProblem || processingReason == .missingArtwork))
+      (status == .unresolved && (processingReason == .parsingProblem || processingReason == .missingArtwork
+        || processingReason == .manualIdentificationRequired))
   }
 
   /// Whether this unchanged folder has a confirmed result that needs user resolution.
@@ -74,6 +78,26 @@ nonisolated struct ProcessingState: Codable {
   var providerRetryAt: Date?
   /// Credential generation captured by the processor that last saved this operational state.
   var credentialRevision: UUID? = .none
+  /// Effective choices used to produce automatic decisions; absent legacy records use established defaults.
+  var identificationPolicy: IdentificationPolicy? = .none
+
+  /// Invalidates automatic assignments while retaining installed-poster evidence and raw search responses.
+  /// - Parameter policy: Current automatic identification choices.
+  mutating func reconcileIdentificationPolicy(_ policy: IdentificationPolicy) {
+    if (identificationPolicy ?? IdentificationPolicy()) != policy {
+      folders = folders.compactMapValues { saved in
+        if saved.movieIdentitySource == .explicitSelection { return saved }
+
+        guard saved.matchedMovieID != .none, saved.posterPath != .none else { return .none }
+
+        var retained = saved
+        retained.requiresAutomaticReassessment = true
+
+        return retained
+      }
+    }
+    identificationPolicy = policy
+  }
 
   /// Discards credential-sensitive evidence while retaining folder identities and explicit decisions.
   /// - Parameter revision: Captured production credential generation; absence preserves isolated legacy callers.
@@ -100,7 +124,7 @@ nonisolated struct ProcessingState: Codable {
 
   /// Preserves the existing cache field name when reading or writing saved processing state.
   private enum CodingKeys: String, CodingKey {
-    case folders, queries, credentialRevision
+    case folders, queries, credentialRevision, identificationPolicy
     case providerRetryAt = "rootBackoffUntil"
   }
 }

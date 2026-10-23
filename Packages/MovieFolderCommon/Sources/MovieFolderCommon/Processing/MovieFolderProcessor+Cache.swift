@@ -52,6 +52,7 @@ extension MovieFolderProcessor {
     stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none,
     reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
   ) {
+    let requiresReassessment = state.folders[candidate.name]?.requiresAutomaticReassessment
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .transientFailure,
@@ -66,6 +67,7 @@ extension MovieFolderProcessor {
       lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       movieIdentitySource: movie == .none ? .none : .conservativeMatch
     )
+    state.folders[candidate.name]?.requiresAutomaticReassessment = requiresReassessment
   }
 
   /// Decodes root processing state or supplies empty state when no record exists.
@@ -78,6 +80,7 @@ extension MovieFolderProcessor {
 
     var state = try JSONDecoder().decode(ProcessingState.self, from: data)
     state.reconcileCredentialRevision(credentialRevision)
+    state.reconcileIdentificationPolicy(identificationPolicy)
 
     return state
   }
@@ -114,6 +117,7 @@ extension MovieFolderProcessor {
   func saveState(_ state: ProcessingState, to lease: PersistenceLease) throws {
     var state = state
     state.credentialRevision = credentialRevision
+    state.identificationPolicy = identificationPolicy
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     do {

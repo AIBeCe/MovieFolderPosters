@@ -59,9 +59,9 @@ struct CredentialPresentationTests {
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
     await model.reloadCredentialState()
     let settings = SettingsViewController(viewModel: model, appearanceSettings: AppAppearanceSettings())
-    settings.selectedTabViewItemIndex = 1
+    settings.selectedTabViewItemIndex = 2
     settings.viewWillAppear()
-    let pane = try #require(settings.tabViewItems[1].viewController)
+    let pane = try #require(settings.tabViewItems.first(where: { $0.label == "TMDb" })?.viewController)
     let buttons = descendants(pane.view).compactMap { $0 as? NSButton }
     let testButton = try #require(buttons.first { $0.title == "Test Saved Token" })
     let cancelButton = try #require(buttons.first { $0.title == "Cancel" })

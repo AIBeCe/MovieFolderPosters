@@ -6,6 +6,7 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
   public enum Action: String, Codable, Sendable, CaseIterable {
     case applicationOpened, configurationLoaded, collectionAdded, collectionRemoved, collectionAccessRestored
     case credentialSaved, credentialRemoved, posterAppearanceSaved, applicationAppearanceChanged
+    case collectionRenamed, identificationPolicySaved
     case collectionCleanup, finderConfiguration, automaticProcessing, posterRefresh, posterSelection, posterRemoval
   }
 
@@ -62,6 +63,8 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
     case .collectionAdded: "Add collection"
     case .collectionRemoved: "Remove collection"
     case .collectionAccessRestored: "Restore collection access"
+    case .collectionRenamed: "Rename collection"
+    case .identificationPolicySaved: "Save identification settings"
     case .credentialSaved: "Save TMDb credential"
     case .credentialRemoved: "Remove TMDb credential"
     case .posterAppearanceSaved: "Save poster appearance"

@@ -7,6 +7,14 @@ import Testing
 
 /// Regression coverage for shared settings validation, persistence, and lease ordering.
 struct DirectoryConfigurationTests {
+  /// New settings persist behavior-equivalent identification defaults for both processes.
+  @Test func identificationDefaultsArePersisted() throws {
+    let encoded = try JSONEncoder().encode(DirectoryConfiguration())
+    let fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let policy = try #require(fields["identificationPolicy"] as? [String: Bool])
+    #expect(policy["requiresReleaseYearForAutomaticIdentification"] == false)
+    #expect(policy["comparesOriginalTitles"] == true)
+  }
   /// Access failures must describe a recovery action consistent with the assessed evidence.
   @Test(arguments: [
     (DirectoryAvailability.available, "not verified"),

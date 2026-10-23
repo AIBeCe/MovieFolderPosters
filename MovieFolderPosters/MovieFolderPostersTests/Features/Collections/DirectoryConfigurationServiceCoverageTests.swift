@@ -15,10 +15,16 @@ struct DirectoryConfigurationServiceCoverageTests {
     let original = try fixture.makeDirectory("Original")
     let replacement = try fixture.makeDirectory("Replacement")
     try await fixture.service.addDirectory(original)
+    try fixture.repository.update {
+      $0.directories[0].displayName = "Family films"
+      $0.directories[0].identificationPolicy = IdentificationPolicy(comparesOriginalTitles: false)
+    }
     let before = try #require(try fixture.repository.read().directories.first)
     try await fixture.service.reauthorizeDirectory(before.id, replacement)
     let after = try #require(try fixture.repository.read().directories.first)
     #expect(after.id == before.id)
+    #expect(after.displayName == before.displayName)
+    #expect(after.identificationPolicy == before.identificationPolicy)
     #expect(after.authorizationVersion != before.authorizationVersion)
     #expect(after.path == replacement.standardizedFileURL.path)
     #expect(after.identity == (try FileSystemService().persistentDirectoryIdentity(at: replacement)))
@@ -99,7 +105,10 @@ struct DirectoryConfigurationServiceCoverageTests {
     let fixture = try DirectoryServiceCoverageFixture(mode: mode)
     defer { fixture.cleanup() }
     let directory = try fixture.makeDirectory("Movies")
-    try await fixture.service.addDirectory(directory)
+    let authorizing = DirectoryConfigurationService(repository: fixture.repository,
+      authorizations: fixture.authorizations, credentials: CoverageCredentials(),
+      notifier: CoverageConfigurationNotifier(), authorization: CoverageAuthorization(mode: .accessible))
+    try await authorizing.addDirectory(directory)
     let summary = try await fixture.service.configurationSummary()
     switch mode {
     case .denied: #expect(summary.directories.first?.availability == .reauthorizationRequired)
@@ -116,6 +125,8 @@ private struct DirectoryServiceCoverageFixture {
   let root: URL
   /// Real configuration used to check commit behavior.
   let repository: ConfigurationRepository
+  /// Host-only bookmark store shared by the initial grant and later failure probe.
+  let authorizations: PersistenceStore
   /// Host service retaining isolated dependencies.
   let service: DirectoryConfigurationService
 
@@ -124,8 +135,9 @@ private struct DirectoryServiceCoverageFixture {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     repository = ConfigurationRepository(
       store: try PersistenceStore(directory: root.appendingPathComponent("Settings")))
+    authorizations = try PersistenceStore(directory: root.appendingPathComponent("Authorization"))
     service = DirectoryConfigurationService(repository: repository,
-      authorizations: try PersistenceStore(directory: root.appendingPathComponent("Authorization")),
+      authorizations: authorizations,
       credentials: CoverageCredentials(), notifier: CoverageConfigurationNotifier(),
       authorization: CoverageAuthorization(mode: mode), activity: ActivityServiceFake())
   }

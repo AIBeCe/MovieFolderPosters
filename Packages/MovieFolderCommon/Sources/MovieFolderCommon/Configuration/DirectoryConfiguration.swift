@@ -1,6 +1,23 @@
 import FileSystem
 import Foundation
 
+/// Conservative automatic identification choices shared by the host and Finder extension.
+nonisolated public struct IdentificationPolicy: Codable, Sendable, Equatable {
+  /// Whether a parsed release year is required before an automatic provider request.
+  public var requiresReleaseYearForAutomaticIdentification: Bool
+  /// Whether exact automatic comparison also considers the provider's original title.
+  public var comparesOriginalTitles: Bool
+
+  /// Creates automatic identification choices; defaults preserve established behavior.
+  /// - Parameters:
+  ///   - requiresReleaseYearForAutomaticIdentification: Reject yearless automatic identification when enabled.
+  ///   - comparesOriginalTitles: Include original titles in exact matching when enabled.
+  public init(requiresReleaseYearForAutomaticIdentification: Bool = false, comparesOriginalTitles: Bool = true) {
+    self.requiresReleaseYearForAutomaticIdentification = requiresReleaseYearForAutomaticIdentification
+    self.comparesOriginalTitles = comparesOriginalTitles
+  }
+}
+
 /// Access and compatibility evidence for a configured collection root.
 nonisolated public enum DirectoryAvailability: String, Sendable, Equatable {
   case available
@@ -50,6 +67,12 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   public let id: UUID
   /// The saved absolute path of the configured folder.
   public let path: String
+  /// Trimmed friendly-name override, retained even while the volume is unavailable.
+  public let displayName: String?
+  /// Name used by Main and collection window titles.
+  public var effectiveDisplayName: String {
+    MonitoredDirectory.normalizedDisplayName(displayName) ?? URL(fileURLWithPath: path).lastPathComponent
+  }
   /// The most recently assessed access and filesystem compatibility state.
   public let availability: DirectoryAvailability
   /// Verified collection processing state, or no value when counts have not been established.
@@ -61,11 +84,14 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   ///   - path: The saved absolute collection path.
   ///   - availability: The most recently assessed access state.
   ///   - counts: Verified processing counts, or no value while unavailable.
-  public init(id: UUID, path: String, availability: DirectoryAvailability, counts: CollectionCounts? = .none) {
+  ///   - displayName: Optional friendly-name override; blank text uses the root folder name.
+  public init(id: UUID, path: String, availability: DirectoryAvailability, counts: CollectionCounts? = .none,
+              displayName: String? = .none) {
     self.id = id
     self.path = path
     self.availability = availability
     self.counts = counts
+    self.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
   }
 }
 
@@ -102,6 +128,8 @@ nonisolated public struct ConfigurationSummary: Sendable, Equatable {
   public let credentialConfigured: Bool
   /// The poster finish applied to new or restyled owned icons.
   public let posterAppearance: PosterAppearance
+  /// Application-wide automatic identification defaults.
+  public let identificationPolicy: IdentificationPolicy
 
   /// Collects assessed roots, credential presence, and the configured poster finish for presentation.
   ///
@@ -109,13 +137,16 @@ nonisolated public struct ConfigurationSummary: Sendable, Equatable {
   ///   - directories: The configured roots and their current access evidence.
   ///   - credentialConfigured: Whether a shared TMDb credential exists.
   ///   - posterAppearance: The selected poster rendering finish.
+  ///   - identificationPolicy: Application defaults inherited by collections without explicit overrides.
   public init(
     directories: [ConfiguredDirectoryStatus], credentialConfigured: Bool,
-    posterAppearance: PosterAppearance = .softFinish
+    posterAppearance: PosterAppearance = .softFinish,
+    identificationPolicy: IdentificationPolicy = IdentificationPolicy()
   ) {
     self.directories = directories
     self.credentialConfigured = credentialConfigured
     self.posterAppearance = posterAppearance
+    self.identificationPolicy = identificationPolicy
   }
 }
 
@@ -183,6 +214,67 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   /// - Parameter appearance: The rendering finish selected for the assigned poster.
   /// - Throws: Storage, authorization, contention, or validation failures from the requested configuration operation.
   func setPosterAppearance(_ appearance: PosterAppearance) async throws
+  /// Captures both bookmarks in memory while the selected folder remains authorized; persists nothing.
+  /// - Parameter directory: A single local directory selected by the user.
+  /// - Returns: An uncommitted, transferable collection candidate.
+  /// - Throws: Invalid-directory, bookmark, or access failures.
+  func prepareCollection(_ directory: URL) async throws -> PreparedCollection
+  /// Rechecks overlap and commits the prepared root, its authorization, and the setup choices.
+  /// - Parameters:
+  ///   - candidate: The current in-memory candidate.
+  ///   - displayName: Friendly name, with blank text clearing the override.
+  ///   - identificationPolicy: Explicit override or absence to inherit application defaults.
+  ///   - appearance: Global poster finish selected in the local draft.
+  /// - Throws: Duplicate, overlap, stale-directory, bookmark, or persistence failures.
+  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws
+  /// Saves a presentation-only collection name without changing processing generations.
+  /// - Parameters:
+  ///   - identifier: Stable collection identity.
+  ///   - displayName: User-entered name, trimmed and limited to 120 characters; blank clears the override.
+  /// - Throws: Missing-collection, contention, or persistence errors.
+  func renameCollection(_ identifier: UUID, displayName: String) async throws
+  /// Saves automatic identification defaults; explicit collection overrides remain unchanged.
+  /// - Parameter policy: The automatic identification defaults chosen in Settings.
+  /// - Throws: Settings contention or persistence errors.
+  func setIdentificationPolicy(_ policy: IdentificationPolicy) async throws
+}
+
+/// In-memory authorization evidence discarded when setup is cancelled or its folder is replaced.
+nonisolated public struct PreparedCollection: Sendable, Equatable {
+  /// Canonical root metadata, not yet present in shared configuration.
+  public let directory: MonitoredDirectory
+  /// Host-only security-scoped bookmark captured while the selection is authorized.
+  public let hostBookmark: Data
+
+  /// Captures both authorization forms without writing either to storage.
+  /// - Parameters:
+  ///   - directory: Canonical root metadata and transferable bookmark.
+  ///   - hostBookmark: Host-only persistent authorization evidence.
+  public init(directory: MonitoredDirectory, hostBookmark: Data) {
+    self.directory = directory
+    self.hostBookmark = hostBookmark
+  }
+}
+
+nonisolated public extension ConfigurationServicing {
+  /// Rejects setup when an older service does not provide transactional collection preparation.
+  func prepareCollection(_ directory: URL) async throws -> PreparedCollection {
+    throw ConfigurationError.invalidConfiguration
+  }
+  /// Rejects commit rather than silently persisting incomplete setup choices.
+  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws {
+    throw ConfigurationError.invalidConfiguration
+  }
+  /// Rejects unsupported rename instead of reporting an unpersisted change.
+  func renameCollection(_ identifier: UUID, displayName: String) async throws {
+    throw ConfigurationError.invalidConfiguration
+  }
+  /// Rejects unsupported policy persistence rather than silently changing presentation.
+  func setIdentificationPolicy(_ policy: IdentificationPolicy) async throws {
+    throw ConfigurationError.invalidConfiguration
+  }
 }
 
 /// A saved collection root with its authorization generation and identity evidence.
@@ -199,6 +291,23 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   public var identity: String?
   /// The previously observed mount path used to explain disconnected storage.
   public var volumePath: String?
+  /// Optional user-facing name; absence uses the current root folder name.
+  public var displayName: String?
+  /// Explicit automatic identification choices; absence inherits application defaults.
+  public var identificationPolicy: IdentificationPolicy?
+  /// The friendly name shown in collection presentations.
+  public var effectiveDisplayName: String {
+    Self.normalizedDisplayName(displayName) ?? URL(fileURLWithPath: path).lastPathComponent
+  }
+
+  /// Trims a collection name and bounds its persisted length; a blank name clears the override.
+  /// - Parameter name: User-entered collection name.
+  /// - Returns: A trimmed name of at most 120 characters, or absence for a blank entry.
+  public static func normalizedDisplayName(_ name: String?) -> String? {
+    let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+    return trimmed.isEmpty ? .none : String(trimmed.prefix(120))
+  }
 
   /// Creates a saved root with its transferred authorization and filesystem evidence.
   /// - Parameters:
@@ -208,14 +317,19 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   ///   - authorizationVersion: The generation identifying this authorization grant.
   ///   - identity: The observed filesystem identity, when established.
   ///   - volumePath: The previously observed mount path, when available.
+  ///   - displayName: Friendly collection name, trimmed and bounded to 120 characters; blank uses the folder name.
+  ///   - identificationPolicy: Explicit automatic identification snapshot, or absence to inherit defaults.
   public init(id: UUID, path: String, transferBookmark: Data, authorizationVersion: UUID,
-              identity: String? = .none, volumePath: String? = .none) {
+              identity: String? = .none, volumePath: String? = .none,
+              displayName: String? = .none, identificationPolicy: IdentificationPolicy? = .none) {
     self.id = id
     self.path = path
     self.transferBookmark = transferBookmark
     self.authorizationVersion = authorizationVersion
     self.identity = identity
     self.volumePath = volumePath
+    self.displayName = Self.normalizedDisplayName(displayName)
+    self.identificationPolicy = identificationPolicy
   }
 }
 
@@ -256,6 +370,15 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public var usesStubTMDbResponses = false
   /// The poster finish applied to new or restyled owned icons.
   public var posterAppearance: PosterAppearance = .softFinish
+  /// Application defaults used by collections without an explicit identification override.
+  public var identificationPolicy = IdentificationPolicy()
+
+  /// Resolves a collection's explicit choices or the application defaults.
+  /// - Parameter directory: Collection whose automatic identification policy is requested.
+  /// - Returns: The effective choices captured by processing and freshness checks.
+  public func effectiveIdentificationPolicy(for directory: MonitoredDirectory) -> IdentificationPolicy {
+    directory.identificationPolicy ?? identificationPolicy
+  }
 
   /// Creates empty settings with a fresh credential generation and the default poster finish.
   public init() { processingCacheRevision = credentialRevision }
@@ -289,7 +412,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
 
   /// Stable field names for decoding persisted settings.
   private enum CodingKeys: String, CodingKey {
-    case version, directories, credentialRevision, processingCacheRevision, posterAppearance
+    case version, directories, credentialRevision, processingCacheRevision, posterAppearance, identificationPolicy
     case usesStubTMDbResponses = "developmentFixtures"
   }
 
@@ -309,6 +432,8 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
       : try values.decode(UUID.self, forKey: .processingCacheRevision)
     usesStubTMDbResponses = try values.decode(Bool.self, forKey: .usesStubTMDbResponses)
     posterAppearance = try values.decodeIfPresent(PosterAppearance.self, forKey: .posterAppearance) ?? .softFinish
+    identificationPolicy = try values.decodeIfPresent(IdentificationPolicy.self, forKey: .identificationPolicy)
+      ?? IdentificationPolicy()
   }
 }
 

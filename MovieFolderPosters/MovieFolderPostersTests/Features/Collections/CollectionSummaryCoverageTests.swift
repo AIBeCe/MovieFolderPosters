@@ -8,6 +8,21 @@ import Testing
 
 /// Verifies read-only projections against real disposable configuration, outcome, and coordination stores.
 struct CollectionSummaryCoverageTests {
+  /// Friendly names preserve freshness; changing defaults invalidates inheriting collections only.
+  @Test(arguments: [false, true])
+  func effectiveIdentificationPolicyControlsFreshness(overridden: Bool) async throws {
+    let fixture = try SummaryStorageFixture()
+    defer { fixture.cleanup() }
+    if overridden {
+      try fixture.configuration.update { $0.directories[0].identificationPolicy = IdentificationPolicy() }
+    }
+    _ = try fixture.seedOutcome(completed: true)
+    try fixture.configuration.update { $0.directories[0].displayName = "Family films" }
+    #expect(await fixture.service().summaries()[fixture.context.rootID]?.displayState == .current)
+    try fixture.configuration.update { $0.identificationPolicy.requiresReleaseYearForAutomaticIdentification = true }
+    let expected: CollectionProcessingDisplayState = overridden ? .current : .stale
+    #expect(await fixture.service().summaries()[fixture.context.rootID]?.displayState == expected)
+  }
   /// A running record is only interrupted when no live root operation owns its coordination lease.
   @Test(arguments: [false, true])
   func distinguishesOrphanedFromActiveOperations(holdsLease: Bool) async throws {

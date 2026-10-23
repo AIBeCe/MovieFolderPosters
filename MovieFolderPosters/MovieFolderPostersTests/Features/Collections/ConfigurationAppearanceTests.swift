@@ -39,7 +39,7 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
     viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),
     appearanceSettings: appearance
   )
-  let pane = try #require(settings.tabViewItems[2].viewController)
+  let pane = try #require(settings.tabViewItems.first(where: { $0.label == "Appearance" })?.viewController)
   let buttons = nativeViews(in: pane.view).compactMap { $0 as? NSButton }
   #expect(buttons.map(\.title) == ["System", "Light", "Dark"])
   #expect(buttons.allSatisfy { $0.image != .none })

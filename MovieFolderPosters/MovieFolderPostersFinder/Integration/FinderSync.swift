@@ -20,7 +20,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// The currently authorized roots, used for scheduling.
   private var roots: [URL: AuthorizedRoot] = [:]
   /// The processing instance built for the currently authorized configuration.
-  private var processor: MovieFolderProcessor?
+  private var processors: [URL: MovieFolderProcessor] = [:]
   /// Settings captured alongside the metadata provider, never refreshed independently of that provider.
   private var processingConfiguration: DirectoryConfiguration?
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
@@ -52,7 +52,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       let authorizations = try environment.authorizationStore()
       let updated = loadAuthorizedRoots(configuration, store: authorizations)
       roots = updated
-      processor = .none
+      processors = [:]
       do {
         if let token = try environment.credential() {
           let client = try environment.provider(token: token, configuration: configuration)
@@ -63,16 +63,19 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
           let mutationGuard = FinderMutationGuard(
             repository: repository, configuration: configuration,
             roots: updated)
-          processor = MovieFolderProcessor(
-            persistence: try PersistenceStore(directory: records),
-            provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
-            cacheDirectory: container.appendingPathComponent("Posters"),
-            coordinationStore: try PersistenceStore(
-              directory: container.appendingPathComponent("ProcessingLocks")
-            ), mutationGuard: mutationGuard,
-            appearance: configuration.posterAppearance,
-            processingStore: try environment.processingStore(), recovery: recovery,
-            credentialRevision: configuration.credentialRevision)
+          for (url, root) in updated {
+            processors[url] = MovieFolderProcessor(
+              persistence: try PersistenceStore(directory: records),
+              provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
+              cacheDirectory: container.appendingPathComponent("Posters"),
+              coordinationStore: try PersistenceStore(
+                directory: container.appendingPathComponent("ProcessingLocks")
+              ), mutationGuard: mutationGuard,
+              appearance: configuration.posterAppearance,
+              processingStore: try environment.processingStore(), recovery: recovery,
+              credentialRevision: configuration.credentialRevision,
+              identificationPolicy: configuration.effectiveIdentificationPolicy(for: root.directory))
+          }
           processingConfiguration = configuration
           logger.notice("Shared Keychain credential available")
         } else {
@@ -84,13 +87,13 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       let registered = Set(updated.keys)
       await environment.register(registered)
       logger.notice("Configuration loaded; registered=\(registered.count)")
-      await recordConfigurationStatus(processor == nil || updated.count != configuration.directories.count
+      await recordConfigurationStatus(processors.isEmpty || updated.count != configuration.directories.count
         ? .unavailable : .succeeded)
 
       return registered
     } catch {
       roots = [:]
-      processor = .none
+      processors = [:]
       await environment.register([])
       logger.error("Shared directory configuration unavailable")
       await recordConfigurationStatus(.unavailable)
@@ -155,7 +158,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   func directoryObservationScheduler(
     _ scheduler: DirectoryObservationScheduler, process url: URL
   ) async throws -> Date? {
-    guard let root = roots[url], let processor, let configuration = processingConfiguration else { return .none }
+    guard let root = roots[url], let processor = processors[url],
+      let configuration = processingConfiguration else { return .none }
     let operationID = UUID()
     await activity.record(MovieFolderActivityEvent(
       action: .automaticProcessing, status: .started,
@@ -168,7 +172,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         rootID: root.directory.id, rootIdentity: root.identity,
         authorizationVersion: root.directory.authorizationVersion,
         credentialRevision: configuration.credentialRevision,
-        usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance)
+        usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance,
+        identificationPolicy: configuration.effectiveIdentificationPolicy(for: root.directory))
       let result = try await processor.process(root: root.access.url, processingContext: context)
       withExtendedLifetime(root.access) {}
       await activity.record(MovieFolderActivityEvent(

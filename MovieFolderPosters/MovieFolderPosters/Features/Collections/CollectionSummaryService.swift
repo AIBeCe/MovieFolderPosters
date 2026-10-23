@@ -274,6 +274,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       && context.credentialRevision == configuration.credentialRevision
       && context.usesStubTMDbResponses == configuration.usesStubTMDbResponses
       && context.appearance == configuration.posterAppearance
+      && context.identificationPolicy == configuration.effectiveIdentificationPolicy(for: root)
       && !configuration.findOverlappingDirectoryIDs().contains(root.id)
   }
 }

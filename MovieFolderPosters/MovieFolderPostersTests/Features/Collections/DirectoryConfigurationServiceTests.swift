@@ -10,6 +10,175 @@ import Testing
 
 /// Covers persistence, folder-access, overlap, and credential behavior in the host service.
 struct DirectoryConfigurationServiceTests {
+  /// Rollback restores pre-existing bytes under the same candidate generation instead of deleting them.
+  @Test func lateConfigurationFailureRestoresExactGeneration() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let folder = fixture.root.appendingPathComponent("Movies")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try fixture.repository.update { $0.directories = [] }
+    let before = try fixture.repository.read()
+    let candidate = try await fixture.service.prepareCollection(folder)
+    let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
+    do {
+      let lease = try #require(try fixture.authorizations.acquireLease(for: key))
+      try lease.write(Data([7, 8]))
+    }
+    let notifications = CollectionSetupNotificationProbe()
+    let limited = ConfigurationRepository(store: try PersistenceStore(
+      directory: fixture.root.appendingPathComponent("Shared"), maximumRecordBytes: 1_500))
+    let service = DirectoryConfigurationService(repository: limited, authorizations: fixture.authorizations,
+      credentials: fixture.credentials, notifier: notifications,
+      authorization: TestDirectoryAuthorization(mode: .implicit))
+    do {
+      try await service.commitCollection(candidate, displayName: .none,
+        identificationPolicy: .none, appearance: .raw)
+      Issue.record("The bounded configuration write must fail")
+    } catch {
+      #expect(String(describing: error) == "recordTooLarge")
+    }
+    let restored = try #require(try fixture.authorizations.acquireLease(for: key))
+    #expect(try restored.read() == Data([7, 8]))
+    #expect(try fixture.repository.read() == before)
+    #expect(notifications.configurationCount == .zero)
+  }
+  /// Late settings-write failure rolls back only the attempted authorization generation for Add and Locate.
+  @Test(arguments: [false, true])
+  func lateConfigurationWriteRollsBackAuthorization(reauthorizing: Bool) async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let original = fixture.root.appendingPathComponent("Original")
+    let replacement = fixture.root.appendingPathComponent("Replacement")
+    try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: replacement, withIntermediateDirectories: true)
+    let old = MonitoredDirectory(id: UUID(), path: original.path, transferBookmark: Data([1]),
+      authorizationVersion: UUID(), identity: FileSystemService().inspectDirectory(at: original).identity)
+    try fixture.repository.update { $0.directories = reauthorizing ? [old] : [] }
+    let oldKey = "host-\(old.id)-\(old.authorizationVersion)"
+    do {
+      let lease = try #require(try fixture.authorizations.acquireLease(for: oldKey))
+      try lease.write(Data([9]))
+    }
+    let bookmarksDirectory = fixture.root.appendingPathComponent("Private")
+    let beforeRecords = try FileManager.default.contentsOfDirectory(atPath: bookmarksDirectory.path)
+      .filter { $0.hasSuffix(".json") }.sorted()
+    let before = try fixture.repository.read()
+    let limitedRepository = ConfigurationRepository(store: try PersistenceStore(
+      directory: fixture.root.appendingPathComponent("Shared"), maximumRecordBytes: 1_500))
+    #expect(try limitedRepository.read() == before)
+    let notifications = CollectionSetupNotificationProbe()
+    let service = DirectoryConfigurationService(repository: limitedRepository, authorizations: fixture.authorizations,
+      credentials: fixture.credentials, notifier: notifications,
+      authorization: TestDirectoryAuthorization(mode: .implicit))
+    if reauthorizing {
+      do {
+        try await service.reauthorizeDirectory(old.id, replacement)
+        Issue.record("The bounded configuration write must fail after authorization is prepared")
+      } catch {
+        #expect(String(describing: error) == "recordTooLarge")
+      }
+    } else {
+      let candidate = try await service.prepareCollection(replacement)
+      do {
+        try await service.commitCollection(candidate, displayName: .none,
+          identificationPolicy: .none, appearance: .raw)
+        Issue.record("The bounded configuration write must fail after authorization is prepared")
+      } catch {
+        #expect(String(describing: error) == "recordTooLarge")
+      }
+    }
+    #expect(try fixture.repository.read() == before)
+    let afterRecords = try FileManager.default.contentsOfDirectory(atPath: bookmarksDirectory.path)
+      .filter { $0.hasSuffix(".json") }.sorted()
+    #expect(afterRecords == beforeRecords)
+    let oldLease = try #require(try fixture.authorizations.acquireLease(for: oldKey))
+    #expect(try oldLease.read() == Data([9]))
+    #expect(notifications.configurationCount == .zero)
+    #expect(notifications.presentationCount == .zero)
+  }
+  /// A rename refreshes presentation while leaving Finder work and processing generations current.
+  @Test func renamePublishesPresentationOnlyAndPreservesChoices() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let folder = fixture.root.appendingPathComponent("Movies")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let notifications = CollectionSetupNotificationProbe()
+    let service = DirectoryConfigurationService(repository: fixture.repository, authorizations: fixture.authorizations,
+      credentials: fixture.credentials, notifier: notifications,
+      authorization: TestDirectoryAuthorization(mode: .implicit))
+    let candidate = try await service.prepareCollection(folder)
+    #expect(notifications.configurationCount == .zero)
+    try await service.commitCollection(candidate, displayName: "Original",
+      identificationPolicy: IdentificationPolicy(comparesOriginalTitles: false), appearance: .softFinish)
+    let before = try fixture.repository.read()
+    try await service.renameCollection(candidate.directory.id, displayName: " Family ")
+    let summary = try await service.configurationSummary()
+    #expect(summary.directories.first?.effectiveDisplayName == "Family")
+    #expect(notifications.configurationCount == 1)
+    #expect(notifications.presentationCount == 1)
+    let saved = try fixture.repository.read()
+    #expect(saved.directories.first?.authorizationVersion == before.directories.first?.authorizationVersion)
+    #expect(saved.directories.first?.identificationPolicy == before.directories.first?.identificationPolicy)
+  }
+  /// Preparation and cancellation leave settings and host authorization storage untouched.
+  @Test func preparedCollectionPersistsOnlyAtFinalCommit() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let folder = fixture.root.appendingPathComponent("Movies")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let candidate = try await fixture.service.prepareCollection(folder)
+    #expect(try fixture.repository.read().directories.isEmpty)
+    let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
+    do {
+      let lease = try #require(try fixture.authorizations.acquireLease(for: key))
+      #expect(try lease.read() == .none)
+    }
+    try await fixture.service.commitCollection(candidate, displayName: "  Family films ",
+      identificationPolicy: IdentificationPolicy(comparesOriginalTitles: false), appearance: .raw)
+    let saved = try fixture.repository.read()
+    #expect(saved.directories.first?.effectiveDisplayName == "Family films")
+    #expect(saved.directories.first?.identificationPolicy?.comparesOriginalTitles == false)
+    #expect(saved.posterAppearance == .raw)
+    let lease = try #require(try fixture.authorizations.acquireLease(for: key))
+    #expect(try lease.read() != .none)
+  }
+
+  /// A competing collection added while a setup sheet is open must be checked again at final Add.
+  @Test func finalCommitRechecksOverlap() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let folder = fixture.root.appendingPathComponent("Movies")
+    let child = folder.appendingPathComponent("Nested")
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+    let candidate = try await fixture.service.prepareCollection(folder)
+    try await fixture.service.addDirectory(child)
+    let before = try fixture.repository.read()
+    await #expect(throws: ConfigurationError.self) {
+      try await fixture.service.commitCollection(candidate, displayName: "Movies",
+        identificationPolicy: .none, appearance: .raw)
+    }
+    #expect(try fixture.repository.read() == before)
+    let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
+    let lease = try #require(try fixture.authorizations.acquireLease(for: key))
+    #expect(try lease.read() == .none)
+  }
+
+  /// A failed configuration write must not leave an authorization record from an unsuccessful Add.
+  @Test func failedFinalCommitDiscardsHostAuthorization() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let folder = fixture.root.appendingPathComponent("Movies")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let candidate = try await fixture.service.prepareCollection(folder)
+    try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("Shared"))
+    await #expect(throws: (any Error).self) {
+      try await fixture.service.commitCollection(candidate, displayName: .none,
+        identificationPolicy: .none, appearance: .raw)
+    }
+    let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
+    let lease = try #require(try fixture.authorizations.acquireLease(for: key))
+    #expect(try lease.read() == .none)
+  }
   /// Catches cleanup tied to UI state or a later summary read instead of the committed mutation.
   @Test func committedRemovalPrunesOutcomesWithoutCreatingAView() async throws {
     let fixture = try ConfigurationServiceFixture()
@@ -142,7 +311,7 @@ struct DirectoryConfigurationServiceTests {
       id: UUID(), path: original.path,
       transferBookmark: try service.makeTransferBookmark(for: original),
       authorizationVersion: UUID(),
-      identity: identity)
+      identity: identity, displayName: "Family films")
     try fixture.repository.update { $0.directories = [directory] }
     do {
       let key = "host-\(directory.id)-\(directory.authorizationVersion)"
@@ -156,6 +325,7 @@ struct DirectoryConfigurationServiceTests {
     #expect(saved.identity == identity)
     #expect(saved.path == renamed.resolvingSymlinksInPath().standardizedFileURL.path)
     #expect(summary.directories.first?.path == saved.path)
+    #expect(summary.directories.first?.effectiveDisplayName == "Family films")
   }
 
   /// Verifies that missing authorized folder is not reported as disconnected.
@@ -221,14 +391,14 @@ struct DirectoryConfigurationServiceTests {
     defer { fixture.cleanup() }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Unavailable", transferBookmark: Data([1]),
-      authorizationVersion: UUID())
+      authorizationVersion: UUID(), displayName: "Unavailable films")
     try fixture.repository.update { $0.directories = [directory] }
     let summary = try await fixture.service.configurationSummary()
     #expect(
       summary.directories == [
         ConfiguredDirectoryStatus(
           id: directory.id, path: directory.path,
-          availability: .reauthorizationRequired)
+          availability: .reauthorizationRequired, displayName: "Unavailable films")
       ])
     #expect(try fixture.repository.read().directories == [directory])
   }
@@ -274,6 +444,18 @@ struct DirectoryConfigurationServiceTests {
   }
 }
 
+/// Distinguishes processing invalidations from presentation-only changes.
+private final class CollectionSetupNotificationProbe: ConfigurationChangeNotifying, Sendable {
+  /// Processing and presentation invalidation counts, in that order.
+  private let counts = Mutex((configuration: Int.zero, presentation: Int.zero))
+  /// How often Finder work would be invalidated.
+  var configurationCount: Int { counts.withLock { $0.configuration } }
+  /// How often friendly-name presentation was invalidated.
+  var presentationCount: Int { counts.withLock { $0.presentation } }
+  func configurationDidChange() { counts.withLock { $0.configuration += 1 } }
+  func collectionPresentationDidChange() { counts.withLock { $0.presentation += 1 } }
+}
+
 /// Creates isolated persistence stores and service collaborators for each test.
 private struct ConfigurationServiceFixture {
   /// Temporary root containing the fixture's stores.
@@ -288,7 +470,7 @@ private struct ConfigurationServiceFixture {
   let service: DirectoryConfigurationService
 
   /// Creates an isolated service fixture with the requested authorization behavior.
-  init(authorization: any DirectoryAuthorizationProviding = TestDirectoryAuthorization()) throws {
+  init(authorization: any DirectoryAuthorizationProviding = TestDirectoryAuthorization(mode: .implicit)) throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     repository = ConfigurationRepository(
       store: try PersistenceStore(

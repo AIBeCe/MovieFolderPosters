@@ -243,6 +243,9 @@ extension MovieFolderProcessor {
     let sameFingerprint = priorRecord?.fingerprint == candidate.fingerprint
 
     if sameFingerprint, let record = priorRecord {
+      // An existing owned icon is assessed separately. An absent icon needs a current-policy decision.
+      if record.requiresAutomaticReassessment == true { return false }
+
       let needsParserReassessment = needsParserReassessment(candidate, saved: record)
 
       if !needsParserReassessment,
@@ -450,6 +453,15 @@ extension MovieFolderProcessor {
       return
     }
 
+    if identificationPolicy.requiresReleaseYearForAutomaticIdentification, parsed.year == .none {
+      recordUnresolved(candidate, in: &visit.cache, reason: .manualIdentificationRequired)
+      try saveState(visit.cache, to: lease)
+      visit.summary.unresolved += 1
+      try recordFolderProcessing(unresolvedFolderAssessment(candidate, reason: .manualIdentificationRequired),
+        in: &visit.recording)
+      return
+    }
+
     attempt.stage = .search
 
     guard let search = try await searchMovies(
@@ -457,7 +469,8 @@ extension MovieFolderProcessor {
       visit: &visit)
     else { return }
 
-    let identityResult = matcher.identify(title: parsed.title, year: parsed.year, search: search)
+    let identityResult = matcher.identify(title: parsed.title, year: parsed.year, search: search,
+      policy: identificationPolicy)
 
     guard case .matched(let movie) = identityResult, let posterPath = movie.posterPath,
       !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

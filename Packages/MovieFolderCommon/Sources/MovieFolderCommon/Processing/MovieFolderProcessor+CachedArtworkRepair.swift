@@ -30,6 +30,7 @@ extension MovieFolderProcessor {
         movieIdentitySource: assignment.record.movieIdentitySource ?? .savedDecision
       )
       cachedRecord.nameParserRevision = assignment.record.nameParserRevision
+      cachedRecord.requiresAutomaticReassessment = assignment.record.requiresAutomaticReassessment
       visit.cache.folders[candidate.name] = cachedRecord
 
       try saveAssignedState(visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
@@ -205,6 +206,7 @@ extension MovieFolderProcessor {
         matchedMovieID: movieID, posterPath: posterPath, movieTitle: record.movieTitle,
         movieYear: record.movieYear, movieIdentitySource: record.movieIdentitySource ?? .savedDecision)
       repairedRecord.nameParserRevision = record.nameParserRevision
+      repairedRecord.requiresAutomaticReassessment = record.requiresAutomaticReassessment
       repairedRecord.lastFailure = .none
       visit.cache.folders[candidate.name] = repairedRecord
 

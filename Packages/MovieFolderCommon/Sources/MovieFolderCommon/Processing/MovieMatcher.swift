@@ -36,14 +36,15 @@ nonisolated struct MovieMatcher: Sendable {
   }
 
   /// Establishes identity independently of artwork availability using unchanged conservative evidence rules.
-  func identify(title: String, year: Int?, search: MovieSearchResult) -> MovieMatchResult {
+  func identify(title: String, year: Int?, search: MovieSearchResult,
+                policy: IdentificationPolicy = IdentificationPolicy()) -> MovieMatchResult {
     let query = normalized(title)
     guard !query.isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else {
       return .unresolved(.invalidQuery)
     }
     guard !search.hasMorePages else { return .unresolved(.incompleteSearch) }
     let plausible = search.movies.filter {
-      (normalized($0.title) == query || normalized($0.originalTitle) == query)
+      (normalized($0.title) == query || (policy.comparesOriginalTitles && normalized($0.originalTitle) == query))
         && (year == .none || $0.releaseYear == year)
     }
     guard let selected = plausible.first else { return .unresolved(.noSuitableMatch) }

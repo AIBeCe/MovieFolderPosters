@@ -40,7 +40,8 @@ extension MovieFolderProcessor {
       try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
 
     switch record.reason {
-    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication:
+    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication,
+         .manualIdentificationRequired:
       return .notEligible
     default: break
     }

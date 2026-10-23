@@ -8,12 +8,24 @@ import Persistence
 nonisolated protocol ConfigurationChangeNotifying: Sendable {
   /// Informs shared app components that persisted configuration changed.
   func configurationDidChange()
+  /// Refreshes collection names without cancelling in-flight Finder processing.
+  func collectionPresentationDidChange()
+}
+
+nonisolated extension ConfigurationChangeNotifying {
+  /// Retains compatibility for observers without separate presentation invalidations.
+  func collectionPresentationDidChange() {}
 }
 
 /// Sends configuration-change notifications through the shared environment.
 nonisolated struct SharedConfigurationChangeNotifier: ConfigurationChangeNotifying {
   /// Publishes a process-wide configuration change notification.
   func configurationDidChange() { MovieFolderEnvironment.notifyConfigurationChanged() }
+  /// Publishes presentation-only changes to interested host interfaces.
+  func collectionPresentationDidChange() {
+    DistributedNotificationCenter.default().postNotificationName(
+      .movieFolderCollectionPresentationChanged, object: .none, userInfo: .none, deliverImmediately: true)
+  }
 }
 
 /// Creates and resolves security-scoped bookmarks for configured directories.
@@ -128,7 +140,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
         ConfiguredDirectoryStatus(
           id: directory.id,
           path: refreshed[directory.id]?.path ?? directory.path,
-          availability: availability))
+          availability: availability, displayName: directory.displayName))
     }
     var assessed = configuration
     assessed.directories = configuration.directories.map { refreshed[$0.id] ?? $0 }
@@ -136,13 +148,14 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     statuses = statuses.map { status in
       guard overlapping.contains(status.id) else { return status }
 
-      return ConfiguredDirectoryStatus(id: status.id, path: status.path, availability: .overlapping)
+      return ConfiguredDirectoryStatus(id: status.id, path: status.path, availability: .overlapping,
+        displayName: status.displayName)
     }
     try persistRefreshedDirectories(refreshed, original: configuration)
 
     return ConfigurationSummary(
       directories: statuses, credentialConfigured: snapshot.token != .none,
-      posterAppearance: configuration.posterAppearance)
+      posterAppearance: configuration.posterAppearance, identificationPolicy: configuration.identificationPolicy)
   }
 
   /// Saves refreshed evidence only while each root still equals the originally assessed configuration.
@@ -240,7 +253,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       if updated.path != directory.path {
         try lease.write(authorization.makeBookmark(for: access.url))
       }
-      refreshed = updated
+      refreshed = updated == directory ? .none : updated
     }
     withExtendedLifetime(access) {}
 
@@ -256,24 +269,64 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     notifier.configurationDidChange()
   }
 
+  /// Persists automatic identification defaults without modifying explicit overrides or credentials.
+  func setIdentificationPolicy(_ policy: IdentificationPolicy) async throws {
+    try repository.update { $0.identificationPolicy = policy }
+    notifier.configurationDidChange()
+  }
+
+  /// Changes only presentation metadata; root authorization and processing identity remain stable.
+  func renameCollection(_ identifier: UUID, displayName: String) async throws {
+    try repository.update { configuration in
+      guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
+        throw ConfigurationError.directoryNotFound
+      }
+      configuration.directories[index].displayName = MonitoredDirectory.normalizedDisplayName(displayName)
+    }
+    notifier.collectionPresentationDidChange()
+  }
+
+  /// Captures authorization in memory; abandoning the candidate requires no persistence cleanup.
+  func prepareCollection(_ directory: URL) async throws -> PreparedCollection {
+    try prepare(directory, identifier: UUID())
+  }
+
+  /// Validates current overlap while the settings lease protects the final collection commit.
+  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws {
+    var value = candidate.directory
+    value.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
+    value.identificationPolicy = identificationPolicy
+    let access = try authorization.acquireAccess(bookmark: candidate.hostBookmark, expectedIdentity: value.identity)
+    defer { withExtendedLifetime(access) {} }
+
+    guard access.url.resolvingSymlinksInPath().standardizedFileURL.path == value.path else {
+      throw ConfigurationError.configurationChanged
+    }
+
+    try commitAuthorization(candidate) { configuration in
+      guard !configuration.directories.contains(where: { $0.path == value.path || $0.id == value.id }) else {
+        throw ConfigurationError.duplicateDirectory
+      }
+
+      guard !configuration.directories.contains(where: { DirectoryConfiguration.overlaps($0, value) }) else {
+        throw ConfigurationError.overlappingDirectory
+      }
+
+      configuration.directories.append(value)
+      configuration.posterAppearance = appearance
+    }
+    notifier.configurationDidChange()
+  }
+
   /// Adds a selected folder after validating access and preventing duplicate or nested roots.
   ///
   /// - Parameter directory: The folder selected as a collection root.
   /// - Throws: A configuration or filesystem error if the root is invalid or overlaps another.
-  func addDirectory(_ directory: URL) throws {
-    let value = try prepare(directory, identifier: UUID())
-    try repository.update { configuration in
-      guard !configuration.directories.contains(where: { $0.path == value.path }) else {
-        throw ConfigurationError.duplicateDirectory
-      }
-      guard
-        !configuration.directories.contains(where: { DirectoryConfiguration.overlaps($0, value) })
-      else {
-        throw ConfigurationError.overlappingDirectory
-      }
-      configuration.directories.append(value)
-    }
-    notifier.configurationDidChange()
+  func addDirectory(_ directory: URL) async throws {
+    let candidate = try await prepareCollection(directory)
+    try await commitCollection(candidate, displayName: .none, identificationPolicy: .none,
+      appearance: repository.read().posterAppearance)
   }
 
   /// Removes a configured collection and notifies shared components.
@@ -299,8 +352,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - directory: The selected folder to authorize.
   /// - Throws: A configuration or filesystem error if the folder is invalid or overlaps another.
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {
-    let value = try prepare(directory, identifier: identifier)
-    try repository.update { configuration in
+    let candidate = try prepare(directory, identifier: identifier)
+    var value = candidate.directory
+    try commitAuthorization(candidate) { configuration in
       guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
         throw ConfigurationError.directoryNotFound
       }
@@ -314,9 +368,45 @@ actor DirectoryConfigurationService: ConfigurationServicing {
           $0.id != identifier && DirectoryConfiguration.overlaps($0, value)
         })
       else { throw ConfigurationError.overlappingDirectory }
+      value.displayName = configuration.directories[index].displayName
+      value.identificationPolicy = configuration.directories[index].identificationPolicy
       configuration.directories[index] = value
     }
     notifier.configurationDidChange()
+  }
+
+  /// Holds the exact authorization generation through settings commit and restores it on later failure.
+  /// - Parameters:
+  ///   - candidate: Authorization generation prepared in memory for Add or Locate Folder.
+  ///   - mutation: Admission checks and configuration edits, run under the settings lease before bookmark mutation.
+  /// - Throws: Admission, persistence, or rollback errors; publication occurs only after this returns successfully.
+  private func commitAuthorization(_ candidate: PreparedCollection,
+    mutation: (inout DirectoryConfiguration) throws -> Void) throws {
+    var authorizationLease: PersistenceLease?
+    var previousBookmark: Data?
+    defer { withExtendedLifetime(authorizationLease) {} }
+    do {
+      try repository.update { configuration in
+        try mutation(&configuration)
+
+        guard let lease = try authorizations.acquireLease(for: authorizationKey(candidate.directory)) else {
+          throw ConfigurationError.busy
+        }
+
+        previousBookmark = try lease.read()
+        authorizationLease = lease
+        try lease.write(candidate.hostBookmark)
+      }
+    } catch {
+      if let authorizationLease {
+        if let previousBookmark {
+          try authorizationLease.write(previousBookmark)
+        } else {
+          try authorizationLease.removeRecord()
+        }
+      }
+      throw error
+    }
   }
 
   /// Reads credential presence and its persisted generation under the same short settings lease.
@@ -396,9 +486,16 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - identifier: Stable identifier assigned to the resulting collection.
   /// - Returns: A monitored-directory record with canonical path and identity evidence.
   /// - Throws: A filesystem, bookmark, or authorization-store error if preparation fails.
-  private func prepare(_ directory: URL, identifier: UUID) throws -> MonitoredDirectory {
+  private func prepare(_ directory: URL, identifier: UUID) throws -> PreparedCollection {
+    guard directory.isFileURL else { throw DirectoryAccessError.invalidDirectory }
+
     let started = directory.startAccessingSecurityScopedResource()
     defer { if started { directory.stopAccessingSecurityScopedResource() } }
+
+    guard try directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+      throw DirectoryAccessError.invalidDirectory
+    }
+
     _ = try fileSystem.makeTransferBookmark(for: directory)
     let canonical = directory.resolvingSymlinksInPath().standardizedFileURL
     let evidence = fileSystem.inspectDirectory(at: canonical)
@@ -408,12 +505,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       transferBookmark: try fileSystem.makeTransferBookmark(for: canonical),
       authorizationVersion: UUID(), identity: evidence.identity,
       volumePath: evidence.volumePath)
-    guard let lease = try authorizations.acquireLease(for: authorizationKey(value)) else {
-      throw ConfigurationError.busy
-    }
-    try lease.write(authorization.makeBookmark(for: canonical))
-
-    return value
+    return PreparedCollection(directory: value, hostBookmark: try authorization.makeBookmark(for: canonical))
   }
 
   /// Maps a filesystem readiness result to the collection row's availability state.

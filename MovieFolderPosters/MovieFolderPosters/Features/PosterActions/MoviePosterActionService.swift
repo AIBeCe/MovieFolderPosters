@@ -472,7 +472,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       authorizationVersion: context.directory.authorizationVersion,
       credentialRevision: context.configuration.credentialRevision,
       usesStubTMDbResponses: context.configuration.usesStubTMDbResponses,
-      appearance: context.configuration.posterAppearance)
+      appearance: context.configuration.posterAppearance,
+      identificationPolicy: context.configuration.effectiveIdentificationPolicy(for: context.directory))
   }
 
   /// Creates a processor bound to the request's persistence and mutation context.
@@ -505,7 +506,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       appearance: context.configuration.posterAppearance,
       processingStore: try environment.makeCollectionProcessingStore(),
       recovery: try environment.makeProcessingRecoveryService(),
-      credentialRevision: context.configuration.credentialRevision)
+      credentialRevision: context.configuration.credentialRevision,
+      identificationPolicy: context.configuration.effectiveIdentificationPolicy(for: context.directory))
 
   }
 }

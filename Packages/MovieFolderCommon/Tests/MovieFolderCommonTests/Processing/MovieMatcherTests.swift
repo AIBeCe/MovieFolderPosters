@@ -5,6 +5,16 @@ import Testing
 
 /// Regression coverage for exact movie identity matching and ambiguity rejection.
 struct MovieMatcherTests {
+  /// Disabling original-title comparisons preserves localized exact matches only.
+  @Test func localizedOnlyPolicyRejectsOriginalTitle() {
+    let movie = candidate(1, "Spirited Away", 2001, original: "千と千尋の神隠し")
+    let matcher = MovieMatcher()
+    let policy = IdentificationPolicy(comparesOriginalTitles: false)
+    #expect(matcher.identify(title: "千と千尋の神隠し", year: 2001, search: results([movie]), policy: policy)
+      == .unresolved(.noSuitableMatch))
+    #expect(matcher.identify(title: "Spirited Away", year: 2001, search: results([movie]), policy: policy)
+      == .matched(movie))
+  }
   /// Verifies accepts Unique Title And Year Agreement.
   @Test func acceptsUniqueTitleAndYearAgreement() {
     let movie = candidate(1, "The Drama", 2026)

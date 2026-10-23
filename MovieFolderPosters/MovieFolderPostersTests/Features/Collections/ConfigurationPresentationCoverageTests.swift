@@ -38,7 +38,7 @@ struct ConfigurationPresentationCoverageTests {
       service: PresentationConfigurationService(), activity: PresentationActivityService())
     let preferences = AppAppearanceSettings(defaults: try isolatedDefaults())
     let controller = SettingsViewController(viewModel: model, appearanceSettings: preferences)
-    let pane = try #require(controller.tabViewItems[2].viewController)
+    let pane = try #require(controller.tabViewItems.first(where: { $0.label == "Appearance" })?.viewController)
     let buttons = descendants(pane.view).compactMap { $0 as? PreviewChoiceButton }
     let dark = try #require(buttons.first { $0.title == "Dark" })
     let system = try #require(buttons.first { $0.title == "System" })
@@ -58,7 +58,7 @@ struct ConfigurationPresentationCoverageTests {
     let model = ConfigurationViewModel(service: service, activity: PresentationActivityService())
     await model.reloadCredentialState()
     let controller = try makeSettingsController(model: model)
-    let pane = try #require(controller.tabViewItems[1].viewController)
+    let pane = try #require(controller.tabViewItems.first(where: { $0.label == "TMDb" })?.viewController)
     let field = try #require(descendants(pane.view).compactMap { $0 as? NSSecureTextField }.first)
     let save = try #require(
       descendants(pane.view).compactMap { $0 as? NSButton }.first { $0.title == "Test and Save Token" })
@@ -80,7 +80,7 @@ struct ConfigurationPresentationCoverageTests {
     let controller = try makeSettingsController(model: model)
     let confirmation = CredentialConfirmationProbe()
     controller.credentialDelegate = confirmation
-    let pane = try #require(controller.tabViewItems[1].viewController)
+    let pane = try #require(controller.tabViewItems.first(where: { $0.label == "TMDb" })?.viewController)
     let field = try #require(descendants(pane.view).compactMap { $0 as? NSSecureTextField }.first)
     let save = try #require(descendants(pane.view).compactMap { $0 as? NSButton }
       .first { $0.title == "Test and Replace Token…" })
@@ -104,7 +104,7 @@ struct ConfigurationPresentationCoverageTests {
     let controller = try makeSettingsController(model: model)
     let confirmation = CredentialConfirmationProbe()
     controller.credentialDelegate = confirmation
-    let pane = try #require(controller.tabViewItems[1].viewController)
+    let pane = try #require(controller.tabViewItems.first(where: { $0.label == "TMDb" })?.viewController)
     let buttons = descendants(pane.view).compactMap { $0 as? NSButton }
     let test = try #require(buttons.first { $0.title == "Test Saved Token" })
     let remove = try #require(buttons.first { $0.title == "Remove Token…" })
@@ -217,7 +217,7 @@ struct ConfigurationPresentationCoverageTests {
     let collectionCell = try #require(
       controller.tableView(table, viewFor: collectionColumn, row: 0))
     let collectionLabels = descendants(collectionCell).compactMap { $0 as? NSTextField }
-    #expect(collectionLabels.contains { $0.stringValue == "Movies / First Movie" })
+    #expect(collectionLabels.contains { $0.stringValue == "First Movie" })
     #expect(collectionLabels.contains { $0.stringValue.contains("Host access preflight passed") })
     #expect(collectionLabels.contains { $0.stringValue.contains("Results: Current") })
 

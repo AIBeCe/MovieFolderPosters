@@ -8,6 +8,19 @@ import Testing
 /// Exercises explicit results actions without using production filesystem or network services.
 @MainActor
 struct CollectionResultsViewModelTests {
+  /// Missing-year policy outcomes require Choose Movie rather than a retry the processor will reject.
+  @Test func manualIdentificationRequiredDisablesRetryButAllowsSelection() async {
+    let record = FolderProcessingRecord(name: "Dune", identity: "identity", state: .unresolved,
+      reason: .manualIdentificationRequired)
+    let fixture = await makeFixture(folders: [record])
+    fixture.model.selectRows(IndexSet(integer: .zero))
+    #expect(fixture.model.canChooseMovie)
+    #expect(!fixture.model.canRetrySelected)
+    #expect(fixture.model.retryAvailability(for: record) == "Manual review required")
+    fixture.model.retrySelected()
+    await settle()
+    #expect(await fixture.retry.requests.isEmpty)
+  }
   /// Loading and reloading saved evidence never requests poster processing.
   @Test func openingAndReloadingAreReadOnly() async {
     let fixture = await makeFixture(folders: [folder("Movie")])

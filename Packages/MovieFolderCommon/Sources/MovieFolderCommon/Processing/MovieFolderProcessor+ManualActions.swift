@@ -49,6 +49,7 @@ extension MovieFolderProcessor {
     refreshedRecord.movieTitle = selection.movieTitle
     refreshedRecord.movieYear = selection.movieYear
     refreshedRecord.movieIdentitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
+    refreshedRecord.requiresAutomaticReassessment = state.folders[child]?.requiresAutomaticReassessment
     state.folders[child] = refreshedRecord
     state.providerRetryAt = .none
     try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
@@ -192,6 +193,8 @@ extension MovieFolderProcessor {
       record.fingerprint == candidate.fingerprint, record.status == .processed
     else { return .none }
 
+    guard try mayReuseSavedIdentity(record, candidate: candidate, root: root) else { return .none }
+
     return record.matchedMovieID
   }
 
@@ -327,7 +330,8 @@ extension MovieFolderProcessor {
     var movieYear = state.folders[child]?.movieYear
     if let record = state.folders[child], record.fingerprint == candidate.fingerprint,
       record.status == .processed, let savedMovieID = record.matchedMovieID,
-      let savedPosterPath = record.posterPath {
+      let savedPosterPath = record.posterPath,
+      try mayReuseSavedIdentity(record, candidate: candidate, root: root) {
       movieID = savedMovieID
       posterPath = savedPosterPath
     } else {
@@ -352,6 +356,19 @@ extension MovieFolderProcessor {
 
     return RefreshMovieSelection(
       movieID: movieID, posterPath: posterPath, movieTitle: movieTitle, movieYear: movieYear)
+  }
+
+  /// Keeps historical automatic identities usable only while their owned poster is still installed.
+  /// - Parameters:
+  ///   - record: Saved identity and artwork evidence.
+  ///   - candidate: Current folder identity.
+  ///   - root: Authorized collection root.
+  /// - Returns: Whether explicit/current decisions or verified installed-poster evidence permit identity reuse.
+  /// - Throws: Filesystem inspection or identity errors.
+  private func mayReuseSavedIdentity(_ record: FolderRecord, candidate: FolderCandidate, root: URL) throws -> Bool {
+    if record.requiresAutomaticReassessment != true { return true }
+
+    return try fileSystem.hasAssignedPoster(toChild: candidate.name, in: root, expectedIdentity: candidate.identity)
   }
 }
 

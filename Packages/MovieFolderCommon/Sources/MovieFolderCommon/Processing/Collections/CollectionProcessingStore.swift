@@ -197,6 +197,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       saved.credentialRevision == context.credentialRevision,
       saved.usesStubTMDbResponses == context.usesStubTMDbResponses,
       saved.posterAppearance == context.appearance,
+      saved.effectiveIdentificationPolicy(for: root) == context.identificationPolicy,
       !saved.findOverlappingDirectoryIDs().contains(context.rootID)
     else { throw CollectionProcessingError.configurationChanged }
   }

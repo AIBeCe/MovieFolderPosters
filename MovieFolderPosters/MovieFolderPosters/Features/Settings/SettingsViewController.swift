@@ -1,5 +1,6 @@
 import AppKit
 import FileSystem
+import MovieFolderCommon
 
 /// Presents poster layout, TMDb credential, and app appearance settings.
 @MainActor
@@ -29,6 +30,8 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
       label: "Poster Layout",
       image: NSImage(systemSymbolName: "rectangle.portrait", accessibilityDescription: .none)
     ) { PosterLayoutPane(viewModel: viewModel) }
+    addTab(label: "Identification", image: NSImage(systemSymbolName: "text.magnifyingglass",
+      accessibilityDescription: .none)) { IdentificationPane(viewModel: viewModel) }
     addTab(label: "TMDb", image: NSImage(systemSymbolName: "key", accessibilityDescription: .none)) {
       self.credentialPane
     }
@@ -78,6 +81,136 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
     item.label = label
     item.image = image
     addTabViewItem(item)
+  }
+}
+
+/// Edits application-wide identification defaults in the established native preference pane layout.
+@MainActor
+private final class IdentificationPane: SettingsPaneController, NSPopoverDelegate {
+  /// Performs persistence and publishes effective application defaults.
+  private let viewModel: ConfigurationViewModel
+  /// Requires a parsed release year before requesting automatic identification.
+  private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic identification",
+    target: .none, action: .none)
+  /// Includes TMDb original titles in exact automatic comparisons.
+  private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles",
+    target: .none, action: .none)
+  /// Displays a fixed safe save failure without exposing underlying storage errors.
+  private let errorLabel = NSTextField(wrappingLabelWithString: "")
+  /// Retains only the currently presented contextual help; AppKit keeps the delegate weak.
+  private var helpPopover: NSPopover?
+
+  /// Retains the model shared by the existing Settings window.
+  init(viewModel: ConfigurationViewModel) {
+    self.viewModel = viewModel
+    super.init(nibName: .none, bundle: .none)
+  }
+
+  /// Programmatic construction is required.
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+  override func loadView() {
+    let explanations = [
+      "Folders without a release year remain unresolved. You can still search and choose a movie manually.",
+      "Include original-language titles when checking exact title matches from TMDb."
+    ]
+    var content = heading("Identification", detail: "Defaults apply to collections using application settings.")
+    for (index, button) in [yearButton, originalButton].enumerated() {
+      button.target = self
+      button.action = #selector(policyChanged)
+      button.toolTip = explanations[index]
+      button.setAccessibilityHelp(explanations[index])
+      let help = NSButton(title: "", target: self, action: #selector(showHelp(_:)))
+      help.bezelStyle = .helpButton
+      help.tag = index
+      help.toolTip = explanations[index]
+      help.setAccessibilityLabel("About \(button.title)")
+      help.setAccessibilityHelp(explanations[index])
+      let row = NSStackView(views: [button, help])
+      row.spacing = 8
+      let detail = NSTextField(wrappingLabelWithString: explanations[index])
+      detail.textColor = .secondaryLabelColor
+      content += [row, detail]
+    }
+    errorLabel.textColor = .systemRed
+    _ = makeContent(content + [errorLabel])
+    updatePresentation()
+  }
+
+  override func updatePresentation() {
+    yearButton.state = viewModel.identificationPolicy.requiresReleaseYearForAutomaticIdentification ? .on : .off
+    originalButton.state = viewModel.identificationPolicy.comparesOriginalTitles ? .on : .off
+    yearButton.isEnabled = !viewModel.isBusy
+    originalButton.isEnabled = !viewModel.isBusy
+    errorLabel.stringValue = viewModel.errorMessage == "Could not save identification settings."
+      ? viewModel.errorMessage ?? "" : ""
+  }
+
+  /// Saves one immutable checkbox snapshot through the shared configuration model.
+  @objc private func policyChanged() {
+    let policy = IdentificationPolicy(requiresReleaseYearForAutomaticIdentification: yearButton.state == .on,
+      comparesOriginalTitles: originalButton.state == .on)
+    Task { await viewModel.setIdentificationPolicy(policy); updatePresentation() }
+  }
+
+  /// Presents transient help anchored to the clicked control and replaces any previous explanation.
+  @objc private func showHelp(_ sender: NSButton) {
+    guard view.window != .none else { return }
+
+    helpPopover?.close()
+    let popover = NSPopover()
+    popover.behavior = .transient
+    popover.delegate = self
+    popover.contentViewController = makeHelpContent(
+      title: sender.tag == .zero ? yearButton.title : originalButton.title, explanation: sender.toolTip ?? "")
+    popover.contentSize = popover.contentViewController?.view.fittingSize ?? NSSize(width: 320, height: 120)
+    helpPopover = popover
+    popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxX)
+  }
+
+  /// Releases only the popover that actually closed; a replaced popover cannot clear its successor.
+  func popoverDidClose(_ notification: Notification) {
+    if let closed = notification.object as? NSPopover, helpPopover === closed { helpPopover = .none }
+  }
+
+  /// Ends contextual help when the user leaves the pane or closes Settings.
+  override func viewDidDisappear() {
+    super.viewDidDisappear()
+    helpPopover?.close()
+    helpPopover = .none
+  }
+
+  /// Builds a compact native help explanation without modal actions or confirmation controls.
+  /// - Parameters:
+  ///   - title: The identification option explained by this help button.
+  ///   - explanation: The same concise guidance exposed through tooltip and accessibility help.
+  /// - Returns: Content sized by its wrapping text inside standard popover margins.
+  private func makeHelpContent(title: String, explanation: String) -> NSViewController {
+    let controller = NSViewController()
+    let heading = NSTextField(wrappingLabelWithString: title)
+    heading.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    heading.preferredMaxLayoutWidth = 288
+    let detail = NSTextField(wrappingLabelWithString: explanation)
+    detail.preferredMaxLayoutWidth = 288
+    let stack = NSStackView(views: [heading, detail])
+    stack.orientation = .vertical
+    stack.alignment = .leading
+    stack.spacing = 8
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    controller.view = NSView()
+    controller.view.addSubview(stack)
+    NSLayoutConstraint.activate([
+      controller.view.widthAnchor.constraint(equalToConstant: 320),
+      stack.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 16),
+      stack.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor, constant: -16),
+      stack.topAnchor.constraint(equalTo: controller.view.topAnchor, constant: 16),
+      stack.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor, constant: -16),
+      heading.widthAnchor.constraint(equalTo: stack.widthAnchor),
+      detail.widthAnchor.constraint(equalTo: stack.widthAnchor)
+    ])
+
+    return controller
   }
 }
 

@@ -75,7 +75,9 @@ nonisolated public struct ConfigurationRepository: Sendable {
       !current.findOverlappingDirectoryIDs().contains(directory.id),
       current.credentialRevision == expectedConfiguration.credentialRevision,
       current.usesStubTMDbResponses == expectedConfiguration.usesStubTMDbResponses,
-      current.posterAppearance == expectedConfiguration.posterAppearance
+      current.posterAppearance == expectedConfiguration.posterAppearance,
+      current.effectiveIdentificationPolicy(for: configured)
+        == expectedConfiguration.effectiveIdentificationPolicy(for: directory)
     else {
       withExtendedLifetime(lease) {}
       throw ConfigurationError.configurationChanged

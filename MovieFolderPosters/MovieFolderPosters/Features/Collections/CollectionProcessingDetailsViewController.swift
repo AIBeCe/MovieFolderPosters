@@ -216,6 +216,7 @@ extension FolderProcessingReason {
     case .incompleteSearch: "Search did not finish"
     case .missingArtwork: "Poster artwork was unavailable"
     case .parsingProblem: "Folder name could not be parsed"
+    case .manualIdentificationRequired: "Release year required; choose a movie manually"
     case .existingPosterPreserved: "An existing poster was preserved"
     case .policySuppressed: "Processing was suppressed by policy"
     case .processingFailure: "Processing failed"

@@ -26,6 +26,8 @@ public actor MovieFolderProcessor {
   let mutationGuard: (any MovieFolderMutationGuard)?
   /// The selected finish used for poster rendering.
   let appearance: PosterAppearance
+  /// Effective automatic identification choices captured when this processor is composed.
+  let identificationPolicy: IdentificationPolicy
   /// Commits authoritative results independently of operational caches.
   let processingStore: CollectionProcessingStore?
   /// Shared recovery admission and mutation fencing, when supplied by production composition.
@@ -53,6 +55,7 @@ public actor MovieFolderProcessor {
   ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon mutation.
   ///   - credentialRevision: Production credential generation stamped on every saved operational state.
   ///   - configuration: Validated retry and cache timings for this processor instance.
+  ///   - identificationPolicy: Effective choices captured for this collection's automatic identification.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
     persistence: PersistenceStore,
@@ -66,7 +69,8 @@ public actor MovieFolderProcessor {
     processingStore: CollectionProcessingStore? = .none,
     recovery: ProcessingRecoveryService? = .none,
     credentialRevision: UUID? = .none,
-    configuration: MovieFolderProcessorConfiguration = .standard
+    configuration: MovieFolderProcessorConfiguration = .standard,
+    identificationPolicy: IdentificationPolicy = IdentificationPolicy()
   ) {
     self.credentialRevision = credentialRevision
     self.configuration = configuration
@@ -79,6 +83,7 @@ public actor MovieFolderProcessor {
     self.now = now
     self.mutationGuard = mutationGuard
     self.appearance = appearance
+    self.identificationPolicy = identificationPolicy
     self.processingStore = processingStore
     self.recovery = recovery
   }

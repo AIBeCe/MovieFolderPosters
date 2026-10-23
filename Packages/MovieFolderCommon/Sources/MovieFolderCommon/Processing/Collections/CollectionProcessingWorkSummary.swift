@@ -56,7 +56,7 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
     if folder.state == .uncertain || folder.state == .done { needsReassessment += 1; return }
     guard let reason = folder.reason, reason != .unknown else { needsReassessment += 1; return }
     switch reason {
-    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork:
+    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .manualIdentificationRequired:
       needsManualResolution += 1
     case .authentication, .recoveryMode:
       waitingToRetry += 1

@@ -59,6 +59,10 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private(set) var resultsWindow: NSWindow?
   /// Owns selected retry lifetime independently of view rendering.
   private var resultsViewModel: CollectionResultsViewModel?
+  /// Finite setup sheet retained independently from Settings and result sheets.
+  private(set) var setupWindow: NSWindow?
+  /// Uncommitted bookmarks and local choices, discarded with the setup sheet.
+  private var setupViewModel: CollectionSetupViewModel?
 
   /// Creates the host flow and connects its configuration and appearance services.
   ///
@@ -123,6 +127,9 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       DistributedNotificationCenter.default().addObserver(
         self, selector: #selector(resultsConfigurationChanged(_:)),
         name: .movieFolderConfigurationChanged, object: .none)
+      DistributedNotificationCenter.default().addObserver(
+        self, selector: #selector(collectionPresentationChanged(_:)),
+        name: .movieFolderCollectionPresentationChanged, object: .none)
     }
   }
 
@@ -166,11 +173,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       displayState: .unavailable
     )
     let controller = CollectionProcessingDetailsViewController(
-      collectionName: URL(fileURLWithPath: directory.path).lastPathComponent,
+      collectionName: directory.effectiveDisplayName,
       summary: summary)
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
-    sheet.title = "Processing Details — \(URL(fileURLWithPath: directory.path).lastPathComponent)"
+    sheet.title = "Processing Details — \(directory.effectiveDisplayName)"
+    sheet.contentView?.toolTip = directory.path
     sheet.styleMask = [.titled, .closable, .resizable]
     sheet.setContentSize(NSSize(width: 680, height: 520))
     sheet.minSize = NSSize(width: 560, height: 360)
@@ -198,7 +206,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     let controller = CollectionResultsViewController(viewModel: model)
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
-    sheet.title = "Unresolved Results — \(URL(fileURLWithPath: directory.path).lastPathComponent)"
+    sheet.title = "Unresolved Results — \(directory.effectiveDisplayName)"
+    sheet.contentView?.toolTip = directory.path
     sheet.styleMask = [.titled, .closable, .resizable]
     sheet.setContentSize(NSSize(width: 800, height: 480))
     sheet.minSize = NSSize(width: 680, height: 360)
@@ -233,6 +242,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       window.delegate = .none
       closeDetails()
       closeResults()
+      closeSetup()
     } else if window === settingsWindow?.window {
       viewModel.cancelCredentialOperation()
       if mainWindow?.window?.isVisible != true {
@@ -243,6 +253,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       closeDetails()
     } else if window === resultsWindow {
       closeResults()
+    } else if window === setupWindow {
+      closeSetup()
     }
   }
 
@@ -352,27 +364,135 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     Task { @MainActor [weak self] in self?.refreshCollectionProcessingState() }
   }
 
+  /// Refreshes friendly names without invalidating captured processing or unresolved selection.
+  @objc private func collectionPresentationChanged(_ notification: Notification) {
+    Task { @MainActor [weak self] in await self?.viewModel.load() }
+  }
+
   /// Owns folder selection and applies only a confirmed selection through the configuration model.
   func configurationViewController(
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?
   ) {
     guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none else { return }
+    guard let identifier else { showCollectionSetup(); return }
     let panel = NSOpenPanel()
-    panel.title = identifier == .none ? "Choose Movie Folder" : "Restore Folder Access"
+    panel.title = "Restore Folder Access"
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
     panel.beginSheetModal(for: window) { [weak self] response in
       guard response == .OK, let url = panel.url, let self else { return }
       Task {
-        if let identifier {
-          await self.viewModel.reauthorizeDirectory(identifier, with: url)
-        } else {
-          await self.viewModel.addDirectory(url)
-        }
+        await self.viewModel.reauthorizeDirectory(identifier, with: url)
       }
     }
   }
+
+  /// Opens the same finite setup sheet with the validated Main drop prepared in memory.
+  func configurationViewController(_ controller: ConfigurationViewController, didDrop directory: URL) {
+    showCollectionSetup(preparing: directory)
+  }
+
+  /// Owns the native rename prompt while the model and service own presentation state and persistence.
+  func configurationViewController(_ controller: ConfigurationViewController, didRequestRename identifier: UUID) {
+    guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none,
+      let directory = viewModel.directories.first(where: { $0.id == identifier }) else { return }
+
+    let alert = NSAlert()
+    alert.messageText = "Rename Collection"
+    alert.informativeText = directory.path + "\nA blank name uses the folder name. Maximum 120 characters."
+    let field = NSTextField(string: directory.displayName ?? "")
+    field.frame = NSRect(x: 0, y: 0, width: 380, height: 24)
+    field.placeholderString = URL(fileURLWithPath: directory.path).lastPathComponent
+    field.setAccessibilityLabel("Collection display name")
+    alert.accessoryView = field
+    alert.addButton(withTitle: "Rename")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: window) { [weak self] response in
+      guard response == .alertFirstButtonReturn else { return }
+
+      Task { await self?.viewModel.renameCollection(identifier, displayName: field.stringValue) }
+    }
+  }
+
+  /// Keeps a final commit alive until its result is known before either owning window can close.
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    if sender === setupWindow || sender === mainWindow?.window { return setupViewModel?.isCommitting != true }
+
+    return true
+  }
+
+  /// Starts one native sheet, initially without a folder unless Main supplied a valid drop.
+  private func showCollectionSetup(preparing directory: URL? = .none) {
+    guard !viewModel.isBusy, let parent = mainWindow?.window, parent.attachedSheet == .none else { return }
+
+    let model = viewModel.makeCollectionSetupViewModel()
+    let controller = CollectionSetupViewController(viewModel: model)
+    controller.delegate = self
+    let sheet = NSWindow(contentViewController: controller)
+    sheet.title = "Add Collection"
+    sheet.styleMask = [.titled, .closable]
+    sheet.setContentSize(NSSize(width: 580, height: 620))
+    sheet.delegate = self
+    setupWindow = sheet
+    setupViewModel = model
+    parent.beginSheet(sheet)
+    if let directory { Task { await model.prepare(directory) } }
+  }
+
+  /// Discards the candidate and ends only the setup flow's own sheet.
+  private func closeSetup() {
+    guard let sheet = setupWindow, setupViewModel?.isCommitting != true else { return }
+
+    setupViewModel?.cancel()
+    setupViewModel = .none
+    setupWindow = .none
+    if let parent = sheet.sheetParent { parent.endSheet(sheet) }
+    sheet.delegate = .none
+    sheet.close()
+  }
+}
+
+extension ConfigurationCoordinator: CollectionSetupViewControllerDelegate {
+  /// Uses the existing authorization panel while the chosen folder is still security scoped.
+  func collectionSetupViewControllerDidRequestFolder(_ controller: CollectionSetupViewController) {
+    guard let sheet = setupWindow, sheet.attachedSheet == .none, let model = setupViewModel,
+      !model.isBusy else { return }
+
+    let panel = NSOpenPanel()
+    panel.title = "Choose Movie Collection Folder"
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.beginSheetModal(for: sheet) { response in
+      guard response == .OK, let directory = panel.url else { return }
+
+      Task { await model.prepare(directory) }
+    }
+  }
+
+  /// Prepares a replacement drop through the same bookmark and validation service as Choose.
+  func collectionSetupViewController(_ controller: CollectionSetupViewController, didDrop directory: URL) {
+    guard let model = setupViewModel, !model.isBusy else { return }
+
+    Task { await model.prepare(directory) }
+  }
+
+  /// Commits only after explicit Add, preserving the sheet and corrective message if persistence fails.
+  func collectionSetupViewControllerDidRequestAdd(_ controller: CollectionSetupViewController) {
+    guard let model = setupViewModel, model.canAdd else { return }
+
+    Task {
+      if await model.commit() {
+        closeSetup()
+        await viewModel.load()
+        summaryViewModel.reload()
+      }
+    }
+  }
+
+  /// Cancels the finite draft without a configuration notification or preference write.
+  func collectionSetupViewControllerDidRequestCancel(_ controller: CollectionSetupViewController) { closeSetup() }
 }
 
 private extension ConfigurationCoordinator {
