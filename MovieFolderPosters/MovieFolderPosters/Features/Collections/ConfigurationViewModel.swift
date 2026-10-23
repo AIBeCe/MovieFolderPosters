@@ -248,6 +248,9 @@ final class ConfigurationViewModel {
   }
 
   /// Saves a collection name without changing processing policy or authorization.
+  /// - Parameters:
+  ///   - identifier: Stable collection identity to rename.
+  ///   - displayName: User-entered friendly name; the service normalizes and bounds it.
   func renameCollection(_ identifier: UUID, displayName: String) async {
     await perform(action: .collectionRenamed, collectionID: identifier,
       failureMessage: "Could not rename this collection.") {
@@ -258,6 +261,7 @@ final class ConfigurationViewModel {
   }
 
   /// Creates an independent setup draft; changing it does not alter persisted application preferences.
+  /// - Returns: A new uncommitted setup model initialized from the currently loaded defaults.
   func makeCollectionSetupViewModel() -> CollectionSetupViewModel {
     CollectionSetupViewModel(service: service, applicationPolicy: identificationPolicy, appearance: posterAppearance)
   }

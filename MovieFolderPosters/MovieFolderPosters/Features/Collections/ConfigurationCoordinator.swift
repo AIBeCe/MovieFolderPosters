@@ -364,7 +364,11 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     Task { @MainActor [weak self] in self?.refreshCollectionProcessingState() }
   }
 
+}
+
+extension ConfigurationCoordinator {
   /// Refreshes friendly names without invalidating captured processing or unresolved selection.
+  /// - Parameter notification: Payload-free presentation invalidation from a committed collection rename.
   @objc private func collectionPresentationChanged(_ notification: Notification) {
     Task { @MainActor [weak self] in await self?.viewModel.load() }
   }
@@ -374,7 +378,9 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?
   ) {
     guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none else { return }
+
     guard let identifier else { showCollectionSetup(); return }
+
     let panel = NSOpenPanel()
     panel.title = "Restore Folder Access"
     panel.canChooseFiles = false
@@ -423,6 +429,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   }
 
   /// Starts one native sheet, initially without a folder unless Main supplied a valid drop.
+  /// - Parameter directory: Optional validated Main drop to prepare after the empty setup sheet is created.
   private func showCollectionSetup(preparing directory: URL? = .none) {
     guard !viewModel.isBusy, let parent = mainWindow?.window, parent.attachedSheet == .none else { return }
 

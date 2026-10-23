@@ -36,6 +36,12 @@ nonisolated struct MovieMatcher: Sendable {
   }
 
   /// Establishes identity independently of artwork availability using unchanged conservative evidence rules.
+  /// - Parameters:
+  ///   - title: Parsed title to compare using normalized exact matching.
+  ///   - year: Parsed release year, or absence when unknown.
+  ///   - search: Provider candidates and pagination-completeness evidence.
+  ///   - policy: Effective automatic choices controlling original-title comparison.
+  /// - Returns: A uniquely supported identity or its unresolved classification.
   func identify(title: String, year: Int?, search: MovieSearchResult,
                 policy: IdentificationPolicy = IdentificationPolicy()) -> MovieMatchResult {
     let query = normalized(title)

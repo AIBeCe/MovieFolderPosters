@@ -5,6 +5,7 @@ import MovieFolderCommon
 /// Receives presentation changes from a finite collection setup draft.
 @MainActor protocol CollectionSetupViewModelDelegate: AnyObject {
   /// Renders the latest candidate, local choices, and operation state.
+  /// - Parameter viewModel: The draft whose presentation state changed.
   func collectionSetupViewModelDidChange(_ viewModel: CollectionSetupViewModel)
 }
 
@@ -13,7 +14,7 @@ import MovieFolderCommon
   /// Service retaining bookmark creation and persistence ownership.
   private let service: any ConfigurationServicing
   /// Current application choices displayed while the draft inherits.
-  let applicationPolicy: IdentificationPolicy
+  private let applicationPolicy: IdentificationPolicy
   /// Current uncommitted authorization; absence means no folder has been chosen.
   private(set) var candidate: PreparedCollection?
   /// Editable friendly name; selecting another folder resets its suggestion.
@@ -42,6 +43,10 @@ import MovieFolderCommon
   var canAdd: Bool { candidate != .none && !isBusy && !isCancelled }
 
   /// Starts a local draft with no selected folder and behavior-equivalent application defaults.
+  /// - Parameters:
+  ///   - service: Retained preparation and persistence boundary for the draft.
+  ///   - applicationPolicy: Defaults displayed while inheriting and used to initialize an explicit override.
+  ///   - appearance: Current global finish, copied into the uncommitted draft.
   init(service: any ConfigurationServicing, applicationPolicy: IdentificationPolicy, appearance: PosterAppearance) {
     self.service = service
     self.applicationPolicy = applicationPolicy
@@ -50,6 +55,7 @@ import MovieFolderCommon
   }
 
   /// Prepares the latest folder selection without committing settings or authorizations.
+  /// - Parameter directory: User-selected local directory whose bookmarks should be captured in memory.
   func prepare(_ directory: URL) async {
     guard !isCancelled else { return }
 
@@ -76,6 +82,7 @@ import MovieFolderCommon
     delegate?.collectionSetupViewModelDidChange(self)
   }
   /// Persists the current candidate and local choices only after explicit Add.
+  /// - Returns: Whether Add committed successfully; failure retains the draft and publishes corrective guidance.
   func commit() async -> Bool {
     guard canAdd, let candidate else { return false }
 

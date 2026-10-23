@@ -101,6 +101,7 @@ private final class IdentificationPane: SettingsPaneController, NSPopoverDelegat
   private var helpPopover: NSPopover?
 
   /// Retains the model shared by the existing Settings window.
+  /// - Parameter viewModel: Shared configuration presentation and persistence model.
   init(viewModel: ConfigurationViewModel) {
     self.viewModel = viewModel
     super.init(nibName: .none, bundle: .none)
@@ -155,6 +156,7 @@ private final class IdentificationPane: SettingsPaneController, NSPopoverDelegat
   }
 
   /// Presents transient help anchored to the clicked control and replaces any previous explanation.
+  /// - Parameter sender: Help button identifying the option and carrying its accessible explanation.
   @objc private func showHelp(_ sender: NSButton) {
     guard view.window != .none else { return }
 

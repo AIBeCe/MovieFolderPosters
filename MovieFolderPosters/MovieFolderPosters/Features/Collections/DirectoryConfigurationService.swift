@@ -269,31 +269,37 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     notifier.configurationDidChange()
   }
 
+}
+
+extension DirectoryConfigurationService {
   /// Persists automatic identification defaults without modifying explicit overrides or credentials.
-  func setIdentificationPolicy(_ policy: IdentificationPolicy) async throws {
+  func setIdentificationPolicy(_ policy: IdentificationPolicy) throws {
     try repository.update { $0.identificationPolicy = policy }
     notifier.configurationDidChange()
   }
 
   /// Changes only presentation metadata; root authorization and processing identity remain stable.
-  func renameCollection(_ identifier: UUID, displayName: String) async throws {
+  func renameCollection(_ identifier: UUID, displayName: String) throws {
     try repository.update { configuration in
       guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
         throw ConfigurationError.directoryNotFound
       }
+
       configuration.directories[index].displayName = MonitoredDirectory.normalizedDisplayName(displayName)
     }
     notifier.collectionPresentationDidChange()
   }
 
   /// Captures authorization in memory; abandoning the candidate requires no persistence cleanup.
-  func prepareCollection(_ directory: URL) async throws -> PreparedCollection {
+  func prepareCollection(_ directory: URL) throws -> PreparedCollection {
     try prepare(directory, identifier: UUID())
   }
 
   /// Validates current overlap while the settings lease protects the final collection commit.
-  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
-    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws {
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance
+  ) throws {
     var value = candidate.directory
     value.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
     value.identificationPolicy = identificationPolicy
@@ -323,9 +329,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///
   /// - Parameter directory: The folder selected as a collection root.
   /// - Throws: A configuration or filesystem error if the root is invalid or overlaps another.
-  func addDirectory(_ directory: URL) async throws {
-    let candidate = try await prepareCollection(directory)
-    try await commitCollection(candidate, displayName: .none, identificationPolicy: .none,
+  func addDirectory(_ directory: URL) throws {
+    let candidate = try prepareCollection(directory)
+    try commitCollection(candidate, displayName: .none, identificationPolicy: .none,
       appearance: repository.read().posterAppearance)
   }
 
@@ -380,8 +386,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - candidate: Authorization generation prepared in memory for Add or Locate Folder.
   ///   - mutation: Admission checks and configuration edits, run under the settings lease before bookmark mutation.
   /// - Throws: Admission, persistence, or rollback errors; publication occurs only after this returns successfully.
-  private func commitAuthorization(_ candidate: PreparedCollection,
-    mutation: (inout DirectoryConfiguration) throws -> Void) throws {
+  private func commitAuthorization(
+    _ candidate: PreparedCollection, mutation: (inout DirectoryConfiguration) throws -> Void
+  ) throws {
     var authorizationLease: PersistenceLease?
     var previousBookmark: Data?
     defer { withExtendedLifetime(authorizationLease) {} }
@@ -479,13 +486,13 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     }
   #endif
 
-  /// Resolves a selected folder and persists its authorization bookmark.
+  /// Captures selected-folder metadata and both bookmark forms in memory without persisting authorization.
   ///
   /// - Parameters:
   ///   - directory: The user-selected folder.
   ///   - identifier: Stable identifier assigned to the resulting collection.
-  /// - Returns: A monitored-directory record with canonical path and identity evidence.
-  /// - Throws: A filesystem, bookmark, or authorization-store error if preparation fails.
+  /// - Returns: Prepared canonical metadata, transferable authorization, and the host bookmark.
+  /// - Throws: Directory validation, filesystem inspection, or bookmark creation errors.
   private func prepare(_ directory: URL, identifier: UUID) throws -> PreparedCollection {
     guard directory.isFileURL else { throw DirectoryAccessError.invalidDirectory }
 
@@ -505,6 +512,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       transferBookmark: try fileSystem.makeTransferBookmark(for: canonical),
       authorizationVersion: UUID(), identity: evidence.identity,
       volumePath: evidence.volumePath)
+
     return PreparedCollection(directory: value, hostBookmark: try authorization.makeBookmark(for: canonical))
   }
 

@@ -226,8 +226,10 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   ///   - identificationPolicy: Explicit override or absence to inherit application defaults.
   ///   - appearance: Global poster finish selected in the local draft.
   /// - Throws: Duplicate, overlap, stale-directory, bookmark, or persistence failures.
-  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
-    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance
+  ) async throws
   /// Saves a presentation-only collection name without changing processing generations.
   /// - Parameters:
   ///   - identifier: Stable collection identity.
@@ -259,20 +261,22 @@ nonisolated public struct PreparedCollection: Sendable, Equatable {
 
 nonisolated public extension ConfigurationServicing {
   /// Rejects setup when an older service does not provide transactional collection preparation.
-  func prepareCollection(_ directory: URL) async throws -> PreparedCollection {
+  func prepareCollection(_ directory: URL) throws -> PreparedCollection {
     throw ConfigurationError.invalidConfiguration
   }
   /// Rejects commit rather than silently persisting incomplete setup choices.
-  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
-    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws {
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance
+  ) throws {
     throw ConfigurationError.invalidConfiguration
   }
   /// Rejects unsupported rename instead of reporting an unpersisted change.
-  func renameCollection(_ identifier: UUID, displayName: String) async throws {
+  func renameCollection(_ identifier: UUID, displayName: String) throws {
     throw ConfigurationError.invalidConfiguration
   }
   /// Rejects unsupported policy persistence rather than silently changing presentation.
-  func setIdentificationPolicy(_ policy: IdentificationPolicy) async throws {
+  func setIdentificationPolicy(_ policy: IdentificationPolicy) throws {
     throw ConfigurationError.invalidConfiguration
   }
 }

@@ -1,6 +1,6 @@
-import Foundation
-import FileSystem
 import AppKit
+import FileSystem
+import Foundation
 import Network
 import Testing
 

@@ -31,9 +31,11 @@ import AppKit
   }
 
   /// Rejects unsupported representations before asking AppKit to transfer a drag's authorization.
+  /// - Parameter representations: Complete file-URL representations, one per drag item.
+  /// - Returns: One local file URL, or absence for unsupported or ambiguous input.
   private static func localURL(from representations: [String]) -> URL? {
     guard representations.count == 1, let url = URL(string: representations[0]),
-      url.isFileURL, url.host == .none || url.host == "" || url.host == "localhost" else { return .none }
+      url.isFileURL, url.host == .none || url.host?.isEmpty == true || url.host == "localhost" else { return .none }
 
     return url
   }

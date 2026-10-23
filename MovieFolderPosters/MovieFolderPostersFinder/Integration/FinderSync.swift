@@ -55,29 +55,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       processors = [:]
       do {
         if let token = try environment.credential() {
-          let client = try environment.provider(token: token, configuration: configuration)
-          let recovery = try environment.processingRecoveryService()
-          let container = try environment.containerURL()
-          let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
-          let repository = try environment.configurationRepository()
-          let mutationGuard = FinderMutationGuard(
-            repository: repository, configuration: configuration,
-            roots: updated)
-          for (url, root) in updated {
-            processors[url] = MovieFolderProcessor(
-              persistence: try PersistenceStore(directory: records),
-              provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
-              cacheDirectory: container.appendingPathComponent("Posters"),
-              coordinationStore: try PersistenceStore(
-                directory: container.appendingPathComponent("ProcessingLocks")
-              ), mutationGuard: mutationGuard,
-              appearance: configuration.posterAppearance,
-              processingStore: try environment.processingStore(), recovery: recovery,
-              credentialRevision: configuration.credentialRevision,
-              identificationPolicy: configuration.effectiveIdentificationPolicy(for: root.directory))
-          }
-          processingConfiguration = configuration
-          logger.notice("Shared Keychain credential available")
+          try configureProcessors(token: token, configuration: configuration, roots: updated)
         } else {
           logger.notice("TMDb credential is not configured")
         }
@@ -100,6 +78,36 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
 
       return []
     }
+  }
+
+  /// Composes policy-bound processors using the credential and authorized roots from one configuration snapshot.
+  /// - Parameters:
+  ///   - token: Saved credential used only at the provider boundary.
+  ///   - configuration: Settings captured alongside the provider and mutation guard.
+  ///   - roots: Authorized roots retaining their access leases.
+  /// - Throws: Provider, recovery, container, or persistence setup errors.
+  private func configureProcessors(
+    token: String, configuration: DirectoryConfiguration, roots: [URL: AuthorizedRoot]
+  ) throws {
+    let client = try environment.provider(token: token, configuration: configuration)
+    let recovery = try environment.processingRecoveryService()
+    let container = try environment.containerURL()
+    let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
+    let repository = try environment.configurationRepository()
+    let mutationGuard = FinderMutationGuard(repository: repository, configuration: configuration, roots: roots)
+    for (url, root) in roots {
+      processors[url] = MovieFolderProcessor(
+        persistence: try PersistenceStore(directory: records),
+        provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
+        cacheDirectory: container.appendingPathComponent("Posters"),
+        coordinationStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
+        mutationGuard: mutationGuard, appearance: configuration.posterAppearance,
+        processingStore: try environment.processingStore(), recovery: recovery,
+        credentialRevision: configuration.credentialRevision,
+        identificationPolicy: configuration.effectiveIdentificationPolicy(for: root.directory))
+    }
+    processingConfiguration = configuration
+    logger.notice("Shared Keychain credential available")
   }
 
   /// Authorizes nonoverlapping roots and excludes aliases sharing a persistent identity.

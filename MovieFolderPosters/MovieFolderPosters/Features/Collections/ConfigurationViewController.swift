@@ -22,8 +22,14 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
   func configurationViewController(
     _ controller: ConfigurationViewController, didRequestDirectorySelection identifier: UUID?)
   /// Requests setup using a single local directory dropped on Main.
+  /// - Parameters:
+  ///   - controller: Main controller forwarding the user's drop.
+  ///   - directory: The single local directory accepted by the drop parser.
   func configurationViewController(_ controller: ConfigurationViewController, didDrop directory: URL)
   /// Requests a presentation-only rename for one configured collection.
+  /// - Parameters:
+  ///   - controller: Main controller requesting the rename flow.
+  ///   - identifier: Stable configured collection identity.
   func configurationViewController(_ controller: ConfigurationViewController, didRequestRename identifier: UUID)
 }
 
@@ -253,13 +259,18 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     recoveryButton.isEnabled = !viewModel.isBusy && viewModel.isRecoveryModeAvailable
   }
 
+}
+
+extension ConfigurationViewController {
   /// Returns the number of collection rows currently displayed.
   /// - Returns: The count of the current directory processing state.
   func numberOfRows(in tableView: NSTableView) -> Int { presentedDirectories.count }
 
   /// Accepts only one local directory, proposing a collection drop rather than a row insertion.
-  func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo,
-    proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+  func tableView(
+    _ tableView: NSTableView, validateDrop info: any NSDraggingInfo,
+    proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation
+  ) -> NSDragOperation {
     guard !viewModel.isBusy, CollectionFolderDrop.directory(from: info.draggingPasteboard) != .none else { return [] }
 
     tableView.setDropRow(-1, dropOperation: .on)
@@ -268,8 +279,10 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   }
 
   /// Opens the same setup flow used by Add Collection after validating the complete drag again.
-  func tableView(_ tableView: NSTableView, acceptDrop info: any NSDraggingInfo,
-    row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
+  func tableView(
+    _ tableView: NSTableView, acceptDrop info: any NSDraggingInfo,
+    row: Int, dropOperation: NSTableView.DropOperation
+  ) -> Bool {
     guard !viewModel.isBusy, let directory = CollectionFolderDrop.directory(from: info.draggingPasteboard)
     else { return false }
 
@@ -421,6 +434,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   @objc private func addDirectory() { chooseDirectory(identifier: .none) }
 
   /// Routes friendly-name editing through the owning coordinator.
+  /// - Parameter sender: Menu item carrying the selected collection's stable identifier.
   @objc private func renameCollection(_ sender: NSMenuItem) {
     guard let identifier = sender.representedObject as? UUID else { return }
 

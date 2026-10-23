@@ -43,6 +43,7 @@ struct DirectoryConfigurationServiceTests {
     #expect(notifications.configurationCount == .zero)
   }
   /// Late settings-write failure rolls back only the attempted authorization generation for Add and Locate.
+  /// - Parameter reauthorizing: Whether the failing operation replaces an existing grant instead of adding a root.
   @Test(arguments: [false, true])
   func lateConfigurationWriteRollsBackAuthorization(reauthorizing: Bool) async throws {
     let fixture = try ConfigurationServiceFixture()
@@ -179,6 +180,9 @@ struct DirectoryConfigurationServiceTests {
     let lease = try #require(try fixture.authorizations.acquireLease(for: key))
     #expect(try lease.read() == .none)
   }
+}
+
+extension DirectoryConfigurationServiceTests {
   /// Catches cleanup tied to UI state or a later summary read instead of the committed mutation.
   @Test func committedRemovalPrunesOutcomesWithoutCreatingAView() async throws {
     let fixture = try ConfigurationServiceFixture()

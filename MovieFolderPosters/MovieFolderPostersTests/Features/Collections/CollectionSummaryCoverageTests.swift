@@ -9,6 +9,7 @@ import Testing
 /// Verifies read-only projections against real disposable configuration, outcome, and coordination stores.
 struct CollectionSummaryCoverageTests {
   /// Friendly names preserve freshness; changing defaults invalidates inheriting collections only.
+  /// - Parameter overridden: Whether the collection retains an explicit policy instead of inheriting defaults.
   @Test(arguments: [false, true])
   func effectiveIdentificationPolicyControlsFreshness(overridden: Bool) async throws {
     let fixture = try SummaryStorageFixture()

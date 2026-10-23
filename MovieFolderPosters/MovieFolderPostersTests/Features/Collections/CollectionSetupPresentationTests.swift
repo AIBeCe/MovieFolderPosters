@@ -2,8 +2,8 @@ import AppKit
 import FileSystem
 import Foundation
 import MovieFolderCommon
-import Testing
 import Synchronization
+import Testing
 
 @testable import MovieFolderPosters
 
@@ -77,6 +77,7 @@ import Synchronization
   /// Popovers observed in presentation order.
   var popovers: [NSPopover] = []
   /// Captures the actual presented AppKit object for behavior and content assertions.
+  /// - Parameter notification: Native popover presentation notification supplying the presented object.
   @objc func willShow(_ notification: Notification) {
     if let popover = notification.object as? NSPopover { popovers.append(popover) }
   }
@@ -163,23 +164,25 @@ private final class SetupServiceProbe: ConfigurationServicing, Sendable {
   var commitCount: Int { policies.withLock { $0.count } }
   /// Last override submitted by the local draft.
   var committedPolicy: IdentificationPolicy? { policies.withLock { $0.last ?? .none } }
-  func prepareCollection(_ directory: URL) async throws -> PreparedCollection {
+  func prepareCollection(_ directory: URL) throws -> PreparedCollection {
     PreparedCollection(directory: MonitoredDirectory(id: UUID(), path: directory.path,
       transferBookmark: Data([1]), authorizationVersion: UUID()), hostBookmark: Data([2]))
   }
-  func commitCollection(_ candidate: PreparedCollection, displayName: String?,
-    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance) async throws {
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance
+  ) throws {
     policies.withLock { $0.append(identificationPolicy) }
   }
-  func configurationSummary() async throws -> ConfigurationSummary {
+  func configurationSummary() throws -> ConfigurationSummary {
     ConfigurationSummary(directories: [], credentialConfigured: false)
   }
-  func addDirectory(_ directory: URL) async throws {}
-  func removeDirectory(_ identifier: UUID) async throws {}
-  func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) async throws {}
-  func credentialState() async throws -> CredentialState { CredentialState(isConfigured: false, revision: .none) }
-  func testCredential(expectedRevision: UUID?) async throws {}
-  func saveCredential(_ value: String, expectedRevision: UUID?) async throws {}
-  func removeCredential(expectedRevision: UUID?) async throws {}
-  func setPosterAppearance(_ appearance: PosterAppearance) async throws {}
+  func addDirectory(_ directory: URL) throws {}
+  func removeDirectory(_ identifier: UUID) throws {}
+  func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {}
+  func credentialState() throws -> CredentialState { CredentialState(isConfigured: false, revision: .none) }
+  func testCredential(expectedRevision: UUID?) throws {}
+  func saveCredential(_ value: String, expectedRevision: UUID?) throws {}
+  func removeCredential(expectedRevision: UUID?) throws {}
+  func setPosterAppearance(_ appearance: PosterAppearance) throws {}
 }

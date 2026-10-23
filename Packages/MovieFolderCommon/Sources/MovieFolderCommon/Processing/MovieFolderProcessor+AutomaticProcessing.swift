@@ -445,20 +445,12 @@ extension MovieFolderProcessor {
     visit: inout AutomaticProcessingVisit, attempt: inout PosterAttempt
   ) async throws {
     guard case .parsed(let parsed) = parser.parse(candidate.name) else {
-      recordUnresolved(candidate, in: &visit.cache)
-      try saveState(visit.cache, to: lease)
-      visit.summary.unresolved += 1
-      let record = unresolvedFolderAssessment(candidate, reason: .parsingProblem)
-      try recordFolderProcessing(record, in: &visit.recording)
+      try recordUnresolvedAttempt(candidate, reason: .parsingProblem, lease: lease, visit: &visit)
       return
     }
 
     if identificationPolicy.requiresReleaseYearForAutomaticIdentification, parsed.year == .none {
-      recordUnresolved(candidate, in: &visit.cache, reason: .manualIdentificationRequired)
-      try saveState(visit.cache, to: lease)
-      visit.summary.unresolved += 1
-      try recordFolderProcessing(unresolvedFolderAssessment(candidate, reason: .manualIdentificationRequired),
-        in: &visit.recording)
+      try recordUnresolvedAttempt(candidate, reason: .manualIdentificationRequired, lease: lease, visit: &visit)
       return
     }
 
@@ -476,11 +468,7 @@ extension MovieFolderProcessor {
       !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else {
       let (reason, identifiedMovie) = unresolvedIdentity(identityResult)
-      recordUnresolved(candidate, in: &visit.cache, reason: reason, movie: identifiedMovie)
-      try saveState(visit.cache, to: lease)
-      visit.summary.unresolved += 1
-      let record = unresolvedFolderAssessment(candidate, reason: reason, movie: identifiedMovie)
-      try recordFolderProcessing(record, in: &visit.recording)
+      try recordUnresolvedAttempt(candidate, reason: reason, movie: identifiedMovie, lease: lease, visit: &visit)
       return
     }
 
@@ -508,6 +496,25 @@ extension MovieFolderProcessor {
 
     try saveAssignedState(visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
     if case .assigned = result { visit.summary.assigned += 1 }
+  }
+
+  /// Persists one unresolved attempt in the operational cache and authoritative result projection.
+  /// - Parameters:
+  ///   - candidate: Current immediate-child identity and fingerprint.
+  ///   - reason: Conservative classification established by parsing or matching.
+  ///   - movie: Identified movie evidence, when artwork alone prevents assignment.
+  ///   - lease: Retained root cache lease.
+  ///   - visit: Visit receiving the cache, summary, and authoritative assessment.
+  /// - Throws: Cache or authoritative-result persistence failures.
+  private func recordUnresolvedAttempt(
+    _ candidate: FolderCandidate, reason: FolderProcessingReason, movie: MovieMetadata? = .none,
+    lease: PersistenceLease, visit: inout AutomaticProcessingVisit
+  ) throws {
+    recordUnresolved(candidate, in: &visit.cache, reason: reason, movie: movie)
+    try saveState(visit.cache, to: lease)
+    visit.summary.unresolved += 1
+    let record = unresolvedFolderAssessment(candidate, reason: reason, movie: movie)
+    try recordFolderProcessing(record, in: &visit.recording)
   }
 
   /// Retains the conservative unresolved reason and any identified movie.

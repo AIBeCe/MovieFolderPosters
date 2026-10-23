@@ -39,12 +39,7 @@ extension MovieFolderProcessor {
       !candidate.hasCustomIcon,
       try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
 
-    switch record.reason {
-    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication,
-         .manualIdentificationRequired:
-      return .notEligible
-    default: break
-    }
+    if requiresManualReview(record.reason) { return .notEligible }
 
     let cache = try loadState(from: lease)
     let prior = cache.folders[child]
@@ -79,5 +74,16 @@ extension MovieFolderProcessor {
     try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
 
     return .attempted(visit.summary, stopSelection: visit.didStopEarly)
+  }
+
+  /// Identifies conclusive outcomes that selected automatic retry must leave for explicit manual resolution.
+  /// - Parameter reason: Persisted reason shown in the selected folder's current evidence.
+  /// - Returns: Whether retry admission must reject this outcome as requiring manual action.
+  private func requiresManualReview(_ reason: FolderProcessingReason?) -> Bool {
+    switch reason {
+    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication,
+         .manualIdentificationRequired: true
+    default: false
+    }
   }
 }

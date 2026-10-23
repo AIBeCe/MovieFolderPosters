@@ -5,12 +5,18 @@ import MovieFolderCommon
 /// Routes finite setup navigation through the owning coordinator.
 @MainActor protocol CollectionSetupViewControllerDelegate: AnyObject {
   /// Requests the coordinator's existing authorization panel.
+  /// - Parameter controller: Setup controller forwarding the explicit Choose action.
   func collectionSetupViewControllerDidRequestFolder(_ controller: CollectionSetupViewController)
   /// Requests final persistence of the local draft.
+  /// - Parameter controller: Setup controller forwarding the explicit Add action.
   func collectionSetupViewControllerDidRequestAdd(_ controller: CollectionSetupViewController)
   /// Requests discarding the local draft and dismissing its sheet.
+  /// - Parameter controller: Setup controller forwarding the Cancel action.
   func collectionSetupViewControllerDidRequestCancel(_ controller: CollectionSetupViewController)
   /// Requests preparation of a single explicitly dropped folder.
+  /// - Parameters:
+  ///   - controller: Setup controller receiving the accepted drop.
+  ///   - directory: The single local directory accepted by the drop parser.
   func collectionSetupViewController(_ controller: CollectionSetupViewController, didDrop directory: URL)
 }
 
@@ -46,6 +52,7 @@ import MovieFolderCommon
   weak var delegate: (any CollectionSetupViewControllerDelegate)?
 
   /// Retains the draft and connects its weak presentation observer.
+  /// - Parameter viewModel: Independent draft retained for the setup sheet's lifetime.
   init(viewModel: CollectionSetupViewModel) {
     self.viewModel = viewModel
     super.init(nibName: .none, bundle: .none)
@@ -58,8 +65,7 @@ import MovieFolderCommon
 
   override func loadView() {
     view = NSView()
-    chooseButton.target = self
-    chooseButton.action = #selector(chooseFolder)
+    configureFormControls()
     let folderRow = NSStackView(views: [folderLabel, chooseButton])
     folderRow.spacing = 12
     folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -67,6 +73,16 @@ import MovieFolderCommon
     let drop = CollectionFolderDropView()
     drop.delegate = self
     drop.heightAnchor.constraint(equalToConstant: 86).isActive = true
+    let actions = NSStackView(views: [NSView(), cancelButton, addButton])
+    actions.spacing = 8
+    installForm(folderRow: folderRow, drop: drop, actions: actions)
+    updatePresentation()
+  }
+
+  /// Connects native controls to local draft actions and accessible explanations.
+  private func configureFormControls() {
+    chooseButton.target = self
+    chooseButton.action = #selector(chooseFolder)
     nameField.placeholderString = "Root folder name"
     nameField.delegate = self
     nameField.setAccessibilityLabel("Collection display name")
@@ -88,9 +104,15 @@ import MovieFolderCommon
     cancelButton.target = self
     cancelButton.action = #selector(cancel)
     cancelButton.keyEquivalent = "\u{1b}"
-    let actions = NSStackView(views: [NSView(), cancelButton, addButton])
-    actions.spacing = 8
     errorLabel.textColor = .systemRed
+  }
+
+  /// Installs the native form sections using the prepared folder, drop, and action rows.
+  /// - Parameters:
+  ///   - folderRow: Selected path and Choose button.
+  ///   - drop: Functional collection-folder drop target.
+  ///   - actions: Explicit Cancel and Add controls.
+  private func installForm(folderRow: NSStackView, drop: CollectionFolderDropView, actions: NSStackView) {
     let content = NSStackView(views: [
       heading("Folder and access"), folderRow, drop,
       note("Choose or drop one collection root. "
@@ -120,7 +142,6 @@ import MovieFolderCommon
     for child in content.arrangedSubviews where child is NSTextField || child is NSBox {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }
-    updatePresentation()
   }
 
   /// Renders a refreshed candidate or operation state.
@@ -184,6 +205,8 @@ import MovieFolderCommon
     viewModel.appearance = PosterAppearance.allCases[index]
   }
   /// Creates a compact native section heading.
+  /// - Parameter title: Section title rendered in the standard bold control font.
+  /// - Returns: A native label containing the section title.
   private func heading(_ title: String) -> NSTextField {
     let label = NSTextField(labelWithString: title)
     label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
@@ -191,6 +214,8 @@ import MovieFolderCommon
     return label
   }
   /// Creates secondary explanatory copy with native wrapping.
+  /// - Parameter text: Guidance rendered beneath the related controls.
+  /// - Returns: A wrapping native label using secondary text styling.
   private func note(_ text: String) -> NSTextField {
     let label = NSTextField(wrappingLabelWithString: text)
     label.textColor = .secondaryLabelColor
@@ -199,6 +224,7 @@ import MovieFolderCommon
     return label
   }
   /// Separates native form sections without custom painted chrome.
+  /// - Returns: A standard AppKit separator box.
   private func separator() -> NSBox {
     let box = NSBox()
     box.boxType = .separator
@@ -210,6 +236,9 @@ import MovieFolderCommon
 /// Receives an explicitly dropped collection root from the setup form.
 @MainActor protocol CollectionFolderDropViewDelegate: AnyObject {
   /// Routes one validated local directory to the owning flow.
+  /// - Parameters:
+  ///   - view: Functional drop target forwarding the drop.
+  ///   - directory: The single local directory accepted by the drop parser.
   func collectionFolderDropView(_ view: CollectionFolderDropView, didDrop directory: URL)
 }
 

@@ -25,6 +25,14 @@ nonisolated public struct CollectionProcessingContext: Codable, Sendable, Equata
   }
 
   /// Creates the captured context used to reject stale result writers.
+  /// - Parameters:
+  ///   - rootID: Stable configured collection identity.
+  ///   - rootIdentity: Captured filesystem identity of the authorized root.
+  ///   - authorizationVersion: Grant generation that must remain current for mutation.
+  ///   - credentialRevision: Credential generation captured with the provider.
+  ///   - usesStubTMDbResponses: Whether explicit development fixtures are enabled.
+  ///   - appearance: Rendering finish captured for this operation.
+  ///   - identificationPolicy: Effective per-collection choices used for automatic identification and freshness.
   public init(rootID: UUID, rootIdentity: String, authorizationVersion: UUID,
               credentialRevision: UUID, usesStubTMDbResponses: Bool, appearance: PosterAppearance,
               identificationPolicy: IdentificationPolicy = IdentificationPolicy()) {
