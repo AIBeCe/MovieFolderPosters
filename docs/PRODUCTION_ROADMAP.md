@@ -304,10 +304,11 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 
 GitHub issue: [#10](https://github.com/AIBeCe/MovieFolderPosters/issues/10); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
-- [ ] Scope: Accept dropped roots through the same authorization flow as the picker. Add friendly display names and a short setup flow for access, current identification policy, and artwork settings; no profile engine yet.
+- [x] Scope: Accept dropped roots through the same authorization flow as the picker. Add friendly display names and a short setup flow for access, current identification policy, and artwork settings; no profile engine yet.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Drop/picker parity, duplicate roots, access denial, display-name changes, and unmounted roots preserve the correct persistent identity. Setup never implies that enabling an extension grants filesystem access.
 - Source ideas: E34, E35, N10.
+- Delivery: Implemented in `407f14d`, validated in `763630b`, and integrated into local `develop` at `3c447e0`. The current Finder Sync versus File Providers Settings presentation remains under investigation; see [native qualification audit](NATIVE_READINESS_QUALIFICATION.md#finder-extension-and-file-provider-registration-audit--2026-10-24).
 
 <a id="r110-02"></a>
 

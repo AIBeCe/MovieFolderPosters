@@ -83,6 +83,37 @@ paths are local investigation artifacts and are not durable prerequisites. Raw b
 repository. After retaining sanitized results, the test bookmark payload and disposable selected folder were removed.
 The substantive observations are recorded above.
 
+### Cleanup audit — 2026-10-24
+
+The retained qualification record states that the sentinel bytes were unchanged during the signed bookmark handoff
+test and that its disposable folder and test bookmark were removed afterward. A follow-up filesystem check found the
+three temporary evidence paths listed above absent; consequently, the sentinel files could not be independently
+re-hashed during this audit. No new sentinel-content claim is made.
+
+The current production App Group settings store still contains four configured collection records. Their contents
+were treated as user data and left unchanged because no record could be positively identified as the disposable
+qualification collection. No configuration or icon metadata was removed. The qualification-specific temporary
+container and sentinel folder were not found in the checked temporary-directory locations. The poster cache and
+custom-icon metadata were not purged because the audit could not reliably separate qualification artifacts from
+user-owned collection data. Thus the historical removal is recorded, but absence of every prior icon artifact is not
+independently verified.
+
+### Finder extension and File Provider registration audit — 2026-10-24
+
+An elevated PlugInKit query returned one MovieFolderPosters extension registration, marked enabled, at the current
+Xcode DerivedData app's embedded `MovieFolderPostersFinder.appex`. Its bundle metadata identifies the extension point
+as `com.apple.FinderSync`; it is not a File Provider extension. The elevated PlugInKit query for
+`com.apple.fileprovider-nonui` returned five entries (iCloud Drive, OneDrive, Photos, and Proton Drive), none belonging
+to MovieFolderPosters. The current Finder Sync extension bundle itself was present at the registered path.
+
+The user observed MovieFolderPosters under Login Items & Extensions → By App → File Providers. These command-line
+results did not identify a separate MovieFolderPosters File Provider bundle or establish which registration backs
+that Settings row. Therefore the row's exact backing bundle and why macOS presents it under File Providers remain
+unresolved. No PlugInKit, LaunchServices, or Settings registration was removed or changed during this audit. A Tahoe
+26.5 developer-forum report describes Finder Sync entries appearing under File Provider with duplicate or unreliable
+Settings presentation ([Apple Developer Forums, thread 837043](https://developer.apple.com/forums/thread/837043)); this
+is supporting context, not proof of the cause on this Mac.
+
 ## Remaining qualification limits
 
 - A reboot is optional durability qualification, not an explicit acceptance criterion in issue #1. The user cannot
