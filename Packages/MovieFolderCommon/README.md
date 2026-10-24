@@ -24,7 +24,7 @@ retry deadline; the configuration is captured per processor instance, which may 
 the calling process. Signed executables retain their App Group/Keychain entitlements and explicit Debug stub
 selection. `StubTMDbTransport` is available only when compiling with `DEBUG`; callers supply poster bytes.
 The Boolean setting `usesStubTMDbResponses` explicitly selects these responses in Debug.
-Importing this package grants no filesystem or Keychain authorization. Do not hold mutation leases across
+Importing this package grants no filesystem or Keychain authorization. Do not hold `PersistenceAccess` across
 networking or other unbounded work.
 
 Activity history, collection processing state, configuration, caches, and icon ownership remain separate stores.

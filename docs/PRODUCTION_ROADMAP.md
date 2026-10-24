@@ -316,10 +316,17 @@ GitHub issue: [#10](https://github.com/AIBeCe/MovieFolderPosters/issues/10); mil
 
 GitHub issue: [#11](https://github.com/AIBeCe/MovieFolderPosters/issues/11); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
-- [ ] Scope: Unify Finder's Ignore/Include Folder actions and collection excluded-folder settings as one reversible inclusion configuration. Pausing a collection preserves its configuration and icons. Distinguish exclusion from durable poster-removal suppression.
+- [x] Scope: Unify Finder's Ignore/Include Folder actions and collection excluded-folder settings as one reversible
+  inclusion configuration. Pause/resume a collection while preserving its configuration and icons. Keep exclusion
+  distinct from durable poster-removal suppression.
 - Dependencies: Previous deliverable in this release; previous release baseline.
-- Acceptance: Exclusion/pause changes fence in-flight automatic and manual writes across processes. Re-enable does not clear unrelated suppression or authorize overwriting foreign icons.
+- Acceptance: Exclusion/pause changes fence in-flight automatic and manual icon changes across processes. Re-enable does not clear unrelated suppression or authorize overwriting foreign icons.
 - Source ideas: E29, E55, E56.
+- Delivery: Implemented in `0b77cb6` and `6c60ef3`, validation committed as `3bce8de`, then fast-forwarded into local
+  `develop`. The focused Swift Testing runs passed (41 package tests, 25 host configuration tests, and 7 setup
+  presentation tests). SwiftLint completed with 19 pre-existing warnings on unchanged lines; the Swift style guide
+  and `git diff --check` passed. Native Finder menu and icon persistence qualification remains unperformed. Legacy
+  serialized configuration keys and Finder URL aliases remain accepted for compatibility.
 
 <a id="r110-03"></a>
 

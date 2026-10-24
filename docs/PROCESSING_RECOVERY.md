@@ -30,7 +30,8 @@ The preceding style-only changes were committed separately as `58e6d33`.
 ## Integration contracts
 
 Add a narrow in-process `ProcessingRecoveryService` in MovieFolderCommon, backed by an independent versioned
-record in shared App Group storage. Existing Persistence leases provide atomic updates and cross-process locking.
+record in shared App Group storage. Existing `PersistenceAccess` values provide atomic updates and cross-process
+exclusive access.
 Unreadable, corrupt, unsupported, or contended gate state fails closed. No settings/result/cache clearing is used.
 
 ```swift
@@ -101,13 +102,13 @@ require separate native observations. Unit tests and builds must not be presente
 - Legacy query invalidation is limited to the matching folder query. An interrupted marker is committed before
   awaiting fresh reassessment; classified results persist and unrelated caches, existing posters, and locks survive.
 - Recovery mode guards provider admission and every synchronous fresh/cached/restyle/replacement/removal boundary.
-  The mutation lease remains held through existing identity, ownership, suppression, and settings validation.
-  Provider networking holds no persistence lease. Releasing mode performs no processing or request by itself.
+  The `PersistenceAccess` remains held through existing identity, ownership, suppression, and settings validation.
+  Provider networking holds no persistence access. Releasing mode performs no processing or request by itself.
 
 ## Behavioral verification and review
 
 Behavioral red/green regressions covered legacy obsolete dates/cache reuse, failure category preservation,
-recovery-mode admission and mutation leases, out-of-order credential failures, capacity exhaustion, partial
+recovery-mode admission and icon-change access checks, out-of-order credential failures, capacity exhaustion, partial
 authentication traversal, and nonfinite Retry-After through a real wrapped processor. Independent review findings
 I1 (credential race), I2 (false completed traversal), and I3 (nonfinite processor deadline) are resolved with regression
 tests and independent re-review PASS.

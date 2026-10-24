@@ -123,5 +123,6 @@ generic bounded record access and pruning. The test-only child-process probe is 
 and never enters a synchronized application/test target. See [Processing results](COLLECTION_PROCESSING.md).
 
 Existing object callbacks use focused delegate protocols. UI delegates are weak and main-actor isolated;
-configuration presentation supports multiple weak subscribers. Required service collaborators and mutation guards
-remain strongly owned. See [Delegate refactor](DELEGATE_REFACTOR.md) for scope and verification.
+configuration presentation supports multiple weak subscribers. Required service collaborators and processing-policy
+checkers remain strongly owned for every required safety decision. See
+[Delegate refactor](DELEGATE_REFACTOR.md) for scope and verification.

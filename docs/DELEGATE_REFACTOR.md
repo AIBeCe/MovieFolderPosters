@@ -15,8 +15,8 @@ The original verification records below remain historical evidence for the deleg
 
 - UI event delegates are class-bound, main-actor isolated, and weakly referenced. Coordinators own flow lifetime.
 - Configuration presentation supports multiple weak delegate subscribers so Main and Settings remain synchronized.
-- Required service collaborators and mutation guards are protocol-based and strongly retained; missing weak
-  delegates must never bypass an authorization/configuration guard.
+- Required service collaborators and processing-policy checkers are protocol-based and strongly retained; missing weak
+  delegates must never bypass an authorization or configuration check.
 - Scheduler callbacks remain actor-safe and preserve cancellation, serialization, and reload ordering.
 - Local algorithms, structured Task bodies, transactions, and framework-required completion handlers retain closures.
   This refactor replaces object communication, rather than syntax required by Swift and Apple APIs.
@@ -26,7 +26,8 @@ The original verification records below remain historical evidence for the deleg
 - [x] Replace host navigation, row actions, presentation/activity, appearance, and Log callbacks.
 - [x] Replace poster-action presentation/navigation callbacks.
 - [x] Replace injected installation/configuration collaborators with narrow protocols.
-- [x] Replace scheduler and mutation-guard callbacks with protocol delegates while preserving lease lifetime.
+- [x] Replace scheduler and processing-check callbacks with protocol delegates while preserving `PersistenceAccess`
+  lifetime.
 - [x] Verify delegate lifetime, multiple subscribers, cancellation, and existing processing/access regressions.
 - [x] Run signed Debug/Release builds and independent review; record results and remaining native limitations.
 

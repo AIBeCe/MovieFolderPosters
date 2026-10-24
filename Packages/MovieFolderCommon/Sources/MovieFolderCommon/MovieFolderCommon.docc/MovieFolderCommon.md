@@ -22,7 +22,7 @@ operation evidence. ``MovieFolderActivityRecorder`` lazily opens bounded storage
 required payload-free notifier. Change notifications are invalidation hints; consumers reload committed data.
 
 The activity recorder retains 500 entries, with a 2 KiB event limit and 2 MiB Persistence envelope limit.
-Lease contention retries are cancellation-aware and bounded to approximately one second. Entries retain commit
+Persistence access contention retries are cancellation-aware and bounded to approximately one second. Entries retain commit
 order independently of occurrence time. Clear preserves the latest sequence; corrupt or unsupported history
 fails explicitly, including on Clear. Recording independently awaits a bounded best-effort append so producer
 cancellation can be recorded without replacing the producer's result. Read and Clear failures remain throwing.

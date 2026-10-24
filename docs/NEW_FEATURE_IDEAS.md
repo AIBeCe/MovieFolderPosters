@@ -33,7 +33,7 @@ Select ideas first; investigate APIs, licensing, security, persistence, and veri
 7. **Collection groups.** Group configured roots for bounded operations, such as processing all selected external-drive collections together.
 8. **Policy version snapshots.** Retain named policy versions so users can restore earlier settings without reverting movie-specific decisions.
 9. **Configuration comparison.** Show differences between current settings and an imported profile before accepting changes.
-10. **Collection onboarding presets.** Guide new collection setup through access, identification policy, and artwork policy as one reviewable flow.
+10. **Collection onboarding presets.** Guide new collection setup through access, matching configuration, and artwork configuration as one reviewable flow.
 
 ## Additional identification evidence
 

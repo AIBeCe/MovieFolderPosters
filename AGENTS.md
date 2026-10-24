@@ -34,6 +34,8 @@
 
 - Organize application code by feature in real folders that are reflected in Xcode.
 - Keep each feature's views, view models, coordinators, and services together where they belong.
+- Within a function, keep related statements together by the work they perform and order those groups in a clear
+  execution flow.
 - Use Application for app-wide lifecycle/navigation, UI/Controls for reusable AppKit controls, and Resources and
   Configuration for their respective non-source inputs. Mirror ownership in test subfolders.
 - Keep host/extension application logic in Shared subfolders by responsibility. Preserve explicit target membership

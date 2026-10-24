@@ -28,7 +28,7 @@ limits below remain. No live credential entry was performed by the agent.
 - Stamp operational caches with the captured credential revision. Reconcile centrally:
   clear cached searches and authentication-specific failure/retry evidence on changes;
   retain decision identity, fingerprints, selections, manual/parsing/missing-artwork states,
-  valid provider throttling, existing coordination, and all icon mutation guards.
+  valid provider throttling, existing coordination, and all icon-change policy checks.
 - Show a local parser preview in Settings and the actual normalized title/year in Choose
   Movie. Preview and search share normalization; previews make no network requests and
   persist neither input nor credentials. No parser grammar change is included.
