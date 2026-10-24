@@ -30,8 +30,8 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
       label: "Poster Layout",
       image: NSImage(systemSymbolName: "rectangle.portrait", accessibilityDescription: .none)
     ) { PosterLayoutPane(viewModel: viewModel) }
-    addTab(label: "Identification", image: NSImage(systemSymbolName: "text.magnifyingglass",
-      accessibilityDescription: .none)) { IdentificationPane(viewModel: viewModel) }
+    addTab(label: "Matching Defaults", image: NSImage(systemSymbolName: "text.magnifyingglass",
+      accessibilityDescription: .none)) { MatchingPane(viewModel: viewModel) }
     addTab(label: "TMDb", image: NSImage(systemSymbolName: "key", accessibilityDescription: .none)) {
       self.credentialPane
     }
@@ -84,13 +84,13 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
   }
 }
 
-/// Edits application-wide identification defaults in the established native preference pane layout.
+/// Edits application-wide matching defaults in the established native preference pane layout.
 @MainActor
-private final class IdentificationPane: SettingsPaneController, NSPopoverDelegate {
+private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
   /// Performs persistence and publishes effective application defaults.
   private let viewModel: ConfigurationViewModel
-  /// Requires a parsed release year before requesting automatic identification.
-  private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic identification",
+  /// Requires a parsed release year before requesting automatic matching.
+  private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic matching",
     target: .none, action: .none)
   /// Includes TMDb original titles in exact automatic comparisons.
   private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles",
@@ -116,7 +116,7 @@ private final class IdentificationPane: SettingsPaneController, NSPopoverDelegat
       "Folders without a release year remain unresolved. You can still search and choose a movie manually.",
       "Include original-language titles when checking exact title matches from TMDb."
     ]
-    var content = heading("Identification", detail: "Defaults apply to collections using application settings.")
+    var content = heading("Matching Defaults", detail: "Defaults apply to collections using application settings.")
     for (index, button) in [yearButton, originalButton].enumerated() {
       button.target = self
       button.action = #selector(policyChanged)
@@ -140,19 +140,19 @@ private final class IdentificationPane: SettingsPaneController, NSPopoverDelegat
   }
 
   override func updatePresentation() {
-    yearButton.state = viewModel.identificationPolicy.requiresReleaseYearForAutomaticIdentification ? .on : .off
-    originalButton.state = viewModel.identificationPolicy.comparesOriginalTitles ? .on : .off
+    yearButton.state = viewModel.movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching ? .on : .off
+    originalButton.state = viewModel.movieMatchingConfiguration.comparesOriginalTitles ? .on : .off
     yearButton.isEnabled = !viewModel.isBusy
     originalButton.isEnabled = !viewModel.isBusy
-    errorLabel.stringValue = viewModel.errorMessage == "Could not save identification settings."
+    errorLabel.stringValue = viewModel.errorMessage == "Could not save matching settings."
       ? viewModel.errorMessage ?? "" : ""
   }
 
   /// Saves one immutable checkbox snapshot through the shared configuration model.
   @objc private func policyChanged() {
-    let policy = IdentificationPolicy(requiresReleaseYearForAutomaticIdentification: yearButton.state == .on,
+    let configuration = MovieMatchingConfiguration(requiresReleaseYearForAutomaticMatching: yearButton.state == .on,
       comparesOriginalTitles: originalButton.state == .on)
-    Task { await viewModel.setIdentificationPolicy(policy); updatePresentation() }
+    Task { await viewModel.setMovieMatchingConfiguration(configuration); updatePresentation() }
   }
 
   /// Presents transient help anchored to the clicked control and replaces any previous explanation.
@@ -185,7 +185,7 @@ private final class IdentificationPane: SettingsPaneController, NSPopoverDelegat
 
   /// Builds a compact native help explanation without modal actions or confirmation controls.
   /// - Parameters:
-  ///   - title: The identification option explained by this help button.
+  ///   - title: The matching option explained by this help button.
   ///   - explanation: The same concise guidance exposed through tooltip and accessibility help.
   /// - Returns: Content sized by its wrapping text inside standard popover margins.
   private func makeHelpContent(title: String, explanation: String) -> NSViewController {

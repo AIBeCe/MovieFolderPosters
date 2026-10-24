@@ -2,7 +2,7 @@ import Foundation
 
 /// Exclusive current assessment for an immediate child directory.
 nonisolated public enum FolderProcessingState: String, Codable, Sendable, CaseIterable {
-  case pending, done, notFound, severalMatches, unresolved, preserved, suppressed, failed, deferred, uncertain
+  case pending, done, notFound, severalMatches, unresolved, preserved, suppressed, excluded, failed, deferred, uncertain
 }
 /// Safe, stable explanations for a folder's current assessment.
 nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseIterable {
@@ -12,7 +12,7 @@ nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseI
   case posterFailure, filesystemFailure, savedIdentityUnavailable, ownershipChanged
   case capacityExceeded, cachePersistenceFailure, authentication, rateLimited, unknown
   case connectivity, serverFailure, invalidResponse, recoveryMode
-  case manualIdentificationRequired
+  case manualMatchingRequired, explicitExclusion
 }
 /// Ownership evidence for the icon currently installed on a folder.
 nonisolated public enum PosterOwnership: String, Codable, Sendable {
@@ -107,11 +107,11 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   /// Retry deadline for an automatically recoverable outcome, excluding conclusive and admission-blocked reasons.
   var automaticRetryAt: Date? {
     guard state != .done, state != .notFound, state != .severalMatches,
-      state != .preserved, state != .suppressed,
+      state != .preserved, state != .suppressed, state != .excluded,
       let reason, let retryAt else { return .none }
     switch reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-         .authentication, .recoveryMode, .unknown, .manualIdentificationRequired:
+         .authentication, .recoveryMode, .unknown, .manualMatchingRequired:
       return .none
     default:
       return retryAt

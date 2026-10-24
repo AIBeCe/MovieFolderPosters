@@ -61,7 +61,7 @@
   retain cycles. Ensure the owning coordinator or other flow owner retains the delegate for the required lifetime.
 - For non-UI delegation, define actor isolation and Sendable requirements explicitly; preserve responsive callbacks
   and avoid crossing isolation boundaries unsafely.
-- Strongly retain required service collaborators and mutation guards through narrow Sendable protocols; weak
+- Strongly retain required service collaborators and safety verifiers through narrow Sendable protocols; weak
   event delegates must never control whether authorization or other required safety checks run.
 - When several views observe one model, preserve all subscribers with weak, identity-deduplicated delegates.
 - Keep closures for local operations such as map/filter and framework APIs that require them. Prefer delegate
@@ -74,7 +74,7 @@
   reuse, independent testing, or a clear ownership boundary.
 - Each module provides an in-process service with a narrow public API and its own tests.
 - Existing service modules are Network, FileSystem, and Persistence. MovieFolderParsing is a
-  Foundation-only local module for release-name parsing and its tests; it does not identify movies.
+  Foundation-only local module for release-name parsing and its tests; it does not match movies.
 - A service may encapsulate a technology such as Core Data when justified;
   examples do not mandate new modules or a change in persistence technology.
 - The application coordinates services and owns movie-specific decisions and workflows.
@@ -84,10 +84,21 @@
 - Prefer Apple frameworks and the fewest possible third-party SPM dependencies.
 - Propose and justify additional modules and third-party dependencies before adding them.
 
+## Naming
+
+- Prefer names that describe the domain concept or concrete behavior; avoid vague or implementation-metaphor terms.
+- Choose role suffixes such as Validator, Verifier, Inspector, or Evaluator only when they accurately describe
+  the type's responsibility.
+- Use Configuration for persisted, user-configurable choices and Settings for their user-facing controls. Reserve
+  Policy for a distinct set of decision rules.
+- Use Inclusion for whether an item belongs in a collection, and Included when describing its resulting state.
+- Do not use Snapshot in names unless the user explicitly requests it.
+
 ## Testing and verification
 
 - Use TDD wherever meaningful: write a failing behavioral test, implement the minimum, then refactor.
-- Prefer Swift Testing for new unit tests and XCTest for UI tests.
+- Use Swift Testing consistently for Swift unit and integration tests.
+- Use XCTest for UI automation tests that rely on XCUIApplication or other XCTest-only UI testing APIs.
 - Test parsing, matching, processing decisions, failures, cancellation, and scope boundaries independently.
 - Avoid tests that merely mirror implementation details or assert mocked behavior.
 - For OS callbacks, signing, sandbox permissions, and icon persistence, use integration or manual checks.

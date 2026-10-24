@@ -34,9 +34,9 @@ nonisolated protocol DirectoryAuthorizationProviding: Sendable {
   /// - Parameters:
   ///   - bookmark: The persisted security-scoped bookmark.
   ///   - expectedIdentity: Saved identity used to reject folder replacement.
-  /// - Returns: A lease retaining access for the caller's operation.
+  /// - Returns: Directory access retained for the caller's work.
   /// - Throws: A directory access error when the bookmark is invalid or stale.
-  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccessLease
+  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccess
   /// Creates a security bookmark for the selected folder.
   /// - Parameter directory: The folder for which access should be persisted.
   /// - Returns: Bookmark data suitable for secure persistence.
@@ -47,7 +47,7 @@ nonisolated protocol DirectoryAuthorizationProviding: Sendable {
 /// Uses FileSystemService to resolve and create security-scoped directory bookmarks.
 nonisolated struct SecurityScopedDirectoryAuthorization: DirectoryAuthorizationProviding {
   /// Resolves a security-scoped bookmark and checks the saved folder identity.
-  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccessLease {
+  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccess {
     try FileSystemService().acquireDirectoryAccess(
       bookmark: bookmark, securityScoped: true,
       expectedIdentity: expectedIdentity)
@@ -68,7 +68,7 @@ extension CollectionProcessingStore: CollectionProcessingCleaning {}
 actor DirectoryConfigurationService: ConfigurationServicing {
   /// Stores collection and poster-appearance configuration.
   private let repository: ConfigurationRepository
-  /// Stores security-scoped authorization bookmarks under cross-process leases.
+  /// Stores security-scoped authorization bookmarks under cross-process persistence access.
   private let authorizations: PersistenceStore
   /// Stores the TMDb token outside of shared configuration data.
   private let credentials: any CredentialStoring
@@ -93,7 +93,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///
   /// - Parameters:
   ///   - repository: Persistent collection and appearance configuration.
-  ///   - authorizations: Store for security bookmark leases.
+  ///   - authorizations: Store for security bookmark persistence access.
   ///   - credentials: Secure provider for the TMDb token.
   ///   - notifier: Notifier invoked after persisted changes.
   ///   - authorization: Provider for resolving and creating security bookmarks.
@@ -140,7 +140,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
         ConfiguredDirectoryStatus(
           id: directory.id,
           path: refreshed[directory.id]?.path ?? directory.path,
-          availability: availability, displayName: directory.displayName))
+          availability: availability, displayName: directory.displayName,
+          processingConfiguration: directory.processingConfiguration, authorizationRevision: directory.authorizationVersion,
+          movieMatchingConfiguration: directory.movieMatchingConfiguration))
     }
     var assessed = configuration
     assessed.directories = configuration.directories.map { refreshed[$0.id] ?? $0 }
@@ -149,13 +151,14 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       guard overlapping.contains(status.id) else { return status }
 
       return ConfiguredDirectoryStatus(id: status.id, path: status.path, availability: .overlapping,
-        displayName: status.displayName)
+        displayName: status.displayName, processingConfiguration: status.processingConfiguration,
+        authorizationRevision: status.authorizationRevision, movieMatchingConfiguration: status.movieMatchingConfiguration)
     }
     try persistRefreshedDirectories(refreshed, original: configuration)
 
     return ConfigurationSummary(
       directories: statuses, credentialConfigured: snapshot.token != .none,
-      posterAppearance: configuration.posterAppearance, identificationPolicy: configuration.identificationPolicy)
+      posterAppearance: configuration.posterAppearance, movieMatchingConfiguration: configuration.movieMatchingConfiguration)
   }
 
   /// Saves refreshed evidence only while each root still equals the originally assessed configuration.
@@ -222,7 +225,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     return (availability, refreshed)
   }
 
-  /// Refreshes authorized metadata while keeping both access and the bookmark lease alive.
+  /// Refreshes authorized metadata while keeping both access and the bookmark access alive.
   /// - Parameter directory: Root requiring matching persistent identity.
   /// - Returns: Availability and any validated metadata refresh.
   /// - Throws: Authorization, identity, bookmark, or persistence errors.
@@ -230,18 +233,18 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     _ directory: MonitoredDirectory
   ) throws -> (availability: DirectoryAvailability, refreshed: MonitoredDirectory?) {
     var refreshed: MonitoredDirectory?
-    guard let lease = try authorizations.acquireLease(for: authorizationKey(directory)) else {
+    guard let persistenceAccess = try authorizations.acquireAccess(for: authorizationKey(directory)) else {
       throw ConfigurationError.busy
     }
-    guard let bookmark = try lease.read() else {
+    guard let bookmark = try persistenceAccess.read() else {
       throw DirectoryAccessError.staleBookmark
     }
-    let access = try authorization.acquireAccess(
+    let directoryAccess = try authorization.acquireAccess(
       bookmark: bookmark, expectedIdentity: directory.identity)
     let evidence = fileSystem.inspectDirectory(
-      at: access.url, expectedIdentity: directory.identity)
+      at: directoryAccess.url, expectedIdentity: directory.identity)
     var updated = directory
-    let resolvedPath = access.url.resolvingSymlinksInPath().standardizedFileURL.path
+    let resolvedPath = directoryAccess.url.resolvingSymlinksInPath().standardizedFileURL.path
     if resolvedPath != directory.path, directory.identity == .none {
       throw DirectoryAccessError.staleBookmark
     }
@@ -249,13 +252,15 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       updated.path = resolvedPath
       updated.identity = identity
       updated.volumePath = evidence.volumePath ?? directory.volumePath
-      updated.transferBookmark = try fileSystem.makeTransferBookmark(for: access.url)
+      updated.transferBookmark = try fileSystem.makeTransferBookmark(for: directoryAccess.url)
       if updated.path != directory.path {
-        try lease.write(authorization.makeBookmark(for: access.url))
+        try persistenceAccess.write(authorization.makeBookmark(for: directoryAccess.url))
       }
       refreshed = updated == directory ? .none : updated
     }
-    withExtendedLifetime(access) {}
+    withExtendedLifetime(persistenceAccess) {
+      withExtendedLifetime(directoryAccess) {}
+    }
 
     return (Self.availability(for: evidence.state), refreshed)
   }
@@ -272,9 +277,120 @@ actor DirectoryConfigurationService: ConfigurationServicing {
 }
 
 extension DirectoryConfigurationService {
-  /// Persists automatic identification defaults without modifying explicit overrides or credentials.
-  func setIdentificationPolicy(_ policy: IdentificationPolicy) throws {
-    try repository.update { $0.identificationPolicy = policy }
+  /// Revalidates a confirmed Finder request without provider credentials or processing admission.
+  func applyInclusionRequest(_ request: MovieFolderInclusionRequest) throws {
+    let savedState = try savedCollectionState(request.collectionID)
+    let directory = savedState.directory
+
+    guard directory.processingConfiguration.revision == request.expectedProcessingConfigurationRevision,
+      let bookmarkAccess = try authorizations.acquireAccess(for: authorizationKey(directory)),
+      let bookmark = try bookmarkAccess.read() else { throw ConfigurationError.configurationChanged }
+
+    let access = try authorization.acquireAccess(bookmark: bookmark, expectedIdentity: directory.identity)
+    defer { withExtendedLifetime(access) {}; withExtendedLifetime(bookmarkAccess) {} }
+    let root = access.url.resolvingSymlinksInPath().standardizedFileURL
+    let folder = request.folderURL.standardizedFileURL
+
+    guard folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL == root else {
+      throw ConfigurationError.configurationChanged
+    }
+
+    let child = try fileSystem.readCurrentState(ofChild: folder.lastPathComponent, in: root)
+
+    guard child.identity == request.folderIdentity else { throw ConfigurationError.configurationChanged }
+
+    var configuration = directory.processingConfiguration
+    switch request.action {
+    case .exclude: configuration.excludeFolder(identity: child.identity, lastKnownName: child.name)
+    case .include: configuration.includeFolder(identity: child.identity)
+    }
+    try updateCollection(directory.id, displayName: directory.displayName,
+      movieMatchingConfiguration: directory.movieMatchingConfiguration,
+      processingConfiguration: configuration, expected: savedState)
+  }
+
+  /// Captures an edit draft without requiring provider credentials or unpausing processing.
+  func savedCollectionState(_ identifier: UUID) throws -> SavedCollectionState {
+    let configuration = try repository.read()
+
+    guard let directory = configuration.directories.first(where: { $0.id == identifier }) else {
+      throw ConfigurationError.directoryNotFound
+    }
+
+    return SavedCollectionState(directory: directory, matchingDefaults: configuration.movieMatchingConfiguration)
+  }
+
+  /// Saves a finite draft atomically, rejecting authorization, configuration, or presentation edits made since loading.
+  func updateCollection(
+    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
+  ) throws {
+    var processingChanged = false
+    var presentationChanged = false
+    try repository.update { configuration in
+      guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
+        throw ConfigurationError.directoryNotFound
+      }
+
+      guard configuration.directories[index] == expected.directory else {
+        throw ConfigurationError.configurationChanged
+      }
+
+      processingChanged = configuration.directories[index].movieMatchingConfiguration != movieMatchingConfiguration
+        || configuration.directories[index].processingConfiguration != processingConfiguration
+      presentationChanged = configuration.directories[index].displayName
+        != MonitoredDirectory.normalizedDisplayName(displayName)
+      configuration.directories[index].displayName = MonitoredDirectory.normalizedDisplayName(displayName)
+      configuration.directories[index].movieMatchingConfiguration = movieMatchingConfiguration
+      configuration.directories[index].processingConfiguration = processingConfiguration
+    }
+    if processingChanged { notifier.configurationDidChange() }
+    if presentationChanged { notifier.collectionPresentationDidChange() }
+  }
+
+  /// Changes processing inclusion while retaining root authorization and installed icons.
+  func setCollectionPaused(_ identifier: UUID, isPaused: Bool, expectedProcessingConfigurationRevision: UUID) throws {
+    try updateInclusion(identifier, expectedRevision: expectedProcessingConfigurationRevision) { $0.setPaused(isPaused) }
+  }
+
+  /// Excludes one identity; the saved name is presentation evidence and never the exclusion key.
+  func excludeFolder(
+    _ identifier: UUID, folderIdentity: String, lastKnownName: String, expectedProcessingConfigurationRevision: UUID
+  ) throws {
+    try updateInclusion(identifier, expectedRevision: expectedProcessingConfigurationRevision) {
+      $0.excludeFolder(identity: folderIdentity, lastKnownName: lastKnownName)
+    }
+  }
+
+  /// Includes a saved identity even when the folder is temporarily missing.
+  func includeFolder(_ identifier: UUID, folderIdentity: String, expectedProcessingConfigurationRevision: UUID) throws {
+    try updateInclusion(identifier, expectedRevision: expectedProcessingConfigurationRevision) {
+      $0.includeFolder(identity: folderIdentity)
+    }
+  }
+
+  /// Holds the repository access through the compare-and-swap inclusion edit.
+  private func updateInclusion(
+    _ identifier: UUID, expectedRevision: UUID, change: (inout CollectionProcessingConfiguration) -> Bool
+  ) throws {
+    var changed = false
+    try repository.update { configuration in
+      guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
+        throw ConfigurationError.directoryNotFound
+      }
+
+      guard configuration.directories[index].processingConfiguration.revision == expectedRevision else {
+        throw ConfigurationError.configurationChanged
+      }
+
+      changed = change(&configuration.directories[index].processingConfiguration)
+    }
+    if changed { notifier.configurationDidChange() }
+  }
+
+  /// Persists automatic matching defaults without modifying explicit overrides or credentials.
+  func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) throws {
+    try repository.update { $0.movieMatchingConfiguration = configuration }
     notifier.configurationDidChange()
   }
 
@@ -295,14 +411,14 @@ extension DirectoryConfigurationService {
     try prepare(directory, identifier: UUID())
   }
 
-  /// Validates current overlap while the settings lease protects the final collection commit.
+  /// Validates current overlap while the settings access protects the final collection commit.
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance
+    movieMatchingConfiguration: MovieMatchingConfiguration?, appearance: PosterAppearance
   ) throws {
     var value = candidate.directory
     value.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
-    value.identificationPolicy = identificationPolicy
+    value.movieMatchingConfiguration = movieMatchingConfiguration
     let access = try authorization.acquireAccess(bookmark: candidate.hostBookmark, expectedIdentity: value.identity)
     defer { withExtendedLifetime(access) {} }
 
@@ -331,7 +447,7 @@ extension DirectoryConfigurationService {
   /// - Throws: A configuration or filesystem error if the root is invalid or overlaps another.
   func addDirectory(_ directory: URL) throws {
     let candidate = try prepareCollection(directory)
-    try commitCollection(candidate, displayName: .none, identificationPolicy: .none,
+    try commitCollection(candidate, displayName: .none, movieMatchingConfiguration: .none,
       appearance: repository.read().posterAppearance)
   }
 
@@ -375,7 +491,8 @@ extension DirectoryConfigurationService {
         })
       else { throw ConfigurationError.overlappingDirectory }
       value.displayName = configuration.directories[index].displayName
-      value.identificationPolicy = configuration.directories[index].identificationPolicy
+      value.movieMatchingConfiguration = configuration.directories[index].movieMatchingConfiguration
+      value.processingConfiguration = configuration.directories[index].processingConfiguration
       configuration.directories[index] = value
     }
     notifier.configurationDidChange()
@@ -384,39 +501,39 @@ extension DirectoryConfigurationService {
   /// Holds the exact authorization generation through settings commit and restores it on later failure.
   /// - Parameters:
   ///   - candidate: Authorization generation prepared in memory for Add or Locate Folder.
-  ///   - mutation: Admission checks and configuration edits, run under the settings lease before bookmark mutation.
+  ///   - change: Admission checks and configuration edits, run under the settings access before bookmark change.
   /// - Throws: Admission, persistence, or rollback errors; publication occurs only after this returns successfully.
   private func commitAuthorization(
-    _ candidate: PreparedCollection, mutation: (inout DirectoryConfiguration) throws -> Void
+    _ candidate: PreparedCollection, change: (inout DirectoryConfiguration) throws -> Void
   ) throws {
-    var authorizationLease: PersistenceLease?
+    var authorizationAccess: PersistenceAccess?
     var previousBookmark: Data?
-    defer { withExtendedLifetime(authorizationLease) {} }
+    defer { withExtendedLifetime(authorizationAccess) {} }
     do {
       try repository.update { configuration in
-        try mutation(&configuration)
+        try change(&configuration)
 
-        guard let lease = try authorizations.acquireLease(for: authorizationKey(candidate.directory)) else {
+        guard let access = try authorizations.acquireAccess(for: authorizationKey(candidate.directory)) else {
           throw ConfigurationError.busy
         }
 
-        previousBookmark = try lease.read()
-        authorizationLease = lease
-        try lease.write(candidate.hostBookmark)
+        previousBookmark = try access.read()
+        authorizationAccess = access
+        try access.write(candidate.hostBookmark)
       }
     } catch {
-      if let authorizationLease {
+      if let authorizationAccess {
         if let previousBookmark {
-          try authorizationLease.write(previousBookmark)
+          try authorizationAccess.write(previousBookmark)
         } else {
-          try authorizationLease.removeRecord()
+          try authorizationAccess.removeRecord()
         }
       }
       throw error
     }
   }
 
-  /// Reads credential presence and its persisted generation under the same short settings lease.
+  /// Reads credential presence and its persisted generation under the same short settings access.
   /// - Returns: Non-secret availability and first-run-aware revision.
   /// - Throws: Safe storage or configuration errors.
   func credentialState() throws -> CredentialState {
@@ -533,8 +650,8 @@ extension DirectoryConfigurationService {
     }
   }
 
-  /// Produces the lease key for one collection authorization generation.
-  /// - Parameter directory: The collection whose bookmark is being leased.
+  /// Produces the access key for one collection authorization generation.
+  /// - Parameter directory: The collection whose bookmark is being accessed.
   /// - Returns: A key that changes whenever its authorization version changes.
   private func authorizationKey(_ directory: MonitoredDirectory) -> String {
     "host-\(directory.id)-\(directory.authorizationVersion)"
@@ -542,13 +659,13 @@ extension DirectoryConfigurationService {
 }
 
 private extension DirectoryConfigurationService {
-  /// Reads Keychain while the settings generation remains exclusively leased.
-  /// - Returns: Only the token and revision needed after the lease has been released.
+  /// Reads Keychain while the settings generation remains exclusively accessed.
+  /// - Returns: Only the token and revision needed after the access has been released.
   /// - Throws: Safe configuration or credential-store failures.
   func credentialSnapshot() throws -> (token: String?, revision: UUID?, configuration: DirectoryConfiguration?) {
     do {
-      let (configuration, lease) = try repository.readIfPresentHoldingLease()
-      let token = try withExtendedLifetime(lease) { try credentials.read() }
+      let (configuration, access) = try repository.readIfPresentHoldingAccess()
+      let token = try withExtendedLifetime(access) { try credentials.read() }
 
       return (token, configuration?.credentialRevision, configuration)
     } catch {
@@ -556,7 +673,7 @@ private extension DirectoryConfigurationService {
     }
   }
 
-  /// Preserves the existing bounded startup retry without retaining a lease during any wait.
+  /// Preserves the existing bounded startup retry without retaining persistence access during any wait.
   /// - Returns: A coherent credential/configuration read within eight attempts.
   /// - Throws: Cancellation, sustained contention, or the original non-contention storage failure.
   func credentialSnapshotWhenAvailable() async throws -> (
@@ -586,7 +703,7 @@ private extension DirectoryConfigurationService {
     return token
   }
 
-  /// Performs admission and HTTP outside settings leases; authentication diagnostics never poison processing.
+  /// Performs admission and HTTP outside settings access; authentication diagnostics never poison processing.
   /// - Parameter token: Locally validated or previously saved bearer token.
   /// - Throws: Safe admission, provider, or cancellation failures.
   func validateCredential(_ token: String) async throws {
@@ -603,18 +720,18 @@ private extension DirectoryConfigurationService {
     }
   }
 
-  /// Publishes committed revision changes even when the subsequent Keychain mutation fails.
+  /// Publishes committed revision changes even when the subsequent Keychain change fails.
   /// - Parameters:
   ///   - expectedRevision: Generation confirmed by the user.
-  ///   - mutation: Synchronous Keychain operation after the durable revision write.
+  ///   - change: Synchronous Keychain operation after the durable revision write.
   /// - Throws: Safe configuration or credential-storage failures.
-  func commitCredential(expectedRevision: UUID?, mutation: () throws -> Void) throws {
+  func commitCredential(expectedRevision: UUID?, change: () throws -> Void) throws {
     var committed = false
     defer { if committed { notifier.configurationDidChange() } }
     do {
       try repository.updateCredential(expectedRevision: expectedRevision) {
         committed = true
-        try mutation()
+        try change()
       }
     } catch {
       throw safeCredentialError(error)

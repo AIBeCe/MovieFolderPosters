@@ -120,7 +120,7 @@ import Testing
   let probe = ConfigurationDelegateProbe()
   model.activityDelegate = probe
   let secret = "fake-sensitive-token"
-  service.failNextOperation(with: TestServiceError(message: secret))
+  service.failNextAction(with: TestServiceError(message: secret))
   await model.saveCredential(secret)
   #expect(!probe.events.isEmpty)
   #expect(probe.events.allSatisfy { !$0.text.contains(secret) })

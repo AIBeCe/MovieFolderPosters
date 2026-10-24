@@ -13,7 +13,7 @@ struct CollectionDetailsCoverageTests {
   @Test func interruptedManualReportKeepsUnknownEvidenceExplicit() throws {
     let context = CollectionProcessingContext(rootID: UUID(), rootIdentity: "private-root-identity",
       authorizationVersion: UUID(), credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish)
-    let operation = CollectionProcessingOperation(action: .removal, startedAt: Date(), state: .running)
+    let run = CollectionProcessingRun(action: .removal, startedAt: Date(), state: .running)
     let records = [
       FolderProcessingRecord(name: "Folder 10", state: .uncertain, reason: .ownershipChanged,
         movieID: 7, movieIdentitySource: .savedDecision, ownership: .changed,
@@ -23,9 +23,9 @@ struct CollectionDetailsCoverageTests {
       FolderProcessingRecord(name: "Folder 1", state: .deferred, reason: .rateLimited, ownership: .none,
         lastFailure: FolderProcessingFailure(reason: .rateLimited, stage: .artwork, occurredAt: Date()))
     ]
-    let snapshot = CollectionProcessingState(context: context, operation: operation, folders: records,
+    let savedState = CollectionProcessingState(context: context, currentRun: run, folders: records,
       isInventoryComplete: false, inventoryIssue: .inspectionFailure)
-    let text = try report(snapshot, displayState: .interrupted)
+    let text = try report(savedState, displayState: .interrupted)
     #expect(text.contains("Result state at last inspection: Interrupted"))
     #expect(text.contains("In progress or awaiting verification"))
     #expect(text.contains("Inventory: incomplete"))
@@ -63,11 +63,11 @@ struct CollectionDetailsCoverageTests {
   func failureReportUsesSafeCategories(_ scenario: FailureReportCase) throws {
     let context = CollectionProcessingContext(rootID: UUID(), rootIdentity: "identity",
       authorizationVersion: UUID(), credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish)
-    let snapshot = CollectionProcessingState(context: context, folders: [
+    let savedState = CollectionProcessingState(context: context, folders: [
       FolderProcessingRecord(name: "Failed Movie", state: .failed, reason: .processingFailure,
         lastFailure: FolderProcessingFailure(reason: scenario.reason, stage: scenario.stage, occurredAt: Date()))
     ])
-    let text = try report(snapshot, displayState: .failed)
+    let text = try report(savedState, displayState: .failed)
     #expect(text.contains("State: Failed"))
     #expect(text.contains("Reason: Processing failed"))
     #expect(text.contains("Last failure: " + scenario.expected))
@@ -75,10 +75,10 @@ struct CollectionDetailsCoverageTests {
 
   /// Loads the actual AppKit text view and checks its read-only contract.
   private func report(
-    _ snapshot: CollectionProcessingState, displayState: CollectionProcessingDisplayState
+    _ savedState: CollectionProcessingState, displayState: CollectionProcessingDisplayState
   ) throws -> String {
-    let summary = CollectionProcessingSummary(processingState: snapshot,
-      presentation: CollectionProcessingPresentation(processingState: snapshot), counts: snapshot.calculateCounts(),
+    let summary = CollectionProcessingSummary(processingState: savedState,
+      presentation: CollectionProcessingPresentation(processingState: savedState), counts: savedState.calculateCounts(),
       displayState: displayState)
     let controller = CollectionProcessingDetailsViewController(collectionName: "Movies", summary: summary)
     let scroll = try #require(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)

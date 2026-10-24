@@ -59,7 +59,7 @@ nonisolated struct FolderRecord: Codable {
   var blocksAutomaticRecovery: Bool {
     requiresManualResolution ||
       (status == .unresolved && (processingReason == .parsingProblem || processingReason == .missingArtwork
-        || processingReason == .manualIdentificationRequired))
+        || processingReason == .manualMatchingRequired))
   }
 
   /// Whether this unchanged folder has a confirmed result that needs user resolution.
@@ -79,12 +79,12 @@ nonisolated struct ProcessingState: Codable {
   /// Credential generation captured by the processor that last saved this operational state.
   var credentialRevision: UUID? = .none
   /// Effective choices used to produce automatic decisions; absent legacy records use established defaults.
-  var identificationPolicy: IdentificationPolicy? = .none
+  var movieMatchingConfiguration: MovieMatchingConfiguration? = .none
 
   /// Invalidates automatic assignments while retaining installed-poster evidence and raw search responses.
-  /// - Parameter policy: Current automatic identification choices.
-  mutating func reconcileIdentificationPolicy(_ policy: IdentificationPolicy) {
-    if (identificationPolicy ?? IdentificationPolicy()) != policy {
+  /// - Parameter configuration: Current automatic matching choices.
+  mutating func reconcileMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) {
+    if (movieMatchingConfiguration ?? MovieMatchingConfiguration()) != configuration {
       folders = folders.compactMapValues { saved in
         if saved.movieIdentitySource == .explicitSelection { return saved }
 
@@ -96,7 +96,7 @@ nonisolated struct ProcessingState: Codable {
         return retained
       }
     }
-    identificationPolicy = policy
+    movieMatchingConfiguration = configuration
   }
 
   /// Discards credential-sensitive evidence while retaining folder identities and explicit decisions.
@@ -124,7 +124,7 @@ nonisolated struct ProcessingState: Codable {
 
   /// Preserves the existing cache field name when reading or writing saved processing state.
   private enum CodingKeys: String, CodingKey {
-    case folders, queries, credentialRevision, identificationPolicy
+    case folders, queries, credentialRevision, movieMatchingConfiguration
     case providerRetryAt = "rootBackoffUntil"
   }
 }

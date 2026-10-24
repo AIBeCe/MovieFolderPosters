@@ -137,6 +137,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ///   - urls: URLs requested by the system or another app.
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
+      if let request = try? MovieFolderInclusionRequest(url: url) {
+        coordinator.openInclusionAction(request)
+        continue
+      }
       guard let request = try? MoviePosterRequest(url: url) else { continue }
       coordinator.openPosterAction(request)
     }

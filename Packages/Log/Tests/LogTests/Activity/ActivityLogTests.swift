@@ -96,8 +96,8 @@ private func temporaryDirectory() -> URL {
 /// Test fixtures deliberately write snapshots through the real persistence envelope.
 private func writeSnapshot(_ data: Data, directory: URL) throws {
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "Log.Activity.v1.test"))
-  try lease.write(data)
+  let access = try #require(try store.acquireAccess(for: "Log.Activity.v1.test"))
+  try access.write(data)
 }
 
 /// Corrupt or future schemas are preserved by reads, appends, and clear.
@@ -111,8 +111,8 @@ func invalidSnapshotIsNeverReplaced(data: Data) async throws {
   await #expect(throws: (any Error).self) { try await log.append(event: 1) }
   await #expect(throws: (any Error).self) { try await log.clear() }
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "Log.Activity.v1.test"))
-  #expect(try lease.read() == data)
+  let access = try #require(try store.acquireAccess(for: "Log.Activity.v1.test"))
+  #expect(try access.read() == data)
 }
 
 /// Overflow cannot wrap ordering or destroy the previously committed sequence.
@@ -127,20 +127,20 @@ func invalidSnapshotIsNeverReplaced(data: Data) async throws {
   await #expect(throws: ActivityLogError.sequenceExhausted) { try await log.append(event: 2) }
 }
 
-/// Lease contention has a bounded failure and cancellation releases a waiting operation promptly.
+/// Access contention has a bounded failure and cancellation releases a waiting operation promptly.
 @Test func contendedOperationsTimeoutAndHonorCancellation() async throws {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let log = try await ActivityLog<Int>(directory: directory, namespace: "test")
   let store = try PersistenceStore(directory: directory)
   do {
-    let lease = try #require(try store.acquireLease(for: "Log.Activity.v1.test"))
-    await #expect(throws: ActivityLogError.leaseTimedOut) { try await log.append(event: 1) }
+    let access = try #require(try store.acquireAccess(for: "Log.Activity.v1.test"))
+    await #expect(throws: ActivityLogError.accessTimedOut) { try await log.append(event: 1) }
     let task = Task { try await log.append(event: 2) }
     try await Task.sleep(for: .milliseconds(25))
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
-    withExtendedLifetime(lease) {}
+    withExtendedLifetime(access) {}
   }
   #expect(try await log.entries().isEmpty)
   #expect(try await log.append(event: 3).sequence == 1)
@@ -169,8 +169,8 @@ func invalidSnapshotIsNeverReplaced(data: Data) async throws {
   await #expect(throws: (any Error).self) { try await log.append(event: 1) }
   await #expect(throws: (any Error).self) { try await log.clear() }
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "Log.Activity.v1.test"))
-  #expect(try lease.read() == data)
+  let access = try #require(try store.acquireAccess(for: "Log.Activity.v1.test"))
+  #expect(try access.read() == data)
 }
 
 /// Already-cancelled reads and clears leave the committed record intact.

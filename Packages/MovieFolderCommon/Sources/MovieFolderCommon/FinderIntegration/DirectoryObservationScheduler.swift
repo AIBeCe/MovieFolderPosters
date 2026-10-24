@@ -145,7 +145,7 @@ public actor DirectoryObservationScheduler {
   /// - Returns: Whether an uncancelled retry is currently retained for that root.
   func hasScheduledRetry(for url: URL) -> Bool { retryTasks[url.standardizedFileURL] != nil }
 
-  /// Starts a root-only directory source; its callback is advisory and never authorizes mutation.
+  /// Starts a root-only directory source; its callback is advisory and never authorizes change.
   private func startMonitoring(_ url: URL) {
     guard monitors[url] == nil else { return }
     let descriptor = open(url.path, O_EVTONLY | O_CLOEXEC)

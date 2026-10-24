@@ -20,12 +20,12 @@ struct MoviePosterActionViewModelTests {
   }
 
   /// Catches a disclosure diverging from normalized inputs or triggering remote work on edits.
-  @Test func identificationPreviewMatchesTheExplicitSearch() async {
+  @Test func matchingPreviewMatchesTheExplicitSearch() async {
     let service = ActionServiceStub()
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("  Alien  ")
     viewModel.setYear(" 1979 ")
-    #expect(viewModel.identificationPreview == "Sent to TMDb: title ‘Alien’; year: 1979.")
+    #expect(viewModel.matchingPreview == "Sent to TMDb: title ‘Alien’; year: 1979.")
     #expect(await service.callCounts.search == 0)
     viewModel.search()
     await waitForIdle(viewModel)
@@ -99,7 +99,7 @@ struct MoviePosterActionViewModelTests {
     viewModel.search()
 
     #expect(viewModel.isBusy)
-    viewModel.cancelCurrentOperation()
+    viewModel.cancelRetryTask()
 
     try? await Task.sleep(for: .milliseconds(20))
     #expect(!viewModel.isBusy)
@@ -182,7 +182,7 @@ struct MoviePosterActionViewModelTests {
   }
 
   /// Verifies that delegates are weak and operations remain safe after their release.
-  @Test func delegatesAreWeakAndOperationsRemainSafeAfterTheirRelease() {
+  @Test func delegatesAreWeakAndTasksRemainSafeAfterTheirRelease() {
     let viewModel = MoviePosterActionViewModel(
       service: ActionServiceStub(), request: request(.change))
     var state: ActionStateProbe? = ActionStateProbe()

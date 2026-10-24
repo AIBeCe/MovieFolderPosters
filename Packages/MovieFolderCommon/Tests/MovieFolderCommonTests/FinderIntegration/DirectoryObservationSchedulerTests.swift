@@ -390,7 +390,7 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
     return nextDeadline
   }
 
-  /// Releases the held continuation or lease so the test can observe completion.
+  /// Releases the held continuation or access so the test can observe completion.
   func release() {
     gate?.resume()
     gate = .none

@@ -26,7 +26,8 @@ struct CollectionUnresolvedResultsTests {
       notFound,
       FolderProcessingRecord(name: "Preserved", state: .preserved),
       ambiguous,
-      FolderProcessingRecord(name: "Suppressed", state: .suppressed)
+      FolderProcessingRecord(name: "Suppressed", state: .suppressed),
+      FolderProcessingRecord(name: "Excluded", state: .excluded, reason: .explicitExclusion)
     ]
 
     #expect(summary(folders: folders).unresolvedFolders() == [

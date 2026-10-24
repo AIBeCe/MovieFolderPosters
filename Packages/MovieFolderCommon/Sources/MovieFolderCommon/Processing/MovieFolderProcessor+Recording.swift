@@ -23,14 +23,14 @@ extension MovieFolderProcessor {
     } catch let error as CollectionProcessingError {
       throw error
     } catch {
-      // Storage errors must escape folder recovery before any subsequent icon mutation.
+      // Storage errors must escape folder recovery before any subsequent icon change.
       throw CollectionProcessingError.unavailable
     }
   }
 
   /// Marks unfinished work conservatively when cancellation or an error exits the operation.
   func interruptUnfinishedProcessing(_ processingState: inout CollectionProcessingState?, child: String? = .none) {
-    guard processingState?.operation?.state == .running else { return }
+    guard processingState?.currentRun?.state == .running else { return }
     if let folders = processingState?.folders {
       processingState?.folders = folders.map { record in
         guard record.state == .pending, child == .none || record.name == child else { return record }
@@ -41,14 +41,14 @@ extension MovieFolderProcessor {
         return uncertain
       }
     }
-    try? finishProcessingOperation(&processingState, state: Task.isCancelled ? .interrupted : .failed)
+    try? finishProcessingRun(&processingState, state: Task.isCancelled ? .interrupted : .failed)
   }
 
   /// Rechecks installed evidence after a failed action while keeping its failed attempt separate.
   func recoverManualProcessing(
     _ processingState: inout CollectionProcessingState?, root: URL, child: String, saved: FolderRecord?
   ) {
-    guard processingState?.operation?.state == .running else { return }
+    guard processingState?.currentRun?.state == .running else { return }
     if let candidate = try? fileSystem.readCurrentState(ofChild: child, in: root),
       var record = try? assessFolderProcessing(candidate, root: root, saved: saved) {
       record.lastFailure = FolderProcessingFailure(
@@ -59,20 +59,20 @@ extension MovieFolderProcessor {
       }
       try? recordFolderProcessing(record, in: &processingState)
     }
-    try? finishProcessingOperation(&processingState, state: Task.isCancelled ? .interrupted : .failed)
+    try? finishProcessingRun(&processingState, state: Task.isCancelled ? .interrupted : .failed)
   }
 
   /// Ends one attempt without confusing action completion with a completed collection traversal.
-  func finishProcessingOperation(
-    _ processingState: inout CollectionProcessingState?, state: CollectionProcessingOperationState
+  func finishProcessingRun(
+    _ processingState: inout CollectionProcessingState?, state: CollectionProcessingRunState
   ) throws {
     guard processingState != .none else { return }
-    processingState?.operation?.state = state
-    processingState?.operation?.endedAt = now()
+    processingState?.currentRun?.state = state
+    processingState?.currentRun?.endedAt = now()
     if state == .completed,
-      processingState?.operation?.action == .automatic,
+      processingState?.currentRun?.action == .automatic,
       processingState?.isInventoryComplete == true {
-      let completed = processingState?.operation
+      let completed = processingState?.currentRun
       processingState?.lastCompletedRun = completed
     }
     try commitProcessingState(&processingState)
@@ -130,7 +130,7 @@ extension MovieFolderProcessor {
       fingerprint: candidate.fingerprint)
   }
 
-  /// Preserves the original unresolved reason while existing retry policy defers another provider request.
+  /// Preserves the original unresolved reason while existing retry configuration defers another provider request.
   func cachedFolderAssessment(_ candidate: FolderCandidate, saved: FolderRecord) -> FolderProcessingRecord {
     var record = unresolvedFolderAssessment(candidate, reason: saved.processingReason ?? .retryDeferred)
     if saved.status == .transientFailure {

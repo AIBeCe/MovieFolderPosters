@@ -156,16 +156,16 @@ actor InstallationReadinessService: InstallationReadinessServicing {
     }
   }
 
-  /// Reads activation evidence under the supplied persistence store's cross-process lease.
+  /// Reads activation evidence under the supplied persistence store's cross-process access.
   /// - Parameter store: Store holding the extension's dated activation receipt.
   /// - Returns: Observed, missing, busy, or sanitized failed evidence.
   nonisolated static func readExtensionReceipt(in store: PersistenceStore) -> ExtensionReceiptEvidence {
     do {
-      guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else {
+      guard let access = try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey) else {
         return .unavailable(.busy)
       }
-      defer { withExtendedLifetime(lease) {} }
-      guard let data = try lease.read() else { return .missing }
+      defer { withExtendedLifetime(access) {} }
+      guard let data = try access.read() else { return .missing }
       let receipt = try JSONDecoder().decode(ExtensionReadinessReceipt.self, from: data)
 
       return .observed(version: receipt.version, build: receipt.build, date: receipt.observedAt)
@@ -190,18 +190,18 @@ actor InstallationReadinessService: InstallationReadinessServicing {
     }
   }
 
-  /// Verifies lease acquisition and a read/write round trip in the supplied store.
+  /// Verifies access acquisition and a read/write round trip in the supplied store.
   ///
   /// - Parameter store: The persistence store used for the probe.
   /// - Returns: Whether storage is healthy, busy, or failed.
   nonisolated static func checkSharedStorage(in store: PersistenceStore) -> SharedStorageEvidence {
     do {
-      guard let lease = try store.acquireLease(for: "readiness-check") else { return .busy }
-      defer { withExtendedLifetime(lease) {} }
-      _ = try lease.read()
+      guard let access = try store.acquireAccess(for: "readiness-check") else { return .busy }
+      defer { withExtendedLifetime(access) {} }
+      _ = try access.read()
       let probe = Data(UUID().uuidString.utf8)
-      try lease.write(probe)
-      guard try lease.read() == probe else { return .failed }
+      try access.write(probe)
+      guard try access.read() == probe else { return .failed }
 
       return .healthy
     } catch {
@@ -246,7 +246,7 @@ nonisolated enum CodeSignatureEvidence: Sendable, Equatable {
 
 /// Why a shared activation receipt could not be read.
 nonisolated enum ReceiptUnavailableReason: Sendable, Equatable {
-  /// Another process currently owns the receipt lease.
+  /// Another process currently owns the receipt access.
   case busy
   /// Storage access or receipt decoding failed.
   case failed
@@ -266,7 +266,7 @@ nonisolated enum ExtensionReceiptEvidence: Sendable, Equatable {
 nonisolated enum SharedStorageEvidence: Sendable, Equatable {
   /// A read/write round trip completed successfully.
   case healthy
-  /// The probe could not acquire its cross-process lease.
+  /// The probe could not acquire its cross-process access.
   case busy
   /// The probe failed to read or write the shared store.
   case failed

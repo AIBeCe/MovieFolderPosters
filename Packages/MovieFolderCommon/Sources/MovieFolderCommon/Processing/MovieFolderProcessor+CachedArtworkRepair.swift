@@ -9,12 +9,12 @@ extension MovieFolderProcessor {
   ///   - assignment: Validated image bytes and saved movie decision.
   ///   - candidate: Folder whose icon may be assigned after identity validation.
   ///   - root: Authorized collection directory.
-  ///   - lease: Held persistence lease for the root.
+  ///   - access: Held persistence access for the root.
   ///   - visit: Traversal state receiving the resulting outcome.
   /// - Throws: Cancellation, authorization, or persistence errors.
   func assignCachedPoster(
     _ assignment: CachedPosterAssignment, candidate: FolderCandidate, root: URL,
-    lease: PersistenceLease, visit: inout AutomaticProcessingVisit
+    access: PersistenceAccess, visit: inout AutomaticProcessingVisit
   ) throws {
     do {
       let result = try assign(assignment.bytes, to: candidate, in: root)
@@ -33,7 +33,7 @@ extension MovieFolderProcessor {
       cachedRecord.requiresAutomaticReassessment = assignment.record.requiresAutomaticReassessment
       visit.cache.folders[candidate.name] = cachedRecord
 
-      try saveAssignedState(visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
+      try saveAssignedState(visit.cache, to: access, candidate: candidate, root: root, processingState: &visit.recording)
       if case .assigned = result { visit.summary.assigned += 1 }
     } catch let error as CollectionProcessingError {
       throw error
@@ -53,7 +53,7 @@ extension MovieFolderProcessor {
 
       recordTransientFailure(candidate, in: &visit.cache, stage: .assignPoster, movie: movie)
       visit.cache.folders[candidate.name]?.movieIdentitySource = assignment.record.movieIdentitySource
-      try saveState(visit.cache, to: lease)
+      try saveState(visit.cache, to: access)
 
       visit.summary.transientFailures += 1
       var failureRecord = failedFolderAssessment(candidate, stage: .assignPoster, movie: movie)
@@ -77,7 +77,7 @@ extension MovieFolderProcessor {
       try assignCachedPoster(
         CachedPosterAssignment(
           bytes: bytes, movieID: decision.movieID, posterPath: decision.posterPath, record: decision.record),
-        candidate: context.candidate, root: context.root, lease: context.lease, visit: &visit)
+        candidate: context.candidate, root: context.root, access: context.access, visit: &visit)
     } catch {
       visit.didStopEarly = try recordArtworkRepairFailure(
         error, decision: decision, context: context, visit: &visit)
@@ -107,13 +107,13 @@ extension MovieFolderProcessor {
     if error is CancellationError { throw CancellationError() }
     if let error = error as? ProcessingRecoveryError {
       return try recordRecoveryAdmissionFailure(
-        error, candidate: context.candidate, lease: context.lease, visit: &visit,
+        error, candidate: context.candidate, access: context.access, visit: &visit,
         attempt: PosterAttempt(stage: .artwork, movie: decision.movie),
         identitySource: decision.record.movieIdentitySource)
     }
     if let error = error as? TMDbError {
       return try recordProviderFailure(
-        error, candidate: context.candidate, lease: context.lease, visit: &visit,
+        error, candidate: context.candidate, access: context.access, visit: &visit,
         attempt: PosterAttempt(stage: .artwork, movie: decision.movie),
         identitySource: decision.record.movieIdentitySource)
     }
@@ -133,7 +133,7 @@ extension MovieFolderProcessor {
     if let identitySource = decision.record.movieIdentitySource {
       visit.cache.folders[context.candidate.name]?.movieIdentitySource = identitySource
     }
-    try saveState(visit.cache, to: context.lease)
+    try saveState(visit.cache, to: context.access)
 
     visit.summary.transientFailures += 1
     var failureRecord = failedFolderAssessment(
@@ -149,11 +149,11 @@ extension MovieFolderProcessor {
   /// - Parameters:
   ///   - candidates: Immediate children from the authorized root inventory.
   ///   - root: Authorized collection directory.
-  ///   - lease: Held persistence lease for the root.
+  ///   - access: Held persistence access for the root.
   ///   - visit: Traversal state and per-path attempt bound.
   /// - Throws: Cancellation, filesystem, authorization, or persistence errors.
   func repairExistingIconArtwork(
-    _ candidates: [FolderCandidate], root: URL, lease: PersistenceLease,
+    _ candidates: [FolderCandidate], root: URL, access: PersistenceAccess,
     visit: inout AutomaticProcessingVisit
   ) async throws {
     for candidate in candidates where candidate.hasCustomIcon {
@@ -182,7 +182,7 @@ extension MovieFolderProcessor {
       }
 
       let decision = SavedPosterDecision(movieID: movieID, posterPath: posterPath, record: record)
-      let context = ArtworkRepairContext(candidate: candidate, root: root, lease: lease)
+      let context = ArtworkRepairContext(candidate: candidate, root: root, access: access)
 
       do {
         let bytes = try await downloadAndCachePoster(
@@ -211,7 +211,7 @@ extension MovieFolderProcessor {
       visit.cache.folders[candidate.name] = repairedRecord
 
       try saveAssignedState(
-        visit.cache, to: lease, candidate: candidate, root: root, processingState: &visit.recording)
+        visit.cache, to: access, candidate: candidate, root: root, processingState: &visit.recording)
     }
   }
 
@@ -282,6 +282,6 @@ struct ArtworkRepairContext {
   let candidate: FolderCandidate
   /// Authorized collection directory containing the child.
   let root: URL
-  /// Held persistence lease for this root.
-  let lease: PersistenceLease
+  /// Held persistence access for this root.
+  let access: PersistenceAccess
 }

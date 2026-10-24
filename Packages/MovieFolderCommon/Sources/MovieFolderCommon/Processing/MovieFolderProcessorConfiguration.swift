@@ -1,12 +1,12 @@
 import Foundation
 
-/// Invalid timing policy supplied when constructing a movie-folder processor configuration.
+/// Invalid timing configuration supplied when constructing a movie-folder processor configuration.
 nonisolated public enum MovieFolderProcessorConfigurationError: Error, Equatable, Sendable {
   case invalidInterval
   case invertedProviderRetryRange
 }
 
-/// Immutable timing policy captured by one processor when it is created.
+/// Immutable timing configuration captured by one processor when it is created.
 nonisolated public struct MovieFolderProcessorConfiguration: Sendable {
   /// Preserves the established production retry and cache timings.
   public static let standard = MovieFolderProcessorConfiguration()
@@ -22,7 +22,7 @@ nonisolated public struct MovieFolderProcessorConfiguration: Sendable {
   /// Maximum accepted provider Retry-After delay.
   public let maximumProviderRetryInterval: TimeInterval
 
-  /// Creates the established production timing policy.
+  /// Creates the established production timing configuration.
   public init() {
     incompleteSearchRetryInterval = 24 * 60 * 60
     transientFailureRetryInterval = 10 * 60
@@ -31,7 +31,7 @@ nonisolated public struct MovieFolderProcessorConfiguration: Sendable {
     maximumProviderRetryInterval = 24 * 60 * 60
   }
 
-  /// Creates a custom timing policy for one processor.
+  /// Creates a custom timing configuration for one processor.
   ///
   /// - Parameters:
   ///   - incompleteSearchRetryInterval: Positive finite delay for incomplete searches.

@@ -102,6 +102,8 @@ nonisolated public enum PosterActionError: Error, Equatable {
 nonisolated public struct ProcessingSummary: Equatable, Sendable {
   /// Folders for which this visit attempted to establish a movie match.
   public var examined: Int
+  /// Immediate child folders intentionally excluded from automatic work.
+  public var excluded: Int
   /// Poster assignments completed during this visit.
   public var assigned: Int
   /// Owned posters rewritten from cache using the selected appearance.
@@ -116,8 +118,8 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
   public var skippedPreviouslyProcessed: Int
   /// Folders deferred until their saved retry time.
   public var skippedRetryWindow: Int
-  /// Whether another operation already held the collection processing lease.
-  public var rootLeaseUnavailable: Bool
+  /// Whether another operation already held the collection processing access.
+  public var rootAccessUnavailable: Bool
   /// The provider-wide retry boundary saved for this root, when present.
   public var providerRetryAt: Date?
   /// Earliest eligible folder-level retry deadline from the completed collection visit.
@@ -134,11 +136,12 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
   ///   - skippedExistingIcons: The number of preserved custom icons.
   ///   - skippedPreviouslyProcessed: The number of previously completed folders skipped.
   ///   - skippedRetryWindow: The number of folders deferred by retry state.
-  ///   - rootLeaseUnavailable: Whether a competing operation prevented the root visit.
+  ///   - rootAccessUnavailable: Whether a competing operation prevented the root visit.
   ///   - providerRetryAt: The provider-wide retry boundary, if present.
   ///   - nextAutomaticRetryAt: The earliest eligible folder-level retry deadline, if present.
   public init(
     examined: Int = .zero,
+    excluded: Int = .zero,
     assigned: Int = .zero,
     restyled: Int = .zero,
     unresolved: Int = .zero,
@@ -146,11 +149,12 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     skippedExistingIcons: Int = .zero,
     skippedPreviouslyProcessed: Int = .zero,
     skippedRetryWindow: Int = .zero,
-    rootLeaseUnavailable: Bool = false,
+    rootAccessUnavailable: Bool = false,
     providerRetryAt: Date? = .none,
     nextAutomaticRetryAt: Date? = .none
   ) {
     self.examined = examined
+    self.excluded = excluded
     self.assigned = assigned
     self.restyled = restyled
     self.unresolved = unresolved
@@ -158,27 +162,33 @@ nonisolated public struct ProcessingSummary: Equatable, Sendable {
     self.skippedExistingIcons = skippedExistingIcons
     self.skippedPreviouslyProcessed = skippedPreviouslyProcessed
     self.skippedRetryWindow = skippedRetryWindow
-    self.rootLeaseUnavailable = rootLeaseUnavailable
+    self.rootAccessUnavailable = rootAccessUnavailable
     self.providerRetryAt = providerRetryAt
     self.nextAutomaticRetryAt = nextAutomaticRetryAt
   }
 }
 
-/// Revalidates current authorization before mutations and optionally holds a settings lease.
-nonisolated public protocol MovieFolderMutationGuard: Sendable {
-  /// Revalidates authorization immediately before an automatic mutation.
+/// Distinguishes inclusion requirements at each icon change boundary.
+nonisolated public enum MovieFolderIconChange: Sendable {
+  case automaticPosterAssignment, manualPosterAssignment, posterRestyle, posterRemoval
+}
+
+/// Checks current inclusion and authorization at processing and icon-write boundaries.
+nonisolated public protocol MovieFolderProcessingVerifier: Sendable {
+  /// Revalidates current authorization and collection inclusion before automatic processing begins.
+  ///
+  /// - Parameter root: The authorized collection directory.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
+  /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
+  func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess?
+  /// Revalidates authorization and candidate inclusion before provider work and the final icon write.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
-  ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
-  /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease?
-  /// Revalidates authorization immediately before a manual mutation.
-  ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  /// - Returns: A lease to retain through the write, or no lease when validation needs no retained lock.
+  ///   - change: Icon change requested; removal can remain available while inclusion is blocked.
+  ///   - candidate: Captured immediate child identity, rechecked by the icon adapter.
+  ///   - root: Authorized collection root containing the child.
+  /// - Returns: A access to retain through the write, or no access when validation needs no retained lock.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease?
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL)
+    throws -> PersistenceAccess?
 }

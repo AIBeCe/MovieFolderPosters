@@ -19,16 +19,21 @@ extension MovieFolderProcessor {
   ) async throws -> Int {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
-    let coordinationLease = try acquireCoordinationLease(for: root)
-    defer { withExtendedLifetime(coordinationLease) {} }
-    let lease = try acquireRootLease(for: root)
-    defer { withExtendedLifetime(lease) {} }
-    var state = try loadState(from: lease)
-    var processingState = try recordProcessingStart(context: processingContext, action: .refresh, child: child)
-    defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
+    let coordinationAccess = try acquireCoordinationAccess(for: root)
+    defer { withExtendedLifetime(coordinationAccess) {} }
+    let access = try acquireRootAccess(for: root)
+    defer { withExtendedLifetime(access) {} }
+    var state = try loadState(from: access)
     var candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
 
+    do {
+      let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
+      withExtendedLifetime(settingsAccess) {}
+    }
+
+    var processingState = try recordProcessingStart(context: processingContext, action: .refresh, child: child)
+    defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
     let selection = try await refreshSelection(
       root: root, child: child, expectedIdentity: expectedIdentity, candidate: &candidate, state: &state)
     let movieID = selection.movieID
@@ -40,8 +45,8 @@ extension MovieFolderProcessor {
     candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
     do {
-      let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
-      defer { withExtendedLifetime(settingsLease) {} }
+      let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
+      defer { withExtendedLifetime(settingsAccess) {} }
       try replacePoster(imageData, candidate: candidate, root: root)
     }
     try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
@@ -52,8 +57,8 @@ extension MovieFolderProcessor {
     refreshedRecord.requiresAutomaticReassessment = state.folders[child]?.requiresAutomaticReassessment
     state.folders[child] = refreshedRecord
     state.providerRetryAt = .none
-    try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
-    try finishProcessingOperation(&processingState, state: .completed)
+    try saveAssignedState(state, to: access, candidate: candidate, root: root, processingState: &processingState)
+    try finishProcessingRun(&processingState, state: .completed)
 
     return movieID
   }
@@ -74,13 +79,11 @@ extension MovieFolderProcessor {
   ) async throws -> Int {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
-    let coordinationLease = try acquireCoordinationLease(for: root)
-    defer { withExtendedLifetime(coordinationLease) {} }
-    let lease = try acquireRootLease(for: root)
-    defer { withExtendedLifetime(lease) {} }
-    var state = try loadState(from: lease)
-    var processingState = try recordProcessingStart(context: processingContext, action: .selection, child: child)
-    defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
+    let coordinationAccess = try acquireCoordinationAccess(for: root)
+    defer { withExtendedLifetime(coordinationAccess) {} }
+    let access = try acquireRootAccess(for: root)
+    defer { withExtendedLifetime(access) {} }
+    var state = try loadState(from: access)
     guard movie.id > 0 else { throw PosterActionError.unresolved }
     guard let posterPath = movie.posterPath,
       !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -89,14 +92,21 @@ extension MovieFolderProcessor {
     }
     var candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
+    do {
+      let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
+      withExtendedLifetime(settingsAccess) {}
+    }
+
+    var processingState = try recordProcessingStart(context: processingContext, action: .selection, child: child)
+    defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
     let imageData = try await provider.downloadPoster(path: posterPath)
     try Task.checkCancellation()
     guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
     candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
     do {
-      let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
-      defer { withExtendedLifetime(settingsLease) {} }
+      let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
+      defer { withExtendedLifetime(settingsAccess) {} }
       try replacePoster(imageData, candidate: candidate, root: root)
     }
     try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
@@ -106,8 +116,8 @@ extension MovieFolderProcessor {
     selectedRecord.movieIdentitySource = .explicitSelection
     state.folders[child] = selectedRecord
     state.providerRetryAt = .none
-    try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
-    try finishProcessingOperation(&processingState, state: .completed)
+    try saveAssignedState(state, to: access, candidate: candidate, root: root, processingState: &processingState)
+    try finishProcessingRun(&processingState, state: .completed)
 
     return movie.id
   }
@@ -126,11 +136,11 @@ extension MovieFolderProcessor {
   ) throws -> Bool {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
-    let coordinationLease = try acquireCoordinationLease(for: root)
-    defer { withExtendedLifetime(coordinationLease) {} }
-    let lease = try acquireRootLease(for: root)
-    defer { withExtendedLifetime(lease) {} }
-    var state = try loadState(from: lease)
+    let coordinationAccess = try acquireCoordinationAccess(for: root)
+    defer { withExtendedLifetime(coordinationAccess) {} }
+    let access = try acquireRootAccess(for: root)
+    defer { withExtendedLifetime(access) {} }
+    var state = try loadState(from: access)
     var processingState = try recordProcessingStart(context: processingContext, action: .removal, child: child)
     defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
@@ -149,17 +159,17 @@ extension MovieFolderProcessor {
       if processingState != .none {
         let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[child])
         try recordFolderProcessing(record, in: &processingState)
-        try finishProcessingOperation(&processingState, state: .completed)
+        try finishProcessingRun(&processingState, state: .completed)
       }
       return false
     }
     try Task.checkCancellation()
     let removed: Bool
     do {
-      let recoveryLease = try recovery?.acquireMutationLease()
-      defer { withExtendedLifetime(recoveryLease) {} }
-      let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
-      defer { withExtendedLifetime(settingsLease) {} }
+      let recoveryAccess = try recovery?.acquireProcessingAccess()
+      defer { withExtendedLifetime(recoveryAccess) {} }
+      let settingsAccess = try checkIconChange(.posterRemoval, to: candidate, in: root)
+      defer { withExtendedLifetime(settingsAccess) {} }
       removed = try fileSystem.removeAssignedPoster(
         toChild: child, in: root, expectedIdentity: expectedIdentity
       )
@@ -169,8 +179,8 @@ extension MovieFolderProcessor {
     }
     guard removed else { return false }
     state.folders.removeValue(forKey: child)
-    try saveAssignedState(state, to: lease, candidate: candidate, root: root, processingState: &processingState)
-    try finishProcessingOperation(&processingState, state: .completed)
+    try saveAssignedState(state, to: access, candidate: candidate, root: root, processingState: &processingState)
+    try finishProcessingRun(&processingState, state: .completed)
 
     return true
   }
@@ -184,12 +194,12 @@ extension MovieFolderProcessor {
   /// - Returns: The saved TMDb identifier, or no value if no current processed match exists.
   /// - Throws: Contention, persistence, or changed-identity errors.
   public func matchedMovieID(root: URL, child: String, expectedIdentity: String) throws -> Int? {
-    let coordinationLease = try acquireCoordinationLease(for: root)
-    defer { withExtendedLifetime(coordinationLease) {} }
-    let lease = try acquireRootLease(for: root)
-    defer { withExtendedLifetime(lease) {} }
+    let coordinationAccess = try acquireCoordinationAccess(for: root)
+    defer { withExtendedLifetime(coordinationAccess) {} }
+    let access = try acquireRootAccess(for: root)
+    defer { withExtendedLifetime(access) {} }
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
-    guard let record = try loadState(from: lease).folders[child],
+    guard let record = try loadState(from: access).folders[child],
       record.fingerprint == candidate.fingerprint, record.status == .processed
     else { return .none }
 
@@ -198,31 +208,31 @@ extension MovieFolderProcessor {
     return record.matchedMovieID
   }
 
-  /// Acquires the root processing lease or reports contention.
+  /// Acquires the root processing access or reports contention.
   ///
   /// - Parameter root: The authorized collection directory containing the immediate child.
-  /// - Returns: The held persistence lease.
+  /// - Returns: The held persistence access.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  private func acquireRootLease(for root: URL) throws -> PersistenceLease {
-    guard let lease = try persistence.acquireLease(for: Self.rootLeaseKey(for: root)) else {
+  private func acquireRootAccess(for root: URL) throws -> PersistenceAccess {
+    guard let access = try persistence.acquireAccess(for: Self.processingStateKey(for: root)) else {
       throw PosterActionError.busy
     }
 
-    return lease
+    return access
   }
 
   /// Acquires the optional stable root lock shared by different settings generations.
   ///
   /// - Parameter root: The authorized collection directory containing the immediate child.
-  /// - Returns: The held lease when coordination is configured.
+  /// - Returns: The held access when coordination is configured.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func acquireCoordinationLease(for root: URL) throws -> PersistenceLease? {
+  func acquireCoordinationAccess(for root: URL) throws -> PersistenceAccess? {
     guard let coordinationStore else { return .none }
-    guard let lease = try coordinationStore.acquireLease(for: Self.rootCoordinationKey(for: root)) else {
+    guard let access = try coordinationStore.acquireAccess(for: Self.rootCoordinationKey(for: root)) else {
       throw PosterActionError.busy
     }
 
-    return lease
+    return access
   }
 
   /// Reads the immediate child and rejects identity changes before a manual action.
@@ -273,8 +283,8 @@ extension MovieFolderProcessor {
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   private func replacePoster(_ data: Data, candidate: FolderCandidate, root: URL) throws {
     try Task.checkCancellation()
-    let recoveryLease = try recovery?.acquireMutationLease()
-    defer { withExtendedLifetime(recoveryLease) {} }
+    let recoveryAccess = try recovery?.acquireProcessingAccess()
+    defer { withExtendedLifetime(recoveryAccess) {} }
     let result: PosterAssignmentResult
     do {
       result = try fileSystem.replaceAssignedPoster(
@@ -301,11 +311,11 @@ extension MovieFolderProcessor {
       matchedMovieID: movieID, posterPath: posterPath)
   }
 
-  /// Derives the processing-state lease key from the canonical root path.
+  /// Derives the persisted processing-state key from the canonical root path.
   ///
   /// - Parameter root: The authorized collection directory containing the immediate child.
-  /// - Returns: The processing lease key namespaced by the canonical root path.
-  static func rootLeaseKey(for root: URL) -> String {
+  /// - Returns: The processing-state key namespaced by the canonical root path.
+  static func processingStateKey(for root: URL) -> String {
     let canonicalPath = root.resolvingSymlinksInPath().standardizedFileURL.path
 
     return "movie-folder-processing:\(canonicalPath)"

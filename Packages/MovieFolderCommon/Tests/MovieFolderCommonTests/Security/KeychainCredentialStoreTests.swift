@@ -69,7 +69,7 @@ private final class CredentialBackendProbe: KeychainCredentialBackend {
   let addStatus = Mutex<OSStatus>(errSecSuccess)
   /// Configured deletion status.
   let deleteStatus = Mutex<OSStatus>(errSecSuccess)
-  /// Mutation sequence for detecting accidental fallback after permission failures.
+  /// Change sequence for detecting accidental fallback after permission failures.
   let calls = Mutex<[String]>([])
 
   func copyMatching(_ query: [String: Any]) -> (OSStatus, CFTypeRef?) {

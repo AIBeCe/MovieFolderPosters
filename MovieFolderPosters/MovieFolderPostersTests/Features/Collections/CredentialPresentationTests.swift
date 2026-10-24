@@ -23,15 +23,15 @@ struct CredentialPresentationTests {
 
   /// Catches treating cancellation as completion before its service call has unwound.
   @Test func cancellationRetainsAdmissionUntilTheServiceReturns() async {
-    let gate = AsyncOperationGate()
+    let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate)
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
     await model.reloadCredentialState()
     let task = Task { await model.testSavedCredential() }
     await gate.waitUntilEntered()
-    model.cancelCredentialOperation()
+    model.cancelCredentialAction()
     #expect(model.isBusy)
-    #expect(model.isCancellingCredentialOperation)
+    #expect(model.isCancellingCredentialAction)
     await gate.open()
     await task.value
     #expect(!model.isBusy)
@@ -40,7 +40,7 @@ struct CredentialPresentationTests {
 
   /// A late successful response after shared invalidation cannot restore stale diagnostic evidence.
   @Test func invalidatedTestDiscardsLateSuccessEvenWhenTheServiceIgnoresCancellation() async {
-    let gate = AsyncOperationGate()
+    let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate, observesCancellation: false)
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
     await model.reloadCredentialState()
@@ -54,7 +54,7 @@ struct CredentialPresentationTests {
 
   /// The TMDb Cancel control requests cancellation and stays disabled until the service unwinds.
   @Test func paneCancelControlDrainsTheSavedTokenRequest() async throws {
-    let gate = AsyncOperationGate()
+    let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate)
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
     await model.reloadCredentialState()
@@ -71,7 +71,7 @@ struct CredentialPresentationTests {
     #expect(cancelButton.isEnabled)
     cancelButton.performClick(.none)
     #expect(model.isBusy)
-    #expect(model.isCancellingCredentialOperation)
+    #expect(model.isCancellingCredentialAction)
     await gate.open()
     for _ in 0..<100 where model.isBusy { await Task.yield() }
     #expect(!model.isBusy)
@@ -113,7 +113,7 @@ struct CredentialPresentationTests {
 
   /// A slower earlier credential-state response cannot overwrite the newest read.
   @Test func olderCredentialStateReadCannotReplaceNewerState() async {
-    let gate = AsyncOperationGate()
+    let gate = AsyncTaskGate()
     let newestRevision = UUID()
     let service = CredentialPresentationService(firstStateGate: gate, revision: newestRevision)
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
@@ -127,7 +127,7 @@ struct CredentialPresentationTests {
 
   /// Catches a late response restoring a successful test after external invalidation.
   @Test func changedConfigurationInvalidatesAnOutstandingTest() async {
-    let gate = AsyncOperationGate()
+    let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate)
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
     await model.reloadCredentialState()
@@ -140,8 +140,8 @@ struct CredentialPresentationTests {
     #expect(!model.isBusy)
   }
 
-  /// Delayed notifications from this host must not erase the outcome of its committed mutation.
-  @Test func delayedMutationNotificationPreservesTheCurrentOutcome() async {
+  /// Delayed notifications from this host must not erase the outcome of its committed change.
+  @Test func delayedChangeNotificationPreservesTheCurrentOutcome() async {
     let service = CredentialPresentationService()
     let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
     await model.reloadCredentialState()
@@ -206,9 +206,9 @@ private actor CredentialPresentationService: ConfigurationServicing {
   /// Ordered service boundaries called by the model.
   private(set) var calls: [String] = []
   /// Optional test-controlled suspension for cancellation and invalidation checks.
-  private let gate: AsyncOperationGate?
+  private let gate: AsyncTaskGate?
   /// Optional suspension for the first credential-state read.
-  private let firstStateGate: AsyncOperationGate?
+  private let firstStateGate: AsyncTaskGate?
   /// Failure returned only by the credential test.
   private let failure: (any Error)?
   /// Failure returned by credential-state reads.
@@ -222,8 +222,8 @@ private actor CredentialPresentationService: ConfigurationServicing {
 
   /// Creates a deterministic, isolated service.
   init(
-    gate: AsyncOperationGate? = .none,
-    firstStateGate: AsyncOperationGate? = .none,
+    gate: AsyncTaskGate? = .none,
+    firstStateGate: AsyncTaskGate? = .none,
     failure: (any Error)? = .none,
     credentialStateFailure: (any Error)? = .none,
     observesCancellation: Bool = true,

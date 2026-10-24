@@ -10,7 +10,7 @@ import Testing
 /// A persistent drop affordance stays visible before selection and accents only valid directory hovers.
 @Test @MainActor func collectionDropZoneHasPersistentPresentationAndValidHoverAccent() throws {
   let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
-    applicationPolicy: IdentificationPolicy(), appearance: .softFinish)
+    applicationConfiguration: MovieMatchingConfiguration(), appearance: .softFinish)
   let controller = CollectionSetupViewController(viewModel: model)
   let drop = try #require(nativeViews(in: controller.view).compactMap { $0 as? CollectionFolderDropView }.first)
   let labels = nativeViews(in: drop).compactMap { ($0 as? NSTextField)?.stringValue }
@@ -33,20 +33,20 @@ import Testing
   #expect(border.strokeColor == normalStroke)
 }
 
-/// Identification help is an anchored transient popover without confirmation buttons or a modal sheet.
-@Test @MainActor func identificationHelpUsesReplacingTransientPopover() throws {
+/// Matching help is an anchored transient popover without confirmation buttons or a modal sheet.
+@Test @MainActor func matchingHelpUsesReplacingTransientPopover() throws {
   _ = NSApplication.shared
   let settings = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),
     appearanceSettings: AppAppearanceSettings())
-  let pane = try #require(settings.tabViewItems.first(where: { $0.label == "Identification" })?.viewController)
+  let pane = try #require(settings.tabViewItems.first(where: { $0.label == "Matching Defaults" })?.viewController)
   let window = NSWindow(contentViewController: pane)
   window.setContentSize(NSSize(width: 700, height: 650))
   window.makeKeyAndOrderFront(.none)
   defer { window.orderOut(.none) }
   let help = nativeViews(in: pane.view).compactMap { $0 as? NSButton }.filter { $0.bezelStyle == .helpButton }
   #expect(help.count == 2)
-  let probe = IdentificationPopoverProbe()
-  NotificationCenter.default.addObserver(probe, selector: #selector(IdentificationPopoverProbe.willShow(_:)),
+  let probe = MatchingPopoverProbe()
+  NotificationCenter.default.addObserver(probe, selector: #selector(MatchingPopoverProbe.willShow(_:)),
     name: NSPopover.willShowNotification, object: .none)
   defer { NotificationCenter.default.removeObserver(probe) }
   let first = try #require(help.first)
@@ -56,7 +56,7 @@ import Testing
   #expect(firstPopover.behavior == .transient)
   let content = try #require(firstPopover.contentViewController?.view)
   let labels = nativeViews(in: content).compactMap { ($0 as? NSTextField)?.stringValue }
-  #expect(labels.contains("Require a release year for automatic identification"))
+  #expect(labels.contains("Require a release year for automatic matching"))
   #expect(labels.contains(first.toolTip ?? ""))
   #expect(nativeViews(in: content).compactMap { $0 as? NSButton }.isEmpty)
   try #require(help.last).performClick(.none)
@@ -73,7 +73,7 @@ import Testing
 }
 
 /// Captures native popover presentation without changing the pane's ownership.
-@MainActor private final class IdentificationPopoverProbe: NSObject {
+@MainActor private final class MatchingPopoverProbe: NSObject {
   /// Popovers observed in presentation order.
   var popovers: [NSPopover] = []
   /// Captures the actual presented AppKit object for behavior and content assertions.
@@ -86,33 +86,33 @@ import Testing
 /// Setup starts without an authorized folder and renders the same native sections for Choose and drop.
 @Test @MainActor func collectionSetupStartsWithNoSelectedFolder() {
   let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
-    applicationPolicy: IdentificationPolicy(), appearance: .softFinish)
+    applicationConfiguration: MovieMatchingConfiguration(), appearance: .softFinish)
   let controller = CollectionSetupViewController(viewModel: model)
   let views = nativeViews(in: controller.view)
   let labels = views.compactMap { ($0 as? NSTextField)?.stringValue }
   #expect(labels.contains("No folder selected"))
   #expect(labels.contains("Folder and access"))
   #expect(labels.contains("Display name"))
-  #expect(labels.contains("Identification"))
+  #expect(labels.contains("Matching"))
   #expect(labels.contains("Poster appearance"))
   let buttons = views.compactMap { $0 as? NSButton }
   #expect(buttons.first(where: { $0.title == "Add Collection" })?.isEnabled == false)
-  #expect(buttons.first(where: { $0.title == "Use application identification settings" })?.state == .on)
+  #expect(buttons.first(where: { $0.title == "Use application matching settings" })?.state == .on)
   #expect(buttons.first(where: { $0.title == "Compare TMDb original titles" })?.isEnabled == false)
 }
 
 /// Setup controls form an explicit keyboard loop independent of AppKit's stack-view loop recalculation.
 @Test @MainActor func collectionSetupDefinesKeyboardNavigationLoop() throws {
   let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
-    applicationPolicy: IdentificationPolicy(), appearance: .softFinish)
+    applicationConfiguration: MovieMatchingConfiguration(), appearance: .softFinish)
   let controller = CollectionSetupViewController(viewModel: model)
   let views = nativeViews(in: controller.view)
   let buttons = views.compactMap { $0 as? NSButton }
   let chooseButton = try #require(buttons.first { $0.title == "Choose…" })
   let nameField = try #require(views.compactMap { $0 as? NSTextField }
     .first { $0.placeholderString == "Root folder name" })
-  let inheritButton = try #require(buttons.first { $0.title == "Use application identification settings" })
-  let yearButton = try #require(buttons.first { $0.title == "Require a release year for automatic identification" })
+  let inheritButton = try #require(buttons.first { $0.title == "Use application matching settings" })
+  let yearButton = try #require(buttons.first { $0.title == "Require a release year for automatic matching" })
   let originalButton = try #require(buttons.first { $0.title == "Compare TMDb original titles" })
   let appearanceButton = try #require(views.compactMap { $0 as? NSPopUpButton }.first)
   let cancelButton = try #require(buttons.first { $0.title == "Cancel" })
@@ -125,15 +125,15 @@ import Testing
   }
 }
 
-/// The native settings toolbar must retain its established layout and insert Identification in order.
-@Test @MainActor func identificationPaneUsesNativeToolbarPosition() throws {
+/// The native settings toolbar must retain its established layout and insert Matching in order.
+@Test @MainActor func matchingPaneUsesNativeToolbarPosition() throws {
   let controller = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),
     appearanceSettings: AppAppearanceSettings())
   #expect(controller.tabStyle == .toolbar)
-  #expect(controller.tabViewItems.map(\.label) == ["Poster Layout", "Identification", "TMDb", "Appearance"])
-  let pane = try #require(controller.tabViewItems.first(where: { $0.label == "Identification" })?.viewController)
+  #expect(controller.tabViewItems.map(\.label) == ["Poster Layout", "Matching Defaults", "TMDb", "Appearance"])
+  let pane = try #require(controller.tabViewItems.first(where: { $0.label == "Matching Defaults" })?.viewController)
   let controls = nativeViews(in: pane.view).compactMap { $0 as? NSButton }
-  #expect(controls.contains { $0.title == "Require a release year for automatic identification" })
+  #expect(controls.contains { $0.title == "Require a release year for automatic matching" })
   #expect(controls.contains { $0.title == "Compare TMDb original titles" })
 }
 
@@ -156,23 +156,23 @@ import Testing
 /// Draft choices are local, replacement resets the suggestion, and cancellation discards authorization.
 @Test @MainActor func collectionSetupDraftCommitsOnlyAfterAdd() async throws {
   let service = SetupServiceProbe()
-  let policy = IdentificationPolicy(comparesOriginalTitles: false)
-  let model = CollectionSetupViewModel(service: service, applicationPolicy: policy, appearance: .softFinish)
+  let configuration = MovieMatchingConfiguration(comparesOriginalTitles: false)
+  let model = CollectionSetupViewModel(service: service, applicationConfiguration: configuration, appearance: .softFinish)
   #expect(model.candidate == .none)
-  #expect(model.usesApplicationPolicy)
-  #expect(model.overridePolicy == policy)
+  #expect(model.inheritsApplicationConfiguration)
+  #expect(model.overrideConfiguration == configuration)
   await model.prepare(URL(fileURLWithPath: "/Movies"))
   #expect(model.displayName == "Movies")
   model.displayName = "Family"
   model.appearance = .raw
-  model.usesApplicationPolicy = false
+  model.inheritsApplicationConfiguration = false
   await model.prepare(URL(fileURLWithPath: "/Cinema"))
   #expect(model.displayName == "Cinema")
   #expect(service.commitCount == .zero)
   #expect(await model.commit())
   #expect(service.commitCount == 1)
-  #expect(service.committedPolicy == policy)
-  let cancelled = CollectionSetupViewModel(service: service, applicationPolicy: policy, appearance: .softFinish)
+  #expect(service.committedConfiguration == configuration)
+  let cancelled = CollectionSetupViewModel(service: service, applicationConfiguration: configuration, appearance: .softFinish)
   await cancelled.prepare(URL(fileURLWithPath: "/Cancelled"))
   cancelled.cancel()
   #expect(cancelled.candidate == .none)
@@ -182,21 +182,21 @@ import Testing
 
 /// Supplies prepared in-memory authorization without filesystem access to presentation tests.
 private final class SetupServiceProbe: ConfigurationServicing, Sendable {
-  /// The submitted policy snapshots; count also records successful commit calls.
-  private let policies = Mutex<[IdentificationPolicy?]>([])
+  /// The submitted configuration snapshots; count also records successful commit calls.
+  private let policies = Mutex<[MovieMatchingConfiguration?]>([])
   /// How many explicit Add actions reached persistence.
   var commitCount: Int { policies.withLock { $0.count } }
   /// Last override submitted by the local draft.
-  var committedPolicy: IdentificationPolicy? { policies.withLock { $0.last ?? .none } }
+  var committedConfiguration: MovieMatchingConfiguration? { policies.withLock { $0.last ?? .none } }
   func prepareCollection(_ directory: URL) throws -> PreparedCollection {
     PreparedCollection(directory: MonitoredDirectory(id: UUID(), path: directory.path,
       transferBookmark: Data([1]), authorizationVersion: UUID()), hostBookmark: Data([2]))
   }
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    identificationPolicy: IdentificationPolicy?, appearance: PosterAppearance
+    movieMatchingConfiguration: MovieMatchingConfiguration?, appearance: PosterAppearance
   ) throws {
-    policies.withLock { $0.append(identificationPolicy) }
+    policies.withLock { $0.append(movieMatchingConfiguration) }
   }
   func configurationSummary() throws -> ConfigurationSummary {
     ConfigurationSummary(directories: [], credentialConfigured: false)

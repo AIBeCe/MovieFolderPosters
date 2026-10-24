@@ -8,10 +8,10 @@ import Testing
 /// Exercises explicit results actions without using production filesystem or network services.
 @MainActor
 struct CollectionResultsViewModelTests {
-  /// Missing-year policy outcomes require Choose Movie rather than a retry the processor will reject.
-  @Test func manualIdentificationRequiredDisablesRetryButAllowsSelection() async {
+  /// Missing-year configuration outcomes require Choose Movie rather than a retry the processor will reject.
+  @Test func manualMatchingRequiredDisablesRetryButAllowsSelection() async {
     let record = FolderProcessingRecord(name: "Dune", identity: "identity", state: .unresolved,
-      reason: .manualIdentificationRequired)
+      reason: .manualMatchingRequired)
     let fixture = await makeFixture(folders: [record])
     fixture.model.selectRows(IndexSet(integer: .zero))
     #expect(fixture.model.canChooseMovie)
@@ -93,7 +93,7 @@ struct CollectionResultsViewModelTests {
     fixture.model.retrySelected()
     await settle()
     let readsBefore = await fixture.source.readCount
-    fixture.model.cancelCurrentOperation()
+    fixture.model.cancelRetryTask()
     #expect(fixture.model.isBusy)
     #expect(fixture.model.isCancelling)
     fixture.model.retrySelected()

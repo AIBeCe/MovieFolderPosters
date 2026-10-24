@@ -31,9 +31,9 @@ import Testing
   #expect(await service.callCount == 2)
 }
 
-/// Shows saved folder evidence in an AppKit details sheet without exposing mutation controls.
+/// Shows saved folder evidence in an AppKit details sheet without exposing change controls.
 @MainActor
-@Test func processingDetailsSheetShowsFolderEvidenceAndNoMutationControls() throws {
+@Test func processingDetailsSheetShowsFolderEvidenceAndNoChangeControls() throws {
   let rootID = UUID()
   let processingState = processingStateForTesting(rootID: rootID)
   let summary = CollectionProcessingSummary(
@@ -71,7 +71,7 @@ import Testing
     usesStubTMDbResponses: initial.context.usesStubTMDbResponses,
     appearance: initial.context.appearance)
   let processingState = CollectionProcessingState(
-    context: initial.context, operation: initial.operation, folders: initial.folders,
+    context: initial.context, currentRun: initial.currentRun, folders: initial.folders,
     isInventoryComplete: initial.isInventoryComplete, inspectedAt: initial.inspectedAt,
     lastCompletedRun: initial.lastCompletedRun, lastCompletedRunContext: priorContext)
   let summary = CollectionProcessingSummary(
@@ -90,7 +90,7 @@ import Testing
   let initial = processingStateForTesting(rootID: rootID)
   let processingState = CollectionProcessingState(
     context: initial.context,
-    operation: CollectionProcessingOperation(action: .automatic, startedAt: Date(), state: .partial),
+    currentRun: CollectionProcessingRun(action: .automatic, startedAt: Date(), state: .partial),
     folders: [FolderProcessingRecord(name: "Pending.Movie", state: .pending)],
     isInventoryComplete: true,
     inspectedAt: Date()
@@ -154,7 +154,7 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
     usesStubTMDbResponses: false, appearance: .softFinish)
   let running = CollectionProcessingState(
     context: context,
-    operation: CollectionProcessingOperation(action: .automatic, startedAt: Date(), state: .running))
+    currentRun: CollectionProcessingRun(action: .automatic, startedAt: Date(), state: .running))
   let reader = FailingOrphanReread(processingState: running, failure: error)
   let service = CollectionSummaryService(
     configuration: configurationRepository,

@@ -9,7 +9,7 @@ import Testing
 
 /// Covers configuration state updates, error handling, and AppKit presentation behavior.
 struct ConfigurationViewModelTests {
-  /// Keeps installation diagnostics independent of collection refresh and mutation.
+  /// Keeps installation diagnostics independent of collection refresh and change.
   @Test @MainActor
   func installationDiagnosticDoesNotRefreshOrMutateCollectionConfiguration() async {
     let service = ConfigurationServiceFake()
@@ -102,7 +102,7 @@ struct ConfigurationViewModelTests {
       ))
     let viewModel = ConfigurationViewModel(service: service)
     await viewModel.load()
-    service.failNextOperation(with: TestServiceError(message: "write failed"))
+    service.failNextAction(with: TestServiceError(message: "write failed"))
 
     await viewModel.setPosterAppearance(.matteFrame)
 
@@ -113,8 +113,8 @@ struct ConfigurationViewModelTests {
 
   /// Rejects overlapping appearance mutations while the first change is pending.
   @Test @MainActor
-  func appearanceChangeIsSerializedWithOtherConfigurationMutations() async {
-    let gate = AsyncOperationGate()
+  func appearanceChangeIsSerializedWithOtherConfigurationChanges() async {
+    let gate = AsyncTaskGate()
     let service = ConfigurationServiceFake(gate: gate)
     let viewModel = ConfigurationViewModel(service: service)
     let change = Task { await viewModel.setPosterAppearance(.raw) }
@@ -188,11 +188,11 @@ struct ConfigurationViewModelTests {
 
   /// Verifies operation failures expose a safe message without repeating credential text.
   @Test @MainActor
-  func failedOperationShowsSafeMessageWithoutEchoingCredential() async {
+  func failedCredentialActionShowsSafeMessageWithoutEchoingCredential() async {
     let service = ConfigurationServiceFake()
     let viewModel = ConfigurationViewModel(service: service)
     let secret = "private-token"
-    service.failNextOperation(with: TestServiceError(message: "Rejected \(secret)"))
+    service.failNextAction(with: TestServiceError(message: "Rejected \(secret)"))
 
     await viewModel.saveCredential(secret)
 
@@ -201,10 +201,10 @@ struct ConfigurationViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
-  /// Prevents a second mutation while the current configuration operation is suspended.
+  /// Prevents a second change while the current configuration operation is suspended.
   @Test @MainActor
-  func busyOperationRejectsAnotherMutationUntilTheFirstCompletes() async {
-    let gate = AsyncOperationGate()
+  func busyActionRejectsAnotherChangeUntilTheFirstCompletes() async {
+    let gate = AsyncTaskGate()
     let service = ConfigurationServiceFake(gate: gate)
     let viewModel = ConfigurationViewModel(service: service)
     let first = URL(fileURLWithPath: "/Movies/First", isDirectory: true)

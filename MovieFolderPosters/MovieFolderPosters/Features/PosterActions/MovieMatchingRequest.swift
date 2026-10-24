@@ -1,7 +1,7 @@
 import Foundation
 
-/// Normalized identification fields shared by the preview and explicit movie search.
-nonisolated struct MovieIdentificationRequest: Equatable, Sendable {
+/// Normalized matching fields shared by the preview and explicit movie search.
+nonisolated struct MovieMatchingRequest: Equatable, Sendable {
   /// The trimmed title disclosed in the search request.
   let title: String
   /// The optional supported release year disclosed in the search request.
@@ -23,7 +23,7 @@ nonisolated struct MovieIdentificationRequest: Equatable, Sendable {
     }
   }
 
-  /// The identification fields that will be disclosed by an explicit search.
+  /// The matching fields that will be disclosed by an explicit search.
   var disclosure: String {
     "Sent to TMDb: title ‘\(title)’; year: \(year.map(String.init) ?? "not supplied")."
   }

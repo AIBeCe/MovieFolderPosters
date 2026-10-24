@@ -74,7 +74,7 @@ final class CollectionProcessingDetailsViewController: NSViewController {
   /// Forwards dismissal to the coordinator that owns the sheet.
   @objc private func close() { delegate?.collectionProcessingDetailsViewControllerDidRequestClose(self) }
 
-  /// Formats the processing state's committed operation and per-folder evidence for display.
+  /// Formats the processing state's committed run and per-folder evidence for display.
   private var reportText: String {
     guard let processingState = summary.processingState else {
       return "No committed processing outcome is available for this collection."
@@ -86,8 +86,8 @@ final class CollectionProcessingDetailsViewController: NSViewController {
       "Done: \(summary.presentation.work.done); Preserved: \(summary.presentation.work.preserved); "
         + "Suppressed: \(summary.presentation.work.suppressed)",
       "Last inspected: \(date(processingState.inspectedAt))",
-      "Current operation: \(operationDescription(processingState.operation))",
-      "Last completed collection run: \(operationDescription(processingState.lastCompletedRun))\(historicalRunNote)",
+      "Current run: \(runDescription(processingState.currentRun))",
+      "Last completed collection run: \(runDescription(processingState.lastCompletedRun))\(historicalRunNote)",
       "Inventory: \(processingState.isInventoryComplete ? "complete" : "incomplete")"
     ]
     if let inventoryIssue = processingState.inventoryIssue {
@@ -153,13 +153,13 @@ final class CollectionProcessingDetailsViewController: NSViewController {
       + date(attempt.occurredAt)
   }
 
-  /// Formats operation lifecycle facts, including start and completion times.
-  private func operationDescription(_ operation: CollectionProcessingOperation?) -> String {
-    guard let operation else { return "Not recorded" }
-    let ended = operation.endedAt.map { date($0) } ?? "In progress or awaiting verification"
+  /// Formats run lifecycle facts, including start and completion times.
+  private func runDescription(_ currentRun: CollectionProcessingRun?) -> String {
+    guard let currentRun else { return "Not recorded" }
+    let ended = currentRun.endedAt.map { date($0) } ?? "In progress or awaiting verification"
 
-    return "\(operation.action.displayDescription), \(operation.state.displayDescription), "
-      + "started \(date(operation.startedAt)), ended \(ended)"
+    return "\(currentRun.action.displayDescription), \(currentRun.state.displayDescription), "
+      + "started \(date(currentRun.startedAt)), ended \(ended)"
   }
 
   /// Formats an optional timestamp without inventing a value.
@@ -192,13 +192,14 @@ extension FolderProcessingState {
   /// User-facing state name for one immediate child directory.
   var displayDescription: String {
     switch self {
+    case .excluded: "Excluded"
     case .pending: "Pending"
     case .done: "Done"
     case .notFound: "Not found"
     case .severalMatches: "Several matches"
     case .unresolved: "Unresolved"
     case .preserved: "Existing poster preserved"
-    case .suppressed: "Suppressed by policy"
+    case .suppressed: "Suppressed by configuration"
     case .failed: "Failed"
     case .deferred: "Deferred"
     case .uncertain: "Uncertain"
@@ -211,14 +212,15 @@ extension FolderProcessingReason {
   /// Safe user-facing reason that contains no raw provider or filesystem error.
   var displayDescription: String {
     switch self {
+    case .explicitExclusion: "Excluded from collection processing"
     case .noSuitableMovie: "No suitable movie found"
     case .ambiguousMovie: "Multiple possible movies remain"
     case .incompleteSearch: "Search did not finish"
     case .missingArtwork: "Poster artwork was unavailable"
     case .parsingProblem: "Folder name could not be parsed"
-    case .manualIdentificationRequired: "Release year required; choose a movie manually"
+    case .manualMatchingRequired: "Release year required; choose a movie manually"
     case .existingPosterPreserved: "An existing poster was preserved"
-    case .policySuppressed: "Processing was suppressed by policy"
+    case .policySuppressed: "Processing was suppressed by configuration"
     case .processingFailure: "Processing failed"
     case .retryDeferred: "Retry was deferred"
     case .interrupted: "Processing was interrupted"
@@ -312,7 +314,7 @@ private extension CollectionProcessingAction {
 }
 
 /// Supplies readable labels for saved operation lifecycle states.
-private extension CollectionProcessingOperationState {
+private extension CollectionProcessingRunState {
   /// User-facing operation state.
   var displayDescription: String {
     switch self {

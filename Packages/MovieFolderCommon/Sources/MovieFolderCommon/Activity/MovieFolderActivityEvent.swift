@@ -2,11 +2,11 @@ import Foundation
 
 /// A closed, privacy-safe vocabulary for persisted product activity.
 nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable {
-  /// The operation being reported; no caller-supplied strings are accepted.
+  /// The activity action being reported; no caller-supplied strings are accepted.
   public enum Action: String, Codable, Sendable, CaseIterable {
     case applicationOpened, configurationLoaded, collectionAdded, collectionRemoved, collectionAccessRestored
     case credentialSaved, credentialRemoved, posterAppearanceSaved, applicationAppearanceChanged
-    case collectionRenamed, identificationPolicySaved
+    case collectionRenamed, movieMatchingConfigurationSaved
     case collectionCleanup, finderConfiguration, automaticProcessing, posterRefresh, posterSelection, posterRemoval
   }
 
@@ -15,31 +15,32 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
     case started, succeeded, partial, cancelled, failed, unavailable
   }
 
-  /// The bounded operation kind.
+  /// The bounded action kind.
   public let action: Action
   /// The observed result, independent of any underlying error text.
   public let status: Status
-  /// Optional correlation for one operation without exposing folder identity or paths.
-  public let operationID: UUID?
+  /// Optional group identifier for related activity events, without exposing folder identity or paths.
+  public let activityGroupID: UUID?
   /// Optional configured collection identity; never a path or bookmark.
   public let collectionID: UUID?
 
   /// Stable persisted field names retained when the Swift lifecycle property name changed.
   private enum CodingKeys: String, CodingKey {
-    case action, operationID, collectionID
+    case action, collectionID
+    case activityGroupID = "operationID"
     case status = "outcome"
   }
 
   /// Creates a structured event using only the approved vocabulary and opaque identifiers.
   /// - Parameters:
-  ///   - action: The product operation.
+  ///   - action: The product action.
   ///   - status: The observed lifecycle result.
-  ///   - operationID: Optional operation correlation identifier.
+  ///   - activityGroupID: Identifier shared by the activity events for one action.
   ///   - collectionID: Optional configured collection identifier.
-  public init(action: Action, status: Status, operationID: UUID? = .none, collectionID: UUID? = .none) {
+  public init(action: Action, status: Status, activityGroupID: UUID? = .none, collectionID: UUID? = .none) {
     self.action = action
     self.status = status
-    self.operationID = operationID
+    self.activityGroupID = activityGroupID
     self.collectionID = collectionID
   }
 
@@ -47,7 +48,7 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
   /// - Parameter summary: Actual automatic processing visit result.
   /// - Returns: Availability, partial completion, or completion derived without folder names.
   public static func automaticProcessingStatus(for summary: ProcessingSummary) -> Status {
-    if summary.rootLeaseUnavailable { return .unavailable }
+    if summary.rootAccessUnavailable { return .unavailable }
     if summary.providerRetryAt != .none || summary.skippedRetryWindow > 0 || summary.transientFailures > 0 {
       return .partial
     }
@@ -64,7 +65,7 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
     case .collectionRemoved: "Remove collection"
     case .collectionAccessRestored: "Restore collection access"
     case .collectionRenamed: "Rename collection"
-    case .identificationPolicySaved: "Save identification settings"
+    case .movieMatchingConfigurationSaved: "Save matching settings"
     case .credentialSaved: "Save TMDb credential"
     case .credentialRemoved: "Remove TMDb credential"
     case .posterAppearanceSaved: "Save poster appearance"

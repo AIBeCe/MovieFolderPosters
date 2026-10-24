@@ -35,14 +35,14 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
   /// Error consumed by the next recorded operation.
   private var nextError: TestServiceError?
   /// Optional gate used to hold one operation in progress for serialization tests.
-  private let gate: AsyncOperationGate?
+  private let gate: AsyncTaskGate?
 
   /// Creates a fake with an initial summary and optional operation gate.
   init(
     summary: ConfigurationSummary = ConfigurationSummary(
       directories: [], credentialConfigured: false, posterAppearance: .softFinish
     ),
-    gate: AsyncOperationGate? = .none
+    gate: AsyncTaskGate? = .none
   ) {
     currentSummary = summary
     self.gate = gate
@@ -54,7 +54,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
   }
 
   /// Configures the next recorded operation to throw the supplied error.
-  func failNextOperation(with error: TestServiceError) {
+  func failNextAction(with error: TestServiceError) {
     lock.withLock { nextError = error }
   }
 
@@ -166,7 +166,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
 }
 
 /// Holds a service operation until a test explicitly opens the gate.
-actor AsyncOperationGate {
+actor AsyncTaskGate {
   /// Continuation for the operation waiting at the gate.
   private var operationContinuation: CheckedContinuation<Void, Never>?
   /// Continuation for a test waiting until the operation reaches the gate.
@@ -284,12 +284,12 @@ func processingStateForTesting(rootID: UUID) -> CollectionProcessingState {
     movieIdentitySource: .conservativeMatch,
     ownership: .owned, assessedAt: Date(), retryAt: Date().addingTimeInterval(600),
     lastFailure: FolderProcessingFailure(reason: .timeout, stage: .search, occurredAt: Date()))
-  let completed = CollectionProcessingOperation(
+  let completed = CollectionProcessingRun(
     action: .automatic, startedAt: Date().addingTimeInterval(-120),
     endedAt: Date(), state: .completed)
 
   return CollectionProcessingState(
-    context: context, operation: completed, folders: [folder], isInventoryComplete: true,
+    context: context, currentRun: completed, folders: [folder], isInventoryComplete: true,
     inspectedAt: Date(), lastCompletedRun: completed, lastCompletedRunContext: context)
 }
 

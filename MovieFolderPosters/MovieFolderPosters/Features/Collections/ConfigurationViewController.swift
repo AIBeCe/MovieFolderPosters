@@ -340,7 +340,7 @@ extension ConfigurationViewController {
       remove.representedObject = directory.id
       remove.isEnabled = !viewModel.isBusy
       menu.addItem(remove)
-      let rename = NSMenuItem(title: "Rename Collection…", action: #selector(renameCollection(_:)), keyEquivalent: "")
+      let rename = NSMenuItem(title: "Edit Collection…", action: #selector(renameCollection(_:)), keyEquivalent: "")
       rename.target = self
       rename.representedObject = directory.id
       rename.isEnabled = !viewModel.isBusy
@@ -555,7 +555,10 @@ private extension ConfigurationViewController {
   /// - Parameter directory: Collection whose latest evidence should be displayed.
   /// - Returns: A vertical stack of the two evidence labels.
   func collectionEvidence(for directory: ConfiguredDirectoryStatus) -> NSStackView {
-    let status = NSTextField(labelWithString: availabilityDescription(directory.availability))
+    let inclusion = directory.processingConfiguration.isPaused ? "Paused · " : ""
+    let excluded = directory.processingConfiguration.excludedFolders.count
+    let status = NSTextField(labelWithString: inclusion + availabilityDescription(directory.availability)
+      + (excluded > .zero ? " · \(excluded) excluded" : ""))
     status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
     status.textColor = .secondaryLabelColor
     status.lineBreakMode = .byTruncatingTail

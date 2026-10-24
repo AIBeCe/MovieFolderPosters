@@ -155,13 +155,13 @@ struct InstallationReadinessTests {
     #expect(InstallationReadinessService.checkSharedStorage(in: fixture.store) == .healthy)
   }
 
-  /// Verifies that shared storage check reports lease contention.
-  @Test func sharedStorageCheckReportsLeaseContention() throws {
+  /// Verifies that shared storage check reports access contention.
+  @Test func sharedStorageCheckReportsAccessContention() throws {
     let fixture = try PersistenceFixture()
     defer { fixture.cleanup() }
-    let heldLease = try #require(try fixture.store.acquireLease(for: "readiness-check"))
+    let heldAccess = try #require(try fixture.store.acquireAccess(for: "readiness-check"))
     #expect(InstallationReadinessService.checkSharedStorage(in: fixture.store) == .busy)
-    withExtendedLifetime(heldLease) {}
+    withExtendedLifetime(heldAccess) {}
   }
 
   /// Verifies that shared storage check fails when existing record cannot be read.
@@ -169,8 +169,8 @@ struct InstallationReadinessTests {
     let fixture = try PersistenceFixture()
     defer { fixture.cleanup() }
     do {
-      let lease = try #require(try fixture.store.acquireLease(for: "readiness-check"))
-      try lease.write(Data("existing probe data".utf8))
+      let access = try #require(try fixture.store.acquireAccess(for: "readiness-check"))
+      try access.write(Data("existing probe data".utf8))
     }
     let record = try #require(
       FileManager.default.contentsOfDirectory(

@@ -1,15 +1,15 @@
 import Darwin
 import Foundation
 
-/// Retains a resolved directory URL and its security-scoped access for the lease's lifetime.
-public final class DirectoryAccessLease: Sendable {
-  /// The resolved directory URL whose access is held for this lease's lifetime.
+/// Retains a resolved directory URL and its security-scoped access for the access's lifetime.
+public final class DirectoryAccess: Sendable {
+  /// The resolved directory URL whose access is held for this access's lifetime.
   public let url: URL
 
-  /// Whether releasing this lease must stop security-scoped access.
+  /// Whether releasing this access must stop security-scoped access.
   private let isAccessingSecurityScopedResource: Bool
 
-  /// Creates a lease for a resolved URL and transfers responsibility for scoped access cleanup.
+  /// Creates a access for a resolved URL and transfers responsibility for scoped access cleanup.
   fileprivate init(url: URL, isAccessingSecurityScopedResource: Bool) {
     self.url = url
     self.isAccessingSecurityScopedResource = isAccessingSecurityScopedResource
@@ -38,19 +38,19 @@ extension FileSystemService {
     )
   }
 
-  /// Resolves a bookmark and holds its security-scoped access until the returned lease is released.
+  /// Resolves a bookmark and holds its security-scoped access until the returned access is released.
   ///
   /// - Parameters:
   ///   - bookmark: Bookmark data previously created for a directory.
   ///   - securityScoped: Whether bookmark resolution and access require security scope.
   ///   - expectedIdentity: An optional identity that must match the resolved directory.
-  /// - Returns: A lease retaining access to the validated directory.
+  /// - Returns: A access retaining access to the validated directory.
   /// - Throws: ``DirectoryAccessError`` when access, bookmark validity, or identity checks fail.
   public func acquireDirectoryAccess(
     bookmark: Data,
     securityScoped: Bool,
     expectedIdentity: String? = .none
-  ) throws -> DirectoryAccessLease {
+  ) throws -> DirectoryAccess {
     var resolutionOptions: URL.BookmarkResolutionOptions = [.withoutUI, .withoutMounting]
     if securityScoped {
       resolutionOptions.insert(.withSecurityScope)
@@ -77,9 +77,9 @@ extension FileSystemService {
     if securityScoped, !startedAccessing {
       throw DirectoryAccessError.accessDenied
     }
-    var transferAccessToLease = false
+    var transferAccessToAccess = false
     defer {
-      if startedAccessing, !transferAccessToLease {
+      if startedAccessing, !transferAccessToAccess {
         directory.stopAccessingSecurityScopedResource()
       }
     }
@@ -88,9 +88,9 @@ extension FileSystemService {
     try validateDirectoryDescriptorAccess(
       directory, service: self, expectedIdentity: expectedIdentity)
 
-    transferAccessToLease = startedAccessing
+    transferAccessToAccess = startedAccessing
 
-    return DirectoryAccessLease(
+    return DirectoryAccess(
       url: directory,
       isAccessingSecurityScopedResource: startedAccessing
     )
@@ -144,7 +144,7 @@ private func validateDirectoryDescriptorAccess(
       expectedIdentity: expectedIdentity
     )
   } catch is DirectoryIdentityUnavailable where expectedIdentity == .none {
-    // The descriptor and current path already match; durable identity is optional for this lease.
+    // The descriptor and current path already match; durable identity is optional for this access.
   }
 }
 

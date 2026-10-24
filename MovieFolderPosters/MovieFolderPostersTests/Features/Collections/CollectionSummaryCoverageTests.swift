@@ -8,47 +8,60 @@ import Testing
 
 /// Verifies read-only projections against real disposable configuration, outcome, and coordination stores.
 struct CollectionSummaryCoverageTests {
+  /// Inclusion edits stale the old processing generation while retaining its historical evidence.
+  @Test func inclusionChangeInvalidatesSummary() async throws {
+    let fixture = try SummaryStorageFixture()
+    defer { fixture.cleanup() }
+    _ = try fixture.seedOutcome(completed: true)
+    #expect(await fixture.service().summaries()[fixture.context.rootID]?.displayState == .current)
+    try fixture.configuration.update { $0.directories[0].processingConfiguration.setPaused(true) }
+    let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
+    #expect(summary.displayState == .stale)
+    #expect(summary.counts.total == .none)
+    #expect(summary.processingState?.folders.count == 1)
+  }
+
   /// Friendly names preserve freshness; changing defaults invalidates inheriting collections only.
-  /// - Parameter overridden: Whether the collection retains an explicit policy instead of inheriting defaults.
+  /// - Parameter overridden: Whether the collection retains an explicit configuration instead of inheriting defaults.
   @Test(arguments: [false, true])
-  func effectiveIdentificationPolicyControlsFreshness(overridden: Bool) async throws {
+  func effectiveMovieMatchingConfigurationControlsFreshness(overridden: Bool) async throws {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     if overridden {
-      try fixture.configuration.update { $0.directories[0].identificationPolicy = IdentificationPolicy() }
+      try fixture.configuration.update { $0.directories[0].movieMatchingConfiguration = MovieMatchingConfiguration() }
     }
     _ = try fixture.seedOutcome(completed: true)
     try fixture.configuration.update { $0.directories[0].displayName = "Family films" }
     #expect(await fixture.service().summaries()[fixture.context.rootID]?.displayState == .current)
-    try fixture.configuration.update { $0.identificationPolicy.requiresReleaseYearForAutomaticIdentification = true }
+    try fixture.configuration.update { $0.movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching = true }
     let expected: CollectionProcessingDisplayState = overridden ? .current : .stale
     #expect(await fixture.service().summaries()[fixture.context.rootID]?.displayState == expected)
   }
-  /// A running record is only interrupted when no live root operation owns its coordination lease.
+  /// A running record is only interrupted when no live root operation owns its coordination access.
   @Test(arguments: [false, true])
-  func distinguishesOrphanedFromActiveOperations(holdsLease: Bool) async throws {
+  func distinguishesOrphanedFromActiveRuns(holdsAccess: Bool) async throws {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     _ = try fixture.seedOutcome(completed: false)
-    let lease = holdsLease ? try fixture.coordination.acquireLease(
+    let access = holdsAccess ? try fixture.coordination.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
-    #expect(summary.displayState == (holdsLease ? .busy : .interrupted))
+    #expect(summary.displayState == (holdsAccess ? .busy : .interrupted))
     #expect(summary.presentation.state == summary.displayState)
-    #expect(try fixture.outcomes.read(rootID: fixture.context.rootID)?.operation?.state == .running)
-    withExtendedLifetime(lease) {}
+    #expect(try fixture.outcomes.read(rootID: fixture.context.rootID)?.currentRun?.state == .running)
+    withExtendedLifetime(access) {}
   }
 
   /// Old credentials invalidate headline counts without deleting historical folder evidence.
   @Test(arguments: [false, true])
-  func staleResultsKeepEvidenceButHideCounts(holdsLease: Bool) async throws {
+  func staleResultsKeepEvidenceButHideCounts(holdsAccess: Bool) async throws {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     let previous = try fixture.seedOutcome(completed: true)
     #expect(previous.calculateCounts().done == 1)
     #expect(previous.calculateCounts().total == 1)
     try fixture.configuration.update { $0.credentialRevision = UUID() }
-    let lease = holdsLease ? try fixture.coordination.acquireLease(
+    let access = holdsAccess ? try fixture.coordination.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == .stale)
@@ -58,7 +71,7 @@ struct CollectionSummaryCoverageTests {
     #expect(summary.processingState?.folders.first?.movieID == 7)
     #expect(summary.counts.done == .none)
     #expect(summary.presentation.state == .stale)
-    withExtendedLifetime(lease) {}
+    withExtendedLifetime(access) {}
   }
 
   /// Missing and corrupt records both remain unknown rather than becoming successful empty results.
@@ -67,9 +80,9 @@ struct CollectionSummaryCoverageTests {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     if corrupt {
-      let lease = try #require(try fixture.records.acquireLease(
+      let access = try #require(try fixture.records.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)))
-      try lease.write(Data("invalid outcome".utf8))
+      try access.write(Data("invalid outcome".utf8))
     }
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == .unavailable)
@@ -83,13 +96,13 @@ struct CollectionSummaryCoverageTests {
   func revalidatesConfigurationAfterReadingOutcomes(hasOutcome: Bool) async throws {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
-    let operation = CollectionProcessingOperation(action: .automatic, startedAt: Date(),
+    let run = CollectionProcessingRun(action: .automatic, startedAt: Date(),
       endedAt: Date(), state: .completed)
-    let snapshot = CollectionProcessingState(context: fixture.context, operation: operation,
+    let savedState = CollectionProcessingState(context: fixture.context, currentRun: run,
       folders: [], isInventoryComplete: true, inspectedAt: Date())
     let replacementID = UUID()
     let reader = ReconfiguringSummaryReader(configuration: fixture.configuration,
-      snapshot: hasOutcome ? snapshot : .none, replacementID: replacementID)
+      savedState: hasOutcome ? savedState : .none, replacementID: replacementID)
     let service = CollectionSummaryService(configuration: fixture.configuration,
       processingStore: reader, coordinationStore: fixture.coordination)
     let summaries = await service.summaries()
@@ -132,7 +145,8 @@ private struct SummaryStorageFixture {
     let saved = try configuration.read()
     context = CollectionProcessingContext(rootID: monitored.id, rootIdentity: "summary-root",
       authorizationVersion: monitored.authorizationVersion, credentialRevision: saved.credentialRevision,
-      usesStubTMDbResponses: saved.usesStubTMDbResponses, appearance: saved.posterAppearance)
+      usesStubTMDbResponses: saved.usesStubTMDbResponses, appearance: saved.posterAppearance,
+      processingConfigurationRevision: monitored.processingConfiguration.revision)
     outcomes = CollectionProcessingStore(store: records, configuration: configuration)
   }
 
@@ -141,22 +155,22 @@ private struct SummaryStorageFixture {
     CollectionSummaryService(configuration: configuration, processingStore: outcomes, coordinationStore: coordination)
   }
 
-  /// Commits running or completed evidence under the same root lease required of production writers.
+  /// Commits running or completed evidence under the same root access required of production writers.
   func seedOutcome(completed: Bool) throws -> CollectionProcessingState {
-    let lease = try #require(try coordination.acquireLease(
+    let access = try #require(try coordination.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: root)))
-    defer { withExtendedLifetime(lease) {} }
-    var snapshot = try outcomes.recordProcessingStart(context: context, action: .automatic)
-    guard completed else { return snapshot }
-    snapshot.folders = [FolderProcessingRecord(name: "Dune (2021)", identity: "child-identity", state: .done,
+    defer { withExtendedLifetime(access) {} }
+    var savedState = try outcomes.recordProcessingStart(context: context, action: .automatic)
+    guard completed else { return savedState }
+    savedState.folders = [FolderProcessingRecord(name: "Dune (2021)", identity: "child-identity", state: .done,
       movieID: 7, movieTitle: "Dune", movieYear: 2021, movieIdentitySource: .explicitSelection,
       ownership: .owned, assessedAt: Date())]
-    snapshot.isInventoryComplete = true
-    snapshot.inspectedAt = Date()
-    snapshot.operation?.state = .completed
-    snapshot.operation?.endedAt = Date()
+    savedState.isInventoryComplete = true
+    savedState.inspectedAt = Date()
+    savedState.currentRun?.state = .completed
+    savedState.currentRun?.endedAt = Date()
 
-    return try outcomes.commit(snapshot, expectedRevision: snapshot.revision)
+    return try outcomes.commit(savedState, expectedRevision: savedState.revision)
   }
 
   /// Removes only this fixture's isolated directory.
@@ -168,7 +182,7 @@ private struct ReconfiguringSummaryReader: CollectionProcessingStateReading {
   /// Real settings repository changed while the service is reading an older generation.
   let configuration: ConfigurationRepository
   /// Optional prior outcome whose historical evidence must remain identifiable.
-  let snapshot: CollectionProcessingState?
+  let savedState: CollectionProcessingState?
   /// Newly configured root, absent from the initial iteration.
   let replacementID: UUID
 
@@ -178,6 +192,6 @@ private struct ReconfiguringSummaryReader: CollectionProcessingStateReading {
         transferBookmark: Data([1]), authorizationVersion: UUID(), identity: "replacement")]
     }
 
-    return snapshot
+    return savedState
   }
 }

@@ -26,12 +26,12 @@ protocol MoviePosterActionViewModelNavigationDelegate: AnyObject {
   )
 }
 
-/// Invalidates saved-result presentation after a service operation has actually returned.
+/// Invalidates saved-result presentation after the requested action has returned.
 @MainActor
-protocol MoviePosterActionViewModelOperationDelegate: AnyObject {
+protocol MoviePosterActionCompletionDelegate: AnyObject {
   /// Reports completion, failure, or fully unwound cancellation.
-  /// - Parameter viewModel: The model whose service operation ended.
-  func moviePosterActionViewModelDidFinishOperation(_ viewModel: MoviePosterActionViewModel)
+  /// - Parameter viewModel: The model whose requested action ended.
+  func moviePosterActionViewModelDidFinishAction(_ viewModel: MoviePosterActionViewModel)
 }
 
 /// Holds the state and user actions for one folder's poster-action window.
@@ -46,14 +46,14 @@ final class MoviePosterActionViewModel {
   /// Retains the active operation so the window can cancel it.
   private var operationTask: Task<Void, Never>?
   /// Distinguishes current work from results arriving after cancellation.
-  private var operationID = UUID()
+  private var activityGroupID = UUID()
 
   /// Observer for visible state changes.
   weak var delegate: (any MoviePosterActionViewModelDelegate)?
   /// Observer for requests to open a movie page in the browser.
   weak var navigationDelegate: (any MoviePosterActionViewModelNavigationDelegate)?
   /// Receives terminal-operation hints independently of the view's rendering delegate.
-  weak var operationDelegate: (any MoviePosterActionViewModelOperationDelegate)?
+  weak var completionDelegate: (any MoviePosterActionCompletionDelegate)?
 
   /// Search text currently shown to the user.
   private(set) var query: String
@@ -70,7 +70,7 @@ final class MoviePosterActionViewModel {
   /// Prevents a changed configuration from silently reusing this action's old selection.
   private(set) var isConfigurationInvalidated = false
   /// Whether this presentation can admit another explicit operation.
-  var canStartOperation: Bool { !isBusy && !isConfigurationInvalidated }
+  var canStartAction: Bool { !isBusy && !isConfigurationInvalidated }
   /// Status text for the current or most recent operation.
   private(set) var statusMessage: String?
   /// A safe, user-facing error message, if the latest action failed.
@@ -84,7 +84,7 @@ final class MoviePosterActionViewModel {
   /// Whether another page of search results is available.
   var hasMorePages: Bool { searchResult?.hasMorePages ?? false }
   /// Whether the selected movie can be applied now.
-  var canApplySelectedMovie: Bool { selectedMovie != .none && canStartOperation }
+  var canApplySelectedMovie: Bool { selectedMovie != .none && canStartAction }
   /// Whether a valid selected movie page can be opened.
   var canOpenSelectedMoviePage: Bool { (selectedMovie?.id ?? 0) > 0 }
   /// The action requested for this folder.
@@ -92,9 +92,9 @@ final class MoviePosterActionViewModel {
   /// The child folder name associated with the request.
   var childName: String { request.childName }
   /// Exact normalized search fields, computed locally without contacting the provider.
-  var identificationPreview: String {
-    do { return try MovieIdentificationRequest(title: query, yearText: yearText).disclosure } catch {
-      return (error as? MovieIdentificationRequest.InputError)?.message ?? "Review the search fields."
+  var matchingPreview: String {
+    do { return try MovieMatchingRequest(title: query, yearText: yearText).disclosure } catch {
+      return (error as? MovieMatchingRequest.InputError)?.message ?? "Review the search fields."
     }
   }
 
@@ -140,12 +140,12 @@ final class MoviePosterActionViewModel {
 
   /// Searches TMDb using the current title and optional valid release year.
   func search() {
-    guard request.action == .change, canStartOperation else { return }
-    let identification: MovieIdentificationRequest
+    guard request.action == .change, canStartAction else { return }
+    let matching: MovieMatchingRequest
     do {
-      identification = try MovieIdentificationRequest(title: query, yearText: yearText)
+      matching = try MovieMatchingRequest(title: query, yearText: yearText)
     } catch {
-      setError((error as? MovieIdentificationRequest.InputError)?.message ?? "Review the search fields.")
+      setError((error as? MovieMatchingRequest.InputError)?.message ?? "Review the search fields.")
       return
     }
 
@@ -157,7 +157,7 @@ final class MoviePosterActionViewModel {
     perform(
       "Searching TMDb…",
       operation: {
-        try await service.searchMovies(for: request, query: identification.title, year: identification.year)
+        try await service.searchMovies(for: request, query: matching.title, year: matching.year)
       },
       completion: { [weak self] result in
         self?.searchResult = result
@@ -194,7 +194,7 @@ final class MoviePosterActionViewModel {
 
   /// Applies the selected movie's poster to the requested folder.
   func applySelectedMovie() {
-    guard request.action == .change, canStartOperation else { return }
+    guard request.action == .change, canStartAction else { return }
     guard let movie = selectedMovie else {
       setError("Choose a movie with a poster before applying it.")
       return
@@ -227,7 +227,7 @@ final class MoviePosterActionViewModel {
 
   /// Re-runs automatic matching for the requested folder.
   func refreshPoster() {
-    guard request.action == .refresh, canStartOperation else { return }
+    guard request.action == .refresh, canStartAction else { return }
     let service = service
     let request = request
     perform(
@@ -239,7 +239,7 @@ final class MoviePosterActionViewModel {
 
   /// Removes the custom poster assigned to the requested folder.
   func removePoster() {
-    guard request.action == .remove, canStartOperation else { return }
+    guard request.action == .remove, canStartAction else { return }
     let service = service
     let request = request
     perform(
@@ -253,7 +253,7 @@ final class MoviePosterActionViewModel {
 
   /// Looks up and opens the TMDb page for the movie already assigned to the folder.
   func openMoviePage() {
-    guard request.action == .view, canStartOperation else { return }
+    guard request.action == .view, canStartAction else { return }
     let service = service
     let request = request
     perform(
@@ -275,7 +275,7 @@ final class MoviePosterActionViewModel {
   }
 
   /// Requests cancellation without releasing admission until the service actually returns.
-  func cancelCurrentOperation() {
+  func cancelRetryTask() {
     guard operationTask != .none else { return }
     isCancelling = true
     operationTask?.cancel()
@@ -286,7 +286,7 @@ final class MoviePosterActionViewModel {
   /// Cancels work because folder authorization or configuration may have changed.
   func configurationDidChange() {
     isConfigurationInvalidated = true
-    cancelCurrentOperation()
+    cancelRetryTask()
     errorMessage = "Directory configuration changed. Reopen this action to continue."
     if !isBusy { statusMessage = .none }
     publish()
@@ -303,13 +303,13 @@ final class MoviePosterActionViewModel {
     operation: @escaping @Sendable () async throws -> Value,
     completion: @escaping @MainActor (Value) -> Void
   ) {
-    guard canStartOperation else { return }
+    guard canStartAction else { return }
     isBusy = true
     isCancelling = false
     statusMessage = status
     errorMessage = .none
-    let currentOperationID = UUID()
-    operationID = currentOperationID
+    let currentActivityGroupID = UUID()
+    activityGroupID = currentActivityGroupID
     publish()
 
     operationTask = Task { @MainActor [weak self] in
@@ -317,23 +317,23 @@ final class MoviePosterActionViewModel {
         try Task.checkCancellation()
         let value = try await operation()
         try Task.checkCancellation()
-        guard let self, self.operationID == currentOperationID else { return }
+        guard let self, self.activityGroupID == currentActivityGroupID else { return }
         completion(value)
       } catch is CancellationError {
-        guard let self, self.operationID == currentOperationID else { return }
+        guard let self, self.activityGroupID == currentActivityGroupID else { return }
         self.statusMessage = .none
       } catch {
-        guard let self, self.operationID == currentOperationID else { return }
+        guard let self, self.activityGroupID == currentActivityGroupID else { return }
         self.errorMessage = self.userMessage(for: error)
         self.statusMessage = .none
       }
 
-      guard let self, self.operationID == currentOperationID else { return }
+      guard let self, self.activityGroupID == currentActivityGroupID else { return }
       self.isBusy = false
       self.isCancelling = false
       self.operationTask = .none
       self.publish()
-      self.operationDelegate?.moviePosterActionViewModelDidFinishOperation(self)
+      self.completionDelegate?.moviePosterActionViewModelDidFinishAction(self)
     }
   }
 

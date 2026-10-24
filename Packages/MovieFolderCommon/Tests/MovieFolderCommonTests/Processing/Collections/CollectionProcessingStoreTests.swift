@@ -7,6 +7,70 @@ import Testing
 
 /// Regression coverage for generation-safe, durable collection processing state.
 struct CollectionProcessingStoreTests {
+  /// Exclude and Include reconcile only affected identities; suppression and foreign-icon evidence stay safe.
+  @Test func inclusionChangesReconcileExcludedAndIncludedRecords() throws {
+    let fixture = try Fixture()
+    var state = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .manual)
+    let unaffected = FolderProcessingRecord(name: "Other", identity: "other", state: .notFound,
+      reason: .noSuitableMovie, assessedAt: Date())
+    let suppressed = FolderProcessingRecord(name: "Suppressed", identity: "suppressed", state: .suppressed,
+      reason: .policySuppressed, assessedAt: Date())
+    state.folders = [
+      FolderProcessingRecord(name: "Selected", identity: "selected", state: .notFound,
+        reason: .noSuitableMovie, assessedAt: Date()),
+      FolderProcessingRecord(name: "Foreign", identity: "foreign", state: .preserved,
+        reason: .existingPosterPreserved, ownership: .unowned, assessedAt: Date()),
+      unaffected, suppressed
+    ]
+    state = try fixture.processingStore.commit(state, expectedRevision: state.revision)
+    var configuration = try #require(try fixture.configuration.read().directories.first).processingConfiguration
+    _ = configuration.excludeFolder(identity: "selected", lastKnownName: "Selected")
+    _ = configuration.excludeFolder(identity: "foreign", lastKnownName: "Foreign")
+    _ = configuration.excludeFolder(identity: "suppressed", lastKnownName: "Suppressed")
+    try fixture.configuration.update { $0.directories[0].processingConfiguration = configuration }
+
+    let excluded = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .manual)
+    #expect(excluded.folders.first { $0.name == "Selected" }?.state == .excluded)
+    #expect(excluded.folders.first { $0.name == "Selected" }?.reason == .explicitExclusion)
+    #expect(excluded.folders.first { $0.name == "Selected" }?.assessedAt != .none)
+    #expect(excluded.folders.first { $0.name == "Foreign" }?.ownership == .unowned)
+    #expect(excluded.folders.first { $0.name == "Other" } == unaffected)
+    #expect(excluded.folders.first { $0.name == "Suppressed" } == suppressed)
+    _ = configuration.includeFolder(identity: "selected")
+    _ = configuration.includeFolder(identity: "foreign")
+    _ = configuration.includeFolder(identity: "suppressed")
+    try fixture.configuration.update { $0.directories[0].processingConfiguration = configuration }
+
+    let included = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .manual)
+    #expect(included.folders.first { $0.name == "Selected" }?.state == .pending)
+    #expect(included.folders.first { $0.name == "Selected" }?.reason == .inventoryPending)
+    #expect(included.folders.first { $0.name == "Selected" }?.assessedAt == .none)
+    #expect(included.folders.first { $0.name == "Foreign" }?.ownership == .unowned)
+    #expect(included.folders.first { $0.name == "Other" } == unaffected)
+    #expect(included.folders.first { $0.name == "Suppressed" } == suppressed)
+  }
+
+  /// Inclusion edits fence stale writers without clearing unrelated saved folder outcomes.
+  @Test func inclusionChangePreservesUnrelatedOutcomesAndRejectsStaleWriter() throws {
+    let fixture = try Fixture()
+    let originalContext = fixture.context
+    var state = try fixture.processingStore.recordProcessingStart(context: originalContext, action: .manual)
+    let preserved = FolderProcessingRecord(name: "Other", identity: "other", state: .notFound,
+      reason: .noSuitableMovie, assessedAt: Date())
+    state.folders = [preserved]
+    state = try fixture.processingStore.commit(state, expectedRevision: state.revision)
+    var configuration = try #require(try fixture.configuration.read().directories.first).processingConfiguration
+    _ = configuration.excludeFolder(identity: "selected", lastKnownName: "Selected")
+    try fixture.configuration.update { $0.directories[0].processingConfiguration = configuration }
+
+    #expect(throws: CollectionProcessingError.configurationChanged) {
+      try fixture.processingStore.commit(state, expectedRevision: state.revision)
+    }
+    let refreshed = try fixture.processingStore.recordProcessingStart(
+      context: fixture.context, action: .manual, child: "Selected")
+    #expect(refreshed.folders.first { $0.name == "Other" } == preserved)
+  }
+
   /// Checks that operation start and completion persist with monotonically increasing revisions.
   @Test func recordProcessingStartPersistsStateAndCommitUsesExpectedRevision() throws {
     let fixture = try Fixture()
@@ -14,11 +78,11 @@ struct CollectionProcessingStoreTests {
     let started = try fixture.processingStore.recordProcessingStart(
       context: context, action: .automatic, now: Date(timeIntervalSince1970: 1))
     #expect(started.revision == 1)
-    #expect(started.operation?.state == .running)
+    #expect(started.currentRun?.state == .running)
 
     var completed = started
-    completed.operation?.state = .completed
-    completed.operation?.endedAt = Date(timeIntervalSince1970: 2)
+    completed.currentRun?.state = .completed
+    completed.currentRun?.endedAt = Date(timeIntervalSince1970: 2)
     completed.folders = [FolderProcessingRecord(
       name: "Film", identity: "child", state: .done, movieID: 7,
       ownership: .owned, assessedAt: Date(timeIntervalSince1970: 2)
@@ -27,14 +91,14 @@ struct CollectionProcessingStoreTests {
     completed.inspectedAt = Date(timeIntervalSince1970: 2)
     let saved = try fixture.processingStore.commit(completed, expectedRevision: started.revision)
     #expect(saved.revision == 2)
-    #expect(saved.lastCompletedRun?.id == started.operation?.id)
+    #expect(saved.lastCompletedRun?.id == started.currentRun?.id)
 
     let reopened = try fixture.makeRepository().read(rootID: context.rootID)
     #expect(reopened == saved)
   }
 
-  /// Checks that notifications expose committed state after persistence leases are released.
-  @Test func notificationsObserveCommittedRevisionAfterLeasesAreReleased() throws {
+  /// Checks that notifications expose committed state after persistence accesses are released.
+  @Test func notificationsObserveCommittedRevisionAfterAccessesAreReleased() throws {
     let fixture = try Fixture()
     let notifier = TestCollectionProcessingNotifier(
       configurationStore: fixture.configurationStore,
@@ -44,13 +108,13 @@ struct CollectionProcessingStoreTests {
     let processingStore = try fixture.makeRepository(notifier: notifier)
     let started = try processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     #expect(notifier.revisions == [started.revision])
-    #expect(notifier.leasesAvailableDuringCallback)
+    #expect(notifier.accessesAvailableDuringCallback)
 
     var completed = started
-    completed.operation?.state = .partial
+    completed.currentRun?.state = .partial
     let saved = try processingStore.commit(completed, expectedRevision: started.revision)
     #expect(notifier.revisions == [started.revision, saved.revision])
-    #expect(notifier.leasesAvailableDuringCallback)
+    #expect(notifier.accessesAvailableDuringCallback)
   }
 
   /// Checks that a rejected stale commit emits no change notification.
@@ -65,7 +129,7 @@ struct CollectionProcessingStoreTests {
     let started = try processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     notifier.reset()
     var stale = started
-    stale.operation?.state = .partial
+    stale.currentRun?.state = .partial
 
     #expect(throws: CollectionProcessingError.staleRevision) {
       try processingStore.commit(stale, expectedRevision: started.revision - 1)
@@ -78,7 +142,7 @@ struct CollectionProcessingStoreTests {
     let fixture = try Fixture()
     let started = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     var first = started
-    first.operation?.state = .partial
+    first.currentRun?.state = .partial
     _ = try fixture.processingStore.commit(first, expectedRevision: started.revision)
 
     #expect(throws: CollectionProcessingError.staleRevision) {
@@ -114,10 +178,10 @@ struct CollectionProcessingStoreTests {
     let newOperation = try fixture.processingStore.recordProcessingStart(context: newContext, action: .automatic)
     #expect(newOperation.revision == oldOperation.revision + 1)
     #expect(newOperation.context == newContext)
-    #expect(newOperation.operation?.id != oldOperation.operation?.id)
+    #expect(newOperation.currentRun?.id != oldOperation.currentRun?.id)
 
     var staleWriter = oldOperation
-    staleWriter.operation?.state = .partial
+    staleWriter.currentRun?.state = .partial
     #expect(throws: CollectionProcessingError.configurationChanged) {
       try fixture.processingStore.commit(staleWriter, expectedRevision: oldOperation.revision)
     }
@@ -132,7 +196,7 @@ struct CollectionProcessingStoreTests {
 
     var forged = started
     forged.context = fixture.makeContext(credentialRevision: newCredentialRevision)
-    forged.operation?.state = .partial
+    forged.currentRun?.state = .partial
     #expect(throws: CollectionProcessingError.configurationChanged) {
       try fixture.processingStore.commit(forged, expectedRevision: started.revision)
     }
@@ -143,8 +207,8 @@ struct CollectionProcessingStoreTests {
     let fixture = try Fixture()
     let oldContext = fixture.context
     var previousRun = try fixture.processingStore.recordProcessingStart(context: oldContext, action: .automatic)
-    previousRun.operation?.state = .completed
-    previousRun.operation?.endedAt = Date(timeIntervalSince1970: 10)
+    previousRun.currentRun?.state = .completed
+    previousRun.currentRun?.endedAt = Date(timeIntervalSince1970: 10)
     previousRun.folders = [FolderProcessingRecord(
       name: "Film", identity: "child-old", state: .notFound,
       reason: .noSuitableMovie, assessedAt: Date(timeIntervalSince1970: 10)
@@ -161,11 +225,11 @@ struct CollectionProcessingStoreTests {
     #expect(manual.isInventoryComplete == false)
     #expect(manual.inspectedAt == .none)
     #expect(manual.folders == [FolderProcessingRecord(name: "Film")])
-    #expect(manual.lastCompletedRun == savedPreviousRun.operation)
+    #expect(manual.lastCompletedRun == savedPreviousRun.currentRun)
     #expect(manual.lastCompletedRunContext == oldContext)
 
-    manual.operation?.state = .completed
-    manual.operation?.endedAt = Date(timeIntervalSince1970: 20)
+    manual.currentRun?.state = .completed
+    manual.currentRun?.endedAt = Date(timeIntervalSince1970: 20)
     let savedManual = try fixture.processingStore.commit(manual, expectedRevision: manual.revision)
     #expect(savedManual.folders.first?.state == .pending)
     #expect(savedManual.calculateCounts().notFound == .none)
@@ -199,19 +263,19 @@ struct CollectionProcessingStoreTests {
     let unsupported = CollectionProcessingState(schemaVersion: 2, context: fixture.context)
     let encoder = JSONEncoder()
     do {
-      let lease = try #require(try fixture.processingStorePersistence.acquireLease(
+      let access = try #require(try fixture.processingStorePersistence.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)
       ))
-      try lease.write(encoder.encode(unsupported))
+      try access.write(encoder.encode(unsupported))
     }
 
     #expect(throws: CollectionProcessingError.unsupportedSchema) {
       try fixture.processingStore.read(rootID: fixture.context.rootID)
     }
-    let lease = try #require(try fixture.processingStorePersistence.acquireLease(
+    let access = try #require(try fixture.processingStorePersistence.acquireAccess(
       for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)
     ))
-    #expect(try lease.read() != .none)
+    #expect(try access.read() != .none)
   }
 
   /// Isolated stores and captured generations for processing repository tests.
@@ -251,7 +315,8 @@ struct CollectionProcessingStoreTests {
         rootID: rootID, rootIdentity: rootIdentity ?? self.rootIdentity,
         authorizationVersion: authorizationVersion ?? self.authorizationVersion,
         credentialRevision: credentialRevision ?? self.credentialRevision,
-        usesStubTMDbResponses: false, appearance: .softFinish
+        usesStubTMDbResponses: false, appearance: .softFinish,
+        processingConfigurationRevision: try? configuration.read().directories.first?.processingConfiguration.revision
       )
     }
 
@@ -316,11 +381,11 @@ struct CollectionProcessingStoreTests {
     private struct State: Sendable {
       /// Committed revisions observed by this notifier.
       var revisions: [UInt64] = []
-      /// Whether both persistence leases were available during the latest callback.
-      var leasesAvailable = false
+    /// Whether both persistence accesses were available during the latest callback.
+    var accessesAvailable = false
     }
 
-    /// Configuration namespace probed for callback-time lease availability.
+    /// Configuration namespace probed for callback-time access availability.
     private let configurationStore: PersistenceStore
     /// Processing namespace probed and read after each committed notification.
     private let processingStorePersistence: PersistenceStore
@@ -332,12 +397,12 @@ struct CollectionProcessingStoreTests {
     /// Snapshot of committed revisions observed so far.
     var revisions: [UInt64] { state.withLock { $0.revisions } }
 
-    /// Whether the latest callback could acquire both repository leases.
-    var leasesAvailableDuringCallback: Bool { state.withLock { $0.leasesAvailable } }
+    /// Whether the latest callback could acquire both repository accesses.
+    var accessesAvailableDuringCallback: Bool { state.withLock { $0.accessesAvailable } }
 
     /// Creates an observer for the supplied namespaces and collection identifier.
     /// - Parameters:
-    ///   - configurationStore: Settings namespace whose lease must be free during notification.
+    ///   - configurationStore: Settings namespace whose access must be free during notification.
     ///   - processingStorePersistence: Outcome namespace to inspect after commits.
     ///   - rootID: Collection whose processing record is observed.
     init(configurationStore: PersistenceStore, processingStorePersistence: PersistenceStore, rootID: UUID) {
@@ -346,18 +411,18 @@ struct CollectionProcessingStoreTests {
       self.rootID = rootID
     }
 
-    /// Reads the committed revision while checking that both repository leases are available.
+    /// Reads the committed revision while checking that both repository accesses are available.
     func collectionProcessingStateDidChange() {
-      let settingsLease = try? configurationStore.acquireLease(for: ConfigurationRepository.recordKey)
-      let resultLease = try? processingStorePersistence.acquireLease(
+      let settingsAccess = try? configurationStore.acquireAccess(for: ConfigurationRepository.recordKey)
+      let resultAccess = try? processingStorePersistence.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: rootID))
-      let data = try? resultLease?.read()
+      let data = try? resultAccess?.read()
       let processingState = data.flatMap { $0 }.flatMap {
         try? JSONDecoder().decode(CollectionProcessingState.self, from: $0)
       }
 
       state.withLock { state in
-        state.leasesAvailable = settingsLease != nil && resultLease != nil
+        state.accessesAvailable = settingsAccess != nil && resultAccess != nil
         if let revision = processingState?.revision { state.revisions.append(revision) }
       }
     }
@@ -366,7 +431,7 @@ struct CollectionProcessingStoreTests {
     func reset() {
       state.withLock {
         $0.revisions = []
-        $0.leasesAvailable = false
+        $0.accessesAvailable = false
       }
     }
   }
@@ -458,8 +523,8 @@ extension CollectionProcessingStoreTests {
         checkpoint.folders[index].assessedAt = now
       }
       if upperBound == checkpoint.folders.count {
-        checkpoint.operation?.state = .completed
-        checkpoint.operation?.endedAt = now
+        checkpoint.currentRun?.state = .completed
+        checkpoint.currentRun?.endedAt = now
       }
       encodeStart = clock.now
       _ = try JSONEncoder().encode(checkpoint)
@@ -516,9 +581,9 @@ extension CollectionProcessingStoreTests {
     }
   }
 
-  /// Retries short processing-store lease contention up to the bounded attempt limit.
+  /// Retries short processing-store access contention up to the bounded attempt limit.
   /// - Parameters:
-  ///   - processingState: Snapshot to commit after acquiring the processing lease.
+  ///   - processingState: Snapshot to commit after acquiring the processing access.
   ///   - expectedRevision: Revision that must still be current.
   ///   - processingStore: Repository participating in the independent-reader probe.
   /// - Returns: The successfully committed snapshot.
@@ -539,6 +604,6 @@ extension CollectionProcessingStoreTests {
     throw ProbeError.timeout
   }
 
-  /// Bounded handshake or lease-retry failures from the opt-in process probe.
+  /// Bounded handshake or access-retry failures from the opt-in process probe.
   private enum ProbeError: Error { case timeout }
 }

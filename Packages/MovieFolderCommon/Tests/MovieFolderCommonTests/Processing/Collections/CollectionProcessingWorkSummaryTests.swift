@@ -4,10 +4,10 @@ import Testing
 
 /// Keeps work eligibility separate from snapshot freshness and historical outcome counts.
 struct CollectionProcessingWorkSummaryTests {
-  /// Missing release-year policy outcomes require manual identification rather than automatic retry.
+  /// Missing release-year configuration outcomes require manual matching rather than automatic retry.
   @Test func missingReleaseYearIsManualWork() {
     let snapshot = state(folders: [
-      FolderProcessingRecord(name: "Dune", state: .unresolved, reason: .manualIdentificationRequired)
+      FolderProcessingRecord(name: "Dune", state: .unresolved, reason: .manualMatchingRequired)
     ])
     let work = CollectionProcessingWorkSummary(processingState: snapshot, now: now)
     #expect(work.needsManualResolution == 1)

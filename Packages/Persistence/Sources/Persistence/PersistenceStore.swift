@@ -24,12 +24,12 @@ public struct PersistenceStore: Sendable {
     self.maximumRecordBytes = maximumRecordBytes
   }
 
-  /// Attempts to hold an exclusive lease for an opaque key.
+  /// Attempts to hold an exclusive access for an opaque key.
   ///
   /// - Parameter key: A nonempty key; only its SHA-256 digest is used for filenames.
-  /// - Returns: A lease when acquired, or `nil` when another process holds the key.
+  /// - Returns: A access when acquired, or `nil` when another process holds the key.
   /// - Throws: ``PersistenceError/invalidKey`` or an I/O error if acquisition fails.
-  public func acquireLease(for key: String) throws -> PersistenceLease? {
+  public func acquireAccess(for key: String) throws -> PersistenceAccess? {
     guard !key.isEmpty else { throw PersistenceError.invalidKey }
 
     let digest = Self.digest(Data(key.utf8))
@@ -48,7 +48,7 @@ public struct PersistenceStore: Sendable {
       throw PersistenceError.io(code)
     }
 
-    return PersistenceLease(
+    return PersistenceAccess(
       directory: directory,
       keyDigest: digest,
       lockDescriptor: descriptor,
@@ -59,7 +59,7 @@ public struct PersistenceStore: Sendable {
   /// Removes obsolete record data while preserving all reusable lock files.
   ///
   /// - Parameter keepingKeys: Opaque keys whose records must remain.
-  /// - Returns: Digests whose records could not be removed because their lease was busy.
+  /// - Returns: Digests whose records could not be removed because their access was busy.
   /// - Throws: A persistence error when directory enumeration or descriptor operations fail.
   public func pruneRecords(keepingKeys: Set<String>) throws -> Set<String> {
     let retainedDigests = Set(keepingKeys.filter { !$0.isEmpty }.map { Self.digest(Data($0.utf8)) })
@@ -91,7 +91,7 @@ public struct PersistenceStore: Sendable {
   /// - Parameters:
   ///   - filename: Validated record filename relative to the pinned store directory.
   ///   - digest: Digest identifying this record's lock.
-  /// - Returns: False only when another owner holds the record lease.
+  /// - Returns: False only when another owner holds the record access.
   /// - Throws: Descriptor, enumeration, or removal errors.
   private func pruneRecord(named filename: String, digest: String) throws -> Bool {
     let lockDescriptor = openat(
@@ -142,23 +142,23 @@ public struct PersistenceStore: Sendable {
 }
 
 /// Holds the exclusive lock for one key and reads or atomically updates its payload.
-public final class PersistenceLease: Sendable {
-  /// The pinned directory used for all reads and writes through this lease.
+public final class PersistenceAccess: Sendable {
+  /// The pinned directory used for all reads and writes through this access.
   private let directory: DirectoryDescriptor
-  /// The digest binding this lease to its record and lock filenames.
+  /// The digest binding this access to its record and lock filenames.
   private let keyDigest: String
-  /// The open lock file whose advisory lock represents this lease.
+  /// The open lock file whose advisory lock represents this access.
   private let lockDescriptor: Int32
-  /// Maximum encoded envelope size accepted through this lease.
+  /// Maximum encoded envelope size accepted through this access.
   private let maximumRecordBytes: Int?
-  /// Serializes file access when callers share the lease across threads.
+  /// Serializes file access when callers share the access across threads.
   private let mutex = NSLock()
 
   /// Retains the pinned directory and takes ownership of an already locked descriptor.
   /// - Parameters:
-  ///   - directory: The shared directory owner retained for the lease's lifetime.
-  ///   - keyDigest: The digest used to select this lease's record and lock files.
-  ///   - lockDescriptor: An exclusively locked descriptor unlocked and closed when this lease is released.
+  ///   - directory: The shared directory owner retained for the access's lifetime.
+  ///   - keyDigest: The digest used to select this access's record and lock files.
+  ///   - lockDescriptor: An exclusively locked descriptor unlocked and closed when this access is released.
   ///   - maximumRecordBytes: The encoded envelope size limit, or `.none` for no configured limit.
   fileprivate init(
     directory: DirectoryDescriptor,
@@ -178,7 +178,7 @@ public final class PersistenceLease: Sendable {
     close(lockDescriptor)
   }
 
-  /// Reads and validates the record currently associated with this lease.
+  /// Reads and validates the record currently associated with this access.
   ///
   /// - Returns: The stored payload, or `nil` when no record exists.
   /// - Throws: A persistence error for invalid, corrupt, mismatched, or unreadable records.
@@ -209,7 +209,7 @@ public final class PersistenceLease: Sendable {
     return try decode(data).payload
   }
 
-  /// Validates and atomically replaces the record payload associated with this lease.
+  /// Validates and atomically replaces the record payload associated with this access.
   ///
   /// - Parameter data: The payload bytes to persist.
   /// - Throws: A persistence error if the existing record is unsafe or invalid, or writing fails.
@@ -236,7 +236,7 @@ public final class PersistenceLease: Sendable {
     try atomicWrite(encoded, named: recordName)
   }
 
-  /// Validates the existing record while the caller retains the lease mutex.
+  /// Validates the existing record while the caller retains the access mutex.
   /// - Throws: Unsafe file, envelope, size, or I/O errors before any replacement is attempted.
   private func validateExistingRecord() throws {
     var info = stat()
@@ -290,7 +290,7 @@ public final class PersistenceLease: Sendable {
     }
   }
 
-  /// Explicitly removes only the regular record file owned by this held lease.
+  /// Explicitly removes only the regular record file owned by this held access.
   ///
   /// Corrupt envelopes may be removed deliberately. The corresponding lock file remains in place.
   /// - Throws: A persistence error if the record is not a regular file or removal fails.
@@ -445,7 +445,7 @@ private final class DirectoryDescriptor: Sendable {
 private struct Envelope: Codable {
   /// The record schema version.
   let version: Int
-  /// The digest of the key whose lease owns this record.
+  /// The digest of the key whose access owns this record.
   let keyDigest: String
   /// The opaque bytes stored for the key.
   let payload: Data

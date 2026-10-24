@@ -11,7 +11,7 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
   /// Last inspected inventory time, when any inventory has completed.
   public let inspectedAt: Date?
   /// Last fully completed collection-wide automatic run.
-  public let lastCompletedRun: CollectionProcessingOperation?
+  public let lastCompletedRun: CollectionProcessingRun?
   /// Whether that run used the same processing context as the current processing state.
   public let lastCompletedRunIsCurrentContext: Bool
 
@@ -43,13 +43,13 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
       state = .busy
     } else if isStale {
       state = .stale
-    } else if processingState.operation?.state == .running {
+    } else if processingState.currentRun?.state == .running {
       state = .running
-    } else if processingState.operation?.state == .partial {
+    } else if processingState.currentRun?.state == .partial {
       state = .partial
-    } else if processingState.operation?.state == .interrupted {
+    } else if processingState.currentRun?.state == .interrupted {
       state = .interrupted
-    } else if processingState.operation?.state == .failed {
+    } else if processingState.currentRun?.state == .failed {
       state = .failed
     } else {
       state = .current

@@ -15,9 +15,9 @@ private func runProbe() throws {
     directory: URL(fileURLWithPath: arguments[2]), maximumRecordBytes: 8_192))
   switch arguments[1] {
   case "hold":
-    let lease = try recovery.acquireMutationLease()
+    let access = try recovery.acquireProcessingAccess()
     try FileHandle.standardOutput.write(contentsOf: Data("ready\n".utf8))
-    withExtendedLifetime(lease) { _ = Darwin.pause() }
+    withExtendedLifetime(access) { _ = Darwin.pause() }
   case "stale":
     try recovery.validateProcessingAllowed()
     try FileHandle.standardOutput.write(contentsOf: Data("ready\n".utf8))

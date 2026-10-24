@@ -5,23 +5,23 @@ import Testing
 
 @testable import MovieFolderCommon
 
-/// Shared recovery policy is independent of roots, instances, and cached provider composition.
+/// Shared recovery configuration is independent of roots, instances, and cached provider composition.
 struct ProcessingRecoveryTests {
-  /// A mode change must fence all participating instances and serialize with icon mutation.
-  @Test func recoveryModeIsSharedAndMutationLeaseFencesActivation() throws {
+  /// A mode change must fence all participating instances and serialize with icon change.
+  @Test func recoveryModeIsSharedAndChangeAccessFencesActivation() throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let first = try coordinator(at: directory)
     let second = try coordinator(at: directory)
     #expect(try !first.read().isRecoveryModeEnabled)
-    var mutation: PersistenceLease? = try first.acquireMutationLease()
-    #expect(mutation.map { _ in true } ?? false)
+    var change: PersistenceAccess? = try first.acquireProcessingAccess()
+    #expect(change.map { _ in true } ?? false)
     #expect(throws: ProcessingRecoveryError.busy) { try second.setRecoveryModeEnabled(true) }
-    mutation = .none
+    change = .none
     try second.setRecoveryModeEnabled(true)
     #expect(try first.read().isRecoveryModeEnabled)
     #expect(throws: ProcessingRecoveryError.recoveryMode) { try first.validateProcessingAllowed() }
-    #expect(throws: ProcessingRecoveryError.recoveryMode) { try first.acquireMutationLease() }
+    #expect(throws: ProcessingRecoveryError.recoveryMode) { try first.acquireProcessingAccess() }
     try second.setRecoveryModeEnabled(false)
     try first.validateProcessingAllowed()
   }
@@ -44,8 +44,8 @@ struct ProcessingRecoveryTests {
       provider: RecoveryTestProvider(), recovery: reopened, credential: "replacement")
     #expect(try await changed.downloadPoster(path: "/poster.jpg") == Data([1]))
     let store = try PersistenceStore(directory: directory)
-    let lease = try #require(try store.acquireLease(for: ProcessingRecoveryService.recordKey))
-    let payload = try #require(try lease.read())
+    let access = try #require(try store.acquireAccess(for: ProcessingRecoveryService.recordKey))
+    let payload = try #require(try access.read())
     let encodedState = try #require(String(bytes: payload, encoding: .utf8))
     #expect(!encodedState.contains("secret-token"))
   }
@@ -68,7 +68,7 @@ struct ProcessingRecoveryTests {
       try await provider.searchMovies(title: "Title", year: .none)
     }
     // Provider backoff must not prohibit a local cached icon operation.
-    _ = try reopened.acquireMutationLease()
+    _ = try reopened.acquireProcessingAccess()
     try recovery.recordProviderFailure(TMDbError.rateLimited(retryAfter: "999999999"), credentialDigest: "a".repeated64)
     #expect(try reopened.read().providerRetryAt == timestamp.addingTimeInterval(86_400))
   }
@@ -116,16 +116,16 @@ struct ProcessingRecoveryTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = try PersistenceStore(directory: directory)
     do {
-      let lease = try #require(try store.acquireLease(for: ProcessingRecoveryService.recordKey))
-      try lease.write(payload)
+      let access = try #require(try store.acquireAccess(for: ProcessingRecoveryService.recordKey))
+      try access.write(payload)
     }
     let recovery = ProcessingRecoveryService(store: store)
     #expect(throws: ProcessingRecoveryError.unavailable) { try recovery.read() }
     #expect(throws: ProcessingRecoveryError.unavailable) { try recovery.setRecoveryModeEnabled(false) }
-    #expect(throws: ProcessingRecoveryError.unavailable) { try recovery.acquireMutationLease() }
+    #expect(throws: ProcessingRecoveryError.unavailable) { try recovery.acquireProcessingAccess() }
   }
 
-  /// A valid JSON shape alone cannot establish trustworthy provider admission policy.
+  /// A valid JSON shape alone cannot establish trustworthy provider admission configuration.
   @Test(arguments: [
     "{\"version\":1,\"isRecoveryModeEnabled\":false,\"providerFailureReason\":\"noSuitableMovie\"}",
     "{\"version\":1,\"isRecoveryModeEnabled\":false,\"providerRetryAt\":10}",
@@ -148,8 +148,8 @@ struct ProcessingRecoveryTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = try coordinator(at: directory)
     let competingStore = try PersistenceStore(directory: directory)
-    let lease = try #require(try competingStore.acquireLease(for: ProcessingRecoveryService.recordKey))
-    withExtendedLifetime(lease) {
+    let access = try #require(try competingStore.acquireAccess(for: ProcessingRecoveryService.recordKey))
+    withExtendedLifetime(access) {
       #expect(throws: ProcessingRecoveryError.busy) {
         try recovery.recordProviderFailure(TMDbError.rateLimited(retryAfter: "120"), credentialDigest: "a".repeated64)
       }
@@ -177,7 +177,7 @@ struct ProcessingRecoveryTests {
 
 }
 
-/// Authentication history, migration, and failure-policy boundaries share the same behavioral suite.
+/// Authentication history, migration, and failure-configuration boundaries share the same behavioral suite.
 extension ProcessingRecoveryTests {
   /// Late failures from already admitted requests must not reopen an earlier rejected credential.
   @Test func outOfOrderAuthenticationFailuresRetainBothRejections() async throws {
@@ -231,9 +231,9 @@ extension ProcessingRecoveryTests {
     #expect(throws: ProcessingRecoveryError.unavailable) {
       try reopened.validateProviderAllowed(credentialDigest: ProcessingRecoveryService.credentialDigest("brand-new"))
     }
-    let lease = try #require(try PersistenceStore(directory: directory).acquireLease(
+    let access = try #require(try PersistenceStore(directory: directory).acquireAccess(
       for: ProcessingRecoveryService.recordKey))
-    #expect(try #require(try lease.read()).count <= 4_096)
+    #expect(try #require(try access.read()).count <= 4_096)
   }
 
   /// Version 1 single-digest records retain their rejection when rewritten to the bounded history format.
@@ -247,8 +247,8 @@ extension ProcessingRecoveryTests {
       "providerFailureReason":"authentication"}
       """
     do {
-      let lease = try #require(try store.acquireLease(for: ProcessingRecoveryService.recordKey))
-      try lease.write(Data(legacy.utf8))
+      let access = try #require(try store.acquireAccess(for: ProcessingRecoveryService.recordKey))
+      try access.write(Data(legacy.utf8))
     }
     let recovery = ProcessingRecoveryService(store: store)
     #expect(throws: ProcessingRecoveryError.authenticationRequired) {
@@ -314,7 +314,7 @@ extension ProcessingRecoveryTests {
     }
   }
 
-  /// Raw transport errors, decoding failures, and cancellation retain their distinct shared-policy meaning.
+  /// Raw transport errors, decoding failures, and cancellation retain their distinct shared-configuration meaning.
   @Test func rawFailuresAndCancellationHaveSafeCategories() throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -365,7 +365,7 @@ private enum RecoveryTestFailure: Error { case unknown }
 private struct RecoveryTestProvider: MovieMetadataProvider {
   /// Optional provider failure delivered unchanged after admission.
   var failure: TMDbError?
-  /// A read inside the provider call fails if the wrapper accidentally retains its admission lease.
+  /// A read inside the provider call fails if the wrapper accidentally retains its admission access.
   var recovery: ProcessingRecoveryService?
   func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
     _ = try recovery?.read()

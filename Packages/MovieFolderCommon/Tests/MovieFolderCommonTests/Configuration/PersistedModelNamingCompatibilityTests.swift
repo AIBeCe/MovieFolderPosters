@@ -2,7 +2,7 @@ import Foundation
 import MovieFolderCommon
 import Testing
 
-/// Guards on-disk field names and bytes while public Swift model names evolve.
+/// Verifiers on-disk field names and bytes while public Swift model names evolve.
 struct PersistedModelNamingCompatibilityTests {
   /// Version-one settings retain their legacy fixture key and initialize the cache namespace on decode.
   /// - Throws: Fixture JSON encoding or configuration decoding errors.
@@ -77,7 +77,7 @@ struct PersistedModelNamingCompatibilityTests {
       "action": "applicationOpened", "outcome": "succeeded"
     ], options: [.sortedKeys])
     let decoded = try JSONDecoder().decode(MovieFolderActivityEvent.self, from: legacy)
-    #expect(decoded.operationID == .none)
+    #expect(decoded.activityGroupID == .none)
     #expect(decoded.collectionID == .none)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]

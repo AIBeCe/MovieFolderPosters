@@ -30,7 +30,7 @@ final class CollectionResultsViewController: NSViewController {
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
   /// Dismisses the results sheet independently of the action footer.
   private let closeButton = NSButton(title: "Close", target: .none, action: .none)
-  /// Guards table-selection feedback during presentation reloads.
+  /// Verifiers table-selection feedback during presentation reloads.
   private var isRendering = false
 
   /// Creates a sheet backed by the supplied current-root presentation model.
@@ -140,14 +140,14 @@ final class CollectionResultsViewController: NSViewController {
   /// Starts one explicit bounded retry invocation.
   @objc private func retrySelected() { viewModel.retrySelected() }
   /// Retains task ownership while cancelling the current operation.
-  @objc private func cancel() { viewModel.cancelCurrentOperation() }
+  @objc private func cancel() { viewModel.cancelRetryTask() }
   /// Reads only saved summaries.
   @objc private func reload() { viewModel.reload() }
   /// Uses the same cancellation and dismissal path as Done.
   @objc private func close() { done() }
   /// Cancels work before delegating sheet dismissal to the flow owner.
   @objc private func done() {
-    viewModel.cancelCurrentOperation()
+    viewModel.cancelRetryTask()
     delegate?.collectionResultsViewControllerDidRequestClose(self)
   }
 }

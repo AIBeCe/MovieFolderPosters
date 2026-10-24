@@ -3,15 +3,15 @@ import FileSystem
 import Foundation
 import Network
 import Persistence
-import XCTest
+import Testing
 
 @testable import MovieFolderCommon
 
 /// Regression coverage for explicit poster actions and live authorization checks.
-final class MoviePosterActionTests: XCTestCase {
-  /// Verifies new Overlap During Search Prevents Manual Poster Mutation.
+struct MoviePosterActionTests {
+  /// Verifies new Overlap During Search Prevents Manual Poster Change.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testNewOverlapDuringSearchPreventsManualPosterMutation() async throws {
+  @Test func newOverlapDuringSearchPreventsManualPosterChange() async throws {
     let fixture = try ActionFixture()
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     try fixture.addFolder("Dune (2021)")
@@ -29,7 +29,7 @@ final class MoviePosterActionTests: XCTestCase {
     let provider = ActionProvider(posterData: fixture.posterData, delaysSearch: true)
     let processor = fixture.processor(
       provider: provider,
-      mutationGuard: ConfigurationMutationGuard(
+      processingVerifier: ConfigurationIconChangeVerifier(
         repository: repository, directory: target,
         configuration: before))
     let identity = try fixture.identity(of: "Dune (2021)")
@@ -41,14 +41,14 @@ final class MoviePosterActionTests: XCTestCase {
     await provider.allowSearch()
     do {
       _ = try await task.value
-      XCTFail("A newly overlapping root must prevent mutation after network suspension")
+      Issue.record("A newly overlapping root must prevent change after network suspension")
     } catch ConfigurationError.configurationChanged {}
-    XCTAssertFalse(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+    #expect(!(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon))
   }
 
   /// Verifies selecting Explicit Movie Bypasses Ambiguous Search And Records Selection.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testSelectingExplicitMovieBypassesAmbiguousSearchAndRecordsSelection() async throws {
+  @Test func selectingExplicitMovieBypassesAmbiguousSearchAndRecordsSelection() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -67,15 +67,15 @@ final class MoviePosterActionTests: XCTestCase {
     )
     let searchCount = await provider.searchCount
     let posterPaths = await provider.posterPaths
-    XCTAssertEqual(movieID, 7)
-    XCTAssertEqual(storedID, 7)
-    XCTAssertEqual(searchCount, 0)
-    XCTAssertEqual(posterPaths, ["/chosen.jpg"])
+    #expect(movieID == 7)
+    #expect(storedID == 7)
+    #expect(searchCount == 0)
+    #expect(posterPaths == ["/chosen.jpg"])
   }
 
   /// Verifies refresh Downloads Again Using Saved Movie Without Searching.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRefreshDownloadsAgainUsingSavedMovieWithoutSearching() async throws {
+  @Test func refreshDownloadsAgainUsingSavedMovieWithoutSearching() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -94,14 +94,14 @@ final class MoviePosterActionTests: XCTestCase {
 
     let searchCount = await provider.searchCount
     let posterPaths = await provider.posterPaths
-    XCTAssertEqual(movieID, 7)
-    XCTAssertEqual(searchCount, 0)
-    XCTAssertEqual(posterPaths, ["/chosen.jpg", "/chosen.jpg"])
+    #expect(movieID == 7)
+    #expect(searchCount == 0)
+    #expect(posterPaths == ["/chosen.jpg", "/chosen.jpg"])
   }
 
   /// Verifies remove Suppresses Automatic Recreation.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRemoveSuppressesAutomaticRecreation() async throws {
+  @Test func removeSuppressesAutomaticRecreation() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -121,15 +121,15 @@ final class MoviePosterActionTests: XCTestCase {
 
     let searchCount = await provider.searchCount
     let posterPaths = await provider.posterPaths
-    XCTAssertTrue(removed)
-    XCTAssertEqual(summary.examined, 0)
-    XCTAssertEqual(searchCount, 0)
-    XCTAssertEqual(posterPaths, ["/chosen.jpg"])
+    #expect(removed)
+    #expect(summary.examined == 0)
+    #expect(searchCount == 0)
+    #expect(posterPaths == ["/chosen.jpg"])
   }
 
   /// Verifies refresh Does Not Require An Existing Custom Icon.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRefreshDoesNotRequireAnExistingCustomIcon() async throws {
+  @Test func refreshDoesNotRequireAnExistingCustomIcon() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -141,13 +141,13 @@ final class MoviePosterActionTests: XCTestCase {
     )
 
     let posterPaths = await provider.posterPaths
-    XCTAssertEqual(movieID, 42)
-    XCTAssertEqual(posterPaths, ["/dune.jpg"])
+    #expect(movieID == 42)
+    #expect(posterPaths == ["/dune.jpg"])
   }
 
   /// Verifies selection Rejects Foreign Icon Before Downloading Poster.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testSelectionRejectsForeignIconBeforeDownloadingPoster() async throws {
+  @Test func selectionRejectsForeignIconBeforeDownloadingPoster() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     try fixture.markCustomIcon("Dune (2021)")
@@ -162,17 +162,17 @@ final class MoviePosterActionTests: XCTestCase {
       _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
-      XCTFail("A foreign custom icon must be preserved")
+      Issue.record("A foreign custom icon must be preserved")
     } catch {
-      XCTAssertEqual(error as? PosterActionError, .foreignIcon)
+      #expect(error as? PosterActionError == .foreignIcon)
     }
     let posterPaths = await provider.posterPaths
-    XCTAssertTrue(posterPaths.isEmpty)
+    #expect(posterPaths.isEmpty)
   }
 
   /// Verifies action Rejects Changed Identity Before Provider Request.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testActionRejectsChangedIdentityBeforeProviderRequest() async throws {
+  @Test func actionRejectsChangedIdentityBeforeProviderRequest() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -185,22 +185,21 @@ final class MoviePosterActionTests: XCTestCase {
       _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: "stale"
       )
-      XCTFail("A stale folder identity must be rejected")
+      Issue.record("A stale folder identity must be rejected")
     } catch {
-      XCTAssertEqual(error as? PosterActionError, .changedIdentity)
+      #expect(error as? PosterActionError == .changedIdentity)
     }
     let posterPaths = await provider.posterPaths
-    XCTAssertTrue(posterPaths.isEmpty)
+    #expect(posterPaths.isEmpty)
   }
 
-  /// Verifies action Uses The Same Root Lease As Automatic Processing.
+  /// Verifies action Uses The Same Root Access As Automatic Processing.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testActionUsesTheSameRootLeaseAsAutomaticProcessing() async throws {
+  @Test func actionUsesTheSameRootAccessAsAutomaticProcessing() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let canonicalPath = fixture.movies.resolvingSymlinksInPath().standardizedFileURL.path
-    let lease = try XCTUnwrap(
-      try fixture.persistence.acquireLease(
+    let access = try #require(try fixture.persistence.acquireAccess(
         for: "movie-folder-processing:\(canonicalPath)"
       ))
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -211,16 +210,16 @@ final class MoviePosterActionTests: XCTestCase {
       _ = try await processor.refreshPoster(
         root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
-      XCTFail("A manual action must not overlap processing for the same root")
+      Issue.record("A manual action must not overlap processing for the same root")
     } catch {
-      XCTAssertEqual(error as? PosterActionError, .busy)
+      #expect(error as? PosterActionError == .busy)
     }
-    withExtendedLifetime(lease) {}
+    withExtendedLifetime(access) {}
   }
 
   /// Verifies refresh Repeats Search Instead Of Reusing An Ambiguous Cached Query.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRefreshRepeatsSearchInsteadOfReusingAnAmbiguousCachedQuery() async throws {
+  @Test func refreshRepeatsSearchInsteadOfReusingAnAmbiguousCachedQuery() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let ambiguous = MovieSearchResult(
@@ -250,14 +249,14 @@ final class MoviePosterActionTests: XCTestCase {
 
     let searchCount = await provider.searchCount
     let posterPaths = await provider.posterPaths
-    XCTAssertEqual(movieID, 51)
-    XCTAssertEqual(searchCount, 2)
-    XCTAssertEqual(posterPaths, ["/resolved.jpg"])
+    #expect(movieID == 51)
+    #expect(searchCount == 2)
+    #expect(posterPaths == ["/resolved.jpg"])
   }
 
-  /// Verifies corrupt State Prevents Selection Before Icon Mutation.
+  /// Verifies corrupt State Prevents Selection Before Icon Change.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testCorruptStatePreventsSelectionBeforeIconMutation() async throws {
+  @Test func corruptStatePreventsSelectionBeforeIconChange() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let identity = try fixture.identity(of: "Dune (2021)")
@@ -272,19 +271,18 @@ final class MoviePosterActionTests: XCTestCase {
       _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
-      XCTFail("Corrupt processing state must fail before assigning an icon")
+      Issue.record("Corrupt processing state must fail before assigning an icon")
     } catch {
-      XCTAssertFalse(
-        try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
-          .hasCustomIcon)
+      #expect(!(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
+          .hasCustomIcon))
     }
     let posterPaths = await provider.posterPaths
-    XCTAssertTrue(posterPaths.isEmpty)
+    #expect(posterPaths.isEmpty)
   }
 
   /// Verifies selection Rejects Nonpositive Movie IDWithout Downloading Poster.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testSelectionRejectsNonpositiveMovieIDWithoutDownloadingPoster() async throws {
+  @Test func selectionRejectsNonpositiveMovieIDWithoutDownloadingPoster() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
@@ -298,12 +296,12 @@ final class MoviePosterActionTests: XCTestCase {
       _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
-      XCTFail("An invalid movie ID must be rejected")
+      Issue.record("An invalid movie ID must be rejected")
     } catch {
-      XCTAssertEqual(error as? PosterActionError, .unresolved)
+      #expect(error as? PosterActionError == .unresolved)
     }
     let posterPaths = await provider.posterPaths
-    XCTAssertTrue(posterPaths.isEmpty)
+    #expect(posterPaths.isEmpty)
   }
 
 }
@@ -312,7 +310,7 @@ final class MoviePosterActionTests: XCTestCase {
 extension MoviePosterActionTests {
   /// Manual selection shares provider throttling and cannot authorize unrelated work before its retry boundary.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testManualSelectionHonorsSharedBackoffBeforeResumingEligibleFolders() async throws {
+  @Test func manualSelectionHonorsSharedBackoffBeforeResumingEligibleFolders() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Arrival (2016)")
     try fixture.addFolder("Dune (2021)")
@@ -325,7 +323,7 @@ extension MoviePosterActionTests {
       provider: RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: "token"),
       cacheDirectory: fixture.base.appendingPathComponent("cache"), now: { clock.now }, recovery: recovery)
     let first = try await processor.process(root: fixture.movies)
-    XCTAssertNotNil(first.providerRetryAt)
+    #expect(first.providerRetryAt != nil)
     await provider.setSearchError(.none)
     let identity = try fixture.identity(of: "Dune (2021)")
     let selected = MovieMetadata(
@@ -335,12 +333,12 @@ extension MoviePosterActionTests {
     do {
       _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity)
-      XCTFail("Manual selection must honor shared provider throttling")
+      Issue.record("Manual selection must honor shared provider throttling")
     } catch let error as ProcessingRecoveryError {
-      XCTAssertEqual(error, .providerBackoff(until: clock.now.addingTimeInterval(600), reason: .rateLimited))
+      #expect(error == .providerBackoff(until: clock.now.addingTimeInterval(600), reason: .rateLimited))
     }
     let blockedDownloads = await provider.posterPaths
-    XCTAssertTrue(blockedDownloads.isEmpty)
+    #expect(blockedDownloads.isEmpty)
     clock.advance(by: 601)
     _ = try await processor.applyMoviePoster(
       selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
@@ -348,18 +346,18 @@ extension MoviePosterActionTests {
     let next = try await processor.process(root: fixture.movies)
 
     let searchCount = await provider.searchCount
-    XCTAssertNil(next.providerRetryAt)
-    XCTAssertEqual(searchCount, 2)
+    #expect(next.providerRetryAt == nil)
+    #expect(searchCount == 2)
   }
 
-  /// Verifies manual Mutation Gate Can Refuse After Download Without Changing Icon Or Record.
+  /// Verifies manual Change Gate Can Refuse After Download Without Changing Icon Or Record.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testManualMutationGateCanRefuseAfterDownloadWithoutChangingIconOrRecord() async throws {
+  @Test func manualChangeGateCanRefuseAfterDownloadWithoutChangingIconOrRecord() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let identity = try fixture.identity(of: "Dune (2021)")
     let provider = ActionProvider(posterData: fixture.posterData)
-    let processor = fixture.processor(provider: provider, mutationGuard: RefusingMutationGuard())
+    let processor = fixture.processor(provider: provider, processingVerifier: RefusingIconChangeVerifier())
     let selected = MovieMetadata(
       id: 7, title: "Dune", originalTitle: "Dune",
       releaseYear: 2021, posterPath: "/chosen.jpg")
@@ -368,9 +366,9 @@ extension MoviePosterActionTests {
       _ = try await processor.applyMoviePoster(
         selected, root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
       )
-      XCTFail("A refused settings gate must stop the icon mutation")
+      Issue.record("A refused settings gate must stop the icon change")
     } catch {
-      XCTAssertEqual(error as? PosterActionError, .busy)
+      #expect(error as? PosterActionError == .busy)
     }
 
     let storedID = try await processor.matchedMovieID(
@@ -379,14 +377,14 @@ extension MoviePosterActionTests {
     let hasCustomIcon = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
       .hasCustomIcon
     let posterPaths = await provider.posterPaths
-    XCTAssertNil(storedID)
-    XCTAssertFalse(hasCustomIcon)
-    XCTAssertEqual(posterPaths, ["/chosen.jpg"])
+    #expect(storedID == nil)
+    #expect(!(hasCustomIcon))
+    #expect(posterPaths == ["/chosen.jpg"])
   }
 
-  /// Verifies stable Coordination Lease Serializes Different State Stores.
+  /// Verifies stable Coordination Access Serializes Different State Stores.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testStableCoordinationLeaseSerializesDifferentStateStores() async throws {
+  @Test func stableCoordinationAccessSerializesDifferentStateStores() async throws {
     let fixture = try ActionFixture()
     try fixture.addFolder("Dune (2021)")
     let stableStore = try PersistenceStore(directory: fixture.base.appendingPathComponent("coordination"))
@@ -406,9 +404,9 @@ extension MoviePosterActionTests {
     await firstProvider.allowSearch()
     _ = try await firstTask.value
 
-    XCTAssertTrue(secondResult.rootLeaseUnavailable)
+    #expect(secondResult.rootAccessUnavailable)
     let secondSearchCount = await secondProvider.searchCount
-    XCTAssertEqual(secondSearchCount, 0)
+    #expect(secondSearchCount == 0)
   }
 }
 
@@ -431,10 +429,9 @@ private struct ActionFixture {
     try FileManager.default.createDirectory(at: movies, withIntermediateDirectories: true)
     persistence = try PersistenceStore(directory: base.appendingPathComponent("state"))
     #if SWIFT_PACKAGE
-      let testFile = try XCTUnwrap(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
+      let testFile = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
     #else
-      let testFile = try XCTUnwrap(
-        Bundle(for: MoviePosterActionTests.self)
+      let testFile = try #require(Bundle(for: MoviePosterActionTests.self)
           .url(forResource: "TestPoster", withExtension: "png"))
     #endif
     posterData = try Data(contentsOf: testFile)
@@ -465,7 +462,7 @@ private struct ActionFixture {
         }
       }
     }
-    XCTAssertEqual(result, 0)
+    #expect(result == 0)
   }
 
   /// Reads the current fixture child identity through the real filesystem service.
@@ -483,10 +480,10 @@ private struct ActionFixture {
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func writeRawState(_ data: Data) throws {
     let canonicalPath = movies.resolvingSymlinksInPath().standardizedFileURL.path
-    guard let lease = try persistence.acquireLease(for: "movie-folder-processing:\(canonicalPath)") else {
+    guard let access = try persistence.acquireAccess(for: "movie-folder-processing:\(canonicalPath)") else {
       throw PosterActionError.busy
     }
-    try lease.write(data)
+    try access.write(data)
   }
 
   /// Builds a processor using the fixture's isolated stores and supplied collaborators.
@@ -494,18 +491,18 @@ private struct ActionFixture {
   /// - Parameters:
   ///   - provider: The source of movie metadata and poster images.
   ///   - coordinationStore: Optional stable locks shared across processing generations.
-  ///   - mutationGuard: Optional retained collaborator enforcing live settings authorization.
+  ///   - processingVerifier: Optional retained collaborator enforcing live settings authorization.
   /// - Returns: The constructed MovieFolderProcessor result.
   func processor(
     provider: ActionProvider,
     coordinationStore: PersistenceStore? = .none,
-    mutationGuard: (any MovieFolderMutationGuard)? = .none
+    processingVerifier: (any MovieFolderProcessingVerifier)? = .none
   ) -> MovieFolderProcessor {
     MovieFolderProcessor(
       persistence: persistence, provider: provider,
       cacheDirectory: base.appendingPathComponent("cache"),
       coordinationStore: coordinationStore,
-      mutationGuard: mutationGuard)
+      processingVerifier: processingVerifier)
   }
 }
 
@@ -614,48 +611,55 @@ private actor ActionProvider: MovieMetadataProvider {
 }
 
 /// Uses live configuration validation during a manual-action regression test.
-private struct ConfigurationMutationGuard: MovieFolderMutationGuard {
-  /// The shared settings source used to validate current mutation authorization.
+private struct ConfigurationIconChangeVerifier: MovieFolderProcessingVerifier {
+  /// The shared settings source used to validate current change authorization.
   let repository: ConfigurationRepository
   /// The saved root whose authorization and identity are being validated.
   let directory: MonitoredDirectory
   /// The settings generation captured when the operation was authorized.
   let configuration: DirectoryConfiguration
 
-  /// Revalidates authorization immediately before an automatic mutation.
+  /// Revalidates authorization immediately before an automatic change.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
+  ///   - processor: The processor requesting authorization for its next change.
   ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? { .none }
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? { .none }
 
-  /// Revalidates authorization immediately before a manual mutation.
+  /// Revalidates authorization immediately before a manual change.
   ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
-    try repository.mutationLease(for: directory, expectedConfiguration: configuration)
+  /// - Parameter processor: The processor requesting authorization for its next change.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+    try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 }
 
-/// Rejects a manual mutation after provider work has completed.
-private struct RefusingMutationGuard: MovieFolderMutationGuard {
-  /// Revalidates authorization immediately before an automatic mutation.
+/// Rejects a manual change after provider work has completed.
+private final class RefusingIconChangeVerifier: MovieFolderProcessingVerifier, @unchecked Sendable {
+  /// Protects invocation counts across the synchronous Sendable configuration boundary.
+  private let lock = NSLock()
+  /// Number of manual authorization checks, including the early provider-admission check.
+  private var calls = Int.zero
+  /// Revalidates authorization immediately before an automatic change.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
+  ///   - processor: The processor requesting authorization for its next change.
   ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? { .none }
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? { .none }
 
-  /// Revalidates authorization immediately before a manual mutation.
+  /// Revalidates authorization immediately before a manual change.
   ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
-    throw PosterActionError.busy
+  /// - Parameter processor: The processor requesting authorization for its next change.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+    let count = lock.withLock { calls += 1; return calls }
+    if count > 1 { throw PosterActionError.busy }
+
+    return .none
   }
 }

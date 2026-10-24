@@ -1,7 +1,7 @@
 import AppKit
 import MovieFolderCommon
 
-/// Renders a read-only report without owning diagnostics or navigation policy.
+/// Renders a read-only report without owning diagnostics or navigation configuration.
 @MainActor
 final class InstallationReadinessViewController: NSViewController {
   /// Diagnostics snapshot captured before presentation.

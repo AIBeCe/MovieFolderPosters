@@ -12,7 +12,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     /// The saved root and authorization generation associated with this grant.
     let directory: MonitoredDirectory
     /// Security-scoped access retained for the configured processing lifetime.
-    let access: DirectoryAccessLease
+    let access: DirectoryAccess
     /// Identity checked again before processing and mutations.
     let identity: String
   }
@@ -80,10 +80,10 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     }
   }
 
-  /// Composes policy-bound processors using the credential and authorized roots from one configuration snapshot.
+  /// Composes configuration-bound processors using the credential and authorized roots from one configuration snapshot.
   /// - Parameters:
   ///   - token: Saved credential used only at the provider boundary.
-  ///   - configuration: Settings captured alongside the provider and mutation guard.
+  ///   - configuration: Settings captured alongside the provider and change guard.
   ///   - roots: Authorized roots retaining their access leases.
   /// - Throws: Provider, recovery, container, or persistence setup errors.
   private func configureProcessors(
@@ -94,17 +94,18 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     let container = try environment.containerURL()
     let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
     let repository = try environment.configurationRepository()
-    let mutationGuard = FinderMutationGuard(repository: repository, configuration: configuration, roots: roots)
+    let processingVerifier = FinderCollectionConfigurationVerifier(repository: repository, configuration: configuration, roots: roots)
     for (url, root) in roots {
       processors[url] = MovieFolderProcessor(
         persistence: try PersistenceStore(directory: records),
         provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
         cacheDirectory: container.appendingPathComponent("Posters"),
         coordinationStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
-        mutationGuard: mutationGuard, appearance: configuration.posterAppearance,
+        processingVerifier: processingVerifier, appearance: configuration.posterAppearance,
         processingStore: try environment.processingStore(), recovery: recovery,
         credentialRevision: configuration.credentialRevision,
-        identificationPolicy: configuration.effectiveIdentificationPolicy(for: root.directory))
+        movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
+        processingConfiguration: root.directory.processingConfiguration)
     }
     processingConfiguration = configuration
     logger.notice("Shared Keychain credential available")
@@ -113,7 +114,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// Authorizes nonoverlapping roots and excludes aliases sharing a persistent identity.
   /// - Parameters:
   ///   - configuration: Saved root and authorization generations.
-  ///   - store: Bookmark store used for each authorization lease.
+  ///   - store: Bookmark store used for each authorization access.
   /// - Returns: Roots retaining access for the processing lifetime.
   private func loadAuthorizedRoots(
     _ configuration: DirectoryConfiguration, store: PersistenceStore
@@ -147,9 +148,9 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       guard let (version, build) = environment.buildVersion else { return }
       let store = try PersistenceStore(
         directory: environment.containerURL().appendingPathComponent("Readiness"))
-      guard let lease = try store.acquireLease(for: ExtensionReadinessReceipt.recordKey) else { return }
+      guard let access = try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey) else { return }
       let receipt = ExtensionReadinessReceipt(version: version, build: build, observedAt: Date())
-      try lease.write(JSONEncoder().encode(receipt))
+      try access.write(JSONEncoder().encode(receipt))
     } catch {
       logger.notice("Could not record extension activation evidence")
     }
@@ -168,10 +169,13 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   ) async throws -> Date? {
     guard let root = roots[url], let processor = processors[url],
       let configuration = processingConfiguration else { return .none }
-    let operationID = UUID()
+
+    guard !root.directory.processingConfiguration.isPaused else { return .none }
+
+    let activityGroupID = UUID()
     await activity.record(MovieFolderActivityEvent(
       action: .automaticProcessing, status: .started,
-      operationID: operationID, collectionID: root.directory.id))
+      activityGroupID: activityGroupID, collectionID: root.directory.id))
     do {
       guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
         throw DirectoryAccessError.identityChanged
@@ -181,19 +185,20 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         authorizationVersion: root.directory.authorizationVersion,
         credentialRevision: configuration.credentialRevision,
         usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance,
-        identificationPolicy: configuration.effectiveIdentificationPolicy(for: root.directory))
+        movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
+        processingConfigurationRevision: root.directory.processingConfiguration.revision)
       let result = try await processor.process(root: root.access.url, processingContext: context)
       withExtendedLifetime(root.access) {}
       await activity.record(MovieFolderActivityEvent(
         action: .automaticProcessing, status: MovieFolderActivityEvent.automaticProcessingStatus(for: result),
-        operationID: operationID, collectionID: root.directory.id))
+        activityGroupID: activityGroupID, collectionID: root.directory.id))
       logger.notice("Processing returned: examined=\(result.examined), assigned=\(result.assigned)")
 
       return result.providerRetryAt ?? result.nextAutomaticRetryAt
     } catch {
       await activity.record(MovieFolderActivityEvent(
         action: .automaticProcessing, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
-        operationID: operationID, collectionID: root.directory.id))
+        activityGroupID: activityGroupID, collectionID: root.directory.id))
       throw error
     }
   }
@@ -209,63 +214,76 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   ///
   /// - Parameters:
   ///   - directory: The authorized collection root.
-  ///   - store: The persistence store supplying cross-process leases and atomic record writes.
+  ///   - store: The persistence store supplying cross-process access and atomic record writes.
   /// - Returns: Access retained for the processing visit after validating or establishing the extension bookmark.
   /// - Throws: Configuration contention or changes, bookmark access failures, persistence failures, or a root identity
   /// mismatch.
-  private func authorize(_ directory: MonitoredDirectory, store: PersistenceStore) throws -> DirectoryAccessLease {
+  private func authorize(_ directory: MonitoredDirectory, store: PersistenceStore) throws -> DirectoryAccess {
     let key = "extension-\(directory.id)-\(directory.authorizationVersion)"
-    guard let lease = try store.acquireLease(for: key) else { throw ConfigurationError.busy }
-    if let bookmark = try lease.read(),
-      let access = try? environment.acquireDirectoryAccess(
+    guard let persistenceAccess = try store.acquireAccess(for: key) else { throw ConfigurationError.busy }
+    if let bookmark = try persistenceAccess.read(),
+      let directoryAccess = try? environment.acquireDirectoryAccess(
         bookmark: bookmark, securityScoped: true,
         expectedIdentity: directory.identity) {
-      return access
+      return directoryAccess
     }
-    let access = try environment.acquireDirectoryAccess(
+    let directoryAccess = try environment.acquireDirectoryAccess(
       bookmark: directory.transferBookmark, securityScoped: false,
       expectedIdentity: directory.identity)
-    try lease.write(environment.makeDirectoryBookmark(for: access.url))
+    try persistenceAccess.write(environment.makeDirectoryBookmark(for: directoryAccess.url))
     logger.notice("Created extension-owned persistent authorization; id=\(directory.id)")
 
-    return access
+    return directoryAccess
   }
 
 }
 
-/// Checks the live settings and root identity before automatic icon mutation.
-nonisolated struct FinderMutationGuard: MovieFolderMutationGuard {
-  /// The shared settings source used to validate current mutation authorization.
+/// Checks the live settings and root identity before automatic icon change.
+nonisolated struct FinderCollectionConfigurationVerifier: MovieFolderProcessingVerifier {
+  /// The shared settings source used to validate current change authorization.
   let repository: ConfigurationRepository
   /// The settings generation captured when the operation was authorized.
   let configuration: DirectoryConfiguration
   /// The currently authorized roots, used for scheduling.
   let roots: [URL: FinderConfigurationRuntime.AuthorizedRoot]
 
-  /// Revalidates authorization immediately before an automatic mutation.
+  /// Revalidates authorization immediately before an automatic change.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
+  ///   - processor: The processor requesting authorization for its next change.
   ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? {
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? {
     guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
-    let lease = try repository.mutationLease(for: expected.directory, expectedConfiguration: configuration)
+    let access = try repository.configurationAccessForIconChange(for: expected.directory, expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == expected.identity else {
-      withExtendedLifetime(lease) {}
+      withExtendedLifetime(access) {}
       throw DirectoryAccessError.identityChanged
     }
 
-    return lease
+    return access
   }
 
-  /// Revalidates authorization immediately before a manual mutation.
+  /// Revalidates authorization immediately before a manual change.
   ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor)
-    throws -> PersistenceLease? { .none }
+  /// - Parameter processor: The processor requesting authorization for its next change.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL)
+    throws -> PersistenceAccess? {
+    guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
+
+    let access = try repository.configurationAccessForIconChange(
+      for: expected.directory, childIdentity: candidate.identity, requiresActiveCollection: change != .posterRemoval,
+      expectedConfiguration: configuration)
+
+    guard try FileSystemService().persistentDirectoryIdentity(at: root) == expected.identity else {
+      withExtendedLifetime(access) {}
+      throw DirectoryAccessError.identityChanged
+    }
+
+    return access
+  }
 }
 
 /// Bridges Finder lifecycle callbacks to retained, independently testable orchestration.
@@ -312,6 +330,8 @@ final class FinderSync: FIFinderSync {
 
   /// Routes Finder's principal-object menu action to the validated request captured for that menu.
   @objc func openPosterAction(_ sender: NSMenuItem) { menuController.openPosterAction(sender) }
+  /// Routes a captured inclusion action to the host's explicit confirmation flow.
+  @objc func openInclusionAction(_ sender: NSMenuItem) { menuController.openInclusionAction(sender) }
 
   deinit {
     DistributedNotificationCenter.default().removeObserver(self)

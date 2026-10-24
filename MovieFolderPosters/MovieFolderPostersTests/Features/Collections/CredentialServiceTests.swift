@@ -13,7 +13,7 @@ struct CredentialServiceTests {
   @Test func summaryRecoversFromBriefSettingsContention() async throws {
     let fixture = try CredentialServiceFixture()
     defer { fixture.cleanup() }
-    var held = try fixture.repository.readIfPresentHoldingLease().1 as PersistenceLease?
+    var held = try fixture.repository.readIfPresentHoldingAccess().1 as PersistenceAccess?
     let operation = Task { try await fixture.service.configurationSummary() }
     try await Task.sleep(for: .milliseconds(50))
     withExtendedLifetime(held) {}
@@ -292,11 +292,11 @@ struct CredentialTestTransport: HTTPTransport {
   func send(_ request: URLRequest) async throws -> HTTPResponse { try await operation(request) }
 }
 
-/// Performs a synchronous competing mutation at the HTTP response boundary.
+/// Performs a synchronous competing change at the HTTP response boundary.
 private final class CredentialRaceTransport: HTTPTransport {
   /// Test operation whose lifetime is isolated to one fixture.
   private let operation = Mutex<(@Sendable () throws -> Void)?>(.none)
-  /// Installs the competing mutation after the fixture's repository exists.
+  /// Installs the competing change after the fixture's repository exists.
   func setOperation(_ operation: @escaping @Sendable () throws -> Void) {
     self.operation.withLock { $0 = operation }
   }

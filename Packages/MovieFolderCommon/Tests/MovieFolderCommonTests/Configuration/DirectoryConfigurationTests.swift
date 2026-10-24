@@ -5,15 +5,111 @@ import Testing
 
 @testable import MovieFolderCommon
 
-/// Regression coverage for shared settings validation, persistence, and lease ordering.
+/// Regression coverage for shared settings validation, persistence, and access ordering.
 struct DirectoryConfigurationTests {
-  /// New settings persist behavior-equivalent identification defaults for both processes.
-  @Test func identificationDefaultsArePersisted() throws {
+  /// New settings persist behavior-equivalent matching defaults for both processes.
+  @Test func matchingDefaultsArePersisted() throws {
     let encoded = try JSONEncoder().encode(DirectoryConfiguration())
     let fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-    let policy = try #require(fields["identificationPolicy"] as? [String: Bool])
-    #expect(policy["requiresReleaseYearForAutomaticIdentification"] == false)
-    #expect(policy["comparesOriginalTitles"] == true)
+    let configuration = try #require(fields["movieMatchingConfiguration"] as? [String: Bool])
+    #expect(configuration["requiresReleaseYearForAutomaticMatching"] == false)
+    #expect(configuration["comparesOriginalTitles"] == true)
+  }
+
+  /// Inclusion changes fence processing, while repeated requests preserve the active revision.
+  @Test func processingConfigurationRotatesOnlyForEffectiveChanges() {
+    var configuration = CollectionProcessingConfiguration()
+    let initialRevision = configuration.revision
+
+    let unchangedPause = configuration.setPaused(false)
+    #expect(!unchangedPause)
+    #expect(configuration.revision == initialRevision)
+    let paused = configuration.setPaused(true)
+    #expect(paused)
+    #expect(configuration.revision != initialRevision)
+    let pausedRevision = configuration.revision
+    let repeatedPause = configuration.setPaused(true)
+    #expect(!repeatedPause)
+    #expect(configuration.revision == pausedRevision)
+
+    let excluded = configuration.excludeFolder(identity: "movie-id", lastKnownName: "Movie 2020")
+    #expect(excluded)
+    let excludedRevision = configuration.revision
+    let repeatedExclusion = configuration.excludeFolder(identity: "movie-id", lastKnownName: "Movie 2020")
+    #expect(!repeatedExclusion)
+    #expect(configuration.revision == excludedRevision)
+    let refreshedName = configuration.refreshExcludedFolderName(identity: "movie-id", lastKnownName: "Renamed Movie")
+    #expect(refreshedName)
+    let renamedRevision = configuration.revision
+    let repeatedName = configuration.refreshExcludedFolderName(identity: "movie-id", lastKnownName: "Renamed Movie")
+    #expect(!repeatedName)
+    #expect(configuration.revision == renamedRevision)
+    let included = configuration.includeFolder(identity: "movie-id")
+    #expect(included)
+    let repeatedInclusion = configuration.includeFolder(identity: "movie-id")
+    #expect(!repeatedInclusion)
+  }
+
+  /// Legacy roots default to active inclusion; v3 roots preserve saved policies.
+  @Test func processingConfigurationDecodesLegacyAndRoundTripsV3() throws {
+    let rootID = UUID()
+    let revision = UUID()
+    let authorization = UUID()
+    let legacyJSON = """
+      {"version":2,"directories":[{"id":"\(rootID)","path":"/Movies","transferBookmark":"AQ==",
+      "authorizationVersion":"\(authorization)"}],"credentialRevision":"\(revision)",
+      "processingCacheRevision":"\(revision)","developmentFixtures":false}
+      """
+    let legacy = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(legacyJSON.utf8))
+    #expect(legacy.directories[0].processingConfiguration.isPaused == false)
+    #expect(legacy.directories[0].processingConfiguration.excludedFolders.isEmpty)
+
+    var current = legacy
+    var configuration = current.directories[0].processingConfiguration
+    let paused = configuration.setPaused(true)
+    let excluded = configuration.excludeFolder(identity: "volume:object", lastKnownName: "Film")
+    #expect(paused)
+    #expect(excluded)
+    current.directories[0].processingConfiguration = configuration
+    current.version = 3
+    let data = try JSONEncoder().encode(current)
+    let reopened = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
+    #expect(reopened.directories[0].processingConfiguration == configuration)
+    #expect(reopened.directories[0].isPaused)
+    #expect(reopened.directories[0].excludesFolder(identity: "volume:object"))
+  }
+
+  /// Legacy decoding assigns one stable generation so settings rereads do not stale their own leases.
+  @Test func legacyInclusionRevisionIsStableAcrossReadsAndChangeAccess() throws {
+    let rootID = UUID()
+    let authorization = UUID()
+    let revision = UUID()
+    let legacyJSON = """
+      {"version":2,"directories":[{"id":"\(rootID)","path":"/Movies","transferBookmark":"AQ==",
+      "authorizationVersion":"\(authorization)"}],"credentialRevision":"\(revision)",
+      "processingCacheRevision":"\(revision)","developmentFixtures":false}
+      """
+    let data = Data(legacyJSON.utf8)
+    let firstDecode = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
+    let secondDecode = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
+    let firstConfigurationRevision = try #require(firstDecode.directories.first?.processingConfiguration.revision)
+    #expect(secondDecode.directories.first?.processingConfiguration.revision == firstConfigurationRevision)
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PersistenceStore(directory: directory)
+    do {
+      let writeAccess = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
+      try writeAccess.write(data)
+      withExtendedLifetime(writeAccess) {}
+    }
+
+    let repository = ConfigurationRepository(store: store)
+    let configuration = try repository.read()
+    let savedDirectory = try #require(configuration.directories.first)
+    let configurationAccessForIconChange = try repository.configurationAccessForIconChange(
+      for: savedDirectory, expectedConfiguration: configuration)
+    withExtendedLifetime(configurationAccessForIconChange) {}
   }
   /// Access failures must describe a recovery action consistent with the assessed evidence.
   @Test(arguments: [
@@ -33,9 +129,9 @@ struct DirectoryConfigurationTests {
     #expect(availability.explanation.contains(guidance))
   }
 
-  /// Verifies mutation Lease Rejects New Overlap Even When Target Root Is Unchanged.
+  /// Verifies change Access Rejects New Overlap Even When Target Root Is Unchanged.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  @Test func mutationLeaseRejectsNewOverlapEvenWhenTargetRootIsUnchanged() throws {
+  @Test func configurationAccessForIconChangeRejectsNewOverlapEvenWhenTargetRootIsUnchanged() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
@@ -49,7 +145,59 @@ struct DirectoryConfigurationTests {
     let before = try repository.read()
     try repository.update { $0.directories[1].path = "/Movies/Nested" }
     #expect(throws: ConfigurationError.self) {
-      _ = try repository.mutationLease(for: target, expectedConfiguration: before)
+      _ = try repository.configurationAccessForIconChange(for: target, expectedConfiguration: before)
+    }
+  }
+
+  /// A root access enforces current pause and exclusion state but permits explicit poster removal.
+  @Test func configurationAccessForIconChangeEnforcesInclusionForPosterWrites() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
+    var configuration = CollectionProcessingConfiguration()
+    let excluded = configuration.excludeFolder(identity: "child", lastKnownName: "Movie")
+    #expect(excluded)
+    let directory = MonitoredDirectory(
+      id: UUID(), path: "/Movies", transferBookmark: Data([1]), authorizationVersion: UUID(),
+      identity: "root", processingConfiguration: configuration)
+    try repository.update { $0.directories = [directory] }
+    let savedConfiguration = try repository.read()
+
+    #expect(throws: ConfigurationError.folderExcluded) {
+      _ = try repository.configurationAccessForIconChange(
+        for: directory, childIdentity: "child", expectedConfiguration: savedConfiguration)
+    }
+    let removalAccess = try repository.configurationAccessForIconChange(
+      for: directory, childIdentity: "child", requiresActiveCollection: false,
+      expectedConfiguration: savedConfiguration)
+    withExtendedLifetime(removalAccess) {}
+  }
+
+  /// Pause rejects normal root writes, and a stale inclusion generation rejects removal too.
+  @Test func configurationAccessForIconChangeEnforcesPauseAndInclusionRevision() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
+    var configuration = CollectionProcessingConfiguration()
+    let paused = configuration.setPaused(true)
+    #expect(paused)
+    let directory = MonitoredDirectory(
+      id: UUID(), path: "/Movies", transferBookmark: Data([1]), authorizationVersion: UUID(),
+      processingConfiguration: configuration)
+    try repository.update { $0.directories = [directory] }
+    let savedConfiguration = try repository.read()
+
+    #expect(throws: ConfigurationError.collectionPaused) {
+      _ = try repository.configurationAccessForIconChange(
+        for: directory, expectedConfiguration: savedConfiguration)
+    }
+    var changedProcessingConfiguration = savedConfiguration.directories[0].processingConfiguration
+    let unpaused = changedProcessingConfiguration.setPaused(false)
+    #expect(unpaused)
+    try repository.update { $0.directories[0].processingConfiguration = changedProcessingConfiguration }
+    #expect(throws: ConfigurationError.configurationChanged) {
+      _ = try repository.configurationAccessForIconChange(
+        for: directory, requiresActiveCollection: false, expectedConfiguration: savedConfiguration)
     }
   }
 
@@ -139,18 +287,18 @@ struct DirectoryConfigurationTests {
     #expect(reopened.credentialRevision == before.credentialRevision)
   }
 
-  /// Verifies holding Read Prevents Changes Until Mutation Finishes.
+  /// Verifies holding Read Prevents Changes Until Change Finishes.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  @Test func holdingReadPreventsChangesUntilMutationFinishes() throws {
+  @Test func holdingReadPreventsChangesUntilChangeFinishes() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
     try repository.update { $0.directories = [] }
     do {
-      let (configuration, lease) = try repository.readHoldingLease()
+      let (configuration, access) = try repository.readHoldingAccess()
       #expect(configuration.directories.isEmpty)
       #expect(throws: ConfigurationError.self) { try repository.update { $0.credentialRevision = UUID() } }
-      withExtendedLifetime(lease) {}
+      withExtendedLifetime(access) {}
     }
     try repository.update { $0.credentialRevision = UUID() }
   }
@@ -176,7 +324,7 @@ struct DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 3 } }
+    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 4 } }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID())
@@ -193,7 +341,7 @@ struct DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    let held = try #require(try store.acquireLease(for: ConfigurationRepository.recordKey))
+    let held = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
     #expect(throws: ConfigurationError.self) { try repository.update { $0.directories = [] } }
     withExtendedLifetime(held) {}
   }
@@ -216,16 +364,16 @@ struct DirectoryConfigurationTests {
     #expect(try repository.read().directories == [second])
     #expect(try repository.read().credentialRevision == revision)
   }
-  /// Verifies credential Mutation Waits For Successful Persistence And Keeps Lease.
+  /// Verifies credential Change Waits For Successful Persistence And Keeps Access.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  @Test func credentialMutationWaitsForSuccessfulPersistenceAndKeepsLease() throws {
+  @Test func credentialChangeWaitsForSuccessfulPersistenceAndKeepsAccess() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
     var credentialMutated = false
     do {
-      let held = try #require(try store.acquireLease(for: ConfigurationRepository.recordKey))
+      let held = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
       #expect(throws: ConfigurationError.self) {
         try repository.update({ $0.credentialRevision = UUID() }, afterCommit: { credentialMutated = true })
       }
@@ -236,17 +384,17 @@ struct DirectoryConfigurationTests {
     try repository.update(
       { $0.credentialRevision = UUID() },
       afterCommit: {
-        let competingLease = try store.acquireLease(for: ConfigurationRepository.recordKey)
-        #expect(competingLease == nil)
+        let competingAccess = try store.acquireAccess(for: ConfigurationRepository.recordKey)
+        #expect(competingAccess == nil)
         credentialMutated = true
       })
     #expect(credentialMutated)
     #expect(try repository.read().credentialRevision != previous)
   }
 
-  /// Verifies failed Persistence Does Not Run Credential Mutation.
+  /// Verifies failed Persistence Does Not Run Credential Change.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  @Test func failedPersistenceDoesNotRunCredentialMutation() throws {
+  @Test func failedPersistenceDoesNotRunCredentialChange() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
@@ -273,8 +421,8 @@ struct DirectoryConfigurationTests {
     try repository.update { $0.directories = [directory] }
     let gate: ConfigurationReadGate
     do {
-      let held = try #require(try store.acquireLease(for: ConfigurationRepository.recordKey))
-      gate = ConfigurationReadGate(lease: held)
+      let held = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
+      gate = ConfigurationReadGate(access: held)
     }
     let configuration = try await repository.readWhenAvailable(pause: { await gate.release() })
     #expect(configuration.directories == [directory])
@@ -288,8 +436,8 @@ struct DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    let held = try #require(try store.acquireLease(for: ConfigurationRepository.recordKey))
-    let counter = ConfigurationReadGate(lease: .none)
+    let held = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
+    let counter = ConfigurationReadGate(access: .none)
     do {
       _ = try await repository.readWhenAvailable(pause: { await counter.release() })
       Issue.record("Persistent contention must fail after bounded attempts")
@@ -300,19 +448,19 @@ struct DirectoryConfigurationTests {
 
 }
 
-/// Holds a real settings lease until a retry test explicitly releases it.
+/// Holds a real settings access until a retry test explicitly releases it.
 private actor ConfigurationReadGate {
-  /// The real persistence lease retained until the contention test releases it.
-  private var lease: PersistenceLease?
+  /// The real persistence access retained until the contention test releases it.
+  private var access: PersistenceAccess?
   /// The number of retry pauses observed while configuration was busy.
   private(set) var waitCount = Int.zero
   /// Creates the configuration read gate from the supplied dependencies and state.
   ///
-  /// - Parameter lease: The already-held persistence lease used throughout this operation.
-  init(lease: PersistenceLease?) { self.lease = lease }
-  /// Releases the held continuation or lease so the test can observe completion.
+  /// - Parameter access: The already-held persistence access used throughout this operation.
+  init(access: PersistenceAccess?) { self.access = access }
+  /// Releases the held continuation or access so the test can observe completion.
   func release() {
     waitCount += 1
-    lease = .none
+    access = .none
   }
 }

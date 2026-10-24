@@ -1,7 +1,7 @@
 import Foundation
 import Persistence
 
-/// Persists validated shared settings under a cross-process lease.
+/// Persists validated shared settings under a cross-process access.
 nonisolated public struct ConfigurationRepository: Sendable {
   /// The persistence record shared by all readers of this versioned payload.
   public static let recordKey = "directory-configuration-v1"
@@ -9,88 +9,105 @@ nonisolated public struct ConfigurationRepository: Sendable {
   let store: PersistenceStore
 
   /// Creates a settings repository backed by the caller's dedicated persistence namespace.
-  /// - Parameter store: The store holding the versioned settings record and cross-process lease.
+  /// - Parameter store: The store holding the versioned settings record and cross-process access.
   public init(store: PersistenceStore) { self.store = store }
 
-  /// Reads the stored configuration under a lease and validates its schema.
+  /// Reads the stored configuration under a access and validates its schema.
   /// - Returns: The validated configuration.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   public func read() throws -> DirectoryConfiguration {
-    let (configuration, lease) = try readHoldingLease()
+    let (configuration, access) = try readHoldingAccess()
 
-    return withExtendedLifetime(lease) { configuration }
+    return withExtendedLifetime(access) { configuration }
   }
 
-  /// Returns validated settings together with the lease that keeps them stable.
-  /// - Returns: The validated configuration and the lease keeping that configuration stable.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
-  public func readHoldingLease() throws -> (DirectoryConfiguration, PersistenceLease) {
-    guard let lease = try store.acquireLease(for: Self.recordKey) else { throw ConfigurationError.busy }
+  /// Returns validated settings together with the access that keeps them stable.
+  /// - Returns: The validated configuration and the access keeping that configuration stable.
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
+  public func readHoldingAccess() throws -> (DirectoryConfiguration, PersistenceAccess) {
+    guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
 
-    return (try read(lease), lease)
+    return (try read(access), access)
   }
 
   /// Reads persisted settings without manufacturing a generation for a missing record.
-  /// - Returns: Optional validated settings and their exclusive lease.
+  /// - Returns: Optional validated settings and their exclusive access.
   /// - Throws: Busy, invalid settings, or persistence failures.
-  public func readIfPresentHoldingLease() throws -> (DirectoryConfiguration?, PersistenceLease) {
-    guard let lease = try store.acquireLease(for: Self.recordKey) else { throw ConfigurationError.busy }
+  public func readIfPresentHoldingAccess() throws -> (DirectoryConfiguration?, PersistenceAccess) {
+    guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
 
-    return (try readIfPresent(lease), lease)
+    return (try readIfPresent(access), access)
   }
 
-  /// Commits a credential generation before mutating Keychain under the same lease.
+  /// Commits a credential generation before mutating Keychain under the same access.
   /// - Parameters:
   ///   - expectedRevision: Persisted generation, or absence captured on first run.
-  ///   - afterCommit: Credential mutation; failure never rolls the settings generation back.
-  /// - Throws: Cancellation, stale configuration, persistence, or credential mutation failures.
+  ///   - afterCommit: Credential change; failure never rolls the settings generation back.
+  /// - Throws: Cancellation, stale configuration, persistence, or credential change failures.
   public func updateCredential(expectedRevision: UUID?, afterCommit: () throws -> Void = {}) throws {
-    let (saved, lease) = try readIfPresentHoldingLease()
+    let (saved, access) = try readIfPresentHoldingAccess()
     try Task.checkCancellation()
     guard saved?.credentialRevision == expectedRevision else { throw ConfigurationError.configurationChanged }
     var configuration = saved ?? DirectoryConfiguration()
-    configuration.version = 2
+    configuration.version = 3
     configuration.credentialRevision = UUID()
     try validate(configuration)
-    try lease.write(JSONEncoder().encode(configuration))
-    try withExtendedLifetime(lease) { try afterCommit() }
+    try access.write(JSONEncoder().encode(configuration))
+    try withExtendedLifetime(access) { try afterCommit() }
   }
 
-  /// Checks that the captured root and settings generation still authorize mutation.
+  /// Checks that the captured root and settings generation still authorize change.
   ///
   /// - Parameters:
   ///   - directory: The authorized collection root.
   ///   - expectedConfiguration: The settings generation captured before provider work began.
-  /// - Returns: The settings lease to retain until the validated mutation finishes.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
-  public func mutationLease(
+  /// - Returns: The settings access to retain until the validated change finishes.
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
+  public func configurationAccessForIconChange(
     for directory: MonitoredDirectory,
+    childIdentity: String? = .none,
+    requiresActiveCollection: Bool = true,
     expectedConfiguration: DirectoryConfiguration
-  ) throws -> PersistenceLease {
-    let (current, lease) = try readHoldingLease()
+  ) throws -> PersistenceAccess {
+    let (current, access) = try readHoldingAccess()
     guard let configured = current.directories.first(where: { $0.id == directory.id }),
       configured.path == directory.path,
       configured.identity == directory.identity,
       configured.authorizationVersion == directory.authorizationVersion,
-      !current.findOverlappingDirectoryIDs().contains(directory.id),
+      configured.processingConfiguration.revision == directory.processingConfiguration.revision,
+      expectedConfiguration.directories.first(where: { $0.id == directory.id })?.processingConfiguration.revision
+        == directory.processingConfiguration.revision,
       current.credentialRevision == expectedConfiguration.credentialRevision,
       current.usesStubTMDbResponses == expectedConfiguration.usesStubTMDbResponses,
       current.posterAppearance == expectedConfiguration.posterAppearance,
-      current.effectiveIdentificationPolicy(for: configured)
-        == expectedConfiguration.effectiveIdentificationPolicy(for: directory)
+      current.effectiveMovieMatchingConfiguration(for: configured)
+        == expectedConfiguration.effectiveMovieMatchingConfiguration(for: directory)
     else {
-      withExtendedLifetime(lease) {}
+      withExtendedLifetime(access) {}
       throw ConfigurationError.configurationChanged
     }
 
-    return lease
+    guard !requiresActiveCollection || !configured.isPaused else {
+      withExtendedLifetime(access) {}
+      throw ConfigurationError.collectionPaused
+    }
+    if let childIdentity, requiresActiveCollection, configured.excludesFolder(identity: childIdentity) {
+      withExtendedLifetime(access) {}
+      throw ConfigurationError.folderExcluded
+    }
+    guard !current.findOverlappingDirectoryIDs().contains(directory.id) else {
+      withExtendedLifetime(access) {}
+      throw ConfigurationError.configurationChanged
+    }
+
+    return access
   }
 
   /// Retries short-lived configuration contention within a fixed attempt budget.
   ///
   /// - Parameter pause: The cancellable delay between bounded attempts at reading busy settings.
   /// - Returns: The validated configuration.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   public func readWhenAvailable(
     pause: @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
   ) async throws -> DirectoryConfiguration {
@@ -104,40 +121,40 @@ nonisolated public struct ConfigurationRepository: Sendable {
     throw ConfigurationError.busy
   }
 
-  /// Validates and commits a settings mutation before running its post-commit action under the same lease.
+  /// Validates and commits a settings change before running its post-commit action under the same access.
   ///
   /// - Parameters:
-  ///   - mutation: The in-place configuration change performed before validation and commit.
-  ///   - afterCommit: The action invoked only after persistence succeeds while the lease remains held.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
+  ///   - change: The in-place configuration change performed before validation and commit.
+  ///   - afterCommit: The action invoked only after persistence succeeds while the access remains held.
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   public func update(
-    _ mutation: (inout DirectoryConfiguration) throws -> Void,
+    _ change: (inout DirectoryConfiguration) throws -> Void,
     afterCommit: () throws -> Void = {}
   ) throws {
-    guard let lease = try store.acquireLease(for: Self.recordKey) else { throw ConfigurationError.busy }
-    var configuration = try read(lease)
-    try mutation(&configuration)
+    guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
+    var configuration = try read(access)
+    try change(&configuration)
     try validate(configuration)
-    configuration.version = 2
-    try lease.write(JSONEncoder().encode(configuration))
-    try withExtendedLifetime(lease) { try afterCommit() }
+    configuration.version = 3
+    try access.write(JSONEncoder().encode(configuration))
+    try withExtendedLifetime(access) { try afterCommit() }
   }
 
-  /// Reads the stored configuration under a lease and validates its schema.
+  /// Reads the stored configuration under a access and validates its schema.
   ///
-  /// - Parameter lease: The already-held persistence lease used throughout this operation.
+  /// - Parameter access: The already-held persistence access used throughout this operation.
   /// - Returns: The validated configuration.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
-  private func read(_ lease: PersistenceLease) throws -> DirectoryConfiguration {
-    try readIfPresent(lease) ?? DirectoryConfiguration()
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
+  private func read(_ access: PersistenceAccess) throws -> DirectoryConfiguration {
+    try readIfPresent(access) ?? DirectoryConfiguration()
   }
 
   /// Decodes only a genuinely persisted record, preserving absence for conditional mutations.
-  /// - Parameter lease: The exclusive settings lease.
+  /// - Parameter access: The exclusive settings access.
   /// - Returns: Validated settings or absence.
   /// - Throws: Persistence or schema failures.
-  private func readIfPresent(_ lease: PersistenceLease) throws -> DirectoryConfiguration? {
-    guard let data = try lease.read() else { return .none }
+  private func readIfPresent(_ access: PersistenceAccess) throws -> DirectoryConfiguration? {
+    guard let data = try access.read() else { return .none }
     let configuration: DirectoryConfiguration
     do { configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: data) } catch {
       throw ConfigurationError.invalidConfiguration
@@ -150,12 +167,20 @@ nonisolated public struct ConfigurationRepository: Sendable {
   /// Rejects unsupported versions, duplicate roots, and malformed authorization records.
   ///
   /// - Parameter configuration: The complete settings payload to validate or retain.
-  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a mutation.
+  /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   private func validate(_ configuration: DirectoryConfiguration) throws {
-    guard (1...2).contains(configuration.version),
+    guard (1...3).contains(configuration.version),
       Set(configuration.directories.map(\.id)).count == configuration.directories.count,
       Set(configuration.directories.map(\.path)).count == configuration.directories.count,
-      configuration.directories.allSatisfy({ $0.path.hasPrefix("/") && !$0.transferBookmark.isEmpty })
+      configuration.directories.allSatisfy({
+        $0.path.hasPrefix("/") && !$0.transferBookmark.isEmpty
+          && Set($0.processingConfiguration.excludedFolders.map(\.identity)).count
+            == $0.processingConfiguration.excludedFolders.count
+          && $0.processingConfiguration.excludedFolders.allSatisfy {
+            !$0.identity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              && !$0.lastKnownName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          }
+      })
     else {
       throw ConfigurationError.invalidConfiguration
     }

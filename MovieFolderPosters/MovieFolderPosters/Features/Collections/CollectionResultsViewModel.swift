@@ -27,7 +27,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// Prevents actions while a changed configuration awaits a fresh projection.
   private var configurationIsInvalidated = false
   /// Keeps a terminal retry or cancellation message visible through its automatic summary reload.
-  private var preservesOperationStatus = false
+  private var preservesRunStatus = false
   /// Stable selection evidence, independent of current row indexes.
   private struct Selection: Hashable {
     /// Saved immediate child name.
@@ -83,7 +83,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// - Parameters:
   ///   - rootID: Stable configured root for this sheet.
   ///   - summaries: Shared read-only summary publisher.
-  ///   - retryService: Shared service that rechecks every authoritative mutation gate.
+  ///   - retryService: Shared service that rechecks every authoritative change gate.
   init(rootID: UUID, summaries: CollectionSummaryViewModel, retryService: any CollectionRetryServicing) {
     self.rootID = rootID
     self.summaries = summaries
@@ -110,7 +110,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// Requests another read of saved summaries without processing folders.
   func reload() {
     if !isBusy {
-      preservesOperationStatus = false
+      preservesRunStatus = false
       updateRows()
     }
     summaries.reload()
@@ -127,7 +127,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     }
     guard !folders.isEmpty else { return }
     let currentGeneration = generation
-    preservesOperationStatus = true
+    preservesRunStatus = true
     statusMessage = "Retrying selected folders…"
     operation = Task { [weak self] in
       guard let self else { return }
@@ -140,7 +140,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   }
 
   /// Cancels later requests while retaining busy state until the active service response unwinds.
-  func cancelCurrentOperation() {
+  func cancelRetryTask() {
     guard let operation else { return }
     generation &+= 1
     isCancelling = true
@@ -152,7 +152,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// Fences saved context and pending requests when configuration changes or the sheet closes.
   func configurationDidChange() {
     configurationIsInvalidated = true
-    cancelCurrentOperation()
+    cancelRetryTask()
     if !isBusy { statusMessage = "Configuration changed. Reload saved results before choosing an action." }
     publish()
   }
@@ -164,7 +164,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     publish()
   }
 
-  /// Describes retry availability without implying that saved evidence grants mutation permission.
+  /// Describes retry availability without implying that saved evidence grants change permission.
   /// - Parameter folder: Saved folder evidence to describe.
   /// - Returns: A safe reason or the earliest saved retry time.
   func retryAvailability(for folder: FolderProcessingRecord) -> String {
@@ -257,7 +257,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     let summary = summaries.summary(for: rootID)
     rows = summary?.unresolvedFolders() ?? []
     selection.formIntersection(Set(rows.map { key(for: $0) }))
-    guard !isBusy, !preservesOperationStatus else { return }
+    guard !isBusy, !preservesRunStatus else { return }
     guard let summary, summary.processingState != .none else {
       statusMessage = "No saved results are available. Outcome is unknown."
       return
@@ -284,12 +284,12 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
       folder.retryAt.map({ $0 <= Date() }) ?? true
     else { return false }
     switch folder.state {
-    case .notFound, .severalMatches, .preserved, .suppressed: return false
+    case .notFound, .severalMatches, .preserved, .suppressed, .excluded: return false
     case .done, .pending, .unresolved, .failed, .deferred, .uncertain: break
     }
     switch folder.reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged, .manualIdentificationRequired:
+      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged, .manualMatchingRequired:
       return false
     default: return true
     }

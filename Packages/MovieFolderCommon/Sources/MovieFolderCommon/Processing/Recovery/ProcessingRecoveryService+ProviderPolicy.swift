@@ -6,7 +6,7 @@ nonisolated extension ProcessingRecoveryService {
   /// Admits an explicit credential diagnostic while preserving processing restrictions.
   /// - Throws: Busy/unavailable recovery state or active shared provider backoff.
   public func validateCredentialTestAllowed() throws {
-    let record = try readRecord(lease: acquireLease())
+    let record = try readRecord(access: acquireAccess())
     if let until = record.providerRetryAt, until > now(), let reason = record.providerFailureReason {
       throw ProcessingRecoveryError.providerBackoff(until: until, reason: reason)
     }
@@ -24,7 +24,7 @@ nonisolated extension ProcessingRecoveryService {
   /// - Parameter credentialDigest: Normalized credential SHA-256 digest; never raw credential text.
   /// - Throws: A safe admission failure before the underlying provider is called.
   func validateProviderAllowed(credentialDigest: String) throws {
-    let record = try readRecord(lease: acquireLease())
+    let record = try readRecord(access: acquireAccess())
     guard !record.isRecoveryModeEnabled else { throw ProcessingRecoveryError.recoveryMode }
     if let until = record.providerRetryAt, until > now(), let reason = record.providerFailureReason {
       throw ProcessingRecoveryError.providerBackoff(until: until, reason: reason)
@@ -39,11 +39,11 @@ nonisolated extension ProcessingRecoveryService {
   /// - Parameters:
   ///   - error: Failure inspected in memory; never encoded or logged.
   ///   - credentialDigest: Digest identifying the credential rejected by authentication.
-  /// - Throws: A safe storage/admission failure when shared policy cannot be committed.
+  /// - Throws: A safe storage/admission failure when shared configuration cannot be committed.
   func recordProviderFailure(_ error: any Error, credentialDigest: String) throws {
     guard !Task.isCancelled, !(error is CancellationError), let failure = Self.providerFailure(error) else { return }
-    let lease = try acquireLease()
-    var record = try readRecord(lease: lease)
+    let access = try acquireAccess()
+    var record = try readRecord(access: access)
     if failure.reason == .authentication {
       if !record.rejectedCredentialDigests.contains(credentialDigest) {
         if record.rejectedCredentialDigests.count == ProcessingRecoveryRecord.maximumRejectedCredentials {
@@ -64,7 +64,7 @@ nonisolated extension ProcessingRecoveryService {
         record.providerFailureReason = failure.reason
       }
     }
-    try writeRecord(record, lease: lease)
+    try writeRecord(record, access: access)
   }
 
   /// Hashes the same normalized token text used by TMDb without retaining it in this service.

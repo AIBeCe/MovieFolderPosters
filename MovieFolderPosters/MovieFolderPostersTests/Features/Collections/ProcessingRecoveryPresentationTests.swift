@@ -54,11 +54,11 @@ import Testing
     let model = ConfigurationViewModel(
       service: ConfigurationServiceFake(), activity: ActivityServiceFake(), recovery: recovery)
     await model.reloadRecoveryMode()
-    let mutation = try recovery.acquireMutationLease()
+    let change = try recovery.acquireProcessingAccess()
     await model.setRecoveryModeEnabled(true)
     #expect(!model.isRecoveryModeEnabled)
     #expect(!model.isRecoveryModeAvailable)
     #expect(model.errorMessage == ProcessingRecoveryError.busy.localizedDescription)
-    withExtendedLifetime(mutation) {}
+    withExtendedLifetime(change) {}
   }
 }

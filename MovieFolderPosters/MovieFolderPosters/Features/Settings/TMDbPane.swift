@@ -22,7 +22,7 @@ protocol CredentialSettingsDelegate: AnyObject {
   func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController)
 }
 
-/// Presents secure credential actions and a local identification-data preview.
+/// Presents secure credential actions and a local matching-data preview.
 @MainActor
 final class TMDbPane: SettingsPaneController, CredentialSettingsSubmitting, NSTextFieldDelegate {
   /// Model retaining finite credential operations and non-secret presentation state.
@@ -45,7 +45,7 @@ final class TMDbPane: SettingsPaneController, CredentialSettingsSubmitting, NSTe
   private let resultLabel = NSTextField(wrappingLabelWithString: " ")
   /// Unpersisted sample folder name, independent of configured collection authorization.
   private let sampleField = NSTextField()
-  /// Local parser output explaining which identification fields a search would disclose.
+  /// Local parser output explaining which matching fields a search would disclose.
   private let previewLabel = NSTextField(wrappingLabelWithString: "Enter a folder name to preview its title and year.")
   /// Existing production parser; previewing does not enumerate folders or contact TMDb.
   private let parser = ReleaseNameParser()
@@ -86,10 +86,10 @@ final class TMDbPane: SettingsPaneController, CredentialSettingsSubmitting, NSTe
       "A successful test does not resume processing or clear recovery restrictions. "
       + "Replacement preserves collections and saved movie decisions.")
     note.textColor = .secondaryLabelColor
-    let previewHeading = NSTextField(labelWithString: "Identification-data preview")
+    let previewHeading = NSTextField(labelWithString: "Matching-data preview")
     previewHeading.font = .boldSystemFont(ofSize: 13)
     sampleField.placeholderString = "Example: Alien.1979.1080p.BluRay"
-    sampleField.setAccessibilityLabel("Folder name for local identification preview")
+    sampleField.setAccessibilityLabel("Folder name for local matching preview")
     sampleField.delegate = self
     previewLabel.textColor = .secondaryLabelColor
     previewLabel.maximumNumberOfLines = 4
@@ -124,8 +124,8 @@ final class TMDbPane: SettingsPaneController, CredentialSettingsSubmitting, NSTe
     saveButton.isEnabled = available
     testButton.isEnabled = available && state?.isConfigured == true
     removeButton.isEnabled = available && state?.isConfigured == true
-    cancelButton.isEnabled = viewModel.isCredentialOperationRunning && !viewModel.isCancellingCredentialOperation
-    cancelButton.title = viewModel.isCancellingCredentialOperation ? "Cancelling…" : "Cancel"
+    cancelButton.isEnabled = viewModel.isCredentialActionRunning && !viewModel.isCancellingCredentialAction
+    cancelButton.title = viewModel.isCancellingCredentialAction ? "Cancelling…" : "Cancel"
     resultLabel.stringValue = viewModel.credentialMessage ?? " "
     resultLabel.textColor = viewModel.isCredentialError ? .systemRed : .secondaryLabelColor
   }
@@ -165,7 +165,7 @@ final class TMDbPane: SettingsPaneController, CredentialSettingsSubmitting, NSTe
   /// Starts only an explicit saved-token diagnostic.
   @objc private func testSavedToken() { Task { await viewModel.testSavedCredential() } }
   /// Cancels the active operation while leaving its model admission held until completion.
-  @objc private func cancelCredentialAction() { viewModel.cancelCredentialOperation() }
+  @objc private func cancelCredentialAction() { viewModel.cancelCredentialAction() }
   /// Requests the coordinator-owned public help navigation.
   @objc private func openTokenHelp() { delegate?.credentialSettingsDidRequestTokenHelp(self) }
 

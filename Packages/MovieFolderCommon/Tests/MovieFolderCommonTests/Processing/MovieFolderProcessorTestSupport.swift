@@ -5,7 +5,6 @@ import Foundation
 import Network
 import Persistence
 import Testing
-import XCTest
 
 @testable import MovieFolderCommon
 
@@ -57,7 +56,7 @@ struct Fixture {
         }
       }
     }
-    XCTAssertEqual(result, 0)
+    #expect(result == 0)
   }
 
   /// Builds a processor using the fixture's isolated stores and supplied collaborators.
@@ -67,8 +66,8 @@ struct Fixture {
   ///   - clock: The test-controlled instant used to evaluate retry and cache expiry.
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - posterAssigner: The synchronous adapter performing final automatic icon assignment.
-  ///   - mutationGuard: Optional retained collaborator enforcing live settings authorization.
-  ///   - configuration: Retry and cache policy supplied to this test processor.
+  ///   - processingVerifier: Optional retained collaborator enforcing live settings authorization.
+  ///   - configuration: Retry and cache configuration supplied to this test processor.
   /// - Returns: The constructed MovieFolderProcessor result.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func processor(
@@ -76,14 +75,14 @@ struct Fixture {
     clock: @escaping @Sendable () -> Date = Date.init,
     appearance: PosterAppearance = .softFinish,
     posterAssigner: (any PosterAssigner)? = .none,
-    mutationGuard: (any MovieFolderMutationGuard)? = .none,
+    processingVerifier: (any MovieFolderProcessingVerifier)? = .none,
     processingStore: CollectionProcessingStore? = .none,
     configuration: MovieFolderProcessorConfiguration = .standard
   ) throws -> MovieFolderProcessor {
     MovieFolderProcessor(
       fileSystem: FileSystemService(), persistence: persistence, provider: provider,
       cacheDirectory: cache, posterAssigner: posterAssigner ?? assigner, now: clock,
-      mutationGuard: mutationGuard, appearance: appearance, processingStore: processingStore,
+      processingVerifier: processingVerifier, appearance: appearance, processingStore: processingStore,
       configuration: configuration)
   }
 }
@@ -249,7 +248,7 @@ actor CountingProvider {
   private func posterData() throws -> Data {
     let encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 
-    return try XCTUnwrap(Data(base64Encoded: encoded))
+    return try #require(Data(base64Encoded: encoded))
   }
 
   /// Resumes the suspended request with the configured cancellation failure.
@@ -346,19 +345,19 @@ final class TestClock: @unchecked Sendable {
 }
 
 /// Rejects a root that no longer has the identity captured by the test.
-struct RootIdentityMutationGuard: MovieFolderMutationGuard {
-  /// The filesystem identity that must still match at the mutation boundary.
+struct RootIdentityIconChangeVerifier: MovieFolderProcessingVerifier {
+  /// The filesystem identity that must still match at the change boundary.
   let expectedIdentity: String
 
-  /// Revalidates authorization immediately before an automatic mutation.
+  /// Revalidates authorization immediately before an automatic change.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
+  ///   - processor: The processor requesting authorization for its next change.
   ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? {
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? {
     guard FileSystemService().inspectDirectory(at: root).identity == expectedIdentity else {
       throw DirectoryAccessError.identityChanged
     }
@@ -366,35 +365,35 @@ struct RootIdentityMutationGuard: MovieFolderMutationGuard {
     return .none
   }
 
-  /// Revalidates authorization immediately before a manual mutation.
+  /// Revalidates authorization immediately before a manual change.
   ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
-    .none
+  /// - Parameter processor: The processor requesting authorization for its next change.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+    try checkAutomaticProcessing(in: root)
   }
 }
 
-/// Suppresses a poster at the final mutation boundary to exercise revalidation.
-struct SuppressingMutationGuard: MovieFolderMutationGuard {
-  /// The configured collection directory involved in the test mutation.
+/// Suppresses a poster at the final change boundary to exercise revalidation.
+struct SuppressingIconChangeVerifier: MovieFolderProcessingVerifier {
+  /// The configured collection directory involved in the test change.
   let root: URL
   /// Filesystem identity evidence used to reject replacement folders.
   let identity: String
 
-  /// Revalidates authorization immediately before an automatic mutation.
+  /// Revalidates authorization immediately before an automatic change.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
+  ///   - processor: The processor requesting authorization for its next change.
   ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? { .none }
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? { .none }
 
-  /// Revalidates authorization immediately before a manual mutation.
+  /// Revalidates authorization immediately before a manual change.
   ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
+  /// - Parameter processor: The processor requesting authorization for its next change.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
     _ = try FileSystemService().removeAssignedPoster(
       toChild: "Dune (2021)", in: root,
       expectedIdentity: identity)
@@ -403,54 +402,49 @@ struct SuppressingMutationGuard: MovieFolderMutationGuard {
   }
 }
 
-/// Records guard calls and returns a real lease for assignment lifetime checks.
-final class LeaseMutationGuard: MovieFolderMutationGuard, @unchecked Sendable {
+/// Records guard calls and returns a real access for assignment lifetime checks.
+final class AccessIconChangeVerifier: MovieFolderProcessingVerifier, @unchecked Sendable {
   /// The persistence store supplying cross-process leases and atomic record writes.
   let store: PersistenceStore
   /// Serializes access to mutable observations from synchronous Sendable test collaborators.
   private let lock = NSLock()
   /// Root URLs observed at automatic guard boundaries.
   private var recordedRoots: [URL] = []
-  /// Processor identities observed at automatic guard boundaries.
-  private var recordedSenderIDs: [ObjectIdentifier] = []
 
-  /// Creates the lease mutation guard from the supplied dependencies and state.
+  /// Creates the access change guard from the supplied dependencies and state.
   ///
   /// - Parameter store: The persistence store supplying cross-process leases and atomic record writes.
   init(store: PersistenceStore) { self.store = store }
 
   /// The currently authorized roots, used for scheduling.
   var roots: [URL] { lock.withLock { recordedRoots } }
-  /// The synchronized processor identities recorded by the mutation guard.
-  var senderIDs: [ObjectIdentifier] { lock.withLock { recordedSenderIDs } }
 
-  /// Revalidates authorization immediately before an automatic mutation.
+  /// Revalidates authorization immediately before an automatic change.
   ///
   /// - Parameters:
-  ///   - processor: The processor requesting authorization for its next mutation.
+  ///   - processor: The processor requesting authorization for its next change.
   ///   - root: The authorized collection directory containing the immediate child.
-  /// - Returns: A lease held through mutation, or no lease when no retained lock is needed.
+  /// - Returns: A access held through change, or no access when no retained lock is needed.
   /// - Throws: A live configuration, authorization, persistence, or root identity validation failure.
-  func movieFolderProcessor(_ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL)
-    throws -> PersistenceLease? {
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? {
     lock.withLock {
       recordedRoots.append(root)
-      recordedSenderIDs.append(ObjectIdentifier(processor))
     }
 
-    return try XCTUnwrap(store.acquireLease(for: "mutation"))
+    return try store.acquireAccess(for: "change")
   }
 
-  /// Revalidates authorization immediately before a manual mutation.
+  /// Revalidates authorization immediately before a manual change.
   ///
-  /// - Parameter processor: The processor requesting authorization for its next mutation.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
-    .none
+  /// - Parameter processor: The processor requesting authorization for its next change.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+    try checkAutomaticProcessing(in: root)
   }
 }
 
-/// Confirms the mutation lease remains held when the icon adapter is called.
-struct LeaseCheckingAssigner: PosterAssigner {
+/// Confirms the change access remains held when the icon adapter is called.
+struct AccessCheckingAssigner: PosterAssigner {
   /// The persistence store supplying cross-process leases and atomic record writes.
   let store: PersistenceStore
 
@@ -467,7 +461,7 @@ struct LeaseCheckingAssigner: PosterAssigner {
     _ imageData: Data, toChild name: String, in directory: URL,
     expectedIdentity: String?
   ) throws -> PosterAssignmentResult {
-    XCTAssertNil(try store.acquireLease(for: "mutation"), "Mutation guard lease must cover icon assignment")
+    #expect(try store.acquireAccess(for: "change") == nil)
 
     return .assigned
   }

@@ -9,7 +9,7 @@ struct InstallationDiagnosticsExportTests {
   /// Ensures no arbitrary report content or opaque event identifiers enter the exported summary.
   @Test func exportsOnlyFixedStatusesAndTypedActivity() {
     let collectionID = UUID()
-    let operationID = UUID()
+    let activityGroupID = UUID()
     let entryID = UUID()
     let privateText = "/Users/private/Movies secret-token bookmark-payload raw-error"
     let report = InstallationReadinessReport(text: """
@@ -25,7 +25,7 @@ struct InstallationDiagnosticsExportTests {
     let entry = MovieFolderActivityEntry(
       id: entryID, sequence: 123456789, occurredAt: Date(timeIntervalSince1970: 0),
       event: MovieFolderActivityEvent(
-        action: .posterRefresh, status: .failed, operationID: operationID, collectionID: collectionID))
+        action: .posterRefresh, status: .failed, activityGroupID: activityGroupID, collectionID: collectionID))
 
     let text = InstallationDiagnosticsExport.format(report: report, entries: [entry])
 
@@ -39,7 +39,7 @@ struct InstallationDiagnosticsExportTests {
     #expect(text.contains("1970-01-01T00:00:00Z Refresh poster: failed."))
     #expect(!text.contains(privateText))
     #expect(!text.contains(collectionID.uuidString))
-    #expect(!text.contains(operationID.uuidString))
+    #expect(!text.contains(activityGroupID.uuidString))
     #expect(!text.contains(entryID.uuidString))
     #expect(!text.contains("123456789"))
   }

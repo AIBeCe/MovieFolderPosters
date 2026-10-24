@@ -23,7 +23,7 @@ nonisolated struct CollectionProcessingSummary: Sendable, Equatable {
     guard let processingState else { return .none }
 
     return processingState.folders.filter {
-      !$0.isVerifiedDone && $0.state != .preserved && $0.state != .suppressed
+      !$0.isVerifiedDone && $0.state != .preserved && $0.state != .suppressed && $0.state != .excluded
     }.sorted {
       $0.name.localizedStandardCompare($1.name) == .orderedAscending
     }
@@ -142,7 +142,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     return currentResult
   }
 
-  /// Reads and projects a root, checking potentially stale or running records under the root coordination lease.
+  /// Reads and projects a root, checking potentially stale or running records under the root coordination access.
   /// - Parameters:
   ///   - root: Configured root identity and authorization generation.
   ///   - saved: Saved processing settings used to evaluate freshness.
@@ -163,16 +163,16 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     }
 
     let isStale = processingState.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
-    let hasRunningOperation = processingState?.operation?.state == .running
-    if isStale || hasRunningOperation,
-      let rootLease = try? coordinationStore.acquireLease(
+    let hasRunningRun = processingState?.currentRun?.state == .running
+    if isStale || hasRunningRun,
+      let rootAccess = try? coordinationStore.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: URL(fileURLWithPath: root.path))) {
-      defer { withExtendedLifetime(rootLease) {} }
+      defer { withExtendedLifetime(rootAccess) {} }
       return refreshedSummary(for: root, configuration: saved, previous: processingState, isStale: isStale)
     } else {
       let displayState: CollectionProcessingDisplayState = if isStale {
         .stale
-      } else if hasRunningOperation {
+      } else if hasRunningRun {
         .busy
       } else {
         CollectionProcessingPresentation(processingState: processingState).state
@@ -181,16 +181,16 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
         processingState: processingState,
         presentation: CollectionProcessingPresentation(
           processingState: processingState, isStale: isStale,
-          isBusy: hasRunningOperation && !isStale),
+          isBusy: hasRunningRun && !isStale),
         counts: isStale ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
         displayState: displayState
       )
     }
   }
 
-  /// Rereads a root while the caller retains its coordination lease, identifying orphaned running work.
+  /// Rereads a root while the caller retains its coordination access, identifying orphaned running work.
   /// - Parameters:
-  ///   - root: Root associated with the held lease.
+  ///   - root: Root associated with the held access.
   ///   - saved: Processing context against which freshness is checked.
   ///   - processingState: Evidence retained if the reread fails.
   ///   - isStale: Whether the original evidence belongs to an older context.
@@ -200,7 +200,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     previous processingState: CollectionProcessingState?, isStale: Bool
   ) -> CollectionProcessingSummary {
     // A stale record may be replaced by work already in flight. Re-read only after obtaining
-    // the same canonical-root coordination lease used by Finder and manual poster actions.
+    // the same canonical-root coordination access used by Finder and manual poster actions.
     let refreshed: CollectionProcessingState?
     do {
       refreshed = try processingStore.read(rootID: root.id)
@@ -208,7 +208,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       return summaryAfterReadFailure(error, previous: processingState, isStale: isStale)
     }
     let remainsStale = refreshed.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
-    let isOrphaned = !remainsStale && refreshed?.operation?.state == .running
+    let isOrphaned = !remainsStale && refreshed?.currentRun?.state == .running
     let displayState: CollectionProcessingDisplayState = if remainsStale {
       .stale
     } else if isOrphaned {
@@ -271,10 +271,11 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     context.rootID == root.id
       && context.rootIdentity == root.identity
       && context.authorizationVersion == root.authorizationVersion
+      && context.processingConfigurationRevision == root.processingConfiguration.revision
       && context.credentialRevision == configuration.credentialRevision
       && context.usesStubTMDbResponses == configuration.usesStubTMDbResponses
       && context.appearance == configuration.posterAppearance
-      && context.identificationPolicy == configuration.effectiveIdentificationPolicy(for: root)
+      && context.movieMatchingConfiguration == configuration.effectiveMovieMatchingConfiguration(for: root)
       && !configuration.findOverlappingDirectoryIDs().contains(root.id)
   }
 }

@@ -3,7 +3,7 @@ import Network
 
 /// Rechecks durable shared admission before every search and artwork request, including cached compositions.
 nonisolated public struct RecoveryMovieMetadataProvider: MovieMetadataProvider {
-  /// Underlying remote provider; invoked only after its admission lease has been released.
+  /// Underlying remote provider; invoked only after its admission access has been released.
   private let provider: any MovieMetadataProvider
   /// Shared mode and provider recovery service.
   private let recovery: ProcessingRecoveryService
@@ -13,7 +13,7 @@ nonisolated public struct RecoveryMovieMetadataProvider: MovieMetadataProvider {
   /// Wraps one provider without initiating work or retaining credential text.
   /// - Parameters:
   ///   - provider: Provider whose calls are admitted independently before each remote boundary.
-  ///   - recovery: Shared durable mode and provider failure policy.
+  ///   - recovery: Shared durable mode and provider failure configuration.
   ///   - credential: Credential corresponding to this provider, normalized then hashed immediately.
   public init(provider: any MovieMetadataProvider, recovery: ProcessingRecoveryService, credential: String) {
     self.provider = provider

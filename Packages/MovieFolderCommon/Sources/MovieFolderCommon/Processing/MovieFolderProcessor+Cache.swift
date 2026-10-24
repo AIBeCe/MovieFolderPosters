@@ -72,33 +72,33 @@ extension MovieFolderProcessor {
 
   /// Decodes root processing state or supplies empty state when no record exists.
   ///
-  /// - Parameter lease: The already-held persistence lease used throughout this operation.
+  /// - Parameter access: The already-held persistence access used throughout this operation.
   /// - Returns: The decoded root state, or empty state when no record has been saved.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func loadState(from lease: PersistenceLease) throws -> ProcessingState {
-    guard let data = try lease.read() else { return ProcessingState() }
+  func loadState(from access: PersistenceAccess) throws -> ProcessingState {
+    guard let data = try access.read() else { return ProcessingState() }
 
     var state = try JSONDecoder().decode(ProcessingState.self, from: data)
     state.reconcileCredentialRevision(credentialRevision)
-    state.reconcileIdentificationPolicy(identificationPolicy)
+    state.reconcileMovieMatchingConfiguration(movieMatchingConfiguration)
 
     return state
   }
 
   /// Keeps a verified icon outcome distinct from failure to persist its operational cache.
   func saveAssignedState(
-    _ state: ProcessingState, to lease: PersistenceLease, candidate: FolderCandidate,
+    _ state: ProcessingState, to access: PersistenceAccess, candidate: FolderCandidate,
     root: URL, processingState: inout CollectionProcessingState?
   ) throws {
     do {
-      try saveState(state, to: lease)
+      try saveState(state, to: access)
     } catch {
       if processingState != .none {
         var record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
         record.reason = .cachePersistenceFailure
         record.lastFailure = FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now())
         try recordFolderProcessing(record, in: &processingState)
-        try finishProcessingOperation(&processingState, state: .failed)
+        try finishProcessingRun(&processingState, state: .failed)
       }
       throw error
     }
@@ -112,18 +112,18 @@ extension MovieFolderProcessor {
   ///
   /// - Parameters:
   ///   - state: The root processing state being inspected or updated.
-  ///   - lease: The already-held persistence lease used throughout this operation.
+  ///   - access: The already-held persistence access used throughout this operation.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func saveState(_ state: ProcessingState, to lease: PersistenceLease) throws {
+  func saveState(_ state: ProcessingState, to access: PersistenceAccess) throws {
     var state = state
     state.credentialRevision = credentialRevision
-    state.identificationPolicy = identificationPolicy
+    state.movieMatchingConfiguration = movieMatchingConfiguration
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     do {
-      try lease.write(encoder.encode(state))
+      try access.write(encoder.encode(state))
     } catch {
-      // A recorded operation must stop before another mutation if its operational cache cannot commit.
+      // A recorded operation must stop before another change if its operational cache cannot commit.
       if processingStore != nil { throw CollectionProcessingError.unavailable }
       throw error
     }

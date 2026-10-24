@@ -54,7 +54,7 @@ struct FileSystemTests {
     #expect(inventory.members[0].issue == .none)
   }
 
-  /// Scenario: strict poster inspection returns the current unowned state without mutation.
+  /// Scenario: strict poster inspection returns the current unowned state without change.
   @Test func strictPosterInspectionReportsNoIconAndSuppression() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

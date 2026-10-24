@@ -13,10 +13,10 @@ extension MovieFolderProcessor {
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func assign(_ data: Data, to candidate: FolderCandidate, in root: URL) throws -> PosterAssignmentResult {
     try Task.checkCancellation()
-    let recoveryLease = try recovery?.acquireMutationLease()
-    defer { withExtendedLifetime(recoveryLease) {} }
-    let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)
-    defer { withExtendedLifetime(settingsLease) {} }
+    let recoveryAccess = try recovery?.acquireProcessingAccess()
+    defer { withExtendedLifetime(recoveryAccess) {} }
+    let settingsAccess = try checkIconChange(.automaticPosterAssignment, to: candidate, in: root)
+    defer { withExtendedLifetime(settingsAccess) {} }
     let current: FolderCandidate
     do {
       current = try fileSystem.readCurrentState(ofChild: candidate.name, in: root)
@@ -31,7 +31,7 @@ extension MovieFolderProcessor {
       appearance: appearance, expectedIdentity: candidate.identity)
   }
 
-  /// Restyles a cached owned poster when its finish differs and suppression permits mutation.
+  /// Restyles a cached owned poster when its finish differs and suppression permits change.
   ///
   /// - Parameters:
   ///   - candidate: The child folder evidence captured before this operation.
@@ -60,16 +60,14 @@ extension MovieFolderProcessor {
     else { return false }
 
     try Task.checkCancellation()
-    let recoveryLease = try recovery?.acquireMutationLease()
-    defer { withExtendedLifetime(recoveryLease) {} }
+    let recoveryAccess = try recovery?.acquireProcessingAccess()
+    defer { withExtendedLifetime(recoveryAccess) {} }
     let current = try fileSystem.readCurrentState(ofChild: candidate.name, in: root)
 
     guard current.identity == candidate.identity else { throw ProcessingFailure.changedIdentity }
 
-    let styleLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
-    defer { withExtendedLifetime(styleLease) {} }
-    let settingsLease = try mutationGuard?.movieFolderProcessor(self, willPerformAutomaticMutationIn: root)
-    defer { withExtendedLifetime(settingsLease) {} }
+    let settingsAccess = try checkIconChange(.posterRestyle, to: candidate, in: root)
+    defer { withExtendedLifetime(settingsAccess) {} }
     let result = try fileSystem.restyleAssignedPoster(
       data, toChild: candidate.name, in: root, appearance: appearance,
       expectedIdentity: candidate.identity
@@ -77,5 +75,20 @@ extension MovieFolderProcessor {
     if case .assigned = result { return true }
 
     return false
+  }
+
+  /// Checks captured inclusion before retaining the live settings fence through a synchronous icon write.
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
+    if change != .posterRemoval {
+      guard !processingConfiguration.isPaused else { throw CollectionProcessingError.configurationChanged }
+
+      guard !processingConfiguration.excludesFolder(identity: candidate.identity) else {
+        throw CollectionProcessingError.configurationChanged
+      }
+    }
+
+    return try processingVerifier?.checkIconChange(change, to: candidate, in: root)
   }
 }

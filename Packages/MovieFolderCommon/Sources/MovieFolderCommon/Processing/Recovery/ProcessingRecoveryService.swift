@@ -31,29 +31,29 @@ nonisolated public struct ProcessingRecoverySnapshot: Equatable, Sendable {
   public let providerFailureReason: FolderProcessingReason?
 }
 
-/// Coordinates admission using one cross-process record lease; networking never holds this lease.
+/// Coordinates admission using one cross-process record access; networking never holds this access.
 nonisolated public struct ProcessingRecoveryService: Sendable {
   /// Dedicated shared namespace; callers must not prune it as collection outcomes.
   let store: PersistenceStore
   /// Clock used to establish and compare bounded provider deadlines.
   let now: @Sendable () -> Date
-  /// One key serializes gate changes, provider policy updates, and synchronous icon writes.
+  /// One key serializes gate changes, provider configuration updates, and synchronous icon writes.
   static let recordKey = "processing-recovery"
 
   /// Opens recovery coordination over a dedicated, preferably size-bounded persistence namespace.
   /// - Parameters:
   ///   - store: Shared App Group persistence opened independently of settings and collection outcomes.
-  ///   - now: Clock used for retry policy; defaults to the current date.
+  ///   - now: Clock used for retry configuration; defaults to the current date.
   public init(store: PersistenceStore, now: @escaping @Sendable () -> Date = Date.init) {
     self.store = store
     self.now = now
   }
 
-  /// Reads a validated snapshot under the shared lease.
+  /// Reads a validated snapshot under the shared access.
   /// - Returns: Default disabled state when no record exists, otherwise validated saved state.
   /// - Throws: `ProcessingRecoveryError.busy` or `.unavailable`; invalid storage never becomes disabled state.
   public func read() throws -> ProcessingRecoverySnapshot {
-    let record = try readRecord(lease: acquireLease())
+    let record = try readRecord(access: acquireAccess())
 
     return ProcessingRecoverySnapshot(
       isRecoveryModeEnabled: record.isRecoveryModeEnabled,
@@ -64,38 +64,38 @@ nonisolated public struct ProcessingRecoveryService: Sendable {
   /// - Parameter enabled: True pauses participating provider requests and mutations; false schedules no replay.
   /// - Throws: A safe busy/unavailable failure without replacing invalid existing state.
   public func setRecoveryModeEnabled(_ enabled: Bool) throws {
-    let lease = try acquireLease()
-    var record = try readRecord(lease: lease)
+    let access = try acquireAccess()
+    var record = try readRecord(access: access)
     record.isRecoveryModeEnabled = enabled
-    try writeRecord(record, lease: lease)
+    try writeRecord(record, access: access)
   }
 
-  /// Rechecks the shared gate without retaining a lease through subsequent work.
+  /// Rechecks the shared gate without retaining a access through subsequent work.
   /// - Throws: Recovery mode, busy, or unavailable state. Provider backoff belongs to provider admission.
   public func validateProcessingAllowed() throws {
-    let lease = try acquireMutationLease()
-    withExtendedLifetime(lease) {}
+    let access = try acquireProcessingAccess()
+    withExtendedLifetime(access) {}
   }
 
-  /// Acquires the shared gate lease and checks mode immediately before synchronous icon mutation.
+  /// Acquires the shared gate access and checks mode immediately before synchronous icon change.
   ///
-  /// Retain the returned lease until the existing synchronous write and identity checks finish.
+  /// Retain the returned access until the existing synchronous write and identity checks finish.
   /// Do not retain it through networking, waiting, or unrelated processing work.
-  /// - Returns: The same exclusive lease used to activate recovery mode.
-  /// - Throws: Recovery mode, busy, or unavailable state, all of which prevent mutation.
-  public func acquireMutationLease() throws -> PersistenceLease {
-    let lease = try acquireLease()
-    guard try !readRecord(lease: lease).isRecoveryModeEnabled else { throw ProcessingRecoveryError.recoveryMode }
+  /// - Returns: The same exclusive access used to activate recovery mode.
+  /// - Throws: Recovery mode, busy, or unavailable state, all of which prevent change.
+  public func acquireProcessingAccess() throws -> PersistenceAccess {
+    let access = try acquireAccess()
+    guard try !readRecord(access: access).isRecoveryModeEnabled else { throw ProcessingRecoveryError.recoveryMode }
 
-    return lease
+    return access
   }
 
   /// Acquires the canonical record lock and maps low-level diagnostics to safe product failures.
-  func acquireLease() throws -> PersistenceLease {
+  func acquireAccess() throws -> PersistenceAccess {
     do {
-      guard let lease = try store.acquireLease(for: Self.recordKey) else { throw ProcessingRecoveryError.busy }
+      guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ProcessingRecoveryError.busy }
 
-      return lease
+      return access
     } catch let error as ProcessingRecoveryError {
       throw error
     } catch {
@@ -104,9 +104,9 @@ nonisolated public struct ProcessingRecoveryService: Sendable {
   }
 
   /// Reads only a bounded, supported, internally consistent recovery payload.
-  func readRecord(lease: PersistenceLease) throws -> ProcessingRecoveryRecord {
+  func readRecord(access: PersistenceAccess) throws -> ProcessingRecoveryRecord {
     do {
-      guard let payload = try lease.read() else { return ProcessingRecoveryRecord() }
+      guard let payload = try access.read() else { return ProcessingRecoveryRecord() }
       guard payload.count <= 4_096 else { throw ProcessingRecoveryError.unavailable }
       let record = try JSONDecoder().decode(ProcessingRecoveryRecord.self, from: payload)
       guard record.isValid else { throw ProcessingRecoveryError.unavailable }
@@ -117,13 +117,13 @@ nonisolated public struct ProcessingRecoveryService: Sendable {
     }
   }
 
-  /// Atomically replaces validated state while its canonical lease remains retained.
-  func writeRecord(_ record: ProcessingRecoveryRecord, lease: PersistenceLease) throws {
+  /// Atomically replaces validated state while its canonical access remains retained.
+  func writeRecord(_ record: ProcessingRecoveryRecord, access: PersistenceAccess) throws {
     do {
       guard record.isValid else { throw ProcessingRecoveryError.unavailable }
       let payload = try JSONEncoder().encode(record)
       guard payload.count <= 4_096 else { throw ProcessingRecoveryError.unavailable }
-      try lease.write(payload)
+      try access.write(payload)
     } catch {
       throw ProcessingRecoveryError.unavailable
     }

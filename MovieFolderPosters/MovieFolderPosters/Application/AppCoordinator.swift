@@ -96,7 +96,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
     appearance.delegate = self
   }
 
-  /// Applies saved policy and opens configuration.
+  /// Applies saved configuration and opens configuration.
   /// - Throws: Configuration startup errors; independent routes remain available.
   func start() throws {
     applyAppearance()
@@ -127,6 +127,11 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   func openPosterAction(_ request: MoviePosterRequest) {
     do { try recoveryLaunch.prepare() } catch { return }
     posterActionCoordinator.start(request)
+  }
+
+  /// Routes inclusion independently from processing recovery and provider credentials.
+  func openInclusionAction(_ request: MovieFolderInclusionRequest) {
+    do { try presentConfiguration { $0.openInclusionAction(request) } } catch { return }
   }
 
   /// Attempts the launch gate before composition, then keeps read-only configuration reachable if it failed.
@@ -174,7 +179,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   }
 
   /// Reloads committed results even when a distributed notification was missed.
-  func moviePosterActionCoordinatorDidFinishOperation(_ coordinator: MoviePosterActionCoordinator) {
+  func moviePosterActionCoordinatorDidFinishAction(_ coordinator: MoviePosterActionCoordinator) {
     configurationCoordinator?.refreshCollectionProcessingState()
   }
 

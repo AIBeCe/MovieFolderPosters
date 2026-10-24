@@ -5,18 +5,18 @@ import Testing
 
 /// Exercises bookmark resolution, security-scoped access, and directory identity validation.
 struct DirectoryAuthorizationTests {
-  /// Scenario: implicit bookmark resolves to readable lease.
-  @Test func implicitBookmarkResolvesToReadableLease() throws {
+  /// Scenario: implicit bookmark resolves to readable access.
+  @Test func implicitBookmarkResolvesToReadableAccess() throws {
     let directory = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     try Data("existing content".utf8).write(to: directory.appendingPathComponent("movie.mkv"))
     let service = FileSystemService()
 
     let bookmark = try service.makeTransferBookmark(for: directory)
-    let lease = try service.acquireDirectoryAccess(bookmark: bookmark, securityScoped: false)
+    let access = try service.acquireDirectoryAccess(bookmark: bookmark, securityScoped: false)
 
-    #expect(lease.url.standardizedFileURL == directory.standardizedFileURL)
-    #expect(try FileManager.default.contentsOfDirectory(atPath: lease.url.path) == ["movie.mkv"])
+    #expect(access.url.standardizedFileURL == directory.standardizedFileURL)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: access.url.path) == ["movie.mkv"])
   }
 
   /// Scenario: transfer bookmark rejects file and symbolic link.
@@ -76,13 +76,13 @@ struct DirectoryAuthorizationTests {
     let bookmark = try service.makeTransferBookmark(for: original)
     try FileManager.default.moveItem(at: original, to: moved)
 
-    let lease = try service.acquireDirectoryAccess(
+    let access = try service.acquireDirectoryAccess(
       bookmark: bookmark,
       securityScoped: false,
       expectedIdentity: expectedIdentity
     )
 
-    #expect(lease.url.standardizedFileURL == moved.standardizedFileURL)
+    #expect(access.url.standardizedFileURL == moved.standardizedFileURL)
   }
 
   /// Scenario: persistent directory identity survives rename and detects replacement.
@@ -133,18 +133,18 @@ struct DirectoryAuthorizationTests {
     }
   }
 
-  /// Scenario: lease can be held across suspension.
-  @Test func leaseCanBeHeldAcrossSuspension() async throws {
+  /// Scenario: access can be held across suspension.
+  @Test func accessCanBeHeldAcrossSuspension() async throws {
     let directory = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let bookmark = try FileSystemService().makeTransferBookmark(for: directory)
-    let lease = try FileSystemService().acquireDirectoryAccess(
+    let access = try FileSystemService().acquireDirectoryAccess(
       bookmark: bookmark, securityScoped: false)
 
     let names = await Task.detached {
       await Task.yield()
 
-      return try? FileManager.default.contentsOfDirectory(atPath: lease.url.path)
+      return try? FileManager.default.contentsOfDirectory(atPath: access.url.path)
     }.value
 
     #expect(names != .none)

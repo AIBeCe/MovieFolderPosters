@@ -12,8 +12,8 @@ struct CollectionProcessingStorageNamespaceTests {
     defer { try? FileManager.default.removeItem(at: container) }
     let legacy = container.appendingPathComponent("Outcomes")
     let originalStore = try PersistenceStore(directory: legacy)
-    let lease = try #require(try originalStore.acquireLease(for: "processing-outcome-v1-existing"))
-    try lease.write(Data("original".utf8))
+    let access = try #require(try originalStore.acquireAccess(for: "processing-outcome-v1-existing"))
+    try access.write(Data("original".utf8))
     let before = try snapshot(legacy)
     #expect(throws: CollectionProcessingStorageNamespaceError.legacyMigrationRequired) {
       try CollectionProcessingStorageNamespace.open(in: container)
@@ -29,8 +29,8 @@ struct CollectionProcessingStorageNamespaceTests {
     let legacy = container.appendingPathComponent("Outcomes")
     let originalStore = try PersistenceStore(directory: legacy)
     let key = "processing-outcome-v1-existing"
-    var originalLease = try #require(try originalStore.acquireLease(for: key))
-    try originalLease.write(Data("original".utf8))
+    var originalAccess = try #require(try originalStore.acquireAccess(for: key))
+    try originalAccess.write(Data("original".utf8))
     let before = try snapshot(legacy)
     let originalDirectory = try inode(legacy)
     try CollectionProcessingStorageNamespace.migrateStoppedInstallation(in: container)
@@ -39,12 +39,12 @@ struct CollectionProcessingStorageNamespaceTests {
     #expect(try snapshot(current) == before)
     #expect(throws: (any Error).self) { try PersistenceStore(directory: legacy) }
     let migratedStore = try CollectionProcessingStorageNamespace.open(in: container)
-    #expect(try migratedStore.acquireLease(for: key) == nil)
-    // Releasing the original lease must release the migrated lock inode.
-    originalLease = try #require(try originalStore.acquireLease(for: "unrelated"))
-    let migratedLease = try #require(try migratedStore.acquireLease(for: key))
-    #expect(try migratedLease.read() == Data("original".utf8))
-    withExtendedLifetime(originalLease) {}
+    #expect(try migratedStore.acquireAccess(for: key) == nil)
+    // Releasing the original access must release the migrated lock inode.
+    originalAccess = try #require(try originalStore.acquireAccess(for: "unrelated"))
+    let migratedAccess = try #require(try migratedStore.acquireAccess(for: key))
+    #expect(try migratedAccess.read() == Data("original".utf8))
+    withExtendedLifetime(originalAccess) {}
     try CollectionProcessingStorageNamespace.migrateStoppedInstallation(in: container)
     #expect(try inode(current) == originalDirectory)
   }
@@ -56,13 +56,13 @@ struct CollectionProcessingStorageNamespaceTests {
     let store = try CollectionProcessingStorageNamespace.open(in: container)
     let key = "processing-outcome-v1-fresh"
     do {
-      let lease = try #require(try store.acquireLease(for: key))
-      try lease.write(Data("fresh".utf8))
+      let access = try #require(try store.acquireAccess(for: key))
+      try access.write(Data("fresh".utf8))
     }
     #expect(throws: (any Error).self) { try PersistenceStore(directory: container.appendingPathComponent("Outcomes")) }
     let reopened = try CollectionProcessingStorageNamespace.open(in: container)
-    let lease = try #require(try reopened.acquireLease(for: key))
-    #expect(try lease.read() == Data("fresh".utf8))
+    let access = try #require(try reopened.acquireAccess(for: key))
+    #expect(try access.read() == Data("fresh".utf8))
   }
 
   /// Conflicting writable directories are preserved for deliberate operator resolution.
@@ -71,8 +71,8 @@ struct CollectionProcessingStorageNamespaceTests {
     defer { try? FileManager.default.removeItem(at: container) }
     for name in ["Outcomes", "CollectionProcessingState"] {
       let store = try PersistenceStore(directory: container.appendingPathComponent(name))
-      let lease = try #require(try store.acquireLease(for: name))
-      try lease.write(Data(name.utf8))
+      let access = try #require(try store.acquireAccess(for: name))
+      try access.write(Data(name.utf8))
     }
     let legacyBefore = try snapshot(container.appendingPathComponent("Outcomes"))
     let currentBefore = try snapshot(container.appendingPathComponent("CollectionProcessingState"))
@@ -124,13 +124,13 @@ struct CollectionProcessingStorageNamespaceTests {
     defer { try? FileManager.default.removeItem(at: container) }
     try markerBytes.write(to: container.appendingPathComponent("Outcomes"))
     let store = try CollectionProcessingStorageNamespace.open(in: container)
-    let lease = try #require(try store.acquireLease(for: "resumed"))
-    try lease.write(Data("resumed".utf8))
-    #expect(try lease.read() == Data("resumed".utf8))
+    let access = try #require(try store.acquireAccess(for: "resumed"))
+    try access.write(Data("resumed".utf8))
+    #expect(try access.read() == Data("resumed".utf8))
   }
 
-  /// Every namespace entrypoint honors the same nonblocking, reusable container lease.
-  @Test func heldNamespaceLeaseBlocksOpenAndMigration() throws {
+  /// Every namespace entrypoint honors the same nonblocking, reusable container access.
+  @Test func heldNamespaceAccessBlocksOpenAndMigration() throws {
     let container = try temporaryContainer()
     defer { try? FileManager.default.removeItem(at: container) }
     let descriptor = Darwin.open(container.appendingPathComponent(".collection-processing-namespace.lock").path,
@@ -173,7 +173,7 @@ struct CollectionProcessingStorageNamespaceTests {
     #expect(!FileManager.default.fileExists(atPath: container.appendingPathComponent("Outcomes").path))
   }
 
-  /// A linked lease path must not redirect namespace synchronization outside the container.
+  /// A linked access path must not redirect namespace synchronization outside the container.
   @Test func rejectsSymlinkedNamespaceLock() throws {
     let container = try temporaryContainer()
     defer { try? FileManager.default.removeItem(at: container) }

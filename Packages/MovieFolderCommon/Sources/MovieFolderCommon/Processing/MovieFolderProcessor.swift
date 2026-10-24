@@ -6,7 +6,7 @@ import Persistence
 
 /// Serializes movie-folder processing, caches results, and validates identity before icon writes.
 public actor MovieFolderProcessor {
-  /// Immutable timing policy captured for this processor instance.
+  /// Immutable timing configuration captured for this processor instance.
   let configuration: MovieFolderProcessorConfiguration
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
   let fileSystem: FileSystemService
@@ -22,15 +22,17 @@ public actor MovieFolderProcessor {
   let posterAssigner: any PosterAssigner
   /// The clock used to evaluate cache age and retry boundaries.
   let now: @Sendable () -> Date
-  /// The retained collaborator that must approve configured mutation boundaries.
-  let mutationGuard: (any MovieFolderMutationGuard)?
+  /// The retained collaborator that must approve configured change boundaries.
+  let processingVerifier: (any MovieFolderProcessingVerifier)?
   /// The selected finish used for poster rendering.
   let appearance: PosterAppearance
-  /// Effective automatic identification choices captured when this processor is composed.
-  let identificationPolicy: IdentificationPolicy
+  /// Effective automatic matching choices captured when this processor is composed.
+  let movieMatchingConfiguration: MovieMatchingConfiguration
+  /// Collection pause and identity-based exclusion choices captured for this operation.
+  let processingConfiguration: CollectionProcessingConfiguration
   /// Commits authoritative results independently of operational caches.
   let processingStore: CollectionProcessingStore?
-  /// Shared recovery admission and mutation fencing, when supplied by production composition.
+  /// Shared recovery admission and change fencing, when supplied by production composition.
   let recovery: ProcessingRecoveryService?
   /// Credential generation captured at composition, never refreshed by an in-flight operation.
   let credentialRevision: UUID?
@@ -39,7 +41,7 @@ public actor MovieFolderProcessor {
   /// The conservative movie matcher used after a complete provider response.
   let matcher = MovieMatcher()
 
-  /// Connects the processing stores, metadata source, clock, icon adapter, and optional mutation guard.
+  /// Connects the processing stores, metadata source, clock, icon adapter, and optional change guard.
   ///
   /// - Parameters:
   ///   - fileSystem: The filesystem adapter used for evidence, cache, and icon operations.
@@ -49,13 +51,13 @@ public actor MovieFolderProcessor {
   ///   - posterAssigner: The synchronous adapter performing final automatic icon assignment.
   ///   - now: The clock used for retry and cache expiry decisions.
   ///   - coordinationStore: Optional stable locks shared across processing generations.
-  ///   - mutationGuard: Optional retained collaborator enforcing live settings authorization.
+  ///   - processingVerifier: Optional retained collaborator enforcing live settings authorization.
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - processingStore: Dedicated result storage; production supplies it with a current context for each operation.
-  ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon mutation.
+  ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon change.
   ///   - credentialRevision: Production credential generation stamped on every saved operational state.
   ///   - configuration: Validated retry and cache timings for this processor instance.
-  ///   - identificationPolicy: Effective choices captured for this collection's automatic identification.
+  ///   - movieMatchingConfiguration: Effective choices captured for this collection's automatic matching.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
     persistence: PersistenceStore,
@@ -64,13 +66,14 @@ public actor MovieFolderProcessor {
     posterAssigner: any PosterAssigner = FileSystemService(),
     now: @escaping @Sendable () -> Date = Date.init,
     coordinationStore: PersistenceStore? = .none,
-    mutationGuard: (any MovieFolderMutationGuard)? = .none,
+    processingVerifier: (any MovieFolderProcessingVerifier)? = .none,
     appearance: PosterAppearance = .softFinish,
     processingStore: CollectionProcessingStore? = .none,
     recovery: ProcessingRecoveryService? = .none,
     credentialRevision: UUID? = .none,
     configuration: MovieFolderProcessorConfiguration = .standard,
-    identificationPolicy: IdentificationPolicy = IdentificationPolicy()
+    movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+    processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration()
   ) {
     self.credentialRevision = credentialRevision
     self.configuration = configuration
@@ -81,9 +84,10 @@ public actor MovieFolderProcessor {
     self.cacheDirectory = cacheDirectory
     self.posterAssigner = posterAssigner
     self.now = now
-    self.mutationGuard = mutationGuard
+    self.processingVerifier = processingVerifier
     self.appearance = appearance
-    self.identificationPolicy = identificationPolicy
+    self.movieMatchingConfiguration = movieMatchingConfiguration
+    self.processingConfiguration = processingConfiguration
     self.processingStore = processingStore
     self.recovery = recovery
   }

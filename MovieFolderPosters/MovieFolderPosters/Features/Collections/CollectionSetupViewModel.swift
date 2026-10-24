@@ -14,15 +14,15 @@ import MovieFolderCommon
   /// Service retaining bookmark creation and persistence ownership.
   private let service: any ConfigurationServicing
   /// Current application choices displayed while the draft inherits.
-  private let applicationPolicy: IdentificationPolicy
+  private let applicationConfiguration: MovieMatchingConfiguration
   /// Current uncommitted authorization; absence means no folder has been chosen.
   private(set) var candidate: PreparedCollection?
   /// Editable friendly name; selecting another folder resets its suggestion.
   var displayName = ""
   /// Whether final Add inherits current application choices rather than saving an override.
-  var usesApplicationPolicy = true
+  var inheritsApplicationConfiguration = true
   /// Snapshot initialized from application defaults, edited only when inheritance is disabled.
-  var overridePolicy: IdentificationPolicy
+  var overrideConfiguration: MovieMatchingConfiguration
   /// Draft global poster finish, saved only with a successful Add.
   var appearance: PosterAppearance
   /// Whether preparation or final commit is still running.
@@ -37,20 +37,20 @@ import MovieFolderCommon
   private var preparationID = UUID()
   /// Whether cancellation has permanently discarded this draft.
   private var isCancelled = false
-  /// Effective choices shown by the identification controls.
-  var effectivePolicy: IdentificationPolicy { usesApplicationPolicy ? applicationPolicy : overridePolicy }
+  /// Effective choices shown by the matching controls.
+  var effectiveConfiguration: MovieMatchingConfiguration { inheritsApplicationConfiguration ? applicationConfiguration : overrideConfiguration }
   /// Whether final Add may submit a prepared candidate.
   var canAdd: Bool { candidate != .none && !isBusy && !isCancelled }
 
   /// Starts a local draft with no selected folder and behavior-equivalent application defaults.
   /// - Parameters:
   ///   - service: Retained preparation and persistence boundary for the draft.
-  ///   - applicationPolicy: Defaults displayed while inheriting and used to initialize an explicit override.
+  ///   - applicationConfiguration: Defaults displayed while inheriting and used to initialize an explicit override.
   ///   - appearance: Current global finish, copied into the uncommitted draft.
-  init(service: any ConfigurationServicing, applicationPolicy: IdentificationPolicy, appearance: PosterAppearance) {
+  init(service: any ConfigurationServicing, applicationConfiguration: MovieMatchingConfiguration, appearance: PosterAppearance) {
     self.service = service
-    self.applicationPolicy = applicationPolicy
-    overridePolicy = applicationPolicy
+    self.applicationConfiguration = applicationConfiguration
+    overrideConfiguration = applicationConfiguration
     self.appearance = appearance
   }
 
@@ -92,7 +92,7 @@ import MovieFolderCommon
     delegate?.collectionSetupViewModelDidChange(self)
     do {
       try await service.commitCollection(candidate, displayName: displayName,
-        identificationPolicy: usesApplicationPolicy ? .none : overridePolicy, appearance: appearance)
+        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration, appearance: appearance)
       self.candidate = .none
       isBusy = false
       isCommitting = false

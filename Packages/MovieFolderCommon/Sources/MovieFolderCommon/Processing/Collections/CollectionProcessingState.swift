@@ -8,8 +8,8 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   public var revision: UInt64
   /// Captured root, authorization, and processing settings generation.
   public var context: CollectionProcessingContext
-  /// Current operation, if processing is active or most recently terminated.
-  public var operation: CollectionProcessingOperation?
+  /// Current or most recently terminated collection run.
+  public var currentRun: CollectionProcessingRun?
   /// Current members and their latest assessments.
   public var folders: [FolderProcessingRecord]
   /// Whether the latest inventory fully classified the immediate children.
@@ -19,38 +19,39 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   /// Safe inventory issue explanation when the inventory was incomplete.
   public var inventoryIssue: FolderProcessingReason?
   /// Metadata for the latest completed collection-wide run.
-  public var lastCompletedRun: CollectionProcessingOperation?
+  public var lastCompletedRun: CollectionProcessingRun?
   /// Context in which the latest completed run was recorded, for historical labeling.
   public var lastCompletedRunContext: CollectionProcessingContext?
 
   /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey {
-    case schemaVersion, revision, context, operation, folders, isInventoryComplete = "inventoryComplete"
+    case schemaVersion, revision, context, currentRun = "operation", folders
+    case isInventoryComplete = "inventoryComplete"
     case inspectedAt, inventoryIssue, lastCompletedRun, lastCompletedRunContext
   }
 
-  /// Creates a snapshot of collection membership, assessments, and operation history.
+  /// Creates saved collection membership, assessments, and run history.
   ///
   /// - Parameters:
   ///   - schemaVersion: Persisted format version, checked by `validate()` before use.
   ///   - revision: Committed revision used to reject stale writers.
-  ///   - context: Root identity, authorization, and settings generation for this snapshot.
-  ///   - operation: Active or most recently terminated operation, when recorded.
+  ///   - context: Root identity, authorization, and settings generation for this saved state.
+  ///   - currentRun: Active or most recently terminated run, when recorded.
   ///   - folders: Immediate-child membership and latest individual assessments.
   ///   - isInventoryComplete: Whether inspection classified all immediate children.
   ///   - inspectedAt: Inspection time required for a complete inventory.
   ///   - inventoryIssue: Safe explanation of an incomplete inventory.
-  ///   - lastCompletedRun: Latest completed collection-wide operation, when available.
+  ///   - lastCompletedRun: Latest completed collection-wide run, when available.
   ///   - lastCompletedRunContext: Generation captured for the historical completed run.
   public init(schemaVersion: Int = 1, revision: UInt64 = .zero, context: CollectionProcessingContext,
-              operation: CollectionProcessingOperation? = .none, folders: [FolderProcessingRecord] = [],
+              currentRun: CollectionProcessingRun? = .none, folders: [FolderProcessingRecord] = [],
               isInventoryComplete: Bool = false, inspectedAt: Date? = .none,
-              inventoryIssue: FolderProcessingReason? = .none, lastCompletedRun: CollectionProcessingOperation? = .none,
+              inventoryIssue: FolderProcessingReason? = .none, lastCompletedRun: CollectionProcessingRun? = .none,
               lastCompletedRunContext: CollectionProcessingContext? = .none) {
     self.schemaVersion = schemaVersion
     self.revision = revision
     self.context = context
-    self.operation = operation
+    self.currentRun = currentRun
     self.folders = folders
     self.isInventoryComplete = isInventoryComplete
     self.inspectedAt = inspectedAt

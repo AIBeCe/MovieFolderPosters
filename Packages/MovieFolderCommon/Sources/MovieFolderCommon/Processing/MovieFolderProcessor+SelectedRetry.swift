@@ -17,14 +17,14 @@ extension MovieFolderProcessor {
   ) async throws -> FolderRetryResult {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
-    let coordinationLease = try acquireCoordinationLease(for: root)
-    defer { withExtendedLifetime(coordinationLease) {} }
+    let coordinationAccess = try acquireCoordinationAccess(for: root)
+    defer { withExtendedLifetime(coordinationAccess) {} }
 
-    guard let lease = try persistence.acquireLease(for: Self.rootLeaseKey(for: root)) else {
+    guard let access = try persistence.acquireAccess(for: Self.processingStateKey(for: root)) else {
       throw PosterActionError.busy
     }
 
-    defer { withExtendedLifetime(lease) {} }
+    defer { withExtendedLifetime(access) {} }
 
     guard let snapshot = try processingStore?.read(rootID: processingContext.rootID),
       snapshot.context == processingContext,
@@ -35,13 +35,14 @@ extension MovieFolderProcessor {
 
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
 
-    guard !record.isVerifiedDone, record.state != .preserved, record.state != .suppressed,
+    guard !record.isVerifiedDone, record.state != .preserved, record.state != .suppressed, record.state != .excluded,
+      !processingConfiguration.excludesFolder(identity: candidate.identity),
       !candidate.hasCustomIcon,
       try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
 
     if requiresManualReview(record.reason) { return .notEligible }
 
-    let cache = try loadState(from: lease)
+    let cache = try loadState(from: access)
     let prior = cache.folders[child]
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
     if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
@@ -57,8 +58,8 @@ extension MovieFolderProcessor {
     }
 
     do {
-      let settingsLease = try mutationGuard?.movieFolderProcessorWillPerformManualMutation(self)
-      withExtendedLifetime(settingsLease) {}
+      let settingsAccess = try checkIconChange(.automaticPosterAssignment, to: candidate, in: root)
+      withExtendedLifetime(settingsAccess) {}
     }
 
     var visit = AutomaticProcessingVisit(
@@ -67,11 +68,11 @@ extension MovieFolderProcessor {
     defer { interruptUnfinishedProcessing(&visit.recording, child: child) }
 
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
-      try await !reuseCachedDecision(candidate, root: root, lease: lease, visit: &visit) {
-      visit.didStopEarly = try await processCandidate(candidate, root: root, lease: lease, visit: &visit)
+      try await !reuseCachedDecision(candidate, root: root, access: access, visit: &visit) {
+      visit.didStopEarly = try await processCandidate(candidate, root: root, access: access, visit: &visit)
     }
 
-    try finishProcessingOperation(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
+    try finishProcessingRun(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
 
     return .attempted(visit.summary, stopSelection: visit.didStopEarly)
   }
@@ -82,7 +83,7 @@ extension MovieFolderProcessor {
   private func requiresManualReview(_ reason: FolderProcessingReason?) -> Bool {
     switch reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication,
-         .manualIdentificationRequired: true
+         .manualMatchingRequired: true
     default: false
     }
   }

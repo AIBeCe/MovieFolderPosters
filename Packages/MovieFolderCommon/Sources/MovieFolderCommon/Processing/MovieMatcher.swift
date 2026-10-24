@@ -26,7 +26,7 @@ nonisolated struct MovieMatcher: Sendable {
   ///   - search: The provider response, including whether further search pages exist.
   /// - Returns: The unique match or explicit unresolved reason.
   func match(title: String, year: Int?, search: MovieSearchResult) -> MovieMatchResult {
-    let result = identify(title: title, year: year, search: search)
+    let result = matchMovie(title: title, year: year, search: search)
     guard case .matched(let selected) = result else { return result }
     guard let poster = selected.posterPath, !poster.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return .unresolved(.missingPoster)
@@ -40,17 +40,17 @@ nonisolated struct MovieMatcher: Sendable {
   ///   - title: Parsed title to compare using normalized exact matching.
   ///   - year: Parsed release year, or absence when unknown.
   ///   - search: Provider candidates and pagination-completeness evidence.
-  ///   - policy: Effective automatic choices controlling original-title comparison.
+  ///   - configuration: Effective automatic choices controlling original-title comparison.
   /// - Returns: A uniquely supported identity or its unresolved classification.
-  func identify(title: String, year: Int?, search: MovieSearchResult,
-                policy: IdentificationPolicy = IdentificationPolicy()) -> MovieMatchResult {
+  func matchMovie(title: String, year: Int?, search: MovieSearchResult,
+                configuration: MovieMatchingConfiguration = MovieMatchingConfiguration()) -> MovieMatchResult {
     let query = normalized(title)
     guard !query.isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else {
       return .unresolved(.invalidQuery)
     }
     guard !search.hasMorePages else { return .unresolved(.incompleteSearch) }
     let plausible = search.movies.filter {
-      (normalized($0.title) == query || (policy.comparesOriginalTitles && normalized($0.originalTitle) == query))
+      (normalized($0.title) == query || (configuration.comparesOriginalTitles && normalized($0.originalTitle) == query))
         && (year == .none || $0.releaseYear == year)
     }
     guard let selected = plausible.first else { return .unresolved(.noSuitableMatch) }

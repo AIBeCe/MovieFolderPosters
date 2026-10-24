@@ -53,16 +53,16 @@ private func runProbe() throws {
   if !FileManager.default.fileExists(atPath: doneURL.path) { throw ProbeError.timeout }
 }
 
-/// Reads a coherent processing snapshot without waiting for another process to release its lease.
+/// Reads a coherent processing snapshot without waiting for another process to release its access.
 /// - Parameters:
 ///   - store: The persistence store shared with the parent test.
 ///   - rootID: The configured root whose revision is being sampled.
-/// - Returns: A validated snapshot, or `.none` when its lease is held by another process.
+/// - Returns: A validated snapshot, or `.none` when its access is held by another process.
 /// - Throws: A persistence, decoding, validation, or probe error when the snapshot is missing or inconsistent.
 private func readProcessingState(store: PersistenceStore, rootID: UUID) throws -> CollectionProcessingState? {
-  guard let lease = try store.acquireLease(
+  guard let access = try store.acquireAccess(
     for: CollectionProcessingStore.processingStateKey(for: rootID)) else { return .none }
-  guard let data = try lease.read() else { throw ProbeError.missingProcessingState }
+  guard let data = try access.read() else { throw ProbeError.missingProcessingState }
   let processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: data)
   try processingState.validate()
   guard processingState.isInventoryComplete, processingState.folders.count == 64,

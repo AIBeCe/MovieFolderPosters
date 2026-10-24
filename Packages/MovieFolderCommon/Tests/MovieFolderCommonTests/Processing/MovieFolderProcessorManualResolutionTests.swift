@@ -5,7 +5,6 @@ import Foundation
 import Network
 import Persistence
 import Testing
-import XCTest
 
 @testable import MovieFolderCommon
 
@@ -57,7 +56,8 @@ struct ManualResolutionScenario {
     let settings = try configuration.read()
     let context = CollectionProcessingContext(
       rootID: rootID, rootIdentity: rootIdentity, authorizationVersion: authorizationVersion,
-      credentialRevision: settings.credentialRevision, usesStubTMDbResponses: false, appearance: .softFinish)
+      credentialRevision: settings.credentialRevision, usesStubTMDbResponses: false, appearance: .softFinish,
+      processingConfigurationRevision: monitoredDirectory.processingConfiguration.revision)
     processingContext = context
     let collectionStore = CollectionProcessingStore(
       store: try PersistenceStore(
@@ -72,8 +72,8 @@ struct ManualResolutionScenario {
   func setLegacyRetryDate() throws {
     let canonicalPath = fixture.movies.resolvingSymlinksInPath().standardizedFileURL.path
     let cacheKey = "movie-folder-processing:\(canonicalPath)"
-    let lease = try #require(try fixture.persistence.acquireLease(for: cacheKey))
-    let data = try #require(try lease.read())
+    let access = try #require(try fixture.persistence.acquireAccess(for: cacheKey))
+    let data = try #require(try access.read())
     let saved = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     var folders = try #require(saved["folders"] as? [String: [String: Any]])
     var dune = try #require(folders["Dune (2021)"])
@@ -82,7 +82,7 @@ struct ManualResolutionScenario {
     folders["Dune (2021)"] = dune
     var legacyState = saved
     legacyState["folders"] = folders
-    try lease.write(JSONSerialization.data(withJSONObject: legacyState))
+    try access.write(JSONSerialization.data(withJSONObject: legacyState))
   }
 }
 

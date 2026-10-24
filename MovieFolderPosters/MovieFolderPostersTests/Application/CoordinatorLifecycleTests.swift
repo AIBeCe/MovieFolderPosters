@@ -55,7 +55,7 @@ struct CoordinatorLifecycleTests {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
-    let mutation = try recovery.acquireMutationLease()
+    let change = try recovery.acquireProcessingAccess()
     let root = AppCoordinator(
       activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance(),
@@ -68,7 +68,7 @@ struct CoordinatorLifecycleTests {
     root.openPosterAction(MoviePosterRequest(
       rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: .change))
     #expect(root.posterActionCoordinator.windowController == .none)
-    withExtendedLifetime(mutation) {}
+    withExtendedLifetime(change) {}
   }
 
   /// Configuration startup failure must not remove the independent operational Log route.

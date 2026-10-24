@@ -22,7 +22,7 @@ func selectedRetryRechecksAdmissionAfterSearch(enablesRecovery: Bool) async thro
     persistence: scenario.source.fixture.persistence, provider: provider,
     cacheDirectory: scenario.source.fixture.cache, posterAssigner: FileSystemService(),
     now: { scenario.source.clock.now },
-    mutationGuard: SelectedRetryConfigurationGuard(
+    processingVerifier: SelectedRetryConfigurationVerifier(
       repository: repository, directory: directory, configuration: configuration),
     processingStore: scenario.source.collectionStore, recovery: recovery)
   let task = Task {
@@ -47,14 +47,14 @@ func selectedRetryRechecksAdmissionAfterSearch(enablesRecovery: Bool) async thro
       // The current settings generation no longer authorizes this result.
     }
   }
-  let lease = try #require(try scenario.source.fixture.persistence.acquireLease(
-    for: MovieFolderProcessor.rootLeaseKey(for: scenario.source.fixture.movies)))
-  #expect(try lease.read() == .none)
+  let access = try #require(try scenario.source.fixture.persistence.acquireAccess(
+    for: MovieFolderProcessor.processingStateKey(for: scenario.source.fixture.movies)))
+  #expect(try access.read() == .none)
   #expect(await provider.posterCount == .zero)
 }
 
-/// Uses a real configuration lease to detect policy changes at synchronous processing boundaries.
-private struct SelectedRetryConfigurationGuard: MovieFolderMutationGuard {
+/// Uses a real configuration access to detect configuration changes at synchronous processing boundaries.
+private struct SelectedRetryConfigurationVerifier: MovieFolderProcessingVerifier {
   /// Current saved settings consulted at every boundary.
   let repository: ConfigurationRepository
   /// Root identity captured before provider work began.
@@ -62,14 +62,12 @@ private struct SelectedRetryConfigurationGuard: MovieFolderMutationGuard {
   /// Settings generation captured by the selected operation.
   let configuration: DirectoryConfiguration
 
-  func movieFolderProcessor(
-    _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
-  ) throws -> PersistenceLease? {
-    try repository.mutationLease(for: directory, expectedConfiguration: configuration)
+  func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess? {
+    try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
-    try repository.mutationLease(for: directory, expectedConfiguration: configuration)
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+    try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 }
 
@@ -108,7 +106,7 @@ private struct SelectedRetryScenario {
       reason: reason, assessedAt: source.clock.now, fingerprint: candidate.fingerprint)] + unrelated
     state.isInventoryComplete = true
     state.inspectedAt = source.clock.now
-    state.operation?.state = .completed
+    state.currentRun?.state = .completed
     _ = try source.collectionStore.commit(state, expectedRevision: state.revision)
   }
 
@@ -135,16 +133,16 @@ private struct SelectedRetryScenario {
         fingerprint: "unrelated-cache", status: .unresolved, retryDate: .none,
         matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)
     ], providerRetryAt: rootDeadline)
-    let lease = try #require(try source.fixture.persistence.acquireLease(
-      for: MovieFolderProcessor.rootLeaseKey(for: source.fixture.movies)))
-    try lease.write(JSONEncoder().encode(state))
+    let access = try #require(try source.fixture.persistence.acquireAccess(
+      for: MovieFolderProcessor.processingStateKey(for: source.fixture.movies)))
+    try access.write(JSONEncoder().encode(state))
   }
 
   /// Returns operational evidence for checking deadlines and decisions independent of display recording.
   func cache() throws -> ProcessingState {
-    let lease = try #require(try source.fixture.persistence.acquireLease(
-      for: MovieFolderProcessor.rootLeaseKey(for: source.fixture.movies)))
-    let bytes = try #require(try lease.read())
+    let access = try #require(try source.fixture.persistence.acquireAccess(
+      for: MovieFolderProcessor.processingStateKey(for: source.fixture.movies)))
+    let bytes = try #require(try access.read())
 
     return try JSONDecoder().decode(ProcessingState.self, from: bytes)
   }
@@ -165,7 +163,7 @@ private struct SelectedRetryScenario {
   #expect(!stopSelection)
   let saved = try scenario.snapshot()
   #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
-  #expect(saved.operation?.action == .manual)
+  #expect(saved.currentRun?.action == .manual)
   #expect(saved.folders.first?.isVerifiedDone == true)
   #expect(await scenario.provider.searchCount == 1)
 }
@@ -195,7 +193,7 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
   #expect(stopSelection)
   let saved = try scenario.snapshot()
   #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
-  #expect(saved.operation?.state == .partial)
+  #expect(saved.currentRun?.state == .partial)
   if case .authentication = error { #expect(summary.providerRetryAt == .none) }
 }
 
@@ -215,9 +213,9 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
     ofChild: "Dune (2021)", in: scenario.source.fixture.movies).hasCustomIcon)
   #expect(await provider.posterCount == 0)
   #expect(try scenario.snapshot() == saved)
-  let lease = try #require(try scenario.source.fixture.persistence.acquireLease(
-    for: MovieFolderProcessor.rootLeaseKey(for: scenario.source.fixture.movies)))
-  #expect(try lease.read() == .none)
+  let access = try #require(try scenario.source.fixture.persistence.acquireAccess(
+    for: MovieFolderProcessor.processingStateKey(for: scenario.source.fixture.movies)))
+  #expect(try access.read() == .none)
 }
 
 /// An unresolved response from an old directory must not classify the directory that replaced it.
@@ -235,9 +233,9 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
   let saved = try scenario.snapshot()
   #expect(saved.folders.first?.reason == .interrupted)
   #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
-  let lease = try #require(try scenario.source.fixture.persistence.acquireLease(
-    for: MovieFolderProcessor.rootLeaseKey(for: scenario.source.fixture.movies)))
-  #expect(try lease.read() == .none)
+  let access = try #require(try scenario.source.fixture.persistence.acquireAccess(
+    for: MovieFolderProcessor.processingStateKey(for: scenario.source.fixture.movies)))
+  #expect(try access.read() == .none)
 }
 
 /// A current root delay and ordinary folder cooldown return a deadline without starting an operation.
@@ -328,12 +326,12 @@ func selectedRetryPreservesProtectionAddedDuringSearch(addSuppression: Bool) asy
   let saved = try scenario.snapshot()
   #expect(saved.folders.first?.state == (addSuppression ? .suppressed : .preserved))
   #expect(saved.folders.first?.reason == (addSuppression ? .policySuppressed : .existingPosterPreserved))
-  #expect(saved.operation?.state == .completed)
+  #expect(saved.currentRun?.state == .completed)
   #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
   #expect(await provider.searchCount == 1)
-  let lease = try #require(try scenario.source.fixture.persistence.acquireLease(
-    for: MovieFolderProcessor.rootLeaseKey(for: scenario.source.fixture.movies)))
-  #expect(try lease.read() == .none)
+  let access = try #require(try scenario.source.fixture.persistence.acquireAccess(
+    for: MovieFolderProcessor.processingStateKey(for: scenario.source.fixture.movies)))
+  #expect(try access.read() == .none)
 }
 
 /// A custom icon added during artwork download cannot be overwritten or recorded as a completed poster.

@@ -7,7 +7,7 @@ import Persistence
 /// privacy rules. This service does not render messages or collect system diagnostic logs.
 ///
 /// Operations use exclusive cross-process leases with cancellation-aware contention retries bounded to
-/// approximately one second. Filesystem work runs outside the caller's actor; no lease spans provider work.
+/// approximately one second. Filesystem work runs outside the caller's actor; no access spans provider work.
 /// Callers supply storage authorization and coordinate change notifications separately.
 public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   /// The store whose record envelope is limited to 2 MiB.
@@ -34,7 +34,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
 
   /// Atomically commits an event, trims oldest entries, and returns its durable identity and order.
   ///
-  /// Encoded events are limited to 2 KiB. Cancellation before the commit prevents mutation; cancellation
+  /// Encoded events are limited to 2 KiB. Cancellation before the commit prevents change; cancellation
   /// arriving after the final cancellation check may race with the atomic commit.
   /// - Parameters:
   ///   - event: The caller-defined Codable payload, whose encoded size must not exceed 2 KiB.
@@ -46,8 +46,8 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
     try await Self.offActor {
       try Self.validate(event)
       guard occurredAt.timeIntervalSinceReferenceDate.isFinite else { throw ActivityLogError.invalidOccurrenceTime }
-      let lease = try await acquireLease()
-      var snapshot = try readSnapshot(using: lease)
+      let access = try await acquireAccess()
+      var snapshot = try readSnapshot(using: access)
       guard snapshot.lastSequence < UInt64.max else { throw ActivityLogError.sequenceExhausted }
       let entry = ActivityEntry(
         id: UUID(), sequence: snapshot.lastSequence + 1, occurredAt: occurredAt, event: event)
@@ -56,22 +56,22 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
       snapshot.entries = Array(snapshot.entries.suffix(maximumEntries))
       let encoded = try JSONEncoder().encode(snapshot)
       try Task.checkCancellation()
-      try lease.write(encoded)
+      try access.write(encoded)
 
       return entry
     }
   }
 
-  /// Reads retained entries in oldest-to-newest commit order, under the same lease used by mutations.
+  /// Reads retained entries in oldest-to-newest commit order, under the same access used by mutations.
   ///
   /// Corrupt, unsupported, oversized, and unavailable records fail explicitly and remain unchanged.
   /// - Returns: Retained entries ordered by sequence, independent of their occurrence timestamps.
   /// - Throws: Validation, corruption, unsupported-version, contention, cancellation, or persistence errors.
   public func entries() async throws -> [ActivityEntry<Event>] {
     try await Self.offActor {
-      let lease = try await acquireLease()
+      let access = try await acquireAccess()
 
-      return try readSnapshot(using: lease).entries
+      return try readSnapshot(using: access).entries
     }
   }
 
@@ -83,29 +83,29 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   /// - Throws: Validation, corruption, unsupported-version, contention, cancellation, or persistence errors.
   public func clear() async throws {
     try await Self.offActor {
-      let lease = try await acquireLease()
-      var snapshot = try readSnapshot(using: lease)
+      let access = try await acquireAccess()
+      var snapshot = try readSnapshot(using: access)
       snapshot.entries.removeAll()
       let encoded = try JSONEncoder().encode(snapshot)
       try Task.checkCancellation()
-      try lease.write(encoded)
+      try access.write(encoded)
     }
   }
 
-  /// Acquires one cross-process lease, retrying for at most approximately one second.
-  private func acquireLease() async throws -> PersistenceLease {
+  /// Acquires one cross-process access, retrying for at most approximately one second.
+  private func acquireAccess() async throws -> PersistenceAccess {
     for attempt in 0...100 {
       try Task.checkCancellation()
-      if let lease = try store.acquireLease(for: key) { return lease }
-      guard attempt < 100 else { throw ActivityLogError.leaseTimedOut }
+      if let access = try store.acquireAccess(for: key) { return access }
+      guard attempt < 100 else { throw ActivityLogError.accessTimedOut }
       try await Task.sleep(for: .milliseconds(10))
     }
-    throw ActivityLogError.leaseTimedOut
+    throw ActivityLogError.accessTimedOut
   }
 
   /// Decodes and validates the complete snapshot before any operation uses or replaces it.
-  private func readSnapshot(using lease: PersistenceLease) throws -> ActivitySnapshot<Event> {
-    guard let data = try lease.read() else { return ActivitySnapshot() }
+  private func readSnapshot(using access: PersistenceAccess) throws -> ActivitySnapshot<Event> {
+    guard let data = try access.read() else { return ActivitySnapshot() }
     let snapshot: ActivitySnapshot<Event>
     do {
       snapshot = try JSONDecoder().decode(ActivitySnapshot<Event>.self, from: data)
@@ -130,7 +130,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
     return snapshot
   }
 
-  /// Rejects unbounded event payloads before acquiring a mutation lease.
+  /// Rejects unbounded event payloads before acquiring a change access.
   private static func validate(_ event: Event) throws {
     guard try JSONEncoder().encode(event).count <= 2 * 1024 else { throw ActivityLogError.eventTooLarge }
   }

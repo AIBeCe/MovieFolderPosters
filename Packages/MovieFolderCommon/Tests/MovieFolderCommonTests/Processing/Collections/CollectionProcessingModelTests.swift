@@ -113,16 +113,16 @@ struct CollectionProcessingModelTests {
 
   /// Checks that projections distinguish stale generations, active work, and interrupted runs.
   @Test func projectionSeparatesStaleBusyAndInterruptedStates() {
-    let operation = CollectionProcessingOperation(
+    let operation = CollectionProcessingRun(
       action: .automatic, startedAt: Date(), endedAt: Date(), state: .interrupted)
-    let processingState = CollectionProcessingState(context: context, operation: operation)
+    let processingState = CollectionProcessingState(context: context, currentRun: operation)
 
     #expect(CollectionProcessingPresentation(processingState: processingState).state == .interrupted)
     #expect(CollectionProcessingPresentation(processingState: processingState, isStale: true).state == .stale)
     #expect(CollectionProcessingPresentation(processingState: processingState, isBusy: true).state == .busy)
 
     var runningProcessingState = processingState
-    runningProcessingState.operation?.state = .running
+    runningProcessingState.currentRun?.state = .running
     #expect(CollectionProcessingPresentation(
       processingState: runningProcessingState, stateOverride: .interrupted
     ).state == .interrupted)
@@ -138,14 +138,14 @@ struct CollectionProcessingModelTests {
   }
 
   /// Checks that renamed Swift declarations retain their historical persisted keys and values.
-  @Test func legacyJSONKeepsRenamedFieldsAndOperationValues() throws {
+  @Test func legacyJSONKeepsRenamedFieldsAndRunValues() throws {
 
     let processingState = try JSONDecoder().decode(
       CollectionProcessingState.self, from: Data(Self.legacyJSONFixture.utf8))
     try processingState.validate()
 
     #expect(processingState.folders.first?.lastFailure?.reason == .storage)
-    #expect(processingState.operation?.action == .selection)
+    #expect(processingState.currentRun?.action == .selection)
     #expect(processingState.isInventoryComplete)
 
     let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(processingState)) as? [String: Any]

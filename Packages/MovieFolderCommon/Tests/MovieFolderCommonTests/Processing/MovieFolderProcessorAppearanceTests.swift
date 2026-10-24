@@ -5,14 +5,13 @@ import Foundation
 import Network
 import Persistence
 import Testing
-import XCTest
 
 @testable import MovieFolderCommon
 
 extension MovieFolderProcessorTests {
   /// Verifies changed Folder Identity Is Never Assigned.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testChangedFolderIdentityIsNeverAssigned() async throws {
+  @Test func changedFolderIdentityIsNeverAssigned() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider(delaysSearch: true)
@@ -26,13 +25,13 @@ extension MovieFolderProcessorTests {
     await provider.allowSearch()
     let summary = try await task.value
 
-    XCTAssertEqual(summary.transientFailures, 1)
-    XCTAssertEqual(fixture.assigner.assignmentCount, 0)
+    #expect(summary.transientFailures == 1)
+    #expect(fixture.assigner.assignmentCount == 0)
   }
 
   /// Verifies appearance Change Restyles Cached Poster Without Provider Requests.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testAppearanceChangeRestylesCachedPosterWithoutProviderRequests() async throws {
+  @Test func appearanceChangeRestylesCachedPosterWithoutProviderRequests() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider()
@@ -52,16 +51,16 @@ extension MovieFolderProcessorTests {
     )
     let searchCount = await provider.searchCount
     let posterCount = await provider.posterCount
-    XCTAssertEqual(initial.assigned, 1)
-    XCTAssertEqual(styled.restyled, 1)
-    XCTAssertEqual(appearance, .softFinish)
-    XCTAssertEqual(searchCount, 1)
-    XCTAssertEqual(posterCount, 1)
+    #expect(initial.assigned == 1)
+    #expect(styled.restyled == 1)
+    #expect(appearance == .softFinish)
+    #expect(searchCount == 1)
+    #expect(posterCount == 1)
   }
 
   /// Verifies unchanged Appearance Does Not Rewrite Owned Icon.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testUnchangedAppearanceDoesNotRewriteOwnedIcon() async throws {
+  @Test func unchangedAppearanceDoesNotRewriteOwnedIcon() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider()
@@ -75,15 +74,15 @@ extension MovieFolderProcessorTests {
 
     let searchCount = await provider.searchCount
     let posterCount = await provider.posterCount
-    XCTAssertEqual(second.assigned, 0)
-    XCTAssertEqual(second.restyled, 0)
-    XCTAssertEqual(searchCount, 1)
-    XCTAssertEqual(posterCount, 1)
+    #expect(second.assigned == 0)
+    #expect(second.restyled == 0)
+    #expect(searchCount == 1)
+    #expect(posterCount == 1)
   }
 
   /// Verifies restyle Preserves Manually Selected Movie ID.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRestylePreservesManuallySelectedMovieID() async throws {
+  @Test func restylePreservesManuallySelectedMovieID() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let fileSystem = FileSystemService()
@@ -106,13 +105,13 @@ extension MovieFolderProcessorTests {
       root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )
 
-    XCTAssertEqual(summary.restyled, 1)
-    XCTAssertEqual(matchedID, 713)
+    #expect(summary.restyled == 1)
+    #expect(matchedID == 713)
   }
 
   /// Verifies foreign Icon Is Not Replaced For Appearance Change.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testForeignIconIsNotReplacedForAppearanceChange() async throws {
+  @Test func foreignIconIsNotReplacedForAppearanceChange() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     try fixture.markCustomIcon("Dune (2021)")
@@ -123,14 +122,14 @@ extension MovieFolderProcessorTests {
 
     let summary = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.restyled, 0)
-    XCTAssertTrue(try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
-    XCTAssertNil(try fileSystem.assignedPosterAppearance(toChild: "Dune (2021)", in: fixture.movies))
+    #expect(summary.restyled == 0)
+    #expect(try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+    #expect(try fileSystem.assignedPosterAppearance(toChild: "Dune (2021)", in: fixture.movies) == nil)
   }
 
   /// Verifies suppressed Owned Icon Is Not Restored For Appearance Change.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testSuppressedOwnedIconIsNotRestoredForAppearanceChange() async throws {
+  @Test func suppressedOwnedIconIsNotRestoredForAppearanceChange() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let fileSystem = FileSystemService()
@@ -147,21 +146,21 @@ extension MovieFolderProcessorTests {
     let removed = try await rawProcessor.removePoster(
       root: fixture.movies, child: "Dune (2021)",
       expectedIdentity: identity)
-    XCTAssertTrue(removed)
+    #expect(removed)
     let styledProcessor = try fixture.processor(
       provider: CountingProvider(), appearance: .softFinish,
       posterAssigner: fileSystem)
 
     let summary = try await styledProcessor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.assigned, 0)
-    XCTAssertEqual(summary.restyled, 0)
-    XCTAssertTrue(try fileSystem.isPosterSuppressed(toChild: "Dune (2021)", in: fixture.movies))
+    #expect(summary.assigned == 0)
+    #expect(summary.restyled == 0)
+    #expect(try fileSystem.isPosterSuppressed(toChild: "Dune (2021)", in: fixture.movies))
   }
 
   /// Verifies missing Cached Source Leaves Owned Icon At Its Current Appearance.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testMissingCachedSourceLeavesOwnedIconAtItsCurrentAppearance() async throws {
+  @Test func missingCachedSourceLeavesOwnedIconAtItsCurrentAppearance() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider()
@@ -186,15 +185,15 @@ extension MovieFolderProcessorTests {
     )
     let searchCount = await provider.searchCount
     let posterCount = await provider.posterCount
-    XCTAssertEqual(summary.restyled, 0)
-    XCTAssertEqual(appearance, .raw)
-    XCTAssertEqual(searchCount, initialSearchCount)
-    XCTAssertEqual(posterCount, initialPosterCount + 1)
+    #expect(summary.restyled == 0)
+    #expect(appearance == .raw)
+    #expect(searchCount == initialSearchCount)
+    #expect(posterCount == initialPosterCount + 1)
   }
 
   /// Verifies cached Restyle Runs Before Root Backoff Network Failure.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testCachedRestyleRunsBeforeRootBackoffNetworkFailure() async throws {
+  @Test func cachedRestyleRunsBeforeRootBackoffNetworkFailure() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider()
@@ -215,14 +214,14 @@ extension MovieFolderProcessorTests {
     let appearance = try fileSystem.assignedPosterAppearance(
       toChild: "Dune (2021)", in: fixture.movies
     )
-    XCTAssertNotNil(summary.providerRetryAt)
-    XCTAssertEqual(summary.restyled, 1)
-    XCTAssertEqual(appearance, .softFinish)
+    #expect(summary.providerRetryAt != nil)
+    #expect(summary.restyled == 1)
+    #expect(appearance == .softFinish)
   }
 
   /// Verifies restyle Does Not Recreate Poster Suppressed Before Final Write.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRestyleDoesNotRecreatePosterSuppressedBeforeFinalWrite() async throws {
+  @Test func restyleDoesNotRecreatePosterSuppressedBeforeFinalWrite() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let fileSystem = FileSystemService()
@@ -233,13 +232,13 @@ extension MovieFolderProcessorTests {
     _ = try await rawProcessor.process(root: fixture.movies)
     let styledProcessor = try fixture.processor(
       provider: CountingProvider(), appearance: .softFinish, posterAssigner: fileSystem,
-      mutationGuard: SuppressingMutationGuard(root: fixture.movies, identity: identity)
+      processingVerifier: SuppressingIconChangeVerifier(root: fixture.movies, identity: identity)
     )
 
     let summary = try await styledProcessor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.restyled, 0)
-    XCTAssertFalse(try fileSystem.hasAssignedPoster(toChild: "Dune (2021)", in: fixture.movies))
-    XCTAssertTrue(try fileSystem.isPosterSuppressed(toChild: "Dune (2021)", in: fixture.movies))
+    #expect(summary.restyled == 0)
+    #expect(!(try fileSystem.hasAssignedPoster(toChild: "Dune (2021)", in: fixture.movies)))
+    #expect(try fileSystem.isPosterSuppressed(toChild: "Dune (2021)", in: fixture.movies))
   }
 }

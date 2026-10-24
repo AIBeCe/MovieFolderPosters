@@ -24,23 +24,23 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let first = try PersistenceStore(directory: directory)
   let second = try PersistenceStore(directory: directory)
   do {
-    let lease = try #require(try first.acquireLease(for: "a"))
-    #expect(try second.acquireLease(for: "a") == nil)
-    #expect(try second.acquireLease(for: "b") != nil)
-    withExtendedLifetime(lease) {}
+    let access = try #require(try first.acquireAccess(for: "a"))
+    #expect(try second.acquireAccess(for: "a") == nil)
+    #expect(try second.acquireAccess(for: "b") != nil)
+    withExtendedLifetime(access) {}
   }
-  #expect(try second.acquireLease(for: "a") != nil)
+  #expect(try second.acquireAccess(for: "a") != nil)
 }
 
-/// Scenario: separate process cannot acquire held lease.
-@Test func separateProcessCannotAcquireHeldLease() throws {
+/// Scenario: separate process cannot acquire held access.
+@Test func separateProcessCannotAcquireHeldAccess() throws {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
   let executable = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     .deletingLastPathComponent().deletingLastPathComponent()
     .appendingPathComponent(".build/debug/PersistenceTestProbe")
-  /// Runs the lease probe in another process to check cross-process exclusion.
+  /// Runs the access probe in another process to check cross-process exclusion.
   /// - Returns: The probe process termination status.
   /// - Throws: A process-launch error when the probe cannot start.
   func probe() throws -> Int32 {
@@ -53,9 +53,9 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
     return process.terminationStatus
   }
   do {
-    let lease = try #require(try store.acquireLease(for: "a"))
+    let access = try #require(try store.acquireAccess(for: "a"))
     #expect(try probe() == 2)
-    withExtendedLifetime(lease) {}
+    withExtendedLifetime(access) {}
   }
   #expect(try probe() == 0)
 }
@@ -65,11 +65,11 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "a"))
+  let access = try #require(try store.acquireAccess(for: "a"))
   let corrupt = Data("invalid json".utf8)
   try corrupt.write(to: recordURL(directory, "a"))
-  #expect(throws: (any Error).self) { try lease.read() }
-  #expect(throws: (any Error).self) { try lease.write(Data()) }
+  #expect(throws: (any Error).self) { try access.read() }
+  #expect(throws: (any Error).self) { try access.write(Data()) }
   #expect(try Data(contentsOf: recordURL(directory, "a")) == corrupt)
 }
 
@@ -78,13 +78,13 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "a"))
+  let access = try #require(try store.acquireAccess(for: "a"))
   try Data(#"{"version":2,"keyDigest":"wrong","payload":""}"#.utf8)
     .write(to: recordURL(directory, "a"))
-  #expect(throws: (any Error).self) { try lease.read() }
+  #expect(throws: (any Error).self) { try access.read() }
   try Data(#"{"version":1,"keyDigest":"wrong","payload":""}"#.utf8)
     .write(to: recordURL(directory, "a"))
-  #expect(throws: (any Error).self) { try lease.read() }
+  #expect(throws: (any Error).self) { try access.read() }
 }
 
 /// Scenario: unsafe directories keys and record symlinks are rejected.
@@ -92,15 +92,15 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
-  #expect(throws: (any Error).self) { try store.acquireLease(for: "") }
+  #expect(throws: (any Error).self) { try store.acquireAccess(for: "") }
   #expect(throws: (any Error).self) { try PersistenceStore(directory: #require(URL(string: "https://example.com"))) }
   let target = directory.appendingPathComponent("target")
   try Data("untouched".utf8).write(to: target)
-  let lease = try #require(try store.acquireLease(for: "a"))
+  let access = try #require(try store.acquireAccess(for: "a"))
   try FileManager.default.createSymbolicLink(
     at: recordURL(directory, "a"), withDestinationURL: target)
-  #expect(throws: (any Error).self) { try lease.read() }
-  #expect(throws: (any Error).self) { try lease.write(Data()) }
+  #expect(throws: (any Error).self) { try access.read() }
+  #expect(throws: (any Error).self) { try access.write(Data()) }
   #expect(try Data(contentsOf: target) == Data("untouched".utf8))
   let alias = directory.appendingPathComponent("alias")
   try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: directory)
@@ -129,13 +129,13 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
   try FileManager.default.createSymbolicLink(at: cache, withDestinationURL: outside)
 
-  let lease = try #require(try store.acquireLease(for: "pinned"))
-  try lease.write(Data("inside original directory".utf8))
+  let access = try #require(try store.acquireAccess(for: "pinned"))
+  try access.write(Data("inside original directory".utf8))
   let movedRecord = recordURL(movedCache, "pinned")
   let outsideRecord = recordURL(outside, "pinned")
   #expect(FileManager.default.fileExists(atPath: movedRecord.path))
   #expect(!FileManager.default.fileExists(atPath: outsideRecord.path))
-  #expect(try lease.read() == Data("inside original directory".utf8))
+  #expect(try access.read() == Data("inside original directory".utf8))
 }
 
 /// Scenario: record fifo is rejected without blocking.
@@ -143,10 +143,10 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "fifo"))
+  let access = try #require(try store.acquireAccess(for: "fifo"))
   #expect(mkfifo(recordURL(directory, "fifo").path, S_IRUSR | S_IWUSR) == 0)
-  #expect(throws: (any Error).self) { try lease.read() }
-  #expect(throws: (any Error).self) { try lease.write(Data("replacement".utf8)) }
+  #expect(throws: (any Error).self) { try access.read() }
+  #expect(throws: (any Error).self) { try access.write(Data("replacement".utf8)) }
 }
 
 /// Scenario: saves reopens and updates data.
@@ -155,16 +155,16 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
   do {
-    let lease = try #require(try store.acquireLease(for: "movie/../any opaque key"))
-    #expect(try lease.read() == .none)
-    try lease.write(Data([0, 1, 255]))
-    #expect(try lease.read() == Data([0, 1, 255]))
+    let access = try #require(try store.acquireAccess(for: "movie/../any opaque key"))
+    #expect(try access.read() == .none)
+    try access.write(Data([0, 1, 255]))
+    #expect(try access.read() == Data([0, 1, 255]))
   }
   let reopened = try PersistenceStore(directory: directory)
-  let lease = try #require(try reopened.acquireLease(for: "movie/../any opaque key"))
-  #expect(try lease.read() == Data([0, 1, 255]))
-  try lease.write(Data("replacement".utf8))
-  #expect(try lease.read() == Data("replacement".utf8))
+  let access = try #require(try reopened.acquireAccess(for: "movie/../any opaque key"))
+  #expect(try access.read() == Data([0, 1, 255]))
+  try access.write(Data("replacement".utf8))
+  #expect(try access.read() == Data("replacement".utf8))
 }
 
 /// Scenario: encoded envelope limits reject oversized reads and writes before replacement.
@@ -172,11 +172,11 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory, maximumRecordBytes: 128)
-  let lease = try #require(try store.acquireLease(for: "bounded"))
-  #expect(throws: (any Error).self) { try lease.write(Data(repeating: 1, count: 128)) }
+  let access = try #require(try store.acquireAccess(for: "bounded"))
+  #expect(throws: (any Error).self) { try access.write(Data(repeating: 1, count: 128)) }
   let record = recordURL(directory, "bounded")
   try Data(repeating: 32, count: 129).write(to: record)
-  #expect(throws: (any Error).self) { try lease.read() }
+  #expect(throws: (any Error).self) { try access.read() }
 }
 
 /// Scenario: the legacy default remains unlimited while callers can opt into an envelope bound.
@@ -184,11 +184,11 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
-  let lease = try #require(try store.acquireLease(for: "large-default"))
+  let access = try #require(try store.acquireAccess(for: "large-default"))
   let payload = Data(repeating: 7, count: 8 * 1024 * 1024 + 1)
 
-  try lease.write(payload)
-  #expect(try lease.read() == payload)
+  try access.write(payload)
+  #expect(try access.read() == payload)
 }
 
 /// Scenario: slash-heavy base64 stays within the exact encoded envelope preflight estimate.
@@ -196,11 +196,11 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory, maximumRecordBytes: 1_024)
-  let lease = try #require(try store.acquireLease(for: "slash-heavy"))
+  let access = try #require(try store.acquireAccess(for: "slash-heavy"))
   let payload = Data(repeating: 0xff, count: 675)
 
-  try lease.write(payload)
-  #expect(try lease.read() == payload)
+  try access.write(payload)
+  #expect(try access.read() == payload)
 }
 
 /// Scenario: pruning removes recognized unlocked records while preserving locks and unknown entries.
@@ -211,11 +211,11 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   let retainedKey = "retained"
   let staleKey = "stale"
   let busyKey = "busy"
-  let retained = try #require(try store.acquireLease(for: retainedKey))
-  let busy = try #require(try store.acquireLease(for: busyKey))
+  let retained = try #require(try store.acquireAccess(for: retainedKey))
+  let busy = try #require(try store.acquireAccess(for: busyKey))
   try retained.write(Data("keep".utf8))
   do {
-    let stale = try #require(try store.acquireLease(for: staleKey))
+    let stale = try #require(try store.acquireAccess(for: staleKey))
     try stale.write(Data("remove".utf8))
   }
   try busy.write(Data("later".utf8))
@@ -245,17 +245,17 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
   #expect(try store.pruneRecords(keepingKeys: [retainedKey]) == deferred)
 }
 
-/// Scenario: a held lease can explicitly remove corrupt regular record data without removing its lock.
-@Test func leaseRemovesCorruptRegularRecordAndKeepsLock() throws {
+/// Scenario: a held access can explicitly remove corrupt regular record data without removing its lock.
+@Test func accessRemovesCorruptRegularRecordAndKeepsLock() throws {
   let directory = temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }
   let store = try PersistenceStore(directory: directory)
   let key = "corrupt"
-  let lease = try #require(try store.acquireLease(for: key))
+  let access = try #require(try store.acquireAccess(for: key))
   try Data("broken".utf8).write(to: recordURL(directory, key))
 
-  try lease.removeRecord()
-  #expect(try lease.read() == .none)
+  try access.removeRecord()
+  #expect(try access.read() == .none)
   #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(
     SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".lock"
   ).path))

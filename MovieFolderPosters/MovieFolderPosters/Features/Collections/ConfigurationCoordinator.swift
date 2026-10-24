@@ -35,6 +35,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.
   private let viewModel: ConfigurationViewModel
+  /// Retains the persistence boundary for confirmed Finder inclusion actions.
+  private let service: any ConfigurationServicing
   /// Independently reads committed processing snapshots for main-window presentation.
   private let summaryViewModel: CollectionSummaryViewModel
   /// Shared appearance selection owned and applied by the application root.
@@ -63,6 +65,10 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private(set) var setupWindow: NSWindow?
   /// Uncommitted bookmarks and local choices, discarded with the setup sheet.
   private var setupViewModel: CollectionSetupViewModel?
+  /// Retains the finite collection edit sheet until cancellation or a successful atomic save.
+  private var editWindow: NSWindow?
+  /// Draft and compare-and-swap evidence owned by the edit flow.
+  private var editViewModel: CollectionEditViewModel?
 
   /// Creates the host flow and connects its configuration and appearance services.
   ///
@@ -83,6 +89,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     recovery: ProcessingRecoveryService? = .none,
     retryService: any CollectionRetryServicing = UnavailableCollectionRetryService()
   ) {
+    self.service = service
     self.installationService = installationService
     self.activity = activity
     self.appearance = appearance
@@ -222,7 +229,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private func closeResults() {
     guard let sheet = resultsWindow else { return }
     resultsWindow = .none
-    resultsViewModel?.cancelCurrentOperation()
+    resultsViewModel?.cancelRetryTask()
     delegate?.configurationCoordinator(self, willCloseResults: sheet)
     if let parent = sheet.sheetParent { parent.endSheet(sheet) }
     sheet.delegate = .none
@@ -243,8 +250,9 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       closeDetails()
       closeResults()
       closeSetup()
+      closeEdit()
     } else if window === settingsWindow?.window {
-      viewModel.cancelCredentialOperation()
+      viewModel.cancelCredentialAction()
       if mainWindow?.window?.isVisible != true {
         DistributedNotificationCenter.default().removeObserver(self)
         isObservingProcessing = false
@@ -255,6 +263,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       closeResults()
     } else if window === setupWindow {
       closeSetup()
+    } else if window === editWindow {
+      closeEdit()
     }
   }
 
@@ -349,7 +359,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     showUnresolvedResults(rootID: rootID)
   }
 
-  /// Invalidates captured selection after authorization or processing policy changes.
+  /// Invalidates captured selection after authorization or processing configuration changes.
   @objc private func resultsConfigurationChanged(_ notification: Notification) {
     Task { @MainActor [weak self] in
       self?.resultsViewModel?.configurationDidChange()
@@ -367,6 +377,37 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 }
 
 extension ConfigurationCoordinator {
+  /// Confirms the captured Finder action before its identity and revision are revalidated by the service.
+  func openInclusionAction(_ request: MovieFolderInclusionRequest) {
+    start()
+
+    guard let parent = mainWindow?.window, parent.attachedSheet == .none else { return }
+
+    let alert = NSAlert()
+    let includes = request.action == .include
+    alert.messageText = includes ? "Include Folder?" : "Ignore Folder?"
+    alert.informativeText = request.folderURL.lastPathComponent
+      + (includes ? " will participate when the collection is active." : " will be excluded from processing.")
+      + " Existing posters and movie contents are preserved."
+    alert.addButton(withTitle: includes ? "Include Folder" : "Ignore Folder")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: parent) { [weak self] response in
+      guard response == .alertFirstButtonReturn, let self else { return }
+
+      Task {
+        do { try await service.applyInclusionRequest(request) }
+        catch {
+          let failure = NSAlert()
+          failure.messageText = "Could not change folder inclusion"
+          failure.informativeText = "The folder or collection may have changed. Open the Finder menu and try again."
+          _ = await failure.beginSheetModal(for: parent)
+        }
+        await viewModel.load()
+        summaryViewModel.reload()
+      }
+    }
+  }
+
   /// Refreshes friendly names without invalidating captured processing or unresolved selection.
   /// - Parameter notification: Payload-free presentation invalidation from a committed collection rename.
   @objc private func collectionPresentationChanged(_ notification: Notification) {
@@ -401,28 +442,36 @@ extension ConfigurationCoordinator {
 
   /// Owns the native rename prompt while the model and service own presentation state and persistence.
   func configurationViewController(_ controller: ConfigurationViewController, didRequestRename identifier: UUID) {
-    guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none,
-      let directory = viewModel.directories.first(where: { $0.id == identifier }) else { return }
+    guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none else { return }
 
-    let alert = NSAlert()
-    alert.messageText = "Rename Collection"
-    alert.informativeText = directory.path + "\nA blank name uses the folder name. Maximum 120 characters."
-    let field = NSTextField(string: directory.displayName ?? "")
-    field.frame = NSRect(x: 0, y: 0, width: 380, height: 24)
-    field.placeholderString = URL(fileURLWithPath: directory.path).lastPathComponent
-    field.setAccessibilityLabel("Collection display name")
-    alert.accessoryView = field
-    alert.addButton(withTitle: "Rename")
-    alert.addButton(withTitle: "Cancel")
-    alert.beginSheetModal(for: window) { [weak self] response in
-      guard response == .alertFirstButtonReturn else { return }
+    let model = viewModel.makeCollectionEditViewModel(identifier: identifier)
+    let controller = CollectionEditViewController(viewModel: model)
+    controller.delegate = self
+    let sheet = NSWindow(contentViewController: controller)
+    sheet.title = "Edit Collection"
+    sheet.styleMask = [.titled, .closable, .resizable]
+    sheet.setContentSize(NSSize(width: 580, height: 600))
+    sheet.delegate = self
+    editWindow = sheet
+    editViewModel = model
+    window.beginSheet(sheet)
+    Task { await model.load() }
+  }
 
-      Task { await self?.viewModel.renameCollection(identifier, displayName: field.stringValue) }
-    }
+  /// Discards the draft only when no final save is running.
+  private func closeEdit() {
+    guard let sheet = editWindow, editViewModel?.isBusy != true else { return }
+
+    editWindow = .none
+    editViewModel = .none
+    if let parent = sheet.sheetParent { parent.endSheet(sheet) }
+    sheet.delegate = .none
+    sheet.close()
   }
 
   /// Keeps a final commit alive until its result is known before either owning window can close.
   func windowShouldClose(_ sender: NSWindow) -> Bool {
+    if sender === editWindow || sender === mainWindow?.window, editViewModel?.isBusy == true { return false }
     if sender === setupWindow || sender === mainWindow?.window { return setupViewModel?.isCommitting != true }
 
     return true
@@ -458,6 +507,23 @@ extension ConfigurationCoordinator {
     sheet.delegate = .none
     sheet.close()
   }
+}
+
+extension ConfigurationCoordinator: CollectionEditViewControllerDelegate {
+  /// Keeps the draft visible after a conflict and refreshes Main after a successful save.
+  func collectionEditViewControllerDidRequestSave(_ controller: CollectionEditViewController) {
+    guard let model = editViewModel, model.canSave else { return }
+
+    Task {
+      if await model.save() {
+        closeEdit()
+        await viewModel.load()
+        summaryViewModel.reload()
+      }
+    }
+  }
+  /// Discards every local change.
+  func collectionEditViewControllerDidRequestCancel(_ controller: CollectionEditViewController) { closeEdit() }
 }
 
 extension ConfigurationCoordinator: CollectionSetupViewControllerDelegate {

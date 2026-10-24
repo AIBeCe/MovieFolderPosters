@@ -57,7 +57,7 @@ func testCredential(expectedRevision: UUID?) async throws
 func saveCredential(_ value: String, expectedRevision: UUID?) async throws
 func removeCredential(expectedRevision: UUID?) async throws
 // ConfigurationRepository:
-func readIfPresentHoldingLease() throws -> (DirectoryConfiguration?, PersistenceLease)
+func readIfPresentHoldingAccess() throws -> (DirectoryConfiguration?, PersistenceAccess)
 func updateCredential(expectedRevision: UUID?, afterCommit: () throws -> Void) throws
 // ProcessingRecoveryService:
 func validateCredentialTestAllowed() throws
@@ -120,7 +120,7 @@ The old settings record key is retained to maintain the same cross-process lease
 older binaries encounter the unsupported version and fail closed.
 
 Settings preview uses the production parser without scanning a collection. Choose Movie
-uses `MovieIdentificationRequest` for both its local disclosure and actual title/year
+uses `MovieMatchingRequest` for both its local disclosure and actual title/year
 arguments, preserving the existing 1888–2099 input range.
 
 ## Focused implementation evidence — 2026-10-22

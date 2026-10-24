@@ -5,7 +5,7 @@ import Testing
 
 /// Configuration defaults preserve established timing while custom policies reject unsafe values.
 struct MovieFolderProcessorConfigurationTests {
-  /// The standard policy retains the timing values used before configuration injection.
+  /// The standard configuration retains the timing values used before configuration injection.
   @Test func standardPolicyPreservesExistingIntervals() {
     let configuration = MovieFolderProcessorConfiguration.standard
 
@@ -16,7 +16,7 @@ struct MovieFolderProcessorConfigurationTests {
     #expect(configuration.maximumProviderRetryInterval == 86_400)
   }
 
-  /// A custom instance keeps its values without changing the shared standard policy.
+  /// A custom instance keeps its values without changing the shared standard configuration.
   @Test func customPolicyIsIndependentOfStandardPolicy() throws {
     let configuration = try MovieFolderProcessorConfiguration(
       incompleteSearchRetryInterval: 45, transientFailureRetryInterval: 15,

@@ -9,12 +9,16 @@ protocol FinderMenuPlatform {
   func selectedItemURLs() -> [URL]?
   /// Opens the persisted settings source.
   func configurationRepository() throws -> ConfigurationRepository
-  /// Dispatches the captured request to the installed host, which revalidates it before mutation.
+  /// Dispatches the captured request to the installed host, which revalidates it before change.
   func open(_ request: MoviePosterRequest)
+  /// Opens a captured inclusion request for host confirmation.
+  func open(_ request: MovieFolderInclusionRequest)
 }
 
-/// Adapts Finder selection and host launch without owning selection policy.
+/// Adapts Finder selection and host launch without owning selection configuration.
 struct SystemFinderMenuPlatform: FinderMenuPlatform {
+  /// Launches the host with the typed inclusion route, independent of provider credentials.
+  func open(_ request: MovieFolderInclusionRequest) { openURL(request.url) }
   func selectedItemURLs() -> [URL]? { FIFinderSyncController.default().selectedItemURLs() }
   func configurationRepository() throws -> ConfigurationRepository {
     try MovieFolderEnvironment.makeConfigurationRepository()
@@ -23,11 +27,16 @@ struct SystemFinderMenuPlatform: FinderMenuPlatform {
   /// Opens the captured action in the containing host app and logs a sanitized launch failure.
   /// - Parameter request: Validated folder action to pass to the host.
   func open(_ request: MoviePosterRequest) {
+    openURL(request.url)
+  }
+
+  /// Launches the containing host application with one captured action URL.
+  private func openURL(_ url: URL) {
     let host = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent()
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
-    NSWorkspace.shared.open([request.url], withApplicationAt: host, configuration: configuration) { _, error in
+    NSWorkspace.shared.open([url], withApplicationAt: host, configuration: configuration) { _, error in
       if error != nil {
         Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderActions")
           .error("Could not open the poster action window")
@@ -44,6 +53,8 @@ final class FinderMenuController: NSObject {
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderActions")
   /// Requests captured for the current menu generation only.
   private var menuRequests: [Int: MoviePosterRequest] = [:]
+  /// Inclusion request retained only for the current menu generation.
+  private var inclusionRequests: [Int: MovieFolderInclusionRequest] = [:]
   /// Monotonically increasing tags prevent older menu items resolving to newer requests.
   private var nextMenuTag: Int
 
@@ -61,10 +72,26 @@ final class FinderMenuController: NSObject {
   func menu(for menuKind: FIMenuKind, actionTarget: AnyObject) -> NSMenu? {
     guard menuKind == .contextualMenuForItems else { return .none }
     menuRequests.removeAll()
+    inclusionRequests.removeAll()
     guard let selection = selectedMovieFolder(),
-      nextMenuTag <= Int.max - MoviePosterAction.allCases.count
+      nextMenuTag < Int.max - MoviePosterAction.allCases.count
     else { return .none }
     let menu = NSMenu(title: "Movie Poster")
+    if let directory = try? platform.configurationRepository().read().directories.first(where: {
+      $0.id == selection.rootID
+    }) {
+      let excluded = directory.processingConfiguration.excludesFolder(identity: selection.identity)
+      let item = NSMenuItem(title: excluded ? "Include Folder…" : "Ignore Folder…",
+        action: #selector(FinderSync.openInclusionAction(_:)), keyEquivalent: "")
+      item.target = actionTarget
+      item.tag = nextMenuTag
+      nextMenuTag += 1
+      inclusionRequests[item.tag] = MovieFolderInclusionRequest(action: excluded ? .include : .exclude,
+        collectionID: directory.id,
+        folderURL: URL(fileURLWithPath: directory.path).appendingPathComponent(selection.childName),
+        folderIdentity: selection.identity, expectedProcessingConfigurationRevision: directory.processingConfiguration.revision)
+      menu.addItem(item)
+    }
     for action in MoviePosterAction.allCases {
       let item = NSMenuItem(
         title: "Movie Poster: \(action.title)",
@@ -91,6 +118,13 @@ final class FinderMenuController: NSObject {
       return
     }
     // The host revalidates this captured folder identity before every action, including the final write.
+    platform.open(request)
+  }
+
+  /// Dispatches only the request captured by this menu generation.
+  func openInclusionAction(_ sender: NSMenuItem) {
+    guard let request = inclusionRequests[sender.tag] else { return }
+
     platform.open(request)
   }
 

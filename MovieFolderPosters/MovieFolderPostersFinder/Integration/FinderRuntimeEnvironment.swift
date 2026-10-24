@@ -4,7 +4,7 @@ import MovieFolderCommon
 import Network
 import Persistence
 
-/// Supplies signed-process boundaries while the runtime retains authorization and processing policy.
+/// Supplies signed-process boundaries while the runtime retains authorization and processing configuration.
 nonisolated protocol FinderRuntimeEnvironment: Sendable {
   /// Best-effort activity service retained independently of authorization.
   var activity: any MovieFolderActivityServicing { get }
@@ -26,7 +26,7 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   func processingRecoveryService() throws -> ProcessingRecoveryService
   /// Resolves and retains authorization for a transferred or extension-owned bookmark.
   func acquireDirectoryAccess(bookmark: Data, securityScoped: Bool, expectedIdentity: String?) throws
-    -> DirectoryAccessLease
+    -> DirectoryAccess
   /// Creates the extension's persistent grant after transferred access succeeds.
   func makeDirectoryBookmark(for url: URL) throws -> Data
   /// Publishes the currently authorized roots to Finder.
@@ -41,7 +41,7 @@ extension FinderRuntimeEnvironment {
   }
 }
 
-/// Adapts the signed extension's system services without adding processing policy.
+/// Adapts the signed extension's system services without adding processing configuration.
 nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
   /// Shared recorder used by Finder configuration and processing events.
   var activity: any MovieFolderActivityServicing { MovieFolderEnvironment.makeActivityRecorder() }
@@ -86,7 +86,7 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
   }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?
-  ) throws -> DirectoryAccessLease {
+  ) throws -> DirectoryAccess {
     try FileSystemService().acquireDirectoryAccess(
       bookmark: bookmark, securityScoped: securityScoped, expectedIdentity: expectedIdentity)
   }

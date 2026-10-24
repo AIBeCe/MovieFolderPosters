@@ -78,7 +78,7 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
   }
 }
 
-/// Resolves host action storage without changing the authorization policy.
+/// Resolves host action storage without changing the authorization configuration.
 nonisolated protocol MoviePosterActionEnvironment: Sendable {
   /// Creates the host bookmark after a transferred grant has been validated.
   func makeDirectoryBookmark(for directory: URL) throws -> Data
@@ -137,14 +137,14 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// Retained best-effort recorder whose failure never changes a poster result.
   private let activity: any MovieFolderActivityServicing
   /// Holds admission through asynchronous suspension and cancellation unwinding.
-  private var isOperationRunning = false
+  private var isConfigurationActionRunning = false
 
   /// Creates the service with a credential provider.
   ///
   /// - Parameters:
   ///   - credentials: The secure credential store used for TMDb access.
   ///   - activity: Best-effort operation recorder independent of action success.
-  ///   - environment: Storage locations preserving the host authorization policy.
+  ///   - environment: Storage locations preserving the host authorization configuration.
   ///   - provider: Optional metadata provider used after credential validation.
   init(
     credentials: any CredentialStoring = KeychainCredentialStore(
@@ -180,7 +180,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     }
   }
 
-  /// Retries only the selected child while preserving current recovery and mutation policy.
+  /// Retries only the selected child while preserving current recovery and change configuration.
   /// - Parameter request: Current collection and selected child identity.
   /// - Returns: The saved eligibility or attempted-processing disposition.
   /// - Throws: Admission, authorization, identity, provider, storage, or cancellation errors.
@@ -190,7 +190,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         try await withAuthorizedRoot(request) { context in
           try Task.checkCancellation()
           let processor = try makeProcessor(for: context, provider: makeProvider(for: context.configuration))
-          try ensureConfigurationIsCurrent(context)
+          try checkConfigurationHasNotChanged(context)
 
           return try await processor.retryEligibleFolder(
             root: context.root, child: request.childName, expectedIdentity: request.identity,
@@ -208,9 +208,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     _ operation: () async throws -> Value
   ) async throws -> Value {
     try Task.checkCancellation()
-    guard !isOperationRunning else { throw PosterActionError.busy }
-    isOperationRunning = true
-    defer { isOperationRunning = false }
+    guard !isConfigurationActionRunning else { throw PosterActionError.busy }
+    isConfigurationActionRunning = true
+    defer { isConfigurationActionRunning = false }
 
     return try await operation()
   }
@@ -220,19 +220,19 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     _ action: MovieFolderActivityEvent.Action, request: MoviePosterRequest,
     operation: () async throws -> Value
   ) async throws -> Value {
-    let operationID = UUID()
+    let activityGroupID = UUID()
     await activity.record(MovieFolderActivityEvent(
-      action: action, status: .started, operationID: operationID, collectionID: request.rootID))
+      action: action, status: .started, activityGroupID: activityGroupID, collectionID: request.rootID))
     do {
       let result = try await operation()
       await activity.record(MovieFolderActivityEvent(
-        action: action, status: .succeeded, operationID: operationID, collectionID: request.rootID))
+        action: action, status: .succeeded, activityGroupID: activityGroupID, collectionID: request.rootID))
 
       return result
     } catch {
       await activity.record(MovieFolderActivityEvent(
         action: action, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
-        operationID: operationID, collectionID: request.rootID))
+        activityGroupID: activityGroupID, collectionID: request.rootID))
       throw error
     }
   }
@@ -259,7 +259,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         let provider = try makeProvider(for: context.configuration)
         let result = try await provider.searchMovies(title: cleanQuery, year: year)
         try Task.checkCancellation()
-        try ensureConfigurationIsCurrent(context)
+        try checkConfigurationHasNotChanged(context)
         guard let current = try? fileSystem.readCurrentState(ofChild: request.childName, in: context.root),
           current.identity == request.identity
         else { throw MoviePosterActionServiceError.childChanged }
@@ -282,7 +282,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       try Task.checkCancellation()
       let provider = try makeProvider(for: context.configuration)
       let processor = try makeProcessor(for: context, provider: provider)
-      try ensureConfigurationIsCurrent(context)
+      try checkConfigurationHasNotChanged(context)
 
       return try await processor.refreshPoster(
         root: context.root, child: request.childName,
@@ -309,7 +309,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       try Task.checkCancellation()
       let provider = try makeProvider(for: context.configuration)
       let processor = try makeProcessor(for: context, provider: provider)
-      try ensureConfigurationIsCurrent(context)
+      try checkConfigurationHasNotChanged(context)
 
       return try await processor.applyMoviePoster(
         movie, root: context.root, child: request.childName,
@@ -326,7 +326,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
       let processor = try makeProcessor(for: context, provider: MissingTokenProvider())
-      try ensureConfigurationIsCurrent(context)
+      try checkConfigurationHasNotChanged(context, requiresActiveCollection: false)
 
       return try await processor.removePoster(
         root: context.root, child: request.childName,
@@ -374,11 +374,11 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
     let authorizationStore = try environment.makePrivateAuthorizationStore()
     let authorizationKey = "host-\(directory.id)-\(directory.authorizationVersion)"
-    guard let authorizationLease = try authorizationStore.acquireLease(for: authorizationKey) else {
+    guard let authorizationAccess = try authorizationStore.acquireAccess(for: authorizationKey) else {
       throw ConfigurationError.busy
     }
-    let rootAccess: DirectoryAccessLease
-    if let bookmark = try authorizationLease.read(),
+    let rootAccess: DirectoryAccess
+    if let bookmark = try authorizationAccess.read(),
       let persisted = try? fileSystem.acquireDirectoryAccess(
         bookmark: bookmark, securityScoped: true,
         expectedIdentity: directory.identity) {
@@ -388,7 +388,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         bookmark: directory.transferBookmark,
         securityScoped: false, expectedIdentity: directory.identity)
       try Task.checkCancellation()
-      try authorizationLease.write(environment.makeDirectoryBookmark(for: rootAccess.url))
+      try authorizationAccess.write(environment.makeDirectoryBookmark(for: rootAccess.url))
     }
 
     guard rootAccess.url.standardizedFileURL.path == directory.path else {
@@ -406,11 +406,11 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
     let context = AuthorizedRoot(
       configuration: configuration, directory: directory, root: rootAccess.url,
-      child: child, authorizationLease: authorizationLease,
+      child: child, authorizationAccess: authorizationAccess,
       rootAccess: rootAccess,
       rootIdentity: try fileSystem.persistentDirectoryIdentity(at: rootAccess.url))
     defer {
-      withExtendedLifetime(context.authorizationLease) {}
+      withExtendedLifetime(context.authorizationAccess) {}
       withExtendedLifetime(context.rootAccess) {}
     }
     try Task.checkCancellation()
@@ -418,15 +418,21 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     return try await operation(context)
   }
 
-  /// Ensures configuration and root identity still match before a manual mutation.
+  /// Ensures configuration and root identity still match before a manual change.
   ///
-  /// - Parameter context: The authorization context captured for this action.
+  /// - Parameters:
+  ///   - context: The authorization context captured for this action.
+  ///   - requiresActiveCollection: Whether the collection must currently participate in processing.
   /// - Throws: An action error if the root identity has changed.
-  private func ensureConfigurationIsCurrent(_ context: AuthorizedRoot) throws {
-    let lease = try environment.makeConfigurationRepository().mutationLease(
+  private func checkConfigurationHasNotChanged(
+    _ context: AuthorizedRoot,
+    requiresActiveCollection: Bool = true
+  ) throws {
+    let access = try environment.makeConfigurationRepository().configurationAccessForIconChange(
       for: context.directory,
+      requiresActiveCollection: requiresActiveCollection,
       expectedConfiguration: context.configuration)
-    defer { withExtendedLifetime(lease) {} }
+    defer { withExtendedLifetime(access) {} }
     guard try fileSystem.persistentDirectoryIdentity(at: context.root) == context.rootIdentity
     else {
       throw MoviePosterActionServiceError.directoryUnavailable
@@ -473,10 +479,11 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       credentialRevision: context.configuration.credentialRevision,
       usesStubTMDbResponses: context.configuration.usesStubTMDbResponses,
       appearance: context.configuration.posterAppearance,
-      identificationPolicy: context.configuration.effectiveIdentificationPolicy(for: context.directory))
+      movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
+      processingConfigurationRevision: context.directory.processingConfiguration.revision)
   }
 
-  /// Creates a processor bound to the request's persistence and mutation context.
+  /// Creates a processor bound to the request's persistence and change context.
   ///
   /// - Parameters:
   ///   - context: The validated root and configuration processing state.
@@ -491,7 +498,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     let recordDirectory = container.appendingPathComponent(
       "Processing/\(context.configuration.processingCacheRevision)")
     let coordinationDirectory = container.appendingPathComponent("ProcessingLocks")
-    let mutationGuard = PosterActionMutationGuard(
+    let processingVerifier = PosterActionCollectionConfigurationVerifier(
       repository: try environment.makeConfigurationRepository(),
       directory: context.directory,
       configuration: context.configuration,
@@ -502,19 +509,20 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       provider: provider,
       cacheDirectory: container.appendingPathComponent("Posters"),
       coordinationStore: try PersistenceStore(directory: coordinationDirectory),
-      mutationGuard: mutationGuard,
+      processingVerifier: processingVerifier,
       appearance: context.configuration.posterAppearance,
       processingStore: try environment.makeCollectionProcessingStore(),
       recovery: try environment.makeProcessingRecoveryService(),
       credentialRevision: context.configuration.credentialRevision,
-      identificationPolicy: context.configuration.effectiveIdentificationPolicy(for: context.directory))
+      movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
+      processingConfiguration: context.directory.processingConfiguration)
 
   }
 }
 
-/// Revalidates configuration and root identity immediately before a manual mutation.
-nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
-  /// The repository used to establish a cross-process mutation lease.
+/// Revalidates configuration and root identity immediately before a manual change.
+nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFolderProcessingVerifier {
+  /// The repository used to establish a cross-process change access.
   let repository: ConfigurationRepository
   /// The monitored directory being mutated.
   let directory: MonitoredDirectory
@@ -526,25 +534,25 @@ nonisolated private struct PosterActionMutationGuard: MovieFolderMutationGuard {
   let rootIdentity: String
 
   /// Holds the same configuration fence when a selected retry reuses automatic assignment.
-  func movieFolderProcessor(
-    _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
-  )
-    throws -> PersistenceLease? {
-    try movieFolderProcessorWillPerformManualMutation(processor)
+  func checkAutomaticProcessing(in root: URL)
+    throws -> PersistenceAccess? {
+    try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 
-  /// Holds configuration stable and rejects root replacement before a manual filesystem mutation.
+  /// Holds configuration stable and rejects root replacement before a manual filesystem change.
   /// - Parameter processor: Processor requesting permission to mutate the captured root.
-  /// - Returns: The configuration lease retained through mutation.
-  /// - Throws: Configuration lease failures or an action error if the root identity changed.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
-    let lease = try repository.mutationLease(for: directory, expectedConfiguration: configuration)
+  /// - Returns: The configuration access retained through change.
+  /// - Throws: Configuration access failures or an action error if the root identity changed.
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+    let access = try repository.configurationAccessForIconChange(
+      for: directory, childIdentity: candidate.identity, requiresActiveCollection: change != .posterRemoval,
+      expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == rootIdentity else {
-      withExtendedLifetime(lease) {}
+      withExtendedLifetime(access) {}
       throw MoviePosterActionServiceError.configurationChanged
     }
 
-    return lease
+    return access
   }
 }
 
@@ -558,10 +566,10 @@ private struct AuthorizedRoot: Sendable {
   let root: URL
   /// The validated child folder processing state.
   let child: FolderCandidate
-  /// Cross-process lease protecting the stored folder authorization.
-  let authorizationLease: PersistenceLease
+  /// Cross-process access protecting the stored folder authorization.
+  let authorizationAccess: PersistenceAccess
   /// Security-scoped access retained while processing runs.
-  let rootAccess: DirectoryAccessLease
+  let rootAccess: DirectoryAccess
   /// Filesystem identity used to detect root replacement.
   let rootIdentity: String
 }

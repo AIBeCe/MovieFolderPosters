@@ -32,10 +32,10 @@ import MovieFolderCommon
   /// Friendly collection name, bounded to 120 characters.
   private let nameField = NSTextField(string: "")
   /// Default-on inheritance choice; overrides remain a local snapshot until Add.
-  private let inheritButton = NSButton(checkboxWithTitle: "Use application identification settings",
+  private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
   /// Requires a release year before automatic metadata requests.
-  private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic identification",
+  private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic matching",
     target: .none, action: .none)
   /// Compares localized and original provider titles when enabled.
   private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles",
@@ -120,7 +120,7 @@ import MovieFolderCommon
         + "Finder extension registration does not itself grant filesystem access."),
       separator(), heading("Display name"), nameField,
       note("Optional, up to 120 characters. A blank name uses the root folder name."),
-      separator(), heading("Identification"), inheritButton, yearButton, originalButton,
+      separator(), heading("Matching"), inheritButton, yearButton, originalButton,
       note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
       separator(), heading("Poster appearance"), appearanceButton,
       note("This is the global finish for every collection. It changes only when Add Collection succeeds."),
@@ -181,11 +181,11 @@ import MovieFolderCommon
     nameField.stringValue = viewModel.displayName
     nameField.isEnabled = !viewModel.isBusy
     chooseButton.isEnabled = !viewModel.isBusy
-    inheritButton.state = viewModel.usesApplicationPolicy ? .on : .off
+    inheritButton.state = viewModel.inheritsApplicationConfiguration ? .on : .off
     inheritButton.isEnabled = !viewModel.isBusy
-    yearButton.state = viewModel.effectivePolicy.requiresReleaseYearForAutomaticIdentification ? .on : .off
-    originalButton.state = viewModel.effectivePolicy.comparesOriginalTitles ? .on : .off
-    yearButton.isEnabled = !viewModel.isBusy && !viewModel.usesApplicationPolicy
+    yearButton.state = viewModel.effectiveConfiguration.requiresReleaseYearForAutomaticMatching ? .on : .off
+    originalButton.state = viewModel.effectiveConfiguration.comparesOriginalTitles ? .on : .off
+    yearButton.isEnabled = !viewModel.isBusy && !viewModel.inheritsApplicationConfiguration
     originalButton.isEnabled = yearButton.isEnabled
     appearanceButton.selectItem(at: PosterAppearance.allCases.firstIndex(of: viewModel.appearance) ?? .zero)
     appearanceButton.isEnabled = !viewModel.isBusy
@@ -200,12 +200,12 @@ import MovieFolderCommon
   @objc private func add() { delegate?.collectionSetupViewControllerDidRequestAdd(self) }
   /// Forwards cancellation through the coordinator.
   @objc private func cancel() { delegate?.collectionSetupViewControllerDidRequestCancel(self) }
-  /// Updates only local identification choices.
+  /// Updates only local matching choices.
   @objc private func policyChanged() {
-    viewModel.usesApplicationPolicy = inheritButton.state == .on
-    if !viewModel.usesApplicationPolicy {
-      viewModel.overridePolicy = IdentificationPolicy(
-        requiresReleaseYearForAutomaticIdentification: yearButton.state == .on,
+    viewModel.inheritsApplicationConfiguration = inheritButton.state == .on
+    if !viewModel.inheritsApplicationConfiguration {
+      viewModel.overrideConfiguration = MovieMatchingConfiguration(
+        requiresReleaseYearForAutomaticMatching: yearButton.state == .on,
         comparesOriginalTitles: originalButton.state == .on)
     }
     updatePresentation()

@@ -5,47 +5,45 @@ import Foundation
 import Network
 import Persistence
 import Testing
-import XCTest
 
 @testable import MovieFolderCommon
 
 extension MovieFolderProcessorTests {
-  /// Verifies retains Mutation Guard And Holds Returned Lease Through Assignment.
+  /// Verifies retains Change Verifier And Holds Returned Access Through Assignment.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRetainsMutationGuardAndHoldsReturnedLeaseThroughAssignment() async throws {
+  @Test func retainsIconChangeVerifierAndHoldsReturnedAccessThroughAssignment() async throws {
     let fixture = try Fixture()
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     try fixture.addFolder("Dune (2021)")
     let store = try PersistenceStore(directory: fixture.base.appendingPathComponent("guard"))
-    var guardProbe: LeaseMutationGuard? = LeaseMutationGuard(store: store)
-    weak var weakGuard = guardProbe
+    var guardProbe: AccessIconChangeVerifier? = AccessIconChangeVerifier(store: store)
+    weak var weakVerifier = guardProbe
     let processor = MovieFolderProcessor(
       persistence: fixture.persistence, provider: CountingProvider(),
-      cacheDirectory: fixture.cache, posterAssigner: LeaseCheckingAssigner(store: store),
-      mutationGuard: guardProbe)
+      cacheDirectory: fixture.cache, posterAssigner: AccessCheckingAssigner(store: store),
+      processingVerifier: guardProbe)
     guardProbe = .none
-    XCTAssertNotNil(weakGuard)
+    #expect(weakVerifier != nil)
 
     let summary = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.assigned, 1)
-    XCTAssertEqual(weakGuard?.roots, [fixture.movies, fixture.movies])
-    XCTAssertEqual(weakGuard?.senderIDs, [ObjectIdentifier(processor), ObjectIdentifier(processor)])
-    XCTAssertNotNil(try store.acquireLease(for: "mutation"))
+    #expect(summary.assigned == 1)
+    #expect(weakVerifier?.roots == [fixture.movies, fixture.movies])
+    #expect(try store.acquireAccess(for: "change") != nil)
   }
 
-  /// Verifies automatic Mutation Revalidates Root After Provider Suspension.
+  /// Verifies automatic Change Revalidates Root After Provider Suspension.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testAutomaticMutationRevalidatesRootAfterProviderSuspension() async throws {
+  @Test func automaticChangeRevalidatesRootAfterProviderSuspension() async throws {
     let fixture = try Fixture()
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     try fixture.addFolder("Dune (2021)")
-    let expected = try XCTUnwrap(FileSystemService().inspectDirectory(at: fixture.movies).identity)
+    let expected = try #require(FileSystemService().inspectDirectory(at: fixture.movies).identity)
     let provider = CountingProvider(delaysSearch: true)
     let processor = MovieFolderProcessor(
       persistence: fixture.persistence, provider: provider,
       cacheDirectory: fixture.cache, posterAssigner: fixture.assigner,
-      mutationGuard: RootIdentityMutationGuard(expectedIdentity: expected))
+      processingVerifier: RootIdentityIconChangeVerifier(expectedIdentity: expected))
     let task = Task { try await processor.process(root: fixture.movies) }
     await provider.waitForSearch()
     let moved = fixture.base.appendingPathComponent("Moved")
@@ -57,14 +55,14 @@ extension MovieFolderProcessorTests {
       to: fixture.movies.appendingPathComponent("Dune (2021)"))
     await provider.allowSearch()
     let summary = try await task.value
-    XCTAssertEqual(summary.assigned, 0)
-    XCTAssertEqual(fixture.assigner.assignmentCount, 0)
-    XCTAssertEqual(summary.transientFailures, 1)
+    #expect(summary.assigned == 0)
+    #expect(fixture.assigner.assignmentCount == 0)
+    #expect(summary.transientFailures == 1)
   }
 
   /// Verifies missing Icons Restore From Cache Without Provider Requests.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testMissingIconsRestoreFromCacheWithoutProviderRequests() async throws {
+  @Test func missingIconsRestoreFromCacheWithoutProviderRequests() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider()
@@ -73,18 +71,18 @@ extension MovieFolderProcessorTests {
     let first = try await processor.process(root: fixture.movies)
     let second = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(first.assigned, 1)
-    XCTAssertEqual(second.assigned, 1)
+    #expect(first.assigned == 1)
+    #expect(second.assigned == 1)
     let searchCount = await provider.searchCount
     let posterCount = await provider.posterCount
-    XCTAssertEqual(searchCount, 1)
-    XCTAssertEqual(posterCount, 1)
-    XCTAssertEqual(fixture.assigner.assignmentCount, 2)
+    #expect(searchCount == 1)
+    #expect(posterCount == 1)
+    #expect(fixture.assigner.assignmentCount == 2)
   }
 
   /// Verifies same Movie Search And Poster Are Shared Across Folders.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testSameMovieSearchAndPosterAreSharedAcrossFolders() async throws {
+  @Test func sameMovieSearchAndPosterAreSharedAcrossFolders() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     try fixture.addFolder("Dune.2021")
@@ -93,16 +91,16 @@ extension MovieFolderProcessorTests {
 
     let summary = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.assigned, 2)
+    #expect(summary.assigned == 2)
     let searchCount = await provider.searchCount
     let posterCount = await provider.posterCount
-    XCTAssertEqual(searchCount, 1)
-    XCTAssertEqual(posterCount, 1)
+    #expect(searchCount == 1)
+    #expect(posterCount == 1)
   }
 
   /// Verifies ambiguous Search Is Recorded And Not Assigned.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testAmbiguousSearchIsRecordedAndNotAssigned() async throws {
+  @Test func ambiguousSearchIsRecordedAndNotAssigned() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider(
@@ -120,21 +118,21 @@ extension MovieFolderProcessorTests {
     let first = try await processor.process(root: fixture.movies)
     let second = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(first.unresolved, 1)
-    XCTAssertEqual(second.unresolved, 1)
-    XCTAssertEqual(second.skippedRetryWindow, 0)
+    #expect(first.unresolved == 1)
+    #expect(second.unresolved == 1)
+    #expect(second.skippedRetryWindow == 0)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 1)
-    XCTAssertEqual(fixture.assigner.assignmentCount, 0)
+    #expect(searchCount == 1)
+    #expect(fixture.assigner.assignmentCount == 0)
   }
 
   /// Verifies legacy cached failures survive a skipped retry and the next cache write.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testLegacyCacheFailureSurvivesSkippedRetry() async throws {
+  @Test func legacyCacheFailureSurvivesSkippedRetry() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let fileSystem = FileSystemService()
-    let candidate = try XCTUnwrap(fileSystem.candidates(in: fixture.movies).first { $0.name == "Dune (2021)" })
+    let candidate = try #require(fileSystem.candidates(in: fixture.movies).first { $0.name == "Dune (2021)" })
     let canonicalPath = fixture.movies.resolvingSymlinksInPath().standardizedFileURL.path
     let legacyCache = """
     {"folders":{"Dune (2021)":{"fingerprint":"\(candidate.fingerprint)","status":"transientFailure",\
@@ -144,8 +142,8 @@ extension MovieFolderProcessorTests {
     """
     let cacheKey = "movie-folder-processing:\(canonicalPath)"
     do {
-      let lease = try XCTUnwrap(try fixture.persistence.acquireLease(for: cacheKey))
-      try lease.write(Data(legacyCache.utf8))
+      let access = try #require(try fixture.persistence.acquireAccess(for: cacheKey))
+      try access.write(Data(legacyCache.utf8))
     }
 
     let provider = CountingProvider()
@@ -155,34 +153,34 @@ extension MovieFolderProcessorTests {
     )
     let summary = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.skippedRetryWindow, 1)
+    #expect(summary.skippedRetryWindow == 1)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 0)
-    let lease = try XCTUnwrap(try fixture.persistence.acquireLease(for: cacheKey))
-    let savedData = try XCTUnwrap(try lease.read())
-    let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
-    let folders = try XCTUnwrap(saved["folders"] as? [String: [String: Any]])
-    let dune = try XCTUnwrap(folders["Dune (2021)"])
-    let failure = try XCTUnwrap(dune["latestAttempt"] as? [String: Any])
-    XCTAssertEqual(failure["code"] as? String, "timeout")
-    XCTAssertEqual(failure["stage"] as? String, "search")
-    XCTAssertNil(dune["lastFailure"])
+    #expect(searchCount == 0)
+    let access = try #require(try fixture.persistence.acquireAccess(for: cacheKey))
+    let savedData = try #require(try access.read())
+    let saved = try #require(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
+    let folders = try #require(saved["folders"] as? [String: [String: Any]])
+    let dune = try #require(folders["Dune (2021)"])
+    let failure = try #require(dune["latestAttempt"] as? [String: Any])
+    #expect(failure["code"] as? String == "timeout")
+    #expect(failure["stage"] as? String == "search")
+    #expect(dune["lastFailure"] == nil)
   }
 
   /// The clearer Swift name retains the existing on-disk provider deadline field.
-  func testProviderRetryDatePreservesSavedCacheKey() throws {
+  @Test func providerRetryDatePreservesSavedCacheKey() throws {
     let deadline = Date(timeIntervalSince1970: 20_000)
     let data = try JSONEncoder().encode(ProcessingState(providerRetryAt: deadline))
-    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-    XCTAssertNotNil(object["rootBackoffUntil"])
-    XCTAssertNil(object["providerRetryAt"])
-    XCTAssertEqual(try JSONDecoder().decode(ProcessingState.self, from: data).providerRetryAt, deadline)
+    #expect(object["rootBackoffUntil"] != nil)
+    #expect(object["providerRetryAt"] == nil)
+    #expect(try JSONDecoder().decode(ProcessingState.self, from: data).providerRetryAt == deadline)
   }
 
   /// Verifies enumeration Skips Hidden Folders Symlinks And Nested Folders.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testEnumerationSkipsHiddenFoldersSymlinksAndNestedFolders() async throws {
+  @Test func enumerationSkipsHiddenFoldersSymlinksAndNestedFolders() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     try fixture.addFolder(".Hidden (2021)")
@@ -199,15 +197,15 @@ extension MovieFolderProcessorTests {
 
     let summary = try await processor.process(root: fixture.movies)
 
-    XCTAssertEqual(summary.examined, 1)
-    XCTAssertEqual(summary.assigned, 1)
+    #expect(summary.examined == 1)
+    #expect(summary.assigned == 1)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 1)
+    #expect(searchCount == 1)
   }
 
   /// Verifies cancellation Does Not Record Negative Result.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testCancellationDoesNotRecordNegativeResult() async throws {
+  @Test func cancellationDoesNotRecordNegativeResult() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider(delaysSearch: true)
@@ -218,21 +216,21 @@ extension MovieFolderProcessorTests {
     task.cancel()
     do {
       _ = try await task.value
-      XCTFail("Cancelled processing should propagate cancellation")
+      Issue.record("Cancelled processing should propagate cancellation")
     } catch is CancellationError {
       // Expected.
     }
 
     await provider.allowSearch()
     let retry = try await processor.process(root: fixture.movies)
-    XCTAssertEqual(retry.assigned, 1)
+    #expect(retry.assigned == 1)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 2)
+    #expect(searchCount == 2)
   }
 
   /// Verifies typed Rate Limit Racing Cancellation Does Not Persist Root Backoff.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testTypedRateLimitRacingCancellationDoesNotPersistRootBackoff() async throws {
+  @Test func typedRateLimitRacingCancellationDoesNotPersistRootBackoff() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider(
@@ -244,36 +242,36 @@ extension MovieFolderProcessorTests {
     task.cancel()
     do {
       _ = try await task.value
-      XCTFail("A cancelled search must propagate cancellation")
+      Issue.record("A cancelled search must propagate cancellation")
     } catch is CancellationError {
       // Expected.
     }
 
     let retry = try await processor.process(root: fixture.movies)
-    XCTAssertEqual(retry.assigned, 1)
-    XCTAssertNil(retry.providerRetryAt)
+    #expect(retry.assigned == 1)
+    #expect(retry.providerRetryAt == nil)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 2)
+    #expect(searchCount == 2)
   }
 
   /// Verifies unavailable Root Is Reported.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testUnavailableRootIsReported() async throws {
+  @Test func unavailableRootIsReported() async throws {
     let fixture = try Fixture()
     let processor = try fixture.processor(provider: CountingProvider())
     let missingRoot = fixture.base.appendingPathComponent("missing")
 
     do {
       _ = try await processor.process(root: missingRoot)
-      XCTFail("A missing root must not be treated as an empty successful scan")
+      Issue.record("A missing root must not be treated as an empty successful scan")
     } catch {
-      XCTAssertTrue(error is ProcessingError)
+      #expect(error is ProcessingError)
     }
   }
 
-  /// Verifies root Lease Prevents Concurrent Processor Instances.
+  /// Verifies root Access Prevents Concurrent Processor Instances.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
-  func testRootLeasePreventsConcurrentProcessorInstances() async throws {
+  @Test func rootAccessPreventsConcurrentProcessorInstances() async throws {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let provider = CountingProvider(delaysSearch: true)
@@ -286,8 +284,8 @@ extension MovieFolderProcessorTests {
     await provider.allowSearch()
     _ = try await task.value
 
-    XCTAssertTrue(concurrent.rootLeaseUnavailable)
+    #expect(concurrent.rootAccessUnavailable)
     let searchCount = await provider.searchCount
-    XCTAssertEqual(searchCount, 1)
+    #expect(searchCount == 1)
   }
 }

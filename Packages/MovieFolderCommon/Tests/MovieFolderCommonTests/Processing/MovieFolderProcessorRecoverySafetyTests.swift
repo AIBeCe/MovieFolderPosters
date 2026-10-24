@@ -49,7 +49,7 @@ func recoveryModeEnabledDuringSearchPreventsAutomaticAssignment() async throws {
 
 /// All explicit mutations check recovery mode, including removal without a provider request.
 @Test(arguments: ["refresh", "selection", "removal"])
-func recoveryModeBlocksEveryManualMutation(action: String) async throws {
+func recoveryModeBlocksEveryManualChange(action: String) async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Dune (2021)")
@@ -80,9 +80,9 @@ func recoveryModeBlocksEveryManualMutation(action: String) async throws {
   #expect(await provider.posterCount == 0)
 }
 
-/// Recovery activation and a synchronous automatic icon write use the same cross-instance lease.
+/// Recovery activation and a synchronous automatic icon write use the same cross-instance access.
 @Test
-func recoveryMutationLeaseCoversAutomaticAssignment() async throws {
+func recoveryChangeAccessCoversAutomaticAssignment() async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Dune (2021)")
@@ -90,7 +90,7 @@ func recoveryMutationLeaseCoversAutomaticAssignment() async throws {
     store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
   let processor = MovieFolderProcessor(
     persistence: fixture.persistence, provider: CountingProvider(), cacheDirectory: fixture.cache,
-    posterAssigner: RecoveryLeaseAssertingAssigner(recovery: recovery), recovery: recovery)
+    posterAssigner: RecoveryAccessAssertingAssigner(recovery: recovery), recovery: recovery)
 
   let summary = try await processor.process(root: fixture.movies)
 
@@ -98,9 +98,9 @@ func recoveryMutationLeaseCoversAutomaticAssignment() async throws {
   #expect(try !recovery.read().isRecoveryModeEnabled)
 }
 
-/// Tests the real recovery lease at the icon adapter boundary without modifying fixture movie metadata.
-private struct RecoveryLeaseAssertingAssigner: PosterAssigner {
-  /// The independent shared service attempting activation during the synchronous mutation.
+/// Tests the real recovery access at the icon adapter boundary without modifying fixture movie metadata.
+private struct RecoveryAccessAssertingAssigner: PosterAssigner {
+  /// The independent shared service attempting activation during the synchronous change.
   let recovery: ProcessingRecoveryService
 
   func assignPoster(

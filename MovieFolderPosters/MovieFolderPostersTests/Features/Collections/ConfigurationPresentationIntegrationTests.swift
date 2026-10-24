@@ -70,7 +70,7 @@ import Testing
   await model.load()
   let controller = ConfigurationViewController(viewModel: model)
   let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)
-  // Complete the controller's initial refresh before dispatching another mutation.
+  // Complete the controller's initial refresh before dispatching another change.
   for _ in 0..<100
   where service.calls.filter({ $0 == .configurationSummary }).count < 2 || model.isBusy {
     try await Task.sleep(for: .milliseconds(5))

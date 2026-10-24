@@ -21,7 +21,7 @@ struct MovieFolderActivityTests {
     for action in MovieFolderActivityEvent.Action.allCases {
       for status in MovieFolderActivityEvent.Status.allCases {
         let event = MovieFolderActivityEvent(
-          action: action, status: status, operationID: UUID(), collectionID: UUID())
+          action: action, status: status, activityGroupID: UUID(), collectionID: UUID())
         let encoded = try JSONEncoder().encode(event)
         let decoded = try JSONDecoder().decode(MovieFolderActivityEvent.self, from: encoded)
         #expect(decoded == event)
@@ -44,7 +44,7 @@ struct MovieFolderActivityTests {
       MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(skippedRetryWindow: 1)) == .partial)
     #expect(
       MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(providerRetryAt: Date())) == .partial)
-    let blockedSummary = ProcessingSummary(rootLeaseUnavailable: true)
+    let blockedSummary = ProcessingSummary(rootAccessUnavailable: true)
     #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: blockedSummary) == .unavailable)
   }
 
@@ -67,7 +67,8 @@ struct MovieFolderActivityTests {
     let context = CollectionProcessingContext(
       rootID: rootID, rootIdentity: "activity-clear-root", authorizationVersion: authorizationVersion,
       credentialRevision: savedConfiguration.credentialRevision,
-      usesStubTMDbResponses: savedConfiguration.usesStubTMDbResponses, appearance: savedConfiguration.posterAppearance)
+      usesStubTMDbResponses: savedConfiguration.usesStubTMDbResponses, appearance: savedConfiguration.posterAppearance,
+      processingConfigurationRevision: savedConfiguration.directories[0].processingConfiguration.revision)
     let outcomes = CollectionProcessingStore(
       store: try PersistenceStore(directory: outcomesDirectory), configuration: configuration)
     let savedOutcome = try outcomes.recordProcessingStart(context: context, action: .automatic)
@@ -100,20 +101,20 @@ struct MovieFolderActivityTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let notifier = ActivityNotifierProbe()
     let recorder = MovieFolderActivityRecorder(directory: directory, notifier: notifier)
-    let operationID = UUID()
+    let activityGroupID = UUID()
     #expect(await recorder.record(MovieFolderActivityEvent(
-      action: .automaticProcessing, status: .started, operationID: operationID)))
+      action: .automaticProcessing, status: .started, activityGroupID: activityGroupID)))
     let terminalCommitted = await Task {
       withUnsafeCurrentTask { $0?.cancel() }
 
       return await recorder.record(MovieFolderActivityEvent(
-        action: .automaticProcessing, status: .cancelled, operationID: operationID))
+        action: .automaticProcessing, status: .cancelled, activityGroupID: activityGroupID))
     }.value
     #expect(terminalCommitted)
     #expect(!(await recorder.hasObservedWriteFailure))
     let events = try await recorder.entries().map(\.event)
     #expect(events.map(\.status) == [.started, .cancelled])
-    #expect(events.allSatisfy { $0.operationID == operationID })
+    #expect(events.allSatisfy { $0.activityGroupID == activityGroupID })
     #expect(notifier.changes == 2)
   }
 

@@ -68,9 +68,9 @@ final class ConfigurationViewModel {
   /// Whether the credential status represents a failed operation.
   private(set) var isCredentialError = false
   /// Whether a credential service operation is still running or draining cancellation.
-  private(set) var isCredentialOperationRunning = false
+  private(set) var isCredentialActionRunning = false
   /// Whether cancellation has been requested for the current credential operation.
-  private(set) var isCancellingCredentialOperation = false
+  private(set) var isCancellingCredentialAction = false
   /// Retains the actual service call until it has finished, including cancellation cleanup.
   private var credentialTask: Task<Void, any Error>?
   /// Whether the active credential operation only tests the saved token.
@@ -79,14 +79,14 @@ final class ConfigurationViewModel {
   private var isCredentialTestInvalidated = false
   /// Identifies the latest presence read so older responses cannot overwrite newer state.
   private var credentialReadID = UUID()
-  /// Distinguishes temporary diagnostic evidence from a mutation's completion feedback.
+  /// Distinguishes temporary diagnostic evidence from a change's completion feedback.
   private var hasCredentialDiagnosticResult = false
-  /// Associates mutation feedback with the generation read after its operation returned.
+  /// Associates change feedback with the generation read after its operation returned.
   private var credentialResultState: CredentialState?
   /// The appearance used when processing posters.
   private(set) var posterAppearance: PosterAppearance = .softFinish
   /// Application defaults shown by Settings and copied into new setup drafts.
-  private(set) var identificationPolicy = IdentificationPolicy()
+  private(set) var movieMatchingConfiguration = MovieMatchingConfiguration()
   /// Whether a configuration operation is currently running.
   private(set) var isBusy = false
   /// A user-facing explanation for the latest failed operation, if any.
@@ -237,17 +237,17 @@ final class ConfigurationViewModel {
     )
   }
 
-  /// Persists the two automatic identification defaults and refreshes presentation.
-  /// - Parameter policy: Current checkbox choices from Settings.
-  func setIdentificationPolicy(_ policy: IdentificationPolicy) async {
-    await perform(action: .identificationPolicySaved, failureMessage: "Could not save identification settings.") {
-      try await self.service.setIdentificationPolicy(policy)
+  /// Persists the two automatic matching defaults and refreshes presentation.
+  /// - Parameter configuration: Current checkbox choices from Settings.
+  func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) async {
+    await perform(action: .movieMatchingConfigurationSaved, failureMessage: "Could not save matching settings.") {
+      try await self.service.setMovieMatchingConfiguration(configuration)
 
       return try await self.service.configurationSummary()
     }
   }
 
-  /// Saves a collection name without changing processing policy or authorization.
+  /// Saves a collection name without changing processing configuration or authorization.
   /// - Parameters:
   ///   - identifier: Stable collection identity to rename.
   ///   - displayName: User-entered friendly name; the service normalizes and bounds it.
@@ -263,7 +263,12 @@ final class ConfigurationViewModel {
   /// Creates an independent setup draft; changing it does not alter persisted application preferences.
   /// - Returns: A new uncommitted setup model initialized from the currently loaded defaults.
   func makeCollectionSetupViewModel() -> CollectionSetupViewModel {
-    CollectionSetupViewModel(service: service, applicationPolicy: identificationPolicy, appearance: posterAppearance)
+    CollectionSetupViewModel(service: service, applicationConfiguration: movieMatchingConfiguration, appearance: posterAppearance)
+  }
+
+  /// Creates a finite edit draft sharing Main's serialized persistence boundary.
+  func makeCollectionEditViewModel(identifier: UUID) -> CollectionEditViewModel {
+    CollectionEditViewModel(identifier: identifier, service: service)
   }
 
   /// Serializes an operation, updates presentation state, and records its outcome.
@@ -326,7 +331,7 @@ final class ConfigurationViewModel {
     directories = summary.directories
     credentialConfigured = summary.credentialConfigured
     posterAppearance = summary.posterAppearance
-    identificationPolicy = summary.identificationPolicy
+    movieMatchingConfiguration = summary.movieMatchingConfiguration
   }
 
   /// Notifies all currently retained observers of the latest state.
@@ -340,7 +345,7 @@ extension ConfigurationViewModel {
   /// Reloads only credential presence, without refreshing folder authorization or processing.
   /// - Parameter clearResult: Whether an earlier diagnostic result should be discarded.
   func reloadCredentialState(clearResult: Bool = true) async {
-    guard !isCredentialOperationRunning else { return }
+    guard !isCredentialActionRunning else { return }
     let readID = UUID()
     credentialReadID = readID
     if clearResult {
@@ -350,7 +355,7 @@ extension ConfigurationViewModel {
     }
     do {
       let state = try await service.credentialState()
-      guard credentialReadID == readID, !isCredentialOperationRunning else { return }
+      guard credentialReadID == readID, !isCredentialActionRunning else { return }
       if let resultState = credentialResultState, resultState != state {
         credentialMessage = .none
         credentialResultState = .none
@@ -358,7 +363,7 @@ extension ConfigurationViewModel {
       credentialState = state
       credentialConfigured = state.isConfigured
     } catch {
-      guard credentialReadID == readID, !isCredentialOperationRunning else { return }
+      guard credentialReadID == readID, !isCredentialActionRunning else { return }
       credentialState = .none
       if clearResult {
         credentialMessage = "Could not read credential state. Reopen Settings to try again."
@@ -375,7 +380,7 @@ extension ConfigurationViewModel {
     if hasCredentialDiagnosticResult { credentialMessage = .none }
     if isTestingSavedCredential {
       isCredentialTestInvalidated = true
-      cancelCredentialOperation()
+      cancelCredentialAction()
     }
     publish()
   }
@@ -384,7 +389,7 @@ extension ConfigurationViewModel {
   func testSavedCredential() async {
     guard let state = credentialState, state.isConfigured else { return }
     let service = service
-    await performCredentialOperation(
+    await performCredentialAction(
       status: "Testing saved token…", success: "TMDb accepted the saved token.", action: .none,
       operation: { try await service.testCredential(expectedRevision: state.revision) })
   }
@@ -398,7 +403,7 @@ extension ConfigurationViewModel {
     if credentialState == .none, expectedState == .none { await reloadCredentialState() }
     guard let state = expectedState ?? credentialState else { return }
     let service = service
-    await performCredentialOperation(
+    await performCredentialAction(
       status: "Testing candidate token…", success: "Token saved after a successful test.", action: .credentialSaved,
       operation: { try await service.saveCredential(credential, expectedRevision: state.revision) })
   }
@@ -410,15 +415,15 @@ extension ConfigurationViewModel {
     if credentialState == .none, expectedState == .none { await reloadCredentialState() }
     guard let state = expectedState ?? credentialState else { return }
     let service = service
-    await performCredentialOperation(
+    await performCredentialAction(
       status: "Removing saved token…", success: "Saved token removed.", action: .credentialRemoved,
       operation: { try await service.removeCredential(expectedRevision: state.revision) })
   }
 
   /// Requests cancellation while retaining admission until the service call actually returns.
-  func cancelCredentialOperation() {
-    guard isCredentialOperationRunning else { return }
-    isCancellingCredentialOperation = true
+  func cancelCredentialAction() {
+    guard isCredentialActionRunning else { return }
+    isCancellingCredentialAction = true
     credentialTask?.cancel()
     credentialMessage = "Cancelling…"
     publish()
@@ -428,16 +433,16 @@ extension ConfigurationViewModel {
   /// - Parameters:
   ///   - status: Safe progress copy shown before the service call.
   ///   - success: Safe completion copy, independent of credential contents.
-  ///   - action: Mutation activity to record, or no activity for a diagnostic.
+  ///   - action: Change activity to record, or no activity for a diagnostic.
   ///   - operation: The service call owned and cancelled by this finite action.
-  private func performCredentialOperation(
+  private func performCredentialAction(
     status: String, success: String, action: MovieFolderActivityEvent.Action?,
     operation: @escaping @Sendable () async throws -> Void
   ) async {
     guard !isBusy else { return }
     isBusy = true
-    isCredentialOperationRunning = true
-    isCancellingCredentialOperation = false
+    isCredentialActionRunning = true
+    isCancellingCredentialAction = false
     isTestingSavedCredential = action == .none
     isCredentialTestInvalidated = false
     credentialReadID = UUID()
@@ -468,9 +473,9 @@ extension ConfigurationViewModel {
       if let action { await recordActivity(action: action, status: .failed, collectionID: .none) }
     }
     credentialTask = .none
-    isCredentialOperationRunning = false
+    isCredentialActionRunning = false
     isTestingSavedCredential = false
-    isCancellingCredentialOperation = false
+    isCancellingCredentialAction = false
     await reloadCredentialState(clearResult: false)
     if action != .none { credentialResultState = credentialState }
     isBusy = false

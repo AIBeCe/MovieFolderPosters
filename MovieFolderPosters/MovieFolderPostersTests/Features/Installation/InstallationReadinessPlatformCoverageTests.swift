@@ -47,20 +47,20 @@ struct InstallationReadinessPlatformCoverageTests {
     switch scenario {
     case "missing": expected = .missing
     case "busy":
-      let lease = try #require(try store.acquireLease(for: ExtensionReadinessReceipt.recordKey))
+      let access = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
       #expect(InstallationReadinessService.readExtensionReceipt(in: store) == .unavailable(.busy))
-      withExtendedLifetime(lease) {}
+      withExtendedLifetime(access) {}
       return
     case "corrupt":
       do {
-        let lease = try #require(try store.acquireLease(for: ExtensionReadinessReceipt.recordKey))
-        try lease.write(Data("not a receipt".utf8))
+        let access = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
+        try access.write(Data("not a receipt".utf8))
       }
       expected = .unavailable(.failed)
     default:
       do {
-        let lease = try #require(try store.acquireLease(for: ExtensionReadinessReceipt.recordKey))
-        try lease.write(JSONEncoder().encode(ExtensionReadinessReceipt(version: "2.3", build: "43", observedAt: date)))
+        let access = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
+        try access.write(JSONEncoder().encode(ExtensionReadinessReceipt(version: "2.3", build: "43", observedAt: date)))
       }
       expected = .observed(version: "2.3", build: "43", date: date)
     }

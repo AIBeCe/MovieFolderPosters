@@ -17,14 +17,14 @@ struct DirectoryConfigurationServiceCoverageTests {
     try await fixture.service.addDirectory(original)
     try fixture.repository.update {
       $0.directories[0].displayName = "Family films"
-      $0.directories[0].identificationPolicy = IdentificationPolicy(comparesOriginalTitles: false)
+      $0.directories[0].movieMatchingConfiguration = MovieMatchingConfiguration(comparesOriginalTitles: false)
     }
     let before = try #require(try fixture.repository.read().directories.first)
     try await fixture.service.reauthorizeDirectory(before.id, replacement)
     let after = try #require(try fixture.repository.read().directories.first)
     #expect(after.id == before.id)
     #expect(after.displayName == before.displayName)
-    #expect(after.identificationPolicy == before.identificationPolicy)
+    #expect(after.movieMatchingConfiguration == before.movieMatchingConfiguration)
     #expect(after.authorizationVersion != before.authorizationVersion)
     #expect(after.path == replacement.standardizedFileURL.path)
     #expect(after.identity == (try FileSystemService().persistentDirectoryIdentity(at: replacement)))
@@ -161,7 +161,7 @@ struct CoverageAuthorization: DirectoryAuthorizationProviding {
   /// Requested external authorization outcome.
   let mode: Mode
 
-  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccessLease {
+  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccess {
     switch mode {
     case .accessible:
       try FileSystemService().acquireDirectoryAccess(bookmark: bookmark, securityScoped: false,

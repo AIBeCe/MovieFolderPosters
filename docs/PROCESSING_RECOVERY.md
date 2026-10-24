@@ -38,7 +38,7 @@ public init(store: PersistenceStore, now: @escaping @Sendable () -> Date = Date.
 public func read() throws -> ProcessingRecoverySnapshot
 public func setRecoveryModeEnabled(_ enabled: Bool) throws
 public func validateProcessingAllowed() throws
-public func acquireMutationLease() throws -> PersistenceLease
+public func acquireProcessingAccess() throws -> PersistenceAccess
 ```
 
 `ProcessingRecoverySnapshot.isRecoveryModeEnabled` supports the host controls. Provider admission and failure recording

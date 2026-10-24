@@ -224,7 +224,7 @@ func legacyReassessmentInterruptionPersistsResumeReason() async throws {
   #expect(try readRecoveryCache(fixture).folders[candidate.name]?.processingReason == .noSuitableMovie)
 }
 
-/// Nonfinite Retry-After text cannot corrupt the processor cache after shared policy safely handles the response.
+/// Nonfinite Retry-After text cannot corrupt the processor cache after shared configuration safely handles the response.
 @Test(arguments: ["nan", "inf", "-inf"])
 func wrappedRateLimitRecoveryUsesFinitePersistedDeadline(header: String) async throws {
   let fixture = try Fixture()
@@ -251,16 +251,16 @@ func wrappedRateLimitRecoveryUsesFinitePersistedDeadline(header: String) async t
 
 /// Seeds the real operational store with historic evidence without touching movie contents.
 private func writeRecoveryCache(_ state: ProcessingState, fixture: Fixture) throws {
-  let lease = try #require(try fixture.persistence.acquireLease(
-    for: MovieFolderProcessor.rootLeaseKey(for: fixture.movies)))
-  try lease.write(JSONEncoder().encode(state))
+  let access = try #require(try fixture.persistence.acquireAccess(
+    for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
+  try access.write(JSONEncoder().encode(state))
 }
 
-/// Reads durable cache evidence after processing has released the root lease.
+/// Reads durable cache evidence after processing has released the root access.
 private func readRecoveryCache(_ fixture: Fixture) throws -> ProcessingState {
-  let lease = try #require(try fixture.persistence.acquireLease(
-    for: MovieFolderProcessor.rootLeaseKey(for: fixture.movies)))
-  let bytes = try #require(try lease.read())
+  let access = try #require(try fixture.persistence.acquireAccess(
+    for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
+  let bytes = try #require(try access.read())
 
   return try JSONDecoder().decode(ProcessingState.self, from: bytes)
 }

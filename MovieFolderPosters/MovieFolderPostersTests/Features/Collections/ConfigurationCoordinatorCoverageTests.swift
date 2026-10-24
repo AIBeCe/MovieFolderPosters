@@ -10,7 +10,7 @@ import Testing
 @Suite(.serialized) @MainActor
 struct ConfigurationCoordinatorCoverageTests {
   /// Main opens the focused results sheet without changing configuration or starting provider work.
-  @Test func unresolvedResultsOpenAndCloseWithoutConfigurationMutation() async throws {
+  @Test func unresolvedResultsOpenAndCloseWithoutConfigurationChange() async throws {
     let rootID = UUID()
     let directory = ConfiguredDirectoryStatus(
       id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
@@ -34,7 +34,7 @@ struct ConfigurationCoordinatorCoverageTests {
     closeButton.performClick(.none)
     #expect(coordinator.resultsWindow == .none)
     #expect(window.attachedSheet == .none)
-    #expect(await service.mutationCount == .zero)
+    #expect(await service.configurationChangeCount == .zero)
   }
 
   /// Verifies that overlapping readiness requests share one in-flight evidence check.
@@ -95,7 +95,7 @@ struct ConfigurationCoordinatorCoverageTests {
     #expect(!textView.isEditable)
     #expect(textView.string.contains("No committed processing outcome is available"))
     #expect(await summaryService.callCount == 1)
-    #expect(await service.mutationCount == 0)
+    #expect(await service.configurationChangeCount == 0)
     let closeButton = try #require(descendants(details.view).compactMap { $0 as? NSButton }
       .first { $0.title == "Close" })
     #expect(closeButton.isEnabled && !closeButton.isHidden)
@@ -195,7 +195,7 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   /// Number of summary reads completed by this service.
   private(set) var summaryReadCount = Int.zero
   /// Number of configuration mutations requested through this service.
-  private(set) var mutationCount = Int.zero
+  private(set) var configurationChangeCount = Int.zero
 
   /// Creates a service with the fixed state shown by the coordinator.
   init(summary: ConfigurationSummary = ConfigurationSummary(directories: [], credentialConfigured: false)) {
@@ -209,18 +209,18 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
     return summary
   }
 
-  func addDirectory(_ directory: URL) throws { mutationCount += 1 }
-  func removeDirectory(_ identifier: UUID) throws { mutationCount += 1 }
-  func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws { mutationCount += 1 }
+  func addDirectory(_ directory: URL) throws { configurationChangeCount += 1 }
+  func removeDirectory(_ identifier: UUID) throws { configurationChangeCount += 1 }
+  func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws { configurationChangeCount += 1 }
   /// Returns the isolated fixture's non-secret credential state.
   func credentialState() -> CredentialState {
     CredentialState(isConfigured: summary.credentialConfigured, revision: .none)
   }
   /// Accepts explicit tests without contacting the provider.
   func testCredential(expectedRevision: UUID?) throws {}
-  func saveCredential(_ value: String, expectedRevision: UUID?) throws { mutationCount += 1 }
-  func removeCredential(expectedRevision: UUID?) throws { mutationCount += 1 }
-  func setPosterAppearance(_ appearance: PosterAppearance) throws { mutationCount += 1 }
+  func saveCredential(_ value: String, expectedRevision: UUID?) throws { configurationChangeCount += 1 }
+  func removeCredential(expectedRevision: UUID?) throws { configurationChangeCount += 1 }
+  func setPosterAppearance(_ appearance: PosterAppearance) throws { configurationChangeCount += 1 }
 
   /// Yields until the requested number of configuration reads has completed.
   func waitForSummaryReads(_ count: Int) async {

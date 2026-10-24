@@ -7,7 +7,7 @@ import Network
 protocol MoviePosterActionCoordinatorDelegate: AnyObject {
   /// Requests a reload after an action returns or its presentation closes.
   /// - Parameter coordinator: The coordinator whose action ended.
-  func moviePosterActionCoordinatorDidFinishOperation(_ coordinator: MoviePosterActionCoordinator)
+  func moviePosterActionCoordinatorDidFinishAction(_ coordinator: MoviePosterActionCoordinator)
 }
 
 /// Receives explicit dismissal requests from the poster-action presentation.
@@ -21,7 +21,7 @@ protocol MoviePosterActionViewControllerDelegate: AnyObject {
 /// Owns the lifetime of a Finder-requested poster action window.
 @MainActor
 final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
-  MoviePosterActionViewModelNavigationDelegate, MoviePosterActionViewModelOperationDelegate,
+  MoviePosterActionViewModelNavigationDelegate, MoviePosterActionCompletionDelegate,
   MoviePosterActionViewControllerDelegate {
   /// The application root owns both this flow and its results consumers.
   weak var delegate: (any MoviePosterActionCoordinatorDelegate)?
@@ -71,7 +71,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     window.delegate = self
 
     viewModel.navigationDelegate = self
-    viewModel.operationDelegate = self
+    viewModel.completionDelegate = self
     let controller = NSWindowController(window: window)
     self.viewModel = viewModel
     activeRequest = request
@@ -92,13 +92,13 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   /// - Parameter notification: The AppKit window-close notification.
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, window === windowController?.window else { return }
-    viewModel?.cancelCurrentOperation()
+    viewModel?.cancelRetryTask()
     if let parent = window.sheetParent { parent.endSheet(window) }
     window.delegate = .none
     viewModel = .none
     activeRequest = .none
     windowController = .none
-    delegate?.moviePosterActionCoordinatorDidFinishOperation(self)
+    delegate?.moviePosterActionCoordinatorDidFinishAction(self)
   }
 
   /// Cancels only the nested action owned by the supplied results sheet.
@@ -111,7 +111,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   /// Ends sheet attachment before closing the current action presentation.
   private func closeCurrentPresentation() {
     guard let window = windowController?.window else { return }
-    viewModel?.cancelCurrentOperation()
+    viewModel?.cancelRetryTask()
     if let parent = window.sheetParent { parent.endSheet(window) }
     window.close()
   }
@@ -122,8 +122,8 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     closeCurrentPresentation()
   }
 
-  func moviePosterActionViewModelDidFinishOperation(_ viewModel: MoviePosterActionViewModel) {
-    delegate?.moviePosterActionCoordinatorDidFinishOperation(self)
+  func moviePosterActionViewModelDidFinishAction(_ viewModel: MoviePosterActionViewModel) {
+    delegate?.moviePosterActionCoordinatorDidFinishAction(self)
   }
 
   /// Cancels the active action after another process changes configuration.
@@ -150,7 +150,7 @@ private final class MoviePosterActionViewController: NSViewController,
   /// Optional release-year entry field.
   private let yearField = NSTextField()
   /// Discloses the current normalized search inputs before an explicit remote request.
-  private let identificationLabel = NSTextField(wrappingLabelWithString: "")
+  private let matchingLabel = NSTextField(wrappingLabelWithString: "")
   /// Displays poster-bearing movie results.
   private let resultPicker = NSPopUpButton()
   /// Displays progress or success feedback.
@@ -203,9 +203,9 @@ private final class MoviePosterActionViewController: NSViewController,
     stack.addArrangedSubview(descriptionLabel)
     if viewModel.action == .change {
       stack.addArrangedSubview(makeSearchControls())
-      identificationLabel.textColor = .secondaryLabelColor
-      identificationLabel.maximumNumberOfLines = 3
-      stack.addArrangedSubview(identificationLabel)
+      matchingLabel.textColor = .secondaryLabelColor
+      matchingLabel.maximumNumberOfLines = 3
+      stack.addArrangedSubview(matchingLabel)
       stack.addArrangedSubview(makeResultPicker())
     }
     stack.addArrangedSubview(statusLabel)
@@ -219,7 +219,7 @@ private final class MoviePosterActionViewController: NSViewController,
       stack.addArrangedSubview(primaryButton)
     }
     cancelButton.target = self
-    cancelButton.action = #selector(cancelPosterOperation)
+    cancelButton.action = #selector(cancelPosterAction)
     cancelButton.setAccessibilityLabel("Cancel current poster operation")
     doneButton.target = self
     doneButton.action = #selector(closePresentation)
@@ -299,12 +299,12 @@ private final class MoviePosterActionViewController: NSViewController,
   private func render() {
     guard isViewLoaded else { return }
     let busy = viewModel.isBusy
-    identificationLabel.stringValue = viewModel.identificationPreview
-    searchButton.isEnabled = viewModel.canStartOperation
+    matchingLabel.stringValue = viewModel.matchingPreview
+    searchButton.isEnabled = viewModel.canStartAction
     resultPicker.isEnabled = !busy && !viewModel.movies.isEmpty
-    primaryButton.isEnabled = viewModel.canStartOperation
-    queryField.isEnabled = viewModel.canStartOperation
-    yearField.isEnabled = viewModel.canStartOperation
+    primaryButton.isEnabled = viewModel.canStartAction
+    queryField.isEnabled = viewModel.canStartAction
+    yearField.isEnabled = viewModel.canStartAction
     cancelButton.isEnabled = busy && !viewModel.isCancelling
     cancelButton.title = viewModel.isCancelling ? "Cancelling…" : "Cancel"
     statusLabel.stringValue =
@@ -392,7 +392,7 @@ private final class MoviePosterActionViewController: NSViewController,
   /// Opens the TMDb page for the movie already assigned to the folder.
   @objc private func openMoviePage() { viewModel.openMoviePage() }
   /// Requests cancellation while leaving the active operation visible until it returns.
-  @objc private func cancelPosterOperation() { viewModel.cancelCurrentOperation() }
+  @objc private func cancelPosterAction() { viewModel.cancelRetryTask() }
   /// Requests dismissal through the coordinator's window-lifetime path.
   @objc private func closePresentation() {
     guard let window = view.window else { return }

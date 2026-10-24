@@ -14,8 +14,10 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
   public private(set) var done: Int = .zero
   /// Existing icons intentionally retained.
   public private(set) var preserved: Int = .zero
-  /// Folders intentionally excluded by saved policy.
+  /// Folders intentionally excluded by saved configuration.
   public private(set) var suppressed: Int = .zero
+  /// Folders excluded from automatic processing by collection inclusion settings.
+  public private(set) var excluded: Int = .zero
   /// Whether the inventory and current processing context support authoritative work counts.
   public let isKnown: Bool
   /// Whether all current folders have a verified or intentional terminal outcome.
@@ -52,11 +54,12 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
     if folder.isVerifiedDone { done += 1; return }
     if folder.state == .preserved { preserved += 1; return }
     if folder.state == .suppressed { suppressed += 1; return }
+    if folder.state == .excluded { excluded += 1; return }
     if folder.state == .pending { needsProcessing += 1; return }
     if folder.state == .uncertain || folder.state == .done { needsReassessment += 1; return }
     guard let reason = folder.reason, reason != .unknown else { needsReassessment += 1; return }
     switch reason {
-    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .manualIdentificationRequired:
+    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .manualMatchingRequired:
       needsManualResolution += 1
     case .authentication, .recoveryMode:
       waitingToRetry += 1

@@ -15,5 +15,5 @@ public enum ActivityLogError: Error, Equatable, Sendable {
   /// The committed sequence has reached the maximum representable value.
   case sequenceExhausted
   /// The approximately one-second contention retry budget expired.
-  case leaseTimedOut
+  case accessTimedOut
 }

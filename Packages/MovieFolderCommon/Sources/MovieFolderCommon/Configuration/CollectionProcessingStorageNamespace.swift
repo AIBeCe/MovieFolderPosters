@@ -16,7 +16,7 @@ public enum CollectionProcessingStorageNamespace {
     /// Directory used by current app and extension processes.
     static let currentName = "CollectionProcessingState"
     /// Reusable container-wide advisory lock; never unlinked.
-    static let leaseName = ".collection-processing-namespace.lock"
+    static let namespaceLockFileName = ".collection-processing-namespace.lock"
     /// Recognizable payload distinguishing our marker from unrelated regular files.
     static let marker = Data("MovieFolderPosters.CollectionProcessingState.namespace.v1\n".utf8)
     /// Existing processing-state envelope limit, retained across the namespace change.
@@ -26,13 +26,13 @@ public enum CollectionProcessingStorageNamespace {
   /// Opens current storage, or initializes a fresh container while blocking older namespace creation.
   ///
   /// An existing legacy directory is never migrated implicitly. Initialization and inspection hold a shared
-  /// container-wide exclusive lease, released after the persistence store has pinned its directory descriptor.
+  /// container-wide exclusive access, released after the persistence store has pinned its directory descriptor.
   /// - Parameter containerURL: An existing trusted App Group directory, never a movie collection directory.
   /// - Returns: The current store with the existing eight-mebibyte record-envelope limit.
   /// - Throws: ``CollectionProcessingStorageNamespaceError/legacyMigrationRequired`` for old storage,
-  ///   namespace validation or lease errors, or a persistence error when the current store cannot open.
+  ///   namespace validation or access errors, or a persistence error when the current store cannot open.
   public static func open(in containerURL: URL) throws -> PersistenceStore {
-    let container = try ContainerLease(containerURL)
+    let container = try ContainerAccess(containerURL)
     let legacy = try container.entry(named: Constants.legacyName)
     let current = try container.entry(named: Constants.currentName)
     try validate(legacy: legacy, current: current)
@@ -54,10 +54,10 @@ public enum CollectionProcessingStorageNamespace {
   /// If exchange is unsupported, the original directory remains intact with a recognizable prepared marker at
   /// the current name. Retrying this API resumes preparation; normal opening still requires explicit migration.
   /// - Parameter containerURL: The existing trusted App Group directory whose older processes are stopped.
-  /// - Throws: ``CollectionProcessingStorageNamespaceError`` on conflicts, unsafe entries, a busy migration lease,
+  /// - Throws: ``CollectionProcessingStorageNamespaceError`` on conflicts, unsafe entries, a busy migration access,
   ///   unsupported atomic exchange, or filesystem failures. Existing records are never merged or removed.
   public static func migrateStoppedInstallation(in containerURL: URL) throws {
-    let container = try ContainerLease(containerURL)
+    let container = try ContainerAccess(containerURL)
     let legacy = try container.entry(named: Constants.legacyName)
     let current = try container.entry(named: Constants.currentName)
     try validate(legacy: legacy, current: current)
@@ -91,7 +91,7 @@ public enum CollectionProcessingStorageNamespace {
   }
 
   /// Creates the old-path blocker before the new writable directory, resuming marker-only initialization.
-  private static func initializeIfNeeded(_ container: ContainerLease, legacy: Entry, current: Entry) throws {
+  private static func initializeIfNeeded(_ container: ContainerAccess, legacy: Entry, current: Entry) throws {
     if legacy == .missing { try container.createMarker(named: Constants.legacyName) }
     if current == .missing {
       guard mkdirat(container.descriptor, Constants.currentName, S_IRWXU) == 0 else {
@@ -111,9 +111,9 @@ public enum CollectionProcessingStorageNamespace {
     case marker
   }
 
-  /// Pins the trusted parent and holds a nonblocking, process-shared initialization/migration lease.
-  private final class ContainerLease {
-    /// Parent descriptor anchoring every namespace inspection and mutation.
+  /// Pins the trusted parent and holds a nonblocking, process-shared initialization/migration access.
+  private final class ContainerAccess {
+    /// Parent descriptor anchoring every namespace inspection and change.
     let descriptor: Int32
     /// Permanent regular-file descriptor whose flock serializes new namespace entrypoints.
     private let lockDescriptor: Int32
@@ -123,7 +123,7 @@ public enum CollectionProcessingStorageNamespace {
       guard url.isFileURL else { throw CollectionProcessingStorageNamespaceError.invalidStorageEntry }
       descriptor = Darwin.open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
       guard descriptor >= 0 else { throw CollectionProcessingStorageNamespaceError.io(errno) }
-      let lock = openat(descriptor, Constants.leaseName,
+      let lock = openat(descriptor, Constants.namespaceLockFileName,
                         O_CREAT | O_RDWR | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
       guard lock >= 0 else {
         let code = errno
@@ -146,7 +146,7 @@ public enum CollectionProcessingStorageNamespace {
       lockDescriptor = lock
     }
 
-    /// Releases the namespace lease without deleting the reusable lock file.
+    /// Releases the namespace access without deleting the reusable lock file.
     deinit {
       flock(lockDescriptor, LOCK_UN)
       close(lockDescriptor)
@@ -219,7 +219,7 @@ public enum CollectionProcessingStorageNamespaceError: Error, Sendable, Equatabl
   case conflictingStorage
   /// A namespace entry is a symlink, special file, hard-linked marker, or unrecognized regular file.
   case invalidStorageEntry
-  /// Another current process holds the shared initialization/migration lease; the caller may retry later.
+  /// Another current process holds the shared initialization/migration access; the caller may retry later.
   case busy
   /// The filesystem cannot perform the required atomic directory/marker exchange; no fallback move is attempted.
   case unsupportedFilesystem

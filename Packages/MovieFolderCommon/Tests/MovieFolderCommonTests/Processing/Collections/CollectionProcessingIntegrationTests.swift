@@ -66,11 +66,12 @@ struct CollectionProcessingIntegrationTests {
       rootID: fixture.context.rootID, rootIdentity: fixture.context.rootIdentity,
       authorizationVersion: fixture.context.authorizationVersion,
       credentialRevision: fixture.context.credentialRevision,
-      usesStubTMDbResponses: false, appearance: .raw)
+      usesStubTMDbResponses: false, appearance: .raw,
+      processingConfigurationRevision: fixture.context.processingConfigurationRevision)
     let processor = MovieFolderProcessor(
       persistence: fixture.processing, provider: CollectionProcessingMetadataProvider(),
       cacheDirectory: fixture.base.appendingPathComponent("Posters"), coordinationStore: fixture.coordination,
-      mutationGuard: RefusingRestyleGuard(), appearance: .raw, processingStore: fixture.processingStore)
+      processingVerifier: RefusingRestyleVerifier(), appearance: .raw, processingStore: fixture.processingStore)
     _ = try await processor.process(root: fixture.root, processingContext: context)
     let processingState = try #require(try fixture.processingStore.read(rootID: context.rootID))
     #expect(processingState.folders.first?.state == .done)
@@ -78,7 +79,7 @@ struct CollectionProcessingIntegrationTests {
     #expect(try FileSystemService().assignedPosterAppearance(toChild: "Movie (2021)", in: fixture.root) == .softFinish)
   }
 
-  /// A cache-save failure records the actual verified poster and stops before the next folder mutation.
+  /// A cache-save failure records the actual verified poster and stops before the next folder change.
   @Test func automaticCacheFailurePreservesActualInstalledEvidence() async throws {
     let fixture = try CollectionProcessingFixture(names: ["Alpha (2021)", "Beta (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
@@ -103,7 +104,7 @@ struct CollectionProcessingIntegrationTests {
     #expect(alpha.state == .done)
     #expect(alpha.reason == .cachePersistenceFailure)
     #expect(alpha.lastFailure?.stage == .persist)
-    #expect(processingState.operation?.state == .failed)
+    #expect(processingState.currentRun?.state == .failed)
     #expect(try FileSystemService().hasAssignedPoster(toChild: "Alpha (2021)", in: fixture.root))
     #expect(try !FileSystemService().readCurrentState(ofChild: "Beta (2021)", in: fixture.root).hasCustomIcon)
   }
@@ -134,7 +135,7 @@ struct CollectionProcessingIntegrationTests {
     #expect(selected.folders.first?.movieID == 7)
     #expect(selected.folders.first?.ownership == .owned)
     #expect(selected.calculateCounts().done == 1)
-    #expect(selected.operation?.action == .selection)
+    #expect(selected.currentRun?.action == .selection)
     #expect(selected.lastCompletedRun == before.lastCompletedRun)
 
     // A download failure must not erase a currently verified installed poster.
@@ -147,7 +148,7 @@ struct CollectionProcessingIntegrationTests {
     let failedRefresh = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     #expect(failedRefresh.folders.first?.state == .done)
     #expect(failedRefresh.folders.first?.lastFailure != .none)
-    #expect(failedRefresh.operation?.state == .failed)
+    #expect(failedRefresh.currentRun?.state == .failed)
 
     _ = try await processor.removePoster(
       root: fixture.root, child: "Missing (2021)", expectedIdentity: identity, processingContext: fixture.context)
@@ -166,7 +167,7 @@ struct CollectionProcessingIntegrationTests {
     let task = Task { try await processor.process(root: fixture.root, processingContext: fixture.context) }
     await provider.waitForSearch()
     let running = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(running.operation?.state == .running)
+    #expect(running.currentRun?.state == .running)
     #expect(running.calculateCounts().total == 1)
     #expect(running.calculateCounts().notFound == .none)
     task.cancel()
@@ -175,7 +176,7 @@ struct CollectionProcessingIntegrationTests {
       Issue.record("Cancellation must propagate")
     } catch is CancellationError {}
     let interrupted = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(interrupted.operation?.state == .interrupted)
+    #expect(interrupted.currentRun?.state == .interrupted)
     #expect(interrupted.folders.first?.state == .uncertain)
     #expect(interrupted.lastCompletedRun == .none)
   }
@@ -195,7 +196,7 @@ struct CollectionProcessingIntegrationTests {
     #expect(processingState.calculateCounts().total == 3)
     #expect(processingState.calculateCounts().notFound == 1)
     #expect(processingState.calculateCounts().severalMatches == 1)
-    #expect(processingState.operation?.state == .completed)
+    #expect(processingState.currentRun?.state == .completed)
   }
 
   /// Conclusive negative and ambiguous matches never arm an automatic retry.
@@ -229,7 +230,7 @@ struct CollectionProcessingIntegrationTests {
     _ = try await fixture.processor(provider: provider).process(
       root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(processingState.operation?.state == .partial)
+    #expect(processingState.currentRun?.state == .partial)
     #expect(processingState.lastCompletedRun == .none)
     #expect(processingState.folders.contains { $0.state == .pending || $0.state == .deferred })
     #expect(processingState.folders.contains { $0.reason == .authentication })
@@ -256,14 +257,14 @@ struct CollectionProcessingIntegrationTests {
     _ = try await processor.process(root: fixture.root, processingContext: fixture.context)
 
     let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(state.operation?.state == .partial)
+    #expect(state.currentRun?.state == .partial)
     #expect(state.lastCompletedRun == .none)
     #expect(state.folders.contains { $0.state == .pending })
     #expect(state.folders.contains { $0.reason == .authentication })
   }
 }
 
-/// Local collection and current configuration required by the result mutation fence.
+/// Local collection and current configuration required by the result change fence.
 private struct CollectionProcessingFixture {
   /// Root directory holding all disposable test inputs and records.
   let base: URL
@@ -298,7 +299,8 @@ private struct CollectionProcessingFixture {
     let settings = try configuration.read()
     context = CollectionProcessingContext(
       rootID: directory.id, rootIdentity: identity, authorizationVersion: directory.authorizationVersion,
-      credentialRevision: settings.credentialRevision, usesStubTMDbResponses: false, appearance: .softFinish)
+      credentialRevision: settings.credentialRevision, usesStubTMDbResponses: false, appearance: .softFinish,
+      processingConfigurationRevision: directory.processingConfiguration.revision)
     processingStore = CollectionProcessingStore(
       store: try PersistenceStore(
         directory: base.appendingPathComponent("Outcomes"), maximumRecordBytes: 8 * 1024 * 1024),
@@ -380,15 +382,13 @@ private struct CacheFailurePosterAssigner: PosterAssigner {
   }
 }
 
-/// Permits inspection while rejecting the manual mutation guard used by automatic restyling.
-private struct RefusingRestyleGuard: MovieFolderMutationGuard {
-  /// Permits automatic mutation to reach the manual restyle guard under test.
-  func movieFolderProcessor(
-    _ processor: MovieFolderProcessor, willPerformAutomaticMutationIn root: URL
-  ) throws -> PersistenceLease? { .none }
+/// Permits inspection while rejecting the manual change guard used by automatic restyling.
+private struct RefusingRestyleVerifier: MovieFolderProcessingVerifier {
+  /// Permits automatic change to reach the manual restyle guard under test.
+  func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess? { .none }
 
   /// Rejects restyling with the configured icon-assignment failure.
-  func movieFolderProcessorWillPerformManualMutation(_ processor: MovieFolderProcessor) throws -> PersistenceLease? {
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
     throw FolderPosterError.iconAssignmentFailed
   }
 }

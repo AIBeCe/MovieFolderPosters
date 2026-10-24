@@ -10,6 +10,24 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// Pausing collection inclusion still permits explicit owned-poster removal and retains suppression.
+  @Test func pausedCollectionAllowsExplicitRemoval() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let service = fixture.service()
+    let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: "/chosen.png")
+    _ = try await service.applyPoster(movie, for: fixture.request)
+    try fixture.repository.update { configuration in
+      _ = configuration.directories[0].processingConfiguration.setPaused(true)
+    }
+
+    #expect(try await service.removePoster(for: fixture.request))
+    #expect(try FileSystemService().isPosterSuppressed(toChild: fixture.request.childName, in: fixture.movies))
+    #expect(try !FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
+      .hasCustomIcon)
+  }
+
   /// Cancelling a noncooperative provider retains admission until its service call returns.
   @Test(.timeLimit(.minutes(1))) func cancelledSearchRetainsSharedAdmissionUntilItReturns() async throws {
     let fixture = try PosterActionFixture()
@@ -38,7 +56,8 @@ struct MoviePosterActionServiceTests {
     let context = CollectionProcessingContext(
       rootID: root.id, rootIdentity: rootIdentity, authorizationVersion: root.authorizationVersion,
       credentialRevision: configuration.credentialRevision,
-      usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance)
+      usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance,
+      processingConfigurationRevision: root.processingConfiguration.revision)
     let unrelated = FolderProcessingRecord(
       name: "Unrelated", identity: "untouched", state: .notFound, reason: .noSuitableMovie)
     var initial = try fixture.processing.recordProcessingStart(context: context, action: .automatic)
@@ -49,7 +68,7 @@ struct MoviePosterActionServiceTests {
     ]
     initial.isInventoryComplete = true
     initial.inspectedAt = Date()
-    initial.operation?.state = .partial
+    initial.currentRun?.state = .partial
     _ = try fixture.processing.commit(initial, expectedRevision: initial.revision)
     let provider = ActionProvider()
     let service = fixture.service(provider: provider)
@@ -174,19 +193,19 @@ struct MoviePosterActionServiceTests {
     await #expect(throws: expected) { try await fixture.service().matchedMovieID(for: request) }
   }
 
-  /// A concurrent authorization lease denies entry rather than running without coordination.
+  /// A concurrent authorization access denies entry rather than running without coordination.
   @Test func authorizationContentionPreventsRead() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let directory = try #require(try fixture.repository.read().directories.first)
-    let lease = try #require(try fixture.authorizations.acquireLease(
+    let access = try #require(try fixture.authorizations.acquireAccess(
       for: "host-\(directory.id)-\(directory.authorizationVersion)"))
     await #expect { try await fixture.service().matchedMovieID(for: fixture.request) } throws: { error in
       if case ConfigurationError.busy = error { return true }
 
       return false
     }
-    withExtendedLifetime(lease) {}
+    withExtendedLifetime(access) {}
   }
 
   /// Credentials remain mandatory even when the network provider is injected.
@@ -211,7 +230,7 @@ struct MoviePosterActionServiceTests {
     #expect(await provider.searches.isEmpty)
   }
 
-  /// Selected IDs and artwork are validated before any authorization or mutation occurs.
+  /// Selected IDs and artwork are validated before any authorization or change occurs.
   @Test(arguments: [Int.zero, -1, 7])
   func invalidSelectionRecordsFailure(_ identifier: Int) async throws {
     let fixture = try PosterActionFixture()
@@ -225,7 +244,7 @@ struct MoviePosterActionServiceTests {
     }
     let events = try await activity.entries().map(\.event)
     #expect(events.map(\.status) == [.started, .failed])
-    #expect(events.first?.operationID == events.last?.operationID)
+    #expect(events.first?.activityGroupID == events.last?.activityGroupID)
     #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
   }
@@ -278,8 +297,8 @@ struct MoviePosterActionServiceTests {
     }
   }
 
-  /// A configuration change during poster download must stop the final mutation guard.
-  @Test func configurationChangeDuringArtworkPreventsMutation() async throws {
+  /// A configuration change during poster download must stop the final change guard.
+  @Test func configurationChangeDuringArtworkPreventsChange() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let provider = ActionProvider(repository: fixture.repository, changesDuringDownload: true)
@@ -380,7 +399,7 @@ private actor ActionProvider: MovieMetadataProvider {
   private(set) var searches: [String] = []
   /// Downloaded poster paths establish whether refresh used the saved movie.
   private(set) var downloads: [String] = []
-  /// Optional real configuration mutation during the asynchronous network boundary.
+  /// Optional real configuration change during the asynchronous network boundary.
   let repository: ConfigurationRepository?
   /// Whether configuration changes at the later artwork boundary instead of during search.
   let changesDuringDownload: Bool

@@ -6,7 +6,7 @@ import Testing
 
 @testable import MovieFolderCommon
 
-/// Names and identification choices must survive persistence without weakening processing fencing.
+/// Names and matching choices must survive persistence without weakening processing fencing.
 struct CollectionSetupPolicyTests {
   /// Names are trimmed, bounded, and independent of filesystem identity.
   @Test func displayNamesAreNormalizedAndPersisted() throws {
@@ -29,19 +29,19 @@ struct CollectionSetupPolicyTests {
     configuration.directories = [root]
     var fields = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
       as? [String: Any])
-    fields.removeValue(forKey: "identificationPolicy")
+    fields.removeValue(forKey: "movieMatchingConfiguration")
     let old = try JSONDecoder().decode(DirectoryConfiguration.self,
       from: JSONSerialization.data(withJSONObject: fields))
-    #expect(old.identificationPolicy == IdentificationPolicy())
-    configuration.identificationPolicy.comparesOriginalTitles = false
-    #expect(!configuration.effectiveIdentificationPolicy(for: root).comparesOriginalTitles)
+    #expect(old.movieMatchingConfiguration == MovieMatchingConfiguration())
+    configuration.movieMatchingConfiguration.comparesOriginalTitles = false
+    #expect(!configuration.effectiveMovieMatchingConfiguration(for: root).comparesOriginalTitles)
     var overridden = root
-    overridden.identificationPolicy = IdentificationPolicy()
-    #expect(configuration.effectiveIdentificationPolicy(for: overridden).comparesOriginalTitles)
+    overridden.movieMatchingConfiguration = MovieMatchingConfiguration()
+    #expect(configuration.effectiveMovieMatchingConfiguration(for: overridden).comparesOriginalTitles)
   }
 
-  /// Renaming is presentation-only; changing effective identification must invalidate a captured mutation.
-  @Test func mutationFencesPolicyButNotName() throws {
+  /// Renaming is presentation-only; changing effective matching must invalidate a captured change.
+  @Test func configurationRevisionFencesMatchingChangesButNotDisplayName() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: directory))
@@ -50,11 +50,11 @@ struct CollectionSetupPolicyTests {
     try repository.update { $0.directories = [root] }
     let before = try repository.read()
     try repository.update { $0.directories[0].displayName = "Films" }
-    do { let lease = try repository.mutationLease(for: root, expectedConfiguration: before)
-      withExtendedLifetime(lease) {} }
-    try repository.update { $0.identificationPolicy.comparesOriginalTitles = false }
+    do { let access = try repository.configurationAccessForIconChange(for: root, expectedConfiguration: before)
+      withExtendedLifetime(access) {} }
+    try repository.update { $0.movieMatchingConfiguration.comparesOriginalTitles = false }
     #expect(throws: ConfigurationError.self) {
-      _ = try repository.mutationLease(for: root, expectedConfiguration: before)
+      _ = try repository.configurationAccessForIconChange(for: root, expectedConfiguration: before)
     }
   }
 }
