@@ -26,8 +26,9 @@ suppressed folders remain untouched. Missing cached sources leave the current ic
 retrieve a new source explicitly. Cached restyling runs even while metadata requests are in backoff and requires no network.
 A configured credential remains required by the existing Finder runtime to create its processor.
 
-Manual refresh and movie selection use the selected appearance. Their mutation guard rejects settings that changed during
-a network request. Native icons persist independently of the extension. No watcher, timer, or extra service is introduced.
+Manual refresh and movie selection use the selected appearance. Their processing verifier rechecks the saved collection
+configuration after network work and before changing an icon. Native icons persist independently of the extension. No
+watcher, timer, or extra service is introduced.
 
 ## Implementation
 

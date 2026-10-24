@@ -37,7 +37,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private let viewModel: ConfigurationViewModel
   /// Retains the persistence boundary for confirmed Finder inclusion actions.
   private let service: any ConfigurationServicing
-  /// Independently reads committed processing snapshots for main-window presentation.
+  /// Independently reads saved processing summaries for the main window.
   private let summaryViewModel: CollectionSummaryViewModel
   /// Shared appearance selection owned and applied by the application root.
   private let appearance: AppAppearanceSettings
@@ -387,7 +387,7 @@ extension ConfigurationCoordinator {
     let includes = request.action == .include
     alert.messageText = includes ? "Include Folder?" : "Ignore Folder?"
     alert.informativeText = request.folderURL.lastPathComponent
-      + (includes ? " will participate when the collection is active." : " will be excluded from processing.")
+      + (includes ? " will be included when the collection is active." : " will be excluded from processing.")
       + " Existing posters and movie contents are preserved."
     alert.addButton(withTitle: includes ? "Include Folder" : "Ignore Folder")
     alert.addButton(withTitle: "Cancel")
@@ -603,7 +603,7 @@ private extension ConfigurationCoordinator {
 
   /// Lets the user choose a destination before reading retained activity or writing a diagnostic file.
   /// - Parameters:
-  ///   - report: The readiness snapshot projected through the export's fixed status vocabulary.
+  ///   - report: Readiness results projected through the export's fixed status vocabulary.
   ///   - window: The configuration window that owns the save panel and any sanitized failure alert.
   func exportDiagnostics(report: InstallationReadinessReport, attachedTo window: NSWindow) {
     let panel = NSSavePanel()

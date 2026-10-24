@@ -304,7 +304,7 @@ Improve routine setup, exclusions, private operational views, Finder navigation,
 
 GitHub issue: [#10](https://github.com/AIBeCe/MovieFolderPosters/issues/10); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
-- [x] Scope: Accept dropped roots through the same authorization flow as the picker. Add friendly display names and a short setup flow for access, current identification policy, and artwork settings; no profile engine yet.
+- [x] Scope: Accept dropped roots through the same authorization flow as the picker. Add friendly display names and a short setup flow for access and matching configuration; poster appearance remains global in Settings. No profile engine yet.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Drop/picker parity, duplicate roots, access denial, display-name changes, and unmounted roots preserve the correct persistent identity. Setup never implies that enabling an extension grants filesystem access.
 - Source ideas: E34, E35, N10.
@@ -316,7 +316,7 @@ GitHub issue: [#10](https://github.com/AIBeCe/MovieFolderPosters/issues/10); mil
 
 GitHub issue: [#11](https://github.com/AIBeCe/MovieFolderPosters/issues/11); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
-- [ ] Scope: Unify Ignore Folder and explicit child exclusions into one reversible policy. Pausing a root preserves configuration and icons. Distinguish exclusion from durable poster-removal suppression.
+- [ ] Scope: Unify Finder's Ignore/Include Folder actions and collection excluded-folder settings as one reversible inclusion configuration. Pausing a collection preserves its configuration and icons. Distinguish exclusion from durable poster-removal suppression.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Exclusion/pause changes fence in-flight automatic and manual writes across processes. Re-enable does not clear unrelated suppression or authorize overwriting foreign icons.
 - Source ideas: E29, E55, E56.

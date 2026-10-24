@@ -36,9 +36,13 @@ import MovieFolderCommon
   private let saveButton = NSButton(title: "Save", target: .none, action: .none)
   /// Explicit discard action.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
+  /// Scroll viewport whose document follows the complete form content height.
   private var formScrollView: NSScrollView?
+  /// Top-origin document that hosts the collection form stack.
   private var formDocumentView: CollectionFormDocumentView?
+  /// Collection form stack measured after its arranged controls update.
   private var formContent: NSStackView?
+  /// Prevents document sizing callbacks from recursively updating the same layout.
   private var isUpdatingFormSize = false
   /// Weak flow owner.
   weak var delegate: (any CollectionEditViewControllerDelegate)?
@@ -56,6 +60,16 @@ import MovieFolderCommon
 
   override func loadView() {
     view = NSView()
+    configureControls()
+    let actions = makeActionRow()
+    let content = makeFormContent()
+    installForm(content: content, actions: actions)
+    updateFormDocumentSize()
+    updatePresentation()
+  }
+
+  /// Connects the controls to the finite edit draft and supplies accessible guidance.
+  private func configureControls() {
     nameField.delegate = self
     nameField.placeholderString = "Root folder name"
     nameField.setAccessibilityLabel("Collection display name")
@@ -78,8 +92,20 @@ import MovieFolderCommon
     errorLabel.textColor = .systemRed
     exclusions.orientation = .vertical
     exclusions.alignment = .leading
+  }
+
+  /// Creates the persistent Cancel and Save controls for the sheet.
+  /// - Returns: A horizontal action row aligned with the form edges.
+  private func makeActionRow() -> NSStackView {
     let actions = NSStackView(views: [NSView(), cancelButton, saveButton])
     actions.spacing = 8
+
+    return actions
+  }
+
+  /// Creates the collection form sections shared with collection setup.
+  /// - Returns: A vertical stack containing the editable collection settings.
+  private func makeFormContent() -> NSStackView {
     let content = NSStackView(views: [
       heading("Folder and access"), pathLabel,
       separator(), heading("Display name"), nameField,
@@ -97,6 +123,15 @@ import MovieFolderCommon
     content.spacing = 9
     content.translatesAutoresizingMaskIntoConstraints = false
     formContent = content
+
+    return content
+  }
+
+  /// Installs the scrollable form and fixed action row in the edit sheet.
+  /// - Parameters:
+  ///   - content: Collection controls and section labels.
+  ///   - actions: Fixed Cancel and Save controls.
+  private func installForm(content: NSStackView, actions: NSStackView) {
     let scroll = NSScrollView()
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
@@ -126,20 +161,21 @@ import MovieFolderCommon
     for child in content.arrangedSubviews where child is NSTextField || child is NSBox {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }
-    updateFormDocumentSize()
-    updatePresentation()
   }
 
+  /// Recalculates document height after the scroll viewport changes size.
   override func viewDidLayout() {
     super.viewDidLayout()
     updateFormDocumentSize()
   }
 
+  /// Resizes the scroll document to fit the current form and visible viewport.
   private func updateFormDocumentSize() {
     guard !isUpdatingFormSize,
       let scroll = formScrollView,
       let document = formDocumentView,
       let content = formContent else { return }
+
     let viewport = scroll.contentView.bounds.size
     guard viewport.width > 0, viewport.height > 0 else { return }
 

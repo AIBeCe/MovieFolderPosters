@@ -24,7 +24,7 @@ configured roots remain registered, but processing
 makes no metadata requests or icon changes. Removing a configured folder unregisters it and cancels its active work;
 existing poster icons remain on disk.
 
-The identification-data preview parses an entered example folder name locally. Choose Movie also shows the exact
+The matching preview parses an entered example folder name locally. Choose Movie also shows the exact
 normalized title and optional year that its explicit search will send. Neither preview initiates a search.
 See [Credential setup and replacement](CREDENTIAL_SETUP.md) for migration, recovery, and qualification limits.
 

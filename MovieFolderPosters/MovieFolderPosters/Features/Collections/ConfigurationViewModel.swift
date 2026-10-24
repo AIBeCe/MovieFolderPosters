@@ -22,7 +22,7 @@ protocol ConfigurationViewModelActivityDelegate: AnyObject {
 /// Holds configuration presentation state and forwards user actions to its service.
 @MainActor
 final class ConfigurationViewModel {
-  /// Performs configuration reads and mutations outside the view layer.
+  /// Reads and changes collection settings outside the view layer.
   private let service: any ConfigurationServicing
   /// Dedicated durable gate, independent of configuration generation and processing results.
   private let recovery: ProcessingRecoveryService?
@@ -93,7 +93,7 @@ final class ConfigurationViewModel {
   private(set) var errorMessage: String?
   /// Whether a configuration summary has been loaded successfully.
   private(set) var hasLoadedSummary = false
-  /// Whether durable state currently pauses provider admission and icon mutations.
+  /// Whether durable state currently pauses provider requests and icon changes.
   private(set) var isRecoveryModeEnabled = false
   /// Whether the durable gate was successfully read at the last explicit refresh.
   private(set) var isRecoveryModeAvailable = false
@@ -160,7 +160,7 @@ final class ConfigurationViewModel {
   }
 
   /// Updates only durable admission; disabling recovery never restarts or replays processing.
-  /// - Parameter enabled: Whether new requests and filesystem mutations must remain paused.
+  /// - Parameter enabled: Whether new requests and filesystem icon changes must remain paused.
   func setRecoveryModeEnabled(_ enabled: Bool) async {
     guard !isBusy, let recovery else { return }
     isBusy = true

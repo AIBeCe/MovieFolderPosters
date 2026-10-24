@@ -41,7 +41,7 @@ public actor MovieFolderProcessor {
   /// The conservative movie matcher used after a complete provider response.
   let matcher = MovieMatcher()
 
-  /// Connects the processing stores, metadata source, clock, icon adapter, and optional change guard.
+  /// Connects the processing stores, metadata source, clock, icon adapter, and optional processing verifier.
   ///
   /// - Parameters:
   ///   - fileSystem: The filesystem adapter used for evidence, cache, and icon operations.

@@ -8,7 +8,7 @@ nonisolated struct CollectionProcessingSummary: Sendable, Equatable {
   let processingState: CollectionProcessingState?
   /// Counts and lifecycle state safe to show for the currently saved configuration.
   let presentation: CollectionProcessingPresentation
-  /// Counts supported by the current saved context; stale snapshots remain available in details.
+  /// Counts supported by the current saved context; stale results remain available in details.
   let counts: CollectionProcessingCounts
   /// Lifecycle state after a nonblocking persisted-operation orphan check.
   let displayState: CollectionProcessingDisplayState
@@ -57,7 +57,7 @@ nonisolated struct EmptyCollectionSummaryService: CollectionSummaryServicing {
 
 /// Projects persisted processing state against current root, authorization, and processing settings.
 nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
-  /// The saved configuration used to reject snapshots from an older context.
+  /// The saved configuration used to reject results from an older context.
   private let configuration: ConfigurationRepository
   /// Read-only access to the per-root outcome records.
   private let processingStore: any CollectionProcessingStateReading
@@ -290,7 +290,7 @@ protocol CollectionSummaryViewModelDelegate: AnyObject {
 /// Loads and publishes committed collection processing state without triggering Finder processing.
 @MainActor
 final class CollectionSummaryViewModel {
-  /// Reads snapshots from the shared processing store.
+  /// Reads saved processing results from the shared processing store.
   private let service: any CollectionSummaryServicing
   /// Avoids applying a response after a newer invalidation arrived.
   private var requestGeneration: UInt64 = .zero

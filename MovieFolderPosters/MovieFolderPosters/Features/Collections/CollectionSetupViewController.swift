@@ -30,7 +30,7 @@ import MovieFolderCommon
   private let chooseButton = NSButton(title: "Choose…", target: .none, action: .none)
   /// Friendly collection name, bounded to 120 characters.
   private let nameField = NSTextField(string: "")
-  /// Default-on inheritance choice; overrides remain a local snapshot until Add.
+  /// Default-on inheritance choice; overrides remain local until Add.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
   /// Requires a release year before automatic metadata requests.
@@ -45,9 +45,13 @@ import MovieFolderCommon
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
   /// Shows only fixed corrective text from the model.
   private let errorLabel = NSTextField(wrappingLabelWithString: "")
+  /// Scroll viewport whose document follows the complete setup form height.
   private var formScrollView: NSScrollView?
+  /// Top-origin document that hosts the collection setup form.
   private var formDocumentView: CollectionFormDocumentView?
+  /// Setup form stack measured after its arranged controls update.
   private var formContent: NSStackView?
+  /// Prevents document sizing callbacks from recursively updating the same layout.
   private var isUpdatingFormSize = false
   /// Weak navigation recipient; the coordinator retains itself and this flow.
   weak var delegate: (any CollectionSetupViewControllerDelegate)?
@@ -161,16 +165,19 @@ import MovieFolderCommon
     updateFormDocumentSize()
   }
 
+  /// Recalculates document height after the scroll viewport changes size.
   override func viewDidLayout() {
     super.viewDidLayout()
     updateFormDocumentSize()
   }
 
+  /// Resizes the scroll document to fit the current form and visible viewport.
   private func updateFormDocumentSize() {
     guard !isUpdatingFormSize,
       let scroll = formScrollView,
       let document = formDocumentView,
       let content = formContent else { return }
+
     let viewport = scroll.contentView.bounds.size
     guard viewport.width > 0, viewport.height > 0 else { return }
 
@@ -273,6 +280,7 @@ import MovieFolderCommon
 
 /// Gives the scrollable collection form a stable top-origin coordinate system.
 @MainActor final class CollectionFormDocumentView: NSView {
+  /// Places form content from the top edge, matching the visual order of native controls.
   override var isFlipped: Bool { true }
 
   /// Keeps the document at least as tall as its viewport while fitting taller form content.

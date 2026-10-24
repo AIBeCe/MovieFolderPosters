@@ -59,9 +59,9 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
   CollectionTableViewActionDelegate, CollectionRowViewDelegate {
   /// Supplies collection state and performs configuration operations.
   private let viewModel: ConfigurationViewModel
-  /// Supplies independently refreshed processing snapshots for collection rows.
+  /// Supplies independently refreshed processing results for collection rows.
   private let summaryViewModel: CollectionSummaryViewModel
-  /// Snapshot currently rendered by the table.
+  /// Collection statuses currently rendered by the table.
   private var presentedDirectories: [ConfiguredDirectoryStatus] = []
   /// Lists configured collection roots and their processing counts.
   private let tableView = CollectionTableView()

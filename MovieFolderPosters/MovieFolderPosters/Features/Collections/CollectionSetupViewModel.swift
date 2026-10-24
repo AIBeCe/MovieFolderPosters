@@ -20,7 +20,7 @@ import MovieFolderCommon
   var displayName = ""
   /// Whether final Add inherits current application choices rather than saving an override.
   var inheritsApplicationConfiguration = true
-  /// Snapshot initialized from application defaults, edited only when inheritance is disabled.
+  /// Matching configuration copied from application defaults and edited only when inheritance is disabled.
   var overrideConfiguration: MovieMatchingConfiguration
   /// Whether preparation or final commit is still running.
   private(set) var isBusy = false

@@ -4,7 +4,7 @@ import MovieFolderCommon
 import Network
 import Persistence
 
-/// Performs authorized searches, poster mutations, and assignment lookups for Finder actions.
+/// Performs authorized searches, poster icon changes, and assignment lookups for Finder actions.
 nonisolated protocol MoviePosterActionServicing: Sendable {
   /// Searches for movie metadata using a title and optional release year.
   ///
@@ -352,13 +352,13 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     }
   }
 
-  /// Acquires authorization and validates the collection and child folder before an operation.
+  /// Acquires authorization and validates the collection and child folder before performing an action.
   ///
   /// - Parameters:
   ///   - request: The action request identifying the configured root and child.
-  ///   - operation: Work performed while the validated authorization leases are retained.
-  /// - Returns: The operation's result.
-  /// - Throws: Folder validation, provider, persistence, cancellation, or operation errors.
+  ///   - operation: Work performed while the validated authorization access is retained.
+  /// - Returns: The action's result.
+  /// - Throws: Folder validation, provider, persistence, cancellation, or action errors.
   private func withAuthorizedRoot<Value: Sendable>(
     _ request: MoviePosterRequest,
     operation: (AuthorizedRoot) async throws -> Value
@@ -422,7 +422,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///
   /// - Parameters:
   ///   - context: The authorization context captured for this action.
-  ///   - requiresActiveCollection: Whether the collection must currently participate in processing.
+  ///   - requiresActiveCollection: Whether the collection must currently be included in processing.
   /// - Throws: An action error if the root identity has changed.
   private func checkConfigurationHasNotChanged(
     _ context: AuthorizedRoot,

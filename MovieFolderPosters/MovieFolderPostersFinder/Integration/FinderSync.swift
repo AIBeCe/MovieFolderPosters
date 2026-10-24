@@ -13,7 +13,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     let directory: MonitoredDirectory
     /// Security-scoped access retained for the configured processing lifetime.
     let access: DirectoryAccess
-    /// Identity checked again before processing and mutations.
+    /// Identity checked again before processing and icon changes.
     let identity: String
   }
 
@@ -80,11 +80,11 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     }
   }
 
-  /// Composes configuration-bound processors using the credential and authorized roots from one configuration snapshot.
+  /// Composes configuration-bound processors using the saved settings and authorized roots.
   /// - Parameters:
   ///   - token: Saved credential used only at the provider boundary.
-  ///   - configuration: Settings captured alongside the provider and change guard.
-  ///   - roots: Authorized roots retaining their access leases.
+  ///   - configuration: Settings captured alongside the provider and processing verifier.
+  ///   - roots: Authorized roots retaining security-scoped directory access.
   /// - Throws: Provider, recovery, container, or persistence setup errors.
   private func configureProcessors(
     token: String, configuration: DirectoryConfiguration, roots: [URL: AuthorizedRoot]
