@@ -414,7 +414,7 @@ extension DirectoryConfigurationService {
   /// Validates current overlap while the settings access protects the final collection commit.
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    movieMatchingConfiguration: MovieMatchingConfiguration?, appearance: PosterAppearance
+    movieMatchingConfiguration: MovieMatchingConfiguration?
   ) throws {
     var value = candidate.directory
     value.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
@@ -436,7 +436,6 @@ extension DirectoryConfigurationService {
       }
 
       configuration.directories.append(value)
-      configuration.posterAppearance = appearance
     }
     notifier.configurationDidChange()
   }
@@ -447,8 +446,7 @@ extension DirectoryConfigurationService {
   /// - Throws: A configuration or filesystem error if the root is invalid or overlaps another.
   func addDirectory(_ directory: URL) throws {
     let candidate = try prepareCollection(directory)
-    try commitCollection(candidate, displayName: .none, movieMatchingConfiguration: .none,
-      appearance: repository.read().posterAppearance)
+    try commitCollection(candidate, displayName: .none, movieMatchingConfiguration: .none)
   }
 
   /// Removes a configured collection and notifies shared components.

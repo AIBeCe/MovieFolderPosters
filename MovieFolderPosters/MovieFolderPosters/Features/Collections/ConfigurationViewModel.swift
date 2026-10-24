@@ -263,7 +263,7 @@ final class ConfigurationViewModel {
   /// Creates an independent setup draft; changing it does not alter persisted application preferences.
   /// - Returns: A new uncommitted setup model initialized from the currently loaded defaults.
   func makeCollectionSetupViewModel() -> CollectionSetupViewModel {
-    CollectionSetupViewModel(service: service, applicationConfiguration: movieMatchingConfiguration, appearance: posterAppearance)
+    CollectionSetupViewModel(service: service, applicationConfiguration: movieMatchingConfiguration)
   }
 
   /// Creates a finite edit draft sharing Main's serialized persistence boundary.

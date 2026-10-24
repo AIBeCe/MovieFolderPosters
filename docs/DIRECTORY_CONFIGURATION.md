@@ -43,9 +43,10 @@ stable-identity rename behavior, the complete access matrix, and unperformed nat
 
 ## Poster appearance
 
-Choose Raw (no styling), Soft finish (default), or Matte frame in the configuration window. The selection is shared
-with the Finder extension. Cached application-owned icons update when a configured collection is revisited; foreign
-and suppressed icons remain intact. See [Poster appearance](POSTER_APPEARANCE.md) for rendering and verification.
+Choose Raw (no styling), Soft finish (default), or Matte frame in **Settings > Poster Layout**. This global selection
+is shared with the Finder extension and applies to every collection; it is not part of Add or Edit Collection.
+Cached application-owned icons update when a configured collection is revisited; foreign and suppressed icons remain
+intact. See [Poster appearance](POSTER_APPEARANCE.md) for rendering and verification.
 
 ## Signing and process permissions
 

@@ -1,4 +1,3 @@
-import FileSystem
 import Foundation
 import MovieFolderCommon
 
@@ -23,8 +22,6 @@ import MovieFolderCommon
   var inheritsApplicationConfiguration = true
   /// Snapshot initialized from application defaults, edited only when inheritance is disabled.
   var overrideConfiguration: MovieMatchingConfiguration
-  /// Draft global poster finish, saved only with a successful Add.
-  var appearance: PosterAppearance
   /// Whether preparation or final commit is still running.
   private(set) var isBusy = false
   /// Prevents dismissal once final Add has started committing the authorized root.
@@ -46,12 +43,10 @@ import MovieFolderCommon
   /// - Parameters:
   ///   - service: Retained preparation and persistence boundary for the draft.
   ///   - applicationConfiguration: Defaults displayed while inheriting and used to initialize an explicit override.
-  ///   - appearance: Current global finish, copied into the uncommitted draft.
-  init(service: any ConfigurationServicing, applicationConfiguration: MovieMatchingConfiguration, appearance: PosterAppearance) {
+  init(service: any ConfigurationServicing, applicationConfiguration: MovieMatchingConfiguration) {
     self.service = service
     self.applicationConfiguration = applicationConfiguration
     overrideConfiguration = applicationConfiguration
-    self.appearance = appearance
   }
 
   /// Prepares the latest folder selection without committing settings or authorizations.
@@ -92,7 +87,7 @@ import MovieFolderCommon
     delegate?.collectionSetupViewModelDidChange(self)
     do {
       try await service.commitCollection(candidate, displayName: displayName,
-        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration, appearance: appearance)
+        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration)
       self.candidate = .none
       isBusy = false
       isCommitting = false

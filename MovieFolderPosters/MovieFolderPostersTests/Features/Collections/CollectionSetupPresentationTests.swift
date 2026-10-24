@@ -10,7 +10,7 @@ import Testing
 /// A persistent drop affordance stays visible before selection and accents only valid directory hovers.
 @Test @MainActor func collectionDropZoneHasPersistentPresentationAndValidHoverAccent() throws {
   let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
-    applicationConfiguration: MovieMatchingConfiguration(), appearance: .softFinish)
+    applicationConfiguration: MovieMatchingConfiguration())
   let controller = CollectionSetupViewController(viewModel: model)
   let drop = try #require(nativeViews(in: controller.view).compactMap { $0 as? CollectionFolderDropView }.first)
   let labels = nativeViews(in: drop).compactMap { ($0 as? NSTextField)?.stringValue }
@@ -86,7 +86,7 @@ import Testing
 /// Setup starts without an authorized folder and renders the same native sections for Choose and drop.
 @Test @MainActor func collectionSetupStartsWithNoSelectedFolder() {
   let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
-    applicationConfiguration: MovieMatchingConfiguration(), appearance: .softFinish)
+    applicationConfiguration: MovieMatchingConfiguration())
   let controller = CollectionSetupViewController(viewModel: model)
   let views = nativeViews(in: controller.view)
   let labels = views.compactMap { ($0 as? NSTextField)?.stringValue }
@@ -94,7 +94,10 @@ import Testing
   #expect(labels.contains("Folder and access"))
   #expect(labels.contains("Display name"))
   #expect(labels.contains("Matching"))
-  #expect(labels.contains("Poster appearance"))
+  #expect(!labels.contains("Collection"))
+  #expect(!labels.contains("Excluded Folders"))
+  #expect(!labels.contains("Poster appearance"))
+  #expect(views.compactMap { $0 as? NSPopUpButton }.isEmpty)
   let buttons = views.compactMap { $0 as? NSButton }
   #expect(buttons.first(where: { $0.title == "Add Collection" })?.isEnabled == false)
   #expect(buttons.first(where: { $0.title == "Use application matching settings" })?.state == .on)
@@ -104,7 +107,7 @@ import Testing
 /// Setup controls form an explicit keyboard loop independent of AppKit's stack-view loop recalculation.
 @Test @MainActor func collectionSetupDefinesKeyboardNavigationLoop() throws {
   let model = CollectionSetupViewModel(service: ConfigurationServiceFake(),
-    applicationConfiguration: MovieMatchingConfiguration(), appearance: .softFinish)
+    applicationConfiguration: MovieMatchingConfiguration())
   let controller = CollectionSetupViewController(viewModel: model)
   let views = nativeViews(in: controller.view)
   let buttons = views.compactMap { $0 as? NSButton }
@@ -114,11 +117,10 @@ import Testing
   let inheritButton = try #require(buttons.first { $0.title == "Use application matching settings" })
   let yearButton = try #require(buttons.first { $0.title == "Require a release year for automatic matching" })
   let originalButton = try #require(buttons.first { $0.title == "Compare TMDb original titles" })
-  let appearanceButton = try #require(views.compactMap { $0 as? NSPopUpButton }.first)
   let cancelButton = try #require(buttons.first { $0.title == "Cancel" })
   let addButton = try #require(buttons.first { $0.title == "Add Collection" })
   let controls: [NSView] = [chooseButton, nameField, inheritButton, yearButton, originalButton,
-    appearanceButton, cancelButton, addButton]
+    cancelButton, addButton]
 
   for (current, next) in zip(controls, controls.dropFirst() + [controls[0]]) {
     #expect(current.nextKeyView === next)
@@ -157,14 +159,13 @@ import Testing
 @Test @MainActor func collectionSetupDraftCommitsOnlyAfterAdd() async throws {
   let service = SetupServiceProbe()
   let configuration = MovieMatchingConfiguration(comparesOriginalTitles: false)
-  let model = CollectionSetupViewModel(service: service, applicationConfiguration: configuration, appearance: .softFinish)
+  let model = CollectionSetupViewModel(service: service, applicationConfiguration: configuration)
   #expect(model.candidate == .none)
   #expect(model.inheritsApplicationConfiguration)
   #expect(model.overrideConfiguration == configuration)
   await model.prepare(URL(fileURLWithPath: "/Movies"))
   #expect(model.displayName == "Movies")
   model.displayName = "Family"
-  model.appearance = .raw
   model.inheritsApplicationConfiguration = false
   await model.prepare(URL(fileURLWithPath: "/Cinema"))
   #expect(model.displayName == "Cinema")
@@ -172,7 +173,7 @@ import Testing
   #expect(await model.commit())
   #expect(service.commitCount == 1)
   #expect(service.committedConfiguration == configuration)
-  let cancelled = CollectionSetupViewModel(service: service, applicationConfiguration: configuration, appearance: .softFinish)
+  let cancelled = CollectionSetupViewModel(service: service, applicationConfiguration: configuration)
   await cancelled.prepare(URL(fileURLWithPath: "/Cancelled"))
   cancelled.cancel()
   #expect(cancelled.candidate == .none)
@@ -194,7 +195,7 @@ private final class SetupServiceProbe: ConfigurationServicing, Sendable {
   }
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    movieMatchingConfiguration: MovieMatchingConfiguration?, appearance: PosterAppearance
+    movieMatchingConfiguration: MovieMatchingConfiguration?
   ) throws {
     policies.withLock { $0.append(movieMatchingConfiguration) }
   }

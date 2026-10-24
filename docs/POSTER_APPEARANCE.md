@@ -1,6 +1,7 @@
 # Poster appearance
 
-Choose **Poster appearance** in the configuration window. The selection applies to every configured collection.
+Choose the global poster finish in **Settings > Poster Layout**. It applies to every configured collection and is not
+chosen while adding or editing an individual collection.
 
 | Appearance | Rendering |
 | --- | --- |

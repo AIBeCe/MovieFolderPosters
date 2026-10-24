@@ -53,7 +53,9 @@ struct DirectoryConfigurationServiceTests {
     let scroll = try #require(views.compactMap { $0 as? NSScrollView }.first)
     #expect(scroll.hasVerticalScroller)
     let labels = views.compactMap { $0 as? NSTextField }.map(\.stringValue)
-    #expect(["General", "Inclusion", "Excluded Folders", "Matching"].allSatisfy(labels.contains))
+    #expect(["Folder and access", "Display name", "Collection", "Excluded Folders", "Matching"]
+      .allSatisfy(labels.contains))
+    #expect(views.compactMap { $0 as? NSPopUpButton }.isEmpty)
     let pause = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Pause this collection" })
     pause.performClick(.none)
     #expect(model.processingConfiguration.isPaused)
@@ -166,7 +168,7 @@ struct DirectoryConfigurationServiceTests {
       authorization: TestDirectoryAuthorization(mode: .implicit))
     do {
       try await service.commitCollection(candidate, displayName: .none,
-        movieMatchingConfiguration: .none, appearance: .raw)
+        movieMatchingConfiguration: .none)
       Issue.record("The bounded configuration write must fail")
     } catch {
       #expect(String(describing: error) == "recordTooLarge")
@@ -216,7 +218,7 @@ struct DirectoryConfigurationServiceTests {
       let candidate = try await service.prepareCollection(replacement)
       do {
         try await service.commitCollection(candidate, displayName: .none,
-          movieMatchingConfiguration: .none, appearance: .raw)
+          movieMatchingConfiguration: .none)
         Issue.record("The bounded configuration write must fail after authorization is prepared")
       } catch {
         #expect(String(describing: error) == "recordTooLarge")
@@ -244,7 +246,7 @@ struct DirectoryConfigurationServiceTests {
     let candidate = try await service.prepareCollection(folder)
     #expect(notifications.configurationCount == .zero)
     try await service.commitCollection(candidate, displayName: "Original",
-      movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false), appearance: .softFinish)
+      movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false))
     let before = try fixture.repository.read()
     try await service.renameCollection(candidate.directory.id, displayName: " Family ")
     let summary = try await service.configurationSummary()
@@ -261,6 +263,7 @@ struct DirectoryConfigurationServiceTests {
     defer { fixture.cleanup() }
     let folder = fixture.root.appendingPathComponent("Movies")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try fixture.repository.update { $0.posterAppearance = .matteFrame }
     let candidate = try await fixture.service.prepareCollection(folder)
     #expect(try fixture.repository.read().directories.isEmpty)
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
@@ -269,11 +272,11 @@ struct DirectoryConfigurationServiceTests {
       #expect(try access.read() == .none)
     }
     try await fixture.service.commitCollection(candidate, displayName: "  Family films ",
-      movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false), appearance: .raw)
+      movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false))
     let saved = try fixture.repository.read()
     #expect(saved.directories.first?.effectiveDisplayName == "Family films")
     #expect(saved.directories.first?.movieMatchingConfiguration?.comparesOriginalTitles == false)
-    #expect(saved.posterAppearance == .raw)
+    #expect(saved.posterAppearance == .matteFrame)
     let access = try #require(try fixture.authorizations.acquireAccess(for: key))
     #expect(try access.read() != .none)
   }
@@ -290,7 +293,7 @@ struct DirectoryConfigurationServiceTests {
     let before = try fixture.repository.read()
     await #expect(throws: ConfigurationError.self) {
       try await fixture.service.commitCollection(candidate, displayName: "Movies",
-        movieMatchingConfiguration: .none, appearance: .raw)
+        movieMatchingConfiguration: .none)
     }
     #expect(try fixture.repository.read() == before)
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
@@ -308,7 +311,7 @@ struct DirectoryConfigurationServiceTests {
     try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("Shared"))
     await #expect(throws: (any Error).self) {
       try await fixture.service.commitCollection(candidate, displayName: .none,
-        movieMatchingConfiguration: .none, appearance: .raw)
+        movieMatchingConfiguration: .none)
     }
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
     let access = try #require(try fixture.authorizations.acquireAccess(for: key))

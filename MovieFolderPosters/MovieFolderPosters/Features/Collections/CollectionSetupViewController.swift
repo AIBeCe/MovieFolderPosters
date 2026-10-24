@@ -1,5 +1,4 @@
 import AppKit
-import FileSystem
 import MovieFolderCommon
 
 /// Routes finite setup navigation through the owning coordinator.
@@ -40,14 +39,16 @@ import MovieFolderCommon
   /// Compares localized and original provider titles when enabled.
   private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles",
     target: .none, action: .none)
-  /// Chooses one global poster finish within this uncommitted draft.
-  private let appearanceButton = NSPopUpButton()
   /// Submits the prepared candidate and local choices.
   private let addButton = NSButton(title: "Add Collection", target: .none, action: .none)
   /// Discards the local draft.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
   /// Shows only fixed corrective text from the model.
   private let errorLabel = NSTextField(wrappingLabelWithString: "")
+  private var formScrollView: NSScrollView?
+  private var formDocumentView: CollectionFormDocumentView?
+  private var formContent: NSStackView?
+  private var isUpdatingFormSize = false
   /// Weak navigation recipient; the coordinator retains itself and this flow.
   weak var delegate: (any CollectionSetupViewControllerDelegate)?
 
@@ -95,10 +96,6 @@ import MovieFolderCommon
     originalButton.toolTip = "Include original-language TMDb titles in exact automatic title comparisons."
     yearButton.setAccessibilityHelp(yearButton.toolTip)
     originalButton.setAccessibilityHelp(originalButton.toolTip)
-    appearanceButton.addItems(withTitles: ["Raw", "Soft finish", "Matte frame"])
-    appearanceButton.target = self
-    appearanceButton.action = #selector(appearanceChanged)
-    appearanceButton.setAccessibilityLabel("Global poster appearance")
     addButton.target = self
     addButton.action = #selector(add)
     addButton.keyEquivalent = "\r"
@@ -122,34 +119,70 @@ import MovieFolderCommon
       note("Optional, up to 120 characters. A blank name uses the root folder name."),
       separator(), heading("Matching"), inheritButton, yearButton, originalButton,
       note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
-      separator(), heading("Poster appearance"), appearanceButton,
-      note("This is the global finish for every collection. It changes only when Add Collection succeeds."),
-      errorLabel, actions
+      errorLabel
     ])
     content.orientation = .vertical
     content.alignment = .leading
+    content.distribution = .fill
     content.spacing = 9
     content.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(content)
+    formContent = content
+    let scroll = NSScrollView()
+    scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    scroll.drawsBackground = false
+    let document = CollectionFormDocumentView()
+    scroll.documentView = document
+    document.addSubview(content)
+    formScrollView = scroll
+    formDocumentView = document
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    actions.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(scroll)
+    view.addSubview(actions)
     NSLayoutConstraint.activate([
-      content.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-      content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-      content.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-      content.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
+      scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+      scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+      scroll.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+      scroll.bottomAnchor.constraint(equalTo: actions.topAnchor, constant: -16),
+      content.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+      content.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+      content.topAnchor.constraint(equalTo: document.topAnchor),
+      actions.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+      actions.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+      actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
     ])
-    for child in [folderRow, drop, nameField, actions] {
+    for child in [folderRow, drop, nameField] {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }
     for child in content.arrangedSubviews where child is NSTextField || child is NSBox {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }
+    updateFormDocumentSize()
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    updateFormDocumentSize()
+  }
+
+  private func updateFormDocumentSize() {
+    guard !isUpdatingFormSize,
+      let scroll = formScrollView,
+      let document = formDocumentView,
+      let content = formContent else { return }
+    let viewport = scroll.contentView.bounds.size
+    guard viewport.width > 0, viewport.height > 0 else { return }
+
+    isUpdatingFormSize = true
+    defer { isUpdatingFormSize = false }
+    document.resize(toFit: content, in: viewport)
   }
 
   /// Gives every keyboard-operable setup control a stable forward and reverse traversal order.
   private func configureKeyViewLoop() {
     let controls: [NSView] = [
-      chooseButton, nameField, inheritButton, yearButton, originalButton,
-      appearanceButton, cancelButton, addButton
+      chooseButton, nameField, inheritButton, yearButton, originalButton, cancelButton, addButton
     ]
     let wrappedControls = controls.dropFirst() + [controls[0]]
 
@@ -187,11 +220,10 @@ import MovieFolderCommon
     originalButton.state = viewModel.effectiveConfiguration.comparesOriginalTitles ? .on : .off
     yearButton.isEnabled = !viewModel.isBusy && !viewModel.inheritsApplicationConfiguration
     originalButton.isEnabled = yearButton.isEnabled
-    appearanceButton.selectItem(at: PosterAppearance.allCases.firstIndex(of: viewModel.appearance) ?? .zero)
-    appearanceButton.isEnabled = !viewModel.isBusy
     addButton.isEnabled = viewModel.canAdd
     cancelButton.isEnabled = !viewModel.isCommitting
     errorLabel.stringValue = viewModel.errorMessage ?? ""
+    updateFormDocumentSize()
   }
 
   /// Forwards selection of an authorized root.
@@ -209,14 +241,6 @@ import MovieFolderCommon
         comparesOriginalTitles: originalButton.state == .on)
     }
     updatePresentation()
-  }
-  /// Updates only the local appearance draft.
-  @objc private func appearanceChanged() {
-    let index = appearanceButton.indexOfSelectedItem
-
-    guard PosterAppearance.allCases.indices.contains(index) else { return }
-
-    viewModel.appearance = PosterAppearance.allCases[index]
   }
   /// Creates a compact native section heading.
   /// - Parameter title: Section title rendered in the standard bold control font.
@@ -244,6 +268,24 @@ import MovieFolderCommon
     box.boxType = .separator
 
     return box
+  }
+}
+
+/// Gives the scrollable collection form a stable top-origin coordinate system.
+@MainActor final class CollectionFormDocumentView: NSView {
+  override var isFlipped: Bool { true }
+
+  /// Keeps the document at least as tall as its viewport while fitting taller form content.
+  /// - Parameters:
+  ///   - content: Intrinsic-height form stack displayed by this document.
+  ///   - viewport: Visible scroll area size after the scroll view lays out.
+  func resize(toFit content: NSView, in viewport: NSSize) {
+    let layoutSize = NSSize(width: viewport.width, height: max(viewport.height, frame.height))
+    if frame.size != layoutSize { setFrameSize(layoutSize) }
+    layoutSubtreeIfNeeded()
+    content.layoutSubtreeIfNeeded()
+    let fittedSize = NSSize(width: viewport.width, height: max(viewport.height, content.fittingSize.height))
+    if frame.size != fittedSize { setFrameSize(fittedSize) }
   }
 }
 

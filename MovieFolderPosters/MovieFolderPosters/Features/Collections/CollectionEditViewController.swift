@@ -21,9 +21,11 @@ import MovieFolderCommon
   /// Whole-collection automatic processing pause.
   private let pauseButton = NSButton(checkboxWithTitle: "Pause this collection", target: .none, action: .none)
   /// Explicit inheritance choice.
-  private let inheritButton = NSButton(checkboxWithTitle: "Use Matching Defaults", target: .none, action: .none)
+  private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
+    target: .none, action: .none)
   /// Conservative year requirement.
-  private let yearButton = NSButton(checkboxWithTitle: "Require a release year", target: .none, action: .none)
+  private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic matching",
+    target: .none, action: .none)
   /// Original-title comparison choice.
   private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles", target: .none, action: .none)
   /// Rebuilt list of saved exclusions, including currently unavailable folders.
@@ -34,6 +36,10 @@ import MovieFolderCommon
   private let saveButton = NSButton(title: "Save", target: .none, action: .none)
   /// Explicit discard action.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
+  private var formScrollView: NSScrollView?
+  private var formDocumentView: CollectionFormDocumentView?
+  private var formContent: NSStackView?
+  private var isUpdatingFormSize = false
   /// Weak flow owner.
   weak var delegate: (any CollectionEditViewControllerDelegate)?
 
@@ -51,7 +57,14 @@ import MovieFolderCommon
   override func loadView() {
     view = NSView()
     nameField.delegate = self
+    nameField.placeholderString = "Root folder name"
     nameField.setAccessibilityLabel("Collection display name")
+    pathLabel.maximumNumberOfLines = 2
+    pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    yearButton.toolTip = "Without a release year, choose a movie manually; automatic lookup makes no request."
+    originalButton.toolTip = "Include original-language TMDb titles in exact automatic title comparisons."
+    yearButton.setAccessibilityHelp(yearButton.toolTip)
+    originalButton.setAccessibilityHelp(originalButton.toolTip)
     for button in [pauseButton, inheritButton, yearButton, originalButton] {
       button.target = self
       button.action = #selector(choicesChanged)
@@ -66,22 +79,33 @@ import MovieFolderCommon
     exclusions.orientation = .vertical
     exclusions.alignment = .leading
     let actions = NSStackView(views: [NSView(), cancelButton, saveButton])
+    actions.spacing = 8
     let content = NSStackView(views: [
-      heading("General"), pathLabel, nameField,
-      heading("Collection"), pauseButton,
-      NSTextField(wrappingLabelWithString: "Pausing keeps this collection and its existing posters."),
-      heading("Excluded Folders"), exclusions,
-      heading("Matching"), inheritButton, yearButton, originalButton, errorLabel
+      heading("Folder and access"), pathLabel,
+      separator(), heading("Display name"), nameField,
+      note("Optional, up to 120 characters. A blank name uses the root folder name."),
+      separator(), heading("Collection"), pauseButton,
+      note("Pausing keeps this collection and its existing posters."),
+      separator(), heading("Excluded Folders"), exclusions,
+      separator(), heading("Matching"), inheritButton, yearButton, originalButton,
+      note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
+      errorLabel
     ])
     content.orientation = .vertical
     content.alignment = .leading
-    content.spacing = 10
+    content.distribution = .fill
+    content.spacing = 9
     content.translatesAutoresizingMaskIntoConstraints = false
+    formContent = content
     let scroll = NSScrollView()
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
     scroll.drawsBackground = false
-    scroll.documentView = content
+    let document = CollectionFormDocumentView()
+    scroll.documentView = document
+    document.addSubview(content)
+    formScrollView = scroll
+    formDocumentView = document
     scroll.translatesAutoresizingMaskIntoConstraints = false
     actions.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(scroll)
@@ -91,18 +115,37 @@ import MovieFolderCommon
       scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
       scroll.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
       scroll.bottomAnchor.constraint(equalTo: actions.topAnchor, constant: -16),
-      content.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-      content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
-      content.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-      nameField.widthAnchor.constraint(equalTo: content.widthAnchor),
-      pathLabel.widthAnchor.constraint(equalTo: content.widthAnchor),
-      errorLabel.widthAnchor.constraint(equalTo: content.widthAnchor),
+      content.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+      content.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+      content.topAnchor.constraint(equalTo: document.topAnchor),
       exclusions.widthAnchor.constraint(equalTo: content.widthAnchor),
       actions.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
       actions.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
     ])
+    for child in content.arrangedSubviews where child is NSTextField || child is NSBox {
+      child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+    }
+    updateFormDocumentSize()
     updatePresentation()
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    updateFormDocumentSize()
+  }
+
+  private func updateFormDocumentSize() {
+    guard !isUpdatingFormSize,
+      let scroll = formScrollView,
+      let document = formDocumentView,
+      let content = formContent else { return }
+    let viewport = scroll.contentView.bounds.size
+    guard viewport.width > 0, viewport.height > 0 else { return }
+
+    isUpdatingFormSize = true
+    defer { isUpdatingFormSize = false }
+    document.resize(toFit: content, in: viewport)
   }
 
   /// Reprojects a completed read, failed save, or local exclusion change.
@@ -138,6 +181,7 @@ import MovieFolderCommon
     if viewModel.processingConfiguration.excludedFolders.isEmpty {
       exclusions.addArrangedSubview(NSTextField(labelWithString: "No excluded folders"))
     }
+    updateFormDocumentSize()
   }
   /// Mutates only the finite local draft.
   @objc private func choicesChanged() {
@@ -166,5 +210,23 @@ import MovieFolderCommon
     label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
 
     return label
+  }
+  /// Creates secondary explanatory copy consistent with the Add Collection form.
+  /// - Parameter text: Guidance rendered beneath the related controls.
+  /// - Returns: A wrapping native label using secondary text styling.
+  private func note(_ text: String) -> NSTextField {
+    let label = NSTextField(wrappingLabelWithString: text)
+    label.textColor = .secondaryLabelColor
+    label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+
+    return label
+  }
+  /// Separates native form sections without custom painted chrome.
+  /// - Returns: A standard AppKit separator box.
+  private func separator() -> NSBox {
+    let box = NSBox()
+    box.boxType = .separator
+
+    return box
   }
 }

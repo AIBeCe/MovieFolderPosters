@@ -450,7 +450,7 @@ extension ConfigurationCoordinator {
     let sheet = NSWindow(contentViewController: controller)
     sheet.title = "Edit Collection"
     sheet.styleMask = [.titled, .closable, .resizable]
-    sheet.setContentSize(NSSize(width: 580, height: 600))
+    sheet.setContentSize(NSSize(width: 580, height: 620))
     sheet.delegate = self
     editWindow = sheet
     editViewModel = model
@@ -487,7 +487,7 @@ extension ConfigurationCoordinator {
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
     sheet.title = "Add Collection"
-    sheet.styleMask = [.titled, .closable]
+    sheet.styleMask = [.titled, .closable, .resizable]
     sheet.setContentSize(NSSize(width: 580, height: 620))
     sheet.delegate = self
     setupWindow = sheet

@@ -349,11 +349,10 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   ///   - candidate: The current in-memory candidate.
   ///   - displayName: Friendly name, with blank text clearing the override.
   ///   - movieMatchingConfiguration: Explicit override or absence to inherit application defaults.
-  ///   - appearance: Global poster finish selected in the local draft.
   /// - Throws: Duplicate, overlap, stale-directory, bookmark, or persistence failures.
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    movieMatchingConfiguration: MovieMatchingConfiguration?, appearance: PosterAppearance
+    movieMatchingConfiguration: MovieMatchingConfiguration?
   ) async throws
   /// Saves a presentation-only collection name without changing processing generations.
   /// - Parameters:
@@ -433,7 +432,7 @@ nonisolated public extension ConfigurationServicing {
   /// Rejects commit rather than silently persisting incomplete setup choices.
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    movieMatchingConfiguration: MovieMatchingConfiguration?, appearance: PosterAppearance
+    movieMatchingConfiguration: MovieMatchingConfiguration?
   ) throws {
     throw ConfigurationError.invalidConfiguration
   }
