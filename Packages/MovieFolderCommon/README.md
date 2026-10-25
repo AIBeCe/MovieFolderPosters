@@ -56,9 +56,9 @@ struct ExampleActivityNotifier: MovieFolderActivityChangeNotifying {
 func recordExample(in authorizedActivityDirectory: URL) async throws {
   let recorder = MovieFolderActivityRecorder(
     directory: authorizedActivityDirectory, notifier: ExampleActivityNotifier())
-  let didCommit = await recorder.record(
+  let didRecordWithoutFailure = await recorder.record(
     MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
-  if didCommit {
+  if didRecordWithoutFailure {
     let history = try await recorder.entries()
     assert(history.last?.event.action == .applicationOpened)
   }
@@ -77,12 +77,45 @@ names, remote URLs, or raw underlying error descriptions. Producers must report 
 
 The recorder lazily opens the `movie-activity` namespace with 500-entry retention, 2 KiB events and a 2 MiB
 Persistence envelope. Entries are returned in committed sequence, independently of occurrence timestamps;
-Clear preserves the latest sequence. Lease contention is cancellation-aware and bounded to approximately
-one second. Generic `Log` APIs propagate cancellation, while `record(_:)` independently awaits a bounded
+Clear preserves the latest sequence. Unlinked writes retain cancellation-aware bounded contention.
+Collection-linked writes open history first, then retain shared settings through an immediate append; they
+never carry the history retry window into configuration access. Generic `Log` APIs propagate cancellation, while `record(_:)` independently awaits a bounded
 best-effort append so a cancelled producer can still record its terminal event. It returns `false` on write
 failure and preserves the product operation's result. The async property `hasObservedWriteFailure` retains process-local write-failure
 evidence separately from throwing read/Clear failures. Corrupt or unsupported history remains an explicit
 error, including on Clear, and is not silently replaced.
+
+## Private activity and optional network history
+
+Configuration schema 4 stores `MonitoredDirectory.usesPrivateHistory`, `isNetworkHistoryRecordingEnabled` (default off),
+and `networkHistoryConfigurationRevision`. Explicit CodingKeys preserve the on-disk `isPrivate`,
+`retainsNetworkHistory`, and `historyRevision` fields unchanged. Legacy schemas 1–3 default to public collections and recording off, with a stable
+history revision derived from their credential revision. All repository writers upgrade to version 4.
+Changing history recording, collection privacy, root membership, or root identity/authorization rotates only
+history revision. Processing, cache, and authorization generations are unaffected by privacy choices.
+
+Production `MovieFolderEnvironment.makeActivityRecorder()` always injects shared configuration. Each new
+collection-linked write checks current settings; private or removed roots drop both collection/group UUIDs.
+Unreadable settings intentionally omit linked optional activity. `record(_:)` returns true for intentional
+omission, sends no change notification, and does not report a storage failure. Explicit test construction may
+omit configuration for legacy controlled scenarios; production composition must retain enforcement.
+
+`MovieFolderEnvironment.makeNetworkHistoryService()` is nonthrowing. It supplies a bounded independent
+`movie-network` history or an explicit unavailable fallback. A `MovieFolderNetworkRequestRecorder` binds a
+provider client to an optional collection UUID. Before dispatch it obtains the current history revision, then
+holds no access during networking. On terminal completion it rechecks enabled recording, revision, and an
+existing nonprivate collection before an immediate append under configuration access. Disabled recording,
+private or removed collections, stale tickets, and unreadable settings intentionally omit history. Fixture
+transport composition omits the recorder; real credential diagnostics remain observable in movie fixture mode.
+Actual storage/append contention failures are tracked separately and never replace a provider result.
+
+Network events contain only closed request purpose, HTTP/transport outcome, terminal timestamp, and an optional
+nonprivate collection UUID. They contain no query, title, year, URL, header, body, credential, path, bookmark, or
+arbitrary error. HTTP 2xx evidence does not claim successful movie matching or poster decoding. Each history
+retains at most 500 entries under 2 KiB event and 2 MiB record limits. Disabling recording and making a collection
+private retain old entries unchanged until explicit source-specific Clear. Omitted history is never reconstructed.
+Payload-free change hints are published after shared accesses are released. Updated host/Finder binaries are
+required for these checks; older running binaries cannot inherit them.
 
 ## Documentation and verification
 

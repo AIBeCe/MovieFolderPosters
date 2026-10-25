@@ -32,14 +32,14 @@ struct MoviePosterActionServiceTests {
   @Test(.timeLimit(.minutes(1))) func cancelledSearchRetainsSharedAdmissionUntilItReturns() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = SuspendedActionProvider()
-    let service = fixture.service(provider: provider)
+    let movieMetadataProvider = SuspendedActionProvider()
+    let service = fixture.service(movieMetadataProvider: movieMetadataProvider)
     let search = Task { try await service.searchMovies(for: fixture.request, query: "Dune", year: 2021) }
-    await provider.waitForSearch()
+    await movieMetadataProvider.waitForSearch()
     search.cancel()
     await #expect(throws: PosterActionError.busy) { try await service.matchedMovieID(for: fixture.request) }
     await #expect(throws: PosterActionError.busy) { try await service.retryFolder(for: fixture.request) }
-    await provider.finishSearch()
+    await movieMetadataProvider.finishSearch()
     await #expect(throws: CancellationError.self) { try await search.value }
     #expect(try await service.matchedMovieID(for: fixture.request) == .none)
   }
@@ -70,13 +70,13 @@ struct MoviePosterActionServiceTests {
     initial.inspectedAt = Date()
     initial.currentRun?.state = .partial
     _ = try fixture.processing.commit(initial, expectedRevision: initial.revision)
-    let provider = ActionProvider()
-    let service = fixture.service(provider: provider)
+    let movieMetadataProvider = ActionProvider()
+    let service = fixture.service(movieMetadataProvider: movieMetadataProvider)
     if choosesMovie {
       let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
         posterPath: "/chosen.png")
       #expect(try await service.applyPoster(movie, for: fixture.request) == 7)
-      #expect(await provider.searches.isEmpty)
+      #expect(await movieMetadataProvider.searches.isEmpty)
     } else {
       let result = try await service.retryFolder(for: fixture.request)
       guard case .attempted(let summary, let stopSelection) = result else {
@@ -98,14 +98,14 @@ struct MoviePosterActionServiceTests {
   @Test(.timeLimit(.minutes(1))) func searchRevalidatesChildAfterProviderReturns() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = SuspendedActionProvider()
-    let service = fixture.service(provider: provider)
+    let movieMetadataProvider = SuspendedActionProvider()
+    let service = fixture.service(movieMetadataProvider: movieMetadataProvider)
     let search = Task { try await service.searchMovies(for: fixture.request, query: "Dune", year: 2021) }
-    await provider.waitForSearch()
+    await movieMetadataProvider.waitForSearch()
     let child = fixture.movies.appendingPathComponent(fixture.request.childName)
     try FileManager.default.moveItem(at: child, to: fixture.movies.appendingPathComponent("Previous"))
     try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
-    await provider.finishSearch()
+    await movieMetadataProvider.finishSearch()
     await #expect(throws: MoviePosterActionServiceError.childChanged) { try await search.value }
   }
 
@@ -113,21 +113,21 @@ struct MoviePosterActionServiceTests {
   @Test func cachedManualServiceHonorsRecoveryModeAndExplicitResume() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = ActionProvider()
-    let service = fixture.service(provider: provider)
+    let movieMetadataProvider = ActionProvider()
+    let service = fixture.service(movieMetadataProvider: movieMetadataProvider)
     let recovery = try fixture.makeProcessingRecoveryService()
     try recovery.setRecoveryModeEnabled(true)
     await #expect(throws: ProcessingRecoveryError.recoveryMode) {
       try await service.searchMovies(for: fixture.request, query: "Dune", year: .none)
     }
-    #expect(await provider.searches.isEmpty)
+    #expect(await movieMetadataProvider.searches.isEmpty)
     await #expect(throws: ProcessingRecoveryError.recoveryMode) {
       try await service.removePoster(for: fixture.request)
     }
     try recovery.setRecoveryModeEnabled(false)
-    #expect(await provider.searches.isEmpty)
+    #expect(await movieMetadataProvider.searches.isEmpty)
     _ = try await service.searchMovies(for: fixture.request, query: "Dune", year: .none)
-    #expect(await provider.searches == ["Dune:none"])
+    #expect(await movieMetadataProvider.searches == ["Dune:none"])
   }
 
   /// An authorized empty assignment must remain readable without a credential.
@@ -198,14 +198,14 @@ struct MoviePosterActionServiceTests {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let directory = try #require(try fixture.repository.read().directories.first)
-    let access = try #require(try fixture.authorizations.acquireAccess(
+    let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(
       for: "host-\(directory.id)-\(directory.authorizationVersion)"))
     await #expect { try await fixture.service().matchedMovieID(for: fixture.request) } throws: { error in
       if case ConfigurationError.busy = error { return true }
 
       return false
     }
-    withExtendedLifetime(access) {}
+    withExtendedLifetime(persistenceAccess) {}
   }
 
   /// Credentials remain mandatory even when the network provider is injected.
@@ -222,12 +222,12 @@ struct MoviePosterActionServiceTests {
   @Test func malformedCredentialPreventsProviderSearch() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = ActionProvider()
+    let movieMetadataProvider = ActionProvider()
     await #expect(throws: TMDbError.self) {
-      try await fixture.service(token: "invalid\ntoken", provider: provider).searchMovies(
+      try await fixture.service(token: "invalid\ntoken", movieMetadataProvider: movieMetadataProvider).searchMovies(
         for: fixture.request, query: "Dune", year: .none)
     }
-    #expect(await provider.searches.isEmpty)
+    #expect(await movieMetadataProvider.searches.isEmpty)
   }
 
   /// Selected IDs and artwork are validated before any authorization or change occurs.
@@ -253,9 +253,9 @@ struct MoviePosterActionServiceTests {
   @Test func selectionRefreshAndRemovalUseRealProcessing() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = ActionProvider()
+    let movieMetadataProvider = ActionProvider()
     let activity = ActivityServiceFake()
-    let service = fixture.service(provider: provider, activity: activity)
+    let service = fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
     let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/chosen.png")
     #expect(try await service.applyPoster(movie, for: fixture.request) == 7)
@@ -264,8 +264,8 @@ struct MoviePosterActionServiceTests {
     #expect(try await service.removePoster(for: fixture.request))
     #expect(try await service.removePoster(for: fixture.request) == false)
     #expect(try await service.matchedMovieID(for: fixture.request) == .none)
-    #expect(await provider.downloads == ["/chosen.png", "/chosen.png"])
-    #expect(await provider.searches.isEmpty)
+    #expect(await movieMetadataProvider.downloads == ["/chosen.png", "/chosen.png"])
+    #expect(await movieMetadataProvider.searches.isEmpty)
     #expect(try await activity.entries().map(\.event.status) == [
       .started, .succeeded, .started, .succeeded, .started, .succeeded, .started, .succeeded
     ])
@@ -275,21 +275,22 @@ struct MoviePosterActionServiceTests {
   @Test func authorizedSearchPreservesQueryAndResults() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = ActionProvider()
-    let result = try await fixture.service(provider: provider).searchMovies(
+    let movieMetadataProvider = ActionProvider()
+    let result = try await fixture.service(movieMetadataProvider: movieMetadataProvider).searchMovies(
       for: fixture.request, query: "  Dune  ", year: 2021)
     #expect(result.movies.map(\.id) == [7])
     #expect(!result.hasMorePages)
-    #expect(await provider.searches == ["Dune:2021"])
+    #expect(await movieMetadataProvider.searches == ["Dune:2021"])
   }
 
   /// A configuration revision changed during provider suspension invalidates its result.
   @Test func configurationChangeDuringSearchRejectsResults() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = ActionProvider(repository: fixture.repository)
+    let movieMetadataProvider = ActionProvider(repository: fixture.repository)
     await #expect {
-      try await fixture.service(provider: provider).searchMovies(for: fixture.request, query: "Dune", year: .none)
+      try await fixture.service(movieMetadataProvider: movieMetadataProvider).searchMovies(
+        for: fixture.request, query: "Dune", year: .none)
     } throws: { error in
       if case ConfigurationError.configurationChanged = error { return true }
 
@@ -301,12 +302,13 @@ struct MoviePosterActionServiceTests {
   @Test func configurationChangeDuringArtworkPreventsChange() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let provider = ActionProvider(repository: fixture.repository, changesDuringDownload: true)
+    let movieMetadataProvider = ActionProvider(repository: fixture.repository, changesDuringDownload: true)
     let activity = ActivityServiceFake()
     let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/chosen.png")
     do {
-      _ = try await fixture.service(provider: provider, activity: activity).applyPoster(movie, for: fixture.request)
+      _ = try await fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
+        .applyPoster(movie, for: fixture.request)
       Issue.record("Artwork from an obsolete configuration must not mutate the folder")
     } catch ConfigurationError.configurationChanged {}
     #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
@@ -319,9 +321,10 @@ struct MoviePosterActionServiceTests {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let activity = ActivityServiceFake()
-    let provider = ActionProvider(cancels: true)
+    let movieMetadataProvider = ActionProvider(cancels: true)
     await #expect(throws: CancellationError.self) {
-      try await fixture.service(provider: provider, activity: activity).refreshPoster(for: fixture.request)
+      try await fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
+        .refreshPoster(for: fixture.request)
     }
     #expect(try await activity.entries().map(\.event.status) == [.started, .cancelled])
     #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
@@ -374,10 +377,10 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   func makePrivateAuthorizationStore() throws -> PersistenceStore { authorizations }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore { processing }
   /// Composes the real action service without external storage, credentials, or networking.
-  func service(token: String? = "fixture-token", provider: (any MovieMetadataProvider)? = .none,
+  func service(token: String? = "fixture-token", movieMetadataProvider: (any MovieMetadataProvider)? = .none,
                activity: (any MovieFolderActivityServicing)? = .none) -> MoviePosterActionService {
     MoviePosterActionService(credentials: ActionCredentials(token: token), activity: activity ?? ActivityServiceFake(),
-      environment: self, provider: provider ?? ActionProvider())
+      environment: self, movieMetadataProvider: movieMetadataProvider ?? ActionProvider())
   }
 
   /// Removes all test-owned resources after leases and operations finish.

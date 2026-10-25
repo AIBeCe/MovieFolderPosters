@@ -8,12 +8,12 @@ public enum ActivityLogError: Error, Equatable, Sendable {
   case invalidOccurrenceTime
   /// An encoded event exceeds the 2 KiB payload limit.
   case eventTooLarge
-  /// The stored snapshot cannot be decoded or violates ordering and identity invariants.
-  case corruptSnapshot
-  /// The stored snapshot uses an unsupported activity schema version.
+  /// The stored activity history record cannot be decoded or violates ordering and identity invariants.
+  case corruptActivityHistory
+  /// The stored activity history record uses an unsupported activity schema version.
   case unsupportedVersion
   /// The committed sequence has reached the maximum representable value.
   case sequenceExhausted
-  /// The approximately one-second contention retry budget expired.
+  /// An immediate attempt was contended, or the bounded contention retry budget expired.
   case accessTimedOut
 }

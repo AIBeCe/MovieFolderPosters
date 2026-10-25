@@ -89,9 +89,17 @@ nonisolated public struct MovieFolderActivityEvent: Codable, Sendable, Equatable
     return "\(subject): \(result)."
   }
 
-  /// Fixed presentation category; failures remain distinguishable without error descriptions.
+  /// Fixed severity derived from the observed lifecycle result.
+  public var severity: String {
+    switch status {
+    case .started, .succeeded, .cancelled: "Information"
+    case .partial: "Warning"
+    case .failed, .unavailable: "Error"
+    }
+  }
+
+  /// Fixed presentation category derived from action, independently of its result.
   public var category: String {
-    if status == .failed || status == .unavailable { return "Error" }
     switch action {
     case .applicationOpened: return "Application"
     case .applicationAppearanceChanged: return "Appearance"

@@ -39,11 +39,11 @@ import Testing
 /// Verifies that log controller refreshes for append and clear.
 @MainActor
 @Test func logControllerRefreshesForAppendAndClear() async throws {
-  let log = ActivityLogViewModel(service: ActivityServiceFake())
-  let controller = LogViewController(log: log)
+  let log = LogViewModel(activityHistoryService: ActivityServiceFake())
+  let controller = LogViewController(viewModel: log)
   let views = nativeViews(in: controller.view)
   let table = try #require(views.compactMap { $0 as? NSTableView }.first)
-  let clear = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Clear" })
+  let clear = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Clear Activity" })
   #expect(table.numberOfRows == 0)
   #expect(!clear.isEnabled)
   await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
@@ -52,7 +52,7 @@ import Testing
   clear.performClick(.none)
   while log.canClear { await Task.yield() }
   while log.isClearing || log.isLoading { await Task.yield() }
-  #expect(log.entries.isEmpty)
+  #expect(log.activityEntries.isEmpty)
   #expect(table.numberOfRows == 0)
   #expect(!clear.isEnabled)
 }

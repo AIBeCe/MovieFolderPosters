@@ -18,6 +18,8 @@ import MovieFolderCommon
   private(set) var candidate: PreparedCollection?
   /// Editable friendly name; selecting another folder resets its suggestion.
   var displayName = ""
+  /// Whether new optional history omits collection correlation and network attempts.
+  var usesPrivateHistory = false
   /// Whether final Add inherits current application choices rather than saving an override.
   var inheritsApplicationConfiguration = true
   /// Matching configuration copied from application defaults and edited only when inheritance is disabled.
@@ -87,7 +89,7 @@ import MovieFolderCommon
     delegate?.collectionSetupViewModelDidChange(self)
     do {
       try await service.commitCollection(candidate, displayName: displayName,
-        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration)
+        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration, usesPrivateHistory: usesPrivateHistory)
       self.candidate = .none
       isBusy = false
       isCommitting = false

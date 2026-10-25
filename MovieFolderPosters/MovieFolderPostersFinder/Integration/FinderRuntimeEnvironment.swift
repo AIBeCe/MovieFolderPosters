@@ -19,7 +19,15 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   /// Reads the shared credential without exposing it to diagnostics.
   func credential() throws -> String?
   /// Builds the metadata provider using the same captured settings generation.
-  func provider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider
+  func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider
+  /// Builds a provider whose optional HTTP history is scoped to exactly one configured collection.
+  /// - Parameters:
+  ///   - token: Saved credential used only by the provider.
+  ///   - configuration: Settings captured for this processing generation.
+  ///   - collectionID: Stable root identity used for current history eligibility.
+  func movieMetadataProvider(
+    token: String, configuration: DirectoryConfiguration, collectionID: UUID
+  ) throws -> any MovieMetadataProvider
   /// Opens authoritative collection outcomes.
   func processingStore() throws -> CollectionProcessingStore
   /// Opens the durable processing gate within this environment's shared storage.
@@ -35,6 +43,13 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
 
 /// Keeps test and production admission state in the same container as their existing runtime stores.
 extension FinderRuntimeEnvironment {
+  /// Preserves explicitly injected providers that perform no production HTTP recording.
+  func movieMetadataProvider(
+    token: String, configuration: DirectoryConfiguration, collectionID: UUID
+  ) throws -> any MovieMetadataProvider {
+    try movieMetadataProvider(token: token, configuration: configuration)
+  }
+
   func processingRecoveryService() throws -> ProcessingRecoveryService {
     ProcessingRecoveryService(store: try PersistenceStore(
       directory: containerURL().appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
@@ -63,7 +78,20 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
     try KeychainCredentialStore(accessGroup: MovieFolderEnvironment.env(.groupIdentifier)).read()
   }
 
-  func provider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
+  func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
+    try makeMovieMetadataProvider(token: token, configuration: configuration, collectionID: .none)
+  }
+
+  func movieMetadataProvider(
+    token: String, configuration: DirectoryConfiguration, collectionID: UUID
+  ) throws -> any MovieMetadataProvider {
+    try makeMovieMetadataProvider(token: token, configuration: configuration, collectionID: collectionID)
+  }
+
+  /// Keeps fixture traffic outside history while binding live requests to the caller's root.
+  private func makeMovieMetadataProvider(
+    token: String, configuration: DirectoryConfiguration, collectionID: UUID?
+  ) throws -> any MovieMetadataProvider {
     #if DEBUG
       if configuration.usesStubTMDbResponses {
         guard let image = Bundle.main.url(forResource: "TestPoster", withExtension: "png") else {
@@ -75,7 +103,12 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
       }
     #endif
 
-    return TMDbClient(token: try TMDbAccessToken(token))
+    let requestDelegate = collectionID.map {
+      MovieFolderNetworkRequestRecorder(
+        networkHistoryService: MovieFolderEnvironment.makeNetworkHistoryService(), collectionID: $0)
+    }
+
+    return TMDbClient(token: try TMDbAccessToken(token), requestDelegate: requestDelegate)
   }
 
   func processingStore() throws -> CollectionProcessingStore {

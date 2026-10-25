@@ -7,14 +7,20 @@ final class LogCoordinator: NSObject {
   /// Retains the window across close/reopen without retaining sibling flows.
   private(set) var windowController: NSWindowController?
   /// Presents history from the independent activity service.
-  private let viewModel: ActivityLogViewModel
+  private let viewModel: LogViewModel
   /// Prevents duplicate registrations after repeated presentation.
   private var isObservingActivity = false
 
   /// Creates state without loading history or opening a window.
-  /// - Parameter activity: History service shared with product event producers.
-  init(activity: any MovieFolderActivityServicing) {
-    viewModel = ActivityLogViewModel(service: activity)
+  /// - Parameters:
+  ///   - activityHistoryService: Activity history shared with product event producers.
+  ///   - networkHistoryService: Optional network history and its persisted recording preference.
+  init(
+    activityHistoryService: any MovieFolderActivityServicing,
+    networkHistoryService: (any MovieFolderNetworkHistoryServicing)? = .none
+  ) {
+    viewModel = LogViewModel(activityHistoryService: activityHistoryService,
+      networkHistoryService: networkHistoryService)
     super.init()
   }
 
@@ -25,14 +31,18 @@ final class LogCoordinator: NSObject {
     if !isObservingActivity {
       DistributedNotificationCenter.default().addObserver(
         self, selector: #selector(activityChanged(_:)), name: .movieFolderActivityChanged, object: .none)
+      for name in [Notification.Name.movieFolderNetworkHistoryChanged, .movieFolderHistoryConfigurationChanged] {
+        DistributedNotificationCenter.default().addObserver(
+          self, selector: #selector(activityChanged(_:)), name: name, object: .none)
+      }
       isObservingActivity = true
     }
     if windowController == .none {
-      let window = NSWindow(contentViewController: LogViewController(log: viewModel))
+      let window = NSWindow(contentViewController: LogViewController(viewModel: viewModel))
       window.title = "Log — Movie Folder Posters"
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-      window.setContentSize(NSSize(width: 820, height: 360))
-      window.minSize = NSSize(width: 650, height: 280)
+      window.setContentSize(NSSize(width: 820, height: 460))
+      window.minSize = NSSize(width: 650, height: 380)
       window.isReleasedWhenClosed = false
       window.center()
       windowController = NSWindowController(window: window)

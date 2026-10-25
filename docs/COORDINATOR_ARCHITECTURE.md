@@ -30,7 +30,7 @@ through a focused weak delegate; only the root connects sibling flows. Log initi
 must not require configuration, collection-processing storage, or summary-service initialization to succeed.
 Each feature owns its window creation, reuse, and flow state. Settings tabs do not need child coordinators.
 
-Product activity is recorded through the retained activity service. ActivityLogViewModel presents history
+Product activity is recorded through the retained activity service. LogViewModel presents history
 and handles Log-specific actions; other workflows must not depend on it to record events. App-wide appearance
 must cover poster-action windows as well as Main, Settings, Log, and inherited sheets.
 

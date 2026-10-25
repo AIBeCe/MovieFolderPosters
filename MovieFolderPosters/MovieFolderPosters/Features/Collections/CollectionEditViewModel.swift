@@ -19,6 +19,8 @@ import MovieFolderCommon
   var displayName = ""
   /// Local inclusion choices, including excluded identities.
   private(set) var processingConfiguration = CollectionProcessingConfiguration()
+  /// Whether new optional history omits collection correlation and network attempts.
+  var usesPrivateHistory = false
   /// Whether this collection inherits application matching defaults.
   var inheritsApplicationConfiguration = true
   /// Local explicit matching choices.
@@ -52,6 +54,7 @@ import MovieFolderCommon
       let current = try await service.savedCollectionState(identifier)
       savedCollectionState = current
       displayName = current.directory.displayName ?? ""
+      usesPrivateHistory = current.directory.usesPrivateHistory
       processingConfiguration = current.directory.processingConfiguration
       inheritsApplicationConfiguration = current.directory.movieMatchingConfiguration == .none
       overrideConfiguration = current.directory.movieMatchingConfiguration ?? current.matchingDefaults
@@ -77,7 +80,7 @@ import MovieFolderCommon
     do {
       try await service.updateCollection(identifier, displayName: displayName,
         movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration,
-        processingConfiguration: processingConfiguration, expected: savedCollectionState)
+        processingConfiguration: processingConfiguration, usesPrivateHistory: usesPrivateHistory, expected: savedCollectionState)
 
       return true
     } catch {

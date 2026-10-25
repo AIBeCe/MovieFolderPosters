@@ -158,3 +158,43 @@ struct MovieFolderActivityTests {
     #expect(notifier.changes == 0)
   }
 }
+
+/// Privacy is checked at each append, including roots removed between activity boundaries.
+@Test func privateAndRemovedActivityIsUnlinkedWithoutChangingExistingHistory() async throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let repository = ConfigurationRepository(store: try PersistenceStore(
+    directory: directory.appendingPathComponent("Settings")))
+  let root = MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1]), authorizationVersion: UUID())
+  try repository.update { $0.directories = [root] }
+  let recorder = MovieFolderActivityRecorder(directory: directory.appendingPathComponent("Activity"),
+    notifier: ActivityNotifierProbe(), configurationRepository: repository)
+  let event = MovieFolderActivityEvent(action: .posterRefresh, status: .started,
+    activityGroupID: UUID(), collectionID: root.id)
+  #expect(await recorder.record(event))
+  try repository.update { $0.directories[0].usesPrivateHistory = true }
+  #expect(await recorder.record(event))
+  try repository.update { $0.directories.removeAll() }
+  #expect(await recorder.record(event))
+  let entries = try await recorder.entries()
+  #expect(entries[0].event == event)
+  #expect(entries.dropFirst().allSatisfy { $0.event.collectionID == .none && $0.event.activityGroupID == .none })
+  #expect(!(await recorder.hasObservedWriteFailure))
+}
+
+/// Busy settings omit linked optional history without reporting a storage write failure.
+@Test func unreadableConfigurationSkipsLinkedActivity() async throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try PersistenceStore(directory: directory.appendingPathComponent("Settings"))
+  let repository = ConfigurationRepository(store: store)
+  let notifier = ActivityNotifierProbe()
+  let recorder = MovieFolderActivityRecorder(directory: directory.appendingPathComponent("Activity"),
+    notifier: notifier, configurationRepository: repository)
+  let persistenceAccess = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
+  #expect(await recorder.record(MovieFolderActivityEvent(action: .posterRefresh, status: .started,
+    activityGroupID: UUID(), collectionID: UUID())))
+  #expect(!(await recorder.hasObservedWriteFailure))
+  #expect(notifier.changes == 0)
+  withExtendedLifetime(persistenceAccess) {}
+}

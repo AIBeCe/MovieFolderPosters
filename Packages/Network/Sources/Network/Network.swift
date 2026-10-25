@@ -234,6 +234,8 @@ public struct TMDbClient: Sendable {
   private let token: TMDbAccessToken
   /// The injected transport used for API and image requests.
   private let transport: any HTTPTransport
+  /// The optional recorder retained for the lifetime of this client.
+  private let requestDelegate: (any TMDbClientRequestDelegate)?
   /// The TMDb API root used to construct endpoint URLs.
   private static let apiBase = URL(string: "https://api.themoviedb.org/3")
   /// Maximum body size accepted from any TMDb endpoint.
@@ -244,9 +246,15 @@ public struct TMDbClient: Sendable {
   /// - Parameters:
   ///   - token: The validated TMDb read access token.
   ///   - transport: The transport used for API requests.
-  public init(token: TMDbAccessToken, transport: any HTTPTransport = URLSessionTransport()) {
+  ///   - requestDelegate: An optional privacy-safe observer of dispatched requests.
+  public init(
+    token: TMDbAccessToken,
+    transport: any HTTPTransport = URLSessionTransport(),
+    requestDelegate: (any TMDbClientRequestDelegate)? = .none
+  ) {
     self.token = token
     self.transport = transport
+    self.requestDelegate = requestDelegate
   }
 
   /// Validates the configured token with TMDb's authentication endpoint.
@@ -255,7 +263,7 @@ public struct TMDbClient: Sendable {
   public func validateCredential() async throws {
     guard let apiBase = Self.apiBase else { throw TMDbError.invalidConfiguration }
     let request = authenticatedRequest(url: apiBase.appending(path: "authentication"))
-    let response = try await send(request)
+    let response = try await send(request, purpose: .credentialValidation)
     try validateStatus(response)
     guard response.statusCode == 200 else { throw TMDbError.httpStatus(response.statusCode) }
     guard let contentType = response.contentType?.split(separator: ";").first?
@@ -298,7 +306,7 @@ public struct TMDbClient: Sendable {
     var request = URLRequest(url: url)
     request.setValue(token.authorizationValue, forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
-    let response = try await send(request)
+    let response = try await send(request, purpose: .movieSearch)
     try validateStatus(response)
     guard let type = response.contentType?.lowercased(), type.contains("json"),
       response.data.count <= Self.maxResponseBytes
@@ -338,7 +346,7 @@ public struct TMDbClient: Sendable {
     else { throw TMDbError.invalidPosterPath }
     guard let apiBase = Self.apiBase else { throw TMDbError.invalidConfiguration }
     let configRequest = authenticatedRequest(url: apiBase.appending(path: "configuration"))
-    let configResponse = try await send(configRequest)
+    let configResponse = try await send(configRequest, purpose: .posterConfiguration)
     try validateStatus(configResponse)
     guard let type = configResponse.contentType?.lowercased(), type.contains("json") else {
       throw TMDbError.invalidConfiguration
@@ -368,7 +376,7 @@ public struct TMDbClient: Sendable {
     }
     var request = URLRequest(url: imageURL)
     request.setValue("image/jpeg,image/png", forHTTPHeaderField: "Accept")
-    let response = try await send(request)
+    let response = try await send(request, purpose: .posterDownload)
     try validateStatus(response)
     guard response.data.count <= Self.maxResponseBytes,
       let mime = response.contentType?.split(separator: ";").first?.lowercased(),
@@ -390,22 +398,52 @@ public struct TMDbClient: Sendable {
   }
 
   /// Sends one bounded request while preserving cancellation and normalizing transport errors.
-  private func send(_ request: URLRequest) async throws -> HTTPResponse {
+  private func send(_ request: URLRequest, purpose: TMDbRequestPurpose) async throws -> HTTPResponse {
     try Task.checkCancellation()
+
+    let recordingTicket = await requestDelegate?.tmdbClientWillSendRequest(purpose: purpose)
+    try Task.checkCancellation()
+
     do {
       let response = try await transport.send(request)
       try Task.checkCancellation()
       guard response.data.count <= Self.maxResponseBytes else { throw TMDbError.responseTooLarge }
+      await completeRequest(
+        purpose: purpose, result: .response(statusCode: response.statusCode),
+        recordingTicket: recordingTicket)
+
       return response
     } catch is CancellationError {
+      await completeRequest(purpose: purpose, result: .cancelled, recordingTicket: recordingTicket)
       throw CancellationError()
     } catch let error as URLError where error.code == .cancelled {
+      await completeRequest(purpose: purpose, result: .cancelled, recordingTicket: recordingTicket)
       throw CancellationError()
+    } catch let error as TMDbError where error == .responseTooLarge {
+      await completeRequest(
+        purpose: purpose, result: .responseTooLarge, recordingTicket: recordingTicket)
+      throw error
     } catch let error as TMDbError {
+      await completeRequest(
+        purpose: purpose, result: .transportFailure, recordingTicket: recordingTicket)
       throw error
     } catch {
+      await completeRequest(
+        purpose: purpose, result: .transportFailure, recordingTicket: recordingTicket)
       throw TMDbError.transport(code: (error as NSError).code)
     }
+  }
+
+  /// Completes one ticketed request without exposing transport errors or request data.
+  private func completeRequest(
+    purpose: TMDbRequestPurpose,
+    result: TMDbRequestResult,
+    recordingTicket: UUID?
+  ) async {
+    guard let recordingTicket else { return }
+
+    await requestDelegate?.tmdbClientDidCompleteRequest(
+      purpose: purpose, result: result, completedAt: Date(), recordingTicket: recordingTicket)
   }
 
   /// Maps HTTP status codes to the client's stable error cases.

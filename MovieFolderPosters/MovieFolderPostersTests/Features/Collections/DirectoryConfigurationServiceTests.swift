@@ -11,6 +11,26 @@ import Testing
 
 /// Covers persistence, folder-access, overlap, and credential behavior in the host service.
 struct DirectoryConfigurationServiceTests {
+  /// Privacy-only edits rotate optional history without invalidating processing or authorization evidence.
+  @Test func privacyOnlySaveKeepsProductGenerations() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let directory = MonitoredDirectory(id: UUID(), path: fixture.root.path, transferBookmark: Data([1]),
+      authorizationVersion: UUID())
+    try fixture.repository.update { $0.directories = [directory] }
+    let before = try fixture.repository.read()
+    let saved = try await fixture.service.savedCollectionState(directory.id)
+    try await fixture.service.updateCollection(directory.id, displayName: directory.displayName,
+      movieMatchingConfiguration: directory.movieMatchingConfiguration,
+      processingConfiguration: directory.processingConfiguration, usesPrivateHistory: true, expected: saved)
+    let after = try fixture.repository.read()
+    #expect(after.directories.first?.usesPrivateHistory == true)
+    #expect(after.networkHistoryConfigurationRevision != before.networkHistoryConfigurationRevision)
+    #expect(after.directories.first?.processingConfiguration == directory.processingConfiguration)
+    #expect(after.directories.first?.authorizationVersion == directory.authorizationVersion)
+    #expect(after.credentialRevision == before.credentialRevision)
+  }
+
   /// Confirmation evidence is revalidated against both the actual child and the persisted inclusion revision.
   @Test func inclusionRequestRejectsReplacementAndStaleRevision() async throws {
     let fixture = try ConfigurationServiceFixture()
@@ -86,6 +106,7 @@ struct DirectoryConfigurationServiceTests {
     let controller = CollectionEditViewController(viewModel: model)
     _ = controller.view
     model.displayName = "Edited"
+    model.usesPrivateHistory = true
     model.setPaused(true)
     model.includeFolder(identity: "child")
     model.inheritsApplicationConfiguration = false
@@ -94,6 +115,7 @@ struct DirectoryConfigurationServiceTests {
     #expect(await model.save())
     let saved = try #require(try fixture.repository.read().directories.first)
     #expect(saved.displayName == "Edited")
+    #expect(saved.usesPrivateHistory)
     #expect(saved.processingConfiguration.isPaused)
     #expect(saved.processingConfiguration.excludedFolders.isEmpty)
     #expect(saved.movieMatchingConfiguration?.requiresReleaseYearForAutomaticMatching == true)
@@ -157,8 +179,8 @@ struct DirectoryConfigurationServiceTests {
     let candidate = try await fixture.service.prepareCollection(folder)
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
     do {
-      let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-      try access.write(Data([7, 8]))
+      let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+      try persistenceAccess.write(Data([7, 8]))
     }
     let notifications = CollectionSetupNotificationProbe()
     let limited = ConfigurationRepository(store: try PersistenceStore(
@@ -193,8 +215,8 @@ struct DirectoryConfigurationServiceTests {
     try fixture.repository.update { $0.directories = reauthorizing ? [old] : [] }
     let oldKey = "host-\(old.id)-\(old.authorizationVersion)"
     do {
-      let access = try #require(try fixture.authorizations.acquireAccess(for: oldKey))
-      try access.write(Data([9]))
+      let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: oldKey))
+      try persistenceAccess.write(Data([9]))
     }
     let bookmarksDirectory = fixture.root.appendingPathComponent("Private")
     let beforeRecords = try FileManager.default.contentsOfDirectory(atPath: bookmarksDirectory.path)
@@ -268,17 +290,18 @@ struct DirectoryConfigurationServiceTests {
     #expect(try fixture.repository.read().directories.isEmpty)
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
     do {
-      let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-      #expect(try access.read() == .none)
+      let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+      #expect(try persistenceAccess.read() == .none)
     }
     try await fixture.service.commitCollection(candidate, displayName: "  Family films ",
-      movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false))
+      movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false), usesPrivateHistory: true)
     let saved = try fixture.repository.read()
     #expect(saved.directories.first?.effectiveDisplayName == "Family films")
+    #expect(saved.directories.first?.usesPrivateHistory == true)
     #expect(saved.directories.first?.movieMatchingConfiguration?.comparesOriginalTitles == false)
     #expect(saved.posterAppearance == .matteFrame)
-    let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-    #expect(try access.read() != .none)
+    let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+    #expect(try persistenceAccess.read() != .none)
   }
 
   /// A competing collection added while a setup sheet is open must be checked again at final Add.
@@ -297,8 +320,8 @@ struct DirectoryConfigurationServiceTests {
     }
     #expect(try fixture.repository.read() == before)
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
-    let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-    #expect(try access.read() == .none)
+    let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+    #expect(try persistenceAccess.read() == .none)
   }
 
   /// A failed configuration write must not leave an authorization record from an unsuccessful Add.
@@ -314,8 +337,8 @@ struct DirectoryConfigurationServiceTests {
         movieMatchingConfiguration: .none)
     }
     let key = "host-\(candidate.directory.id)-\(candidate.directory.authorizationVersion)"
-    let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-    #expect(try access.read() == .none)
+    let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+    #expect(try persistenceAccess.read() == .none)
   }
 }
 
@@ -331,8 +354,8 @@ extension DirectoryConfigurationServiceTests {
     let processing = CollectionProcessingStore(store: outcomes, configuration: fixture.repository)
     let key = CollectionProcessingStore.processingStateKey(for: directory.id)
     do {
-      let access = try #require(try outcomes.acquireAccess(for: key))
-      try access.write(Data([1]))
+      let persistenceAccess = try #require(try outcomes.acquireAccess(for: key))
+      try persistenceAccess.write(Data([1]))
     }
     let service = DirectoryConfigurationService(
       repository: fixture.repository, authorizations: fixture.authorizations,
@@ -344,8 +367,8 @@ extension DirectoryConfigurationServiceTests {
       _ = try await service.configurationSummary()
       Issue.record("The summary fixture must fail")
     } catch {}
-    let access = try #require(try outcomes.acquireAccess(for: key))
-    #expect(try access.read() == .none)
+    let persistenceAccess = try #require(try outcomes.acquireAccess(for: key))
+    #expect(try persistenceAccess.read() == .none)
   }
 
   /// Catches cleanup failure replacing a committed removal or silently losing its failure event.
@@ -395,10 +418,10 @@ extension DirectoryConfigurationServiceTests {
       volumePath: volume.path)
     try fixture.repository.update { $0.directories = [directory] }
     do {
-      let access = try #require(
+      let persistenceAccess = try #require(
         try fixture.authorizations.acquireAccess(
           for: "host-\(directory.id)-\(directory.authorizationVersion)"))
-      try access.write(Data([1]))
+      try persistenceAccess.write(Data([1]))
     }
     #expect(
       try await fixture.service.configurationSummary().directories.first?.availability
@@ -456,8 +479,8 @@ extension DirectoryConfigurationServiceTests {
     try fixture.repository.update { $0.directories = [directory] }
     do {
       let key = "host-\(directory.id)-\(directory.authorizationVersion)"
-      let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-      try access.write(directory.transferBookmark)
+      let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+      try persistenceAccess.write(directory.transferBookmark)
     }
     try FileManager.default.moveItem(at: original, to: renamed)
     let summary = try await fixture.service.configurationSummary()
@@ -481,8 +504,8 @@ extension DirectoryConfigurationServiceTests {
     try fixture.repository.update { $0.directories = [directory] }
     do {
       let key = "host-\(directory.id)-\(directory.authorizationVersion)"
-      let access = try #require(try fixture.authorizations.acquireAccess(for: key))
-      try access.write(Data([1]))
+      let persistenceAccess = try #require(try fixture.authorizations.acquireAccess(for: key))
+      try persistenceAccess.write(Data([1]))
     }
     #expect(
       try await fixture.service.configurationSummary().directories.first?.availability == .missing)

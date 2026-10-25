@@ -10,6 +10,10 @@ presentation. The review applies the user's swift-style-guide naming and DocC ru
 at the point of use, distinguish processing state from configuration and activity status, and document actual
 contracts without implying unverified permissions or data validation.
 
+R110-03 subsequently extends the host Log to activity and network history. Its approved presentation names are
+now `LogViewModel` and `LogViewModelDelegate`; N04 below records the earlier extraction rename. The current
+approved correction set and focused evidence are recorded in [Result filtering and private history](PRIVATE_HISTORY.md).
+
 ## Approved names
 
 | ID | Current name | Suggested name | Reason and impact |

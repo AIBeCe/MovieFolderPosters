@@ -5,6 +5,7 @@ import MovieFolderCommon
 @testable import MovieFolderFinder
 import Network
 import Persistence
+import Synchronization
 import Testing
 
 /// Temporary filesystem, grants, and repositories owned by one integration test.
@@ -69,7 +70,7 @@ private struct NoMatchesProvider: MovieMetadataProvider {
 
 /// Counts actual provider admission for a cached Finder runtime across gate changes.
 private actor CountingNoMatchesProvider: MovieMetadataProvider {
-  /// Number of searches that reached the underlying provider.
+  /// Number of searches that reached the underlying movieMetadataProvider.
   private(set) var searchCount = Int.zero
 
   func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
@@ -113,6 +114,12 @@ private actor SuspendedFinderProvider: MovieMetadataProvider {
   }
 }
 
+/// Retains synchronized provider composition evidence across copies of the injected environment.
+private final class FinderProviderCollections: Sendable {
+  /// Root identifiers passed to provider construction.
+  let collectionIDs = Mutex<[UUID]>([])
+}
+
 /// Redirects system boundaries into one test-owned container while retaining runtime configuration.
 private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   /// Real test-owned repositories and collection.
@@ -128,7 +135,9 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   /// Forces creation failure at the provider boundary.
   var providerFailure = false
   /// Injects a controlled metadata source while the production processor remains real.
-  var metadataProvider: any MovieMetadataProvider = NoMatchesProvider()
+  var movieMetadataProvider: any MovieMetadataProvider = NoMatchesProvider()
+  /// Captures collection-specific composition without exposing request or folder contents.
+  let providerCollections = FinderProviderCollections()
 
   /// Creates isolated runtime dependencies and a recorder rooted in the fixture container.
   /// - Parameter fixture: Test-owned stores and authorized root.
@@ -145,10 +154,18 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   }
   func containerURL() throws -> URL { fixture.container }
   func credential() throws -> String? { token }
-  func provider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
+  func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
     if providerFailure { throw TMDbError.authentication }
 
-    return metadataProvider
+    return movieMetadataProvider
+  }
+  /// Records the root scope passed to each independently composed movie metadata provider.
+  func movieMetadataProvider(
+    token: String, configuration: DirectoryConfiguration, collectionID: UUID
+  ) throws -> any MovieMetadataProvider {
+    providerCollections.collectionIDs.withLock { $0.append(collectionID) }
+
+    return try movieMetadataProvider(token: token, configuration: configuration)
   }
   func processingStore() throws -> CollectionProcessingStore {
     try CollectionProcessingStore(
@@ -300,6 +317,26 @@ struct FinderIntegrationTests {
 
 // MARK: - Configuration and processing
 extension FinderIntegrationTests {
+  /// Each root receives its own request-history context instead of sharing another root's provider context.
+  @Test @MainActor func providersAreComposedWithTheirCollectionIdentity() async throws {
+    let fixture = try FinderFixture()
+    defer { fixture.remove() }
+    let secondRoot = fixture.container.appendingPathComponent("Second Collection", isDirectory: true)
+    try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+    let fileSystem = FileSystemService()
+    let secondDirectory = MonitoredDirectory(
+      id: UUID(), path: secondRoot.path, transferBookmark: try fileSystem.makeTransferBookmark(for: secondRoot),
+      authorizationVersion: UUID(), identity: try fileSystem.persistentDirectoryIdentity(at: secondRoot))
+    try fixture.repository.update { $0.directories.append(secondDirectory) }
+    let environment = IsolatedFinderEnvironment(fixture)
+    let runtime = FinderConfigurationRuntime(environment: environment)
+    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+
+    #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root, secondRoot])
+    #expect(Set(environment.providerCollections.collectionIDs.withLock { $0 })
+      == [fixture.directory.id, secondDirectory.id])
+  }
+
   /// Paused roots stay registered while visits create no processing operation or provider request.
   @Test @MainActor func pausedRootRemainsRegisteredWithoutProcessingActivity() async throws {
     let fixture = try FinderFixture()
@@ -307,13 +344,13 @@ extension FinderIntegrationTests {
     _ = try fixture.movie()
     try fixture.repository.update { $0.directories[0].processingConfiguration.setPaused(true) }
     var environment = IsolatedFinderEnvironment(fixture)
-    let provider = CountingNoMatchesProvider()
-    environment.metadataProvider = provider
+    let movieMetadataProvider = CountingNoMatchesProvider()
+    environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) == .none)
-    #expect(await provider.searchCount == .zero)
+    #expect(await movieMetadataProvider.searchCount == .zero)
     #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
     #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded])
     #expect(environment.registrations.roots == [[fixture.root]])
@@ -325,8 +362,8 @@ extension FinderIntegrationTests {
     defer { fixture.remove() }
     _ = try fixture.movie()
     var environment = IsolatedFinderEnvironment(fixture)
-    let provider = CountingNoMatchesProvider()
-    environment.metadataProvider = provider
+    let movieMetadataProvider = CountingNoMatchesProvider()
+    environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
@@ -335,7 +372,7 @@ extension FinderIntegrationTests {
     await #expect(throws: ProcessingRecoveryError.recoveryMode) {
       try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     }
-    #expect(await provider.searchCount == .zero)
+    #expect(await movieMetadataProvider.searchCount == .zero)
     let paused = try environment.processingStore().read(rootID: fixture.directory.id)
     #expect(paused?.folders.contains { $0.state == .notFound } != true)
     try recovery.setRecoveryModeEnabled(false)
@@ -343,7 +380,7 @@ extension FinderIntegrationTests {
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     let resumed = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
     #expect(resumed.folders.first?.state == .notFound)
-    #expect(await provider.searchCount == 1)
+    #expect(await movieMetadataProvider.searchCount == 1)
   }
 
   /// Verifies authorized processing saves activation evidence and a complete not-found outcome.
@@ -363,8 +400,8 @@ extension FinderIntegrationTests {
     #expect(state.folders.count == 1)
     #expect(state.folders.first?.state == .notFound)
     let store = try PersistenceStore(directory: fixture.container.appendingPathComponent("Readiness"))
-    let access = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
-    let receipt = try JSONDecoder().decode(ExtensionReadinessReceipt.self, from: #require(try access.read()))
+    let persistenceAccess = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
+    let receipt = try JSONDecoder().decode(ExtensionReadinessReceipt.self, from: #require(try persistenceAccess.read()))
     #expect(receipt.version == "1.2.3" && receipt.build == "45")
     let activity = try await environment.activity.entries()
     #expect(activity.map(\.event.status) == [.succeeded, .started, .succeeded])
@@ -432,8 +469,8 @@ extension FinderIntegrationTests {
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let store = try PersistenceStore(directory: fixture.container.appendingPathComponent("Settings"))
     do {
-      let access = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
-      try access.write(Data("malformed".utf8))
+      let persistenceAccess = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
+      try persistenceAccess.write(Data("malformed".utf8))
     }
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
@@ -569,16 +606,16 @@ extension FinderIntegrationTests {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
     let movie = try fixture.movie()
-    let provider = SuspendedFinderProvider()
+    let movieMetadataProvider = SuspendedFinderProvider()
     var environment = IsolatedFinderEnvironment(fixture)
-    environment.metadataProvider = provider
+    environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let operation = Task { try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) }
-    await provider.waitUntilStarted()
+    await movieMetadataProvider.waitUntilStarted()
     operation.cancel()
-    await provider.finish()
+    await movieMetadataProvider.finish()
     await #expect(throws: CancellationError.self) { try await operation.value }
     let state = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
     #expect(state.currentRun?.state == .interrupted)
@@ -591,16 +628,16 @@ extension FinderIntegrationTests {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
     _ = try fixture.movie()
-    let provider = SuspendedFinderProvider()
+    let movieMetadataProvider = SuspendedFinderProvider()
     var environment = IsolatedFinderEnvironment(fixture)
-    environment.metadataProvider = provider
+    environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let operation = Task { try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) }
-    await provider.waitUntilStarted()
+    await movieMetadataProvider.waitUntilStarted()
     try fixture.repository.update { $0.credentialRevision = UUID() }
-    await provider.finish()
+    await movieMetadataProvider.finish()
     await #expect(throws: (any Error).self) { try await operation.value }
     let state = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
     #expect(state.currentRun?.state != .completed)
@@ -612,13 +649,14 @@ extension FinderIntegrationTests {
   @Test func systemProviderCompositionValidatesCredentialsWithoutSendingNetworkRequests() throws {
     let system = SystemFinderRuntimeEnvironment()
     let settings = DirectoryConfiguration()
-    #expect(throws: TMDbError.missingToken) { try system.provider(token: "", configuration: settings) }
-    #expect(try system.provider(token: "isolated-composition-token", configuration: settings) is TMDbClient)
+    #expect(throws: TMDbError.missingToken) { try system.movieMetadataProvider(token: "", configuration: settings) }
+    #expect(try system.movieMetadataProvider(
+      token: "isolated-composition-token", configuration: settings) is TMDbClient)
     var debugSettings = settings
     debugSettings.usesStubTMDbResponses = true
     // This standalone test bundle intentionally has no signed extension TestPoster resource.
     #expect(throws: FolderPosterError.invalidImage) {
-      try system.provider(token: "isolated-composition-token", configuration: debugSettings)
+      try system.movieMetadataProvider(token: "isolated-composition-token", configuration: debugSettings)
     }
   }
 

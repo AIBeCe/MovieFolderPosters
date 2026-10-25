@@ -89,16 +89,17 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   private func configureProcessors(
     token: String, configuration: DirectoryConfiguration, roots: [URL: AuthorizedRoot]
   ) throws {
-    let client = try environment.provider(token: token, configuration: configuration)
     let recovery = try environment.processingRecoveryService()
     let container = try environment.containerURL()
     let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
     let repository = try environment.configurationRepository()
     let processingVerifier = FinderCollectionConfigurationVerifier(repository: repository, configuration: configuration, roots: roots)
     for (url, root) in roots {
+      let movieMetadataProvider = try environment.movieMetadataProvider(
+        token: token, configuration: configuration, collectionID: root.directory.id)
       processors[url] = MovieFolderProcessor(
         persistence: try PersistenceStore(directory: records),
-        provider: RecoveryMovieMetadataProvider(provider: client, recovery: recovery, credential: token),
+        provider: RecoveryMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token),
         cacheDirectory: container.appendingPathComponent("Posters"),
         coordinationStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
         processingVerifier: processingVerifier, appearance: configuration.posterAppearance,
@@ -148,9 +149,9 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       guard let (version, build) = environment.buildVersion else { return }
       let store = try PersistenceStore(
         directory: environment.containerURL().appendingPathComponent("Readiness"))
-      guard let access = try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey) else { return }
+      guard let persistenceAccess = try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey) else { return }
       let receipt = ExtensionReadinessReceipt(version: version, build: build, observedAt: Date())
-      try access.write(JSONEncoder().encode(receipt))
+      try persistenceAccess.write(JSONEncoder().encode(receipt))
     } catch {
       logger.notice("Could not record extension activation evidence")
     }
@@ -257,13 +258,14 @@ nonisolated struct FinderCollectionConfigurationVerifier: MovieFolderProcessingV
   func checkAutomaticProcessing(in root: URL)
     throws -> PersistenceAccess? {
     guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
-    let access = try repository.configurationAccessForIconChange(for: expected.directory, expectedConfiguration: configuration)
+    let persistenceAccess = try repository.configurationAccessForIconChange(
+      for: expected.directory, expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == expected.identity else {
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
       throw DirectoryAccessError.identityChanged
     }
 
-    return access
+    return persistenceAccess
   }
 
   /// Revalidates authorization immediately before a manual change.
@@ -273,16 +275,16 @@ nonisolated struct FinderCollectionConfigurationVerifier: MovieFolderProcessingV
     throws -> PersistenceAccess? {
     guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
 
-    let access = try repository.configurationAccessForIconChange(
+    let persistenceAccess = try repository.configurationAccessForIconChange(
       for: expected.directory, childIdentity: candidate.identity, requiresActiveCollection: change != .posterRemoval,
       expectedConfiguration: configuration)
 
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == expected.identity else {
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
       throw DirectoryAccessError.identityChanged
     }
 
-    return access
+    return persistenceAccess
   }
 }
 

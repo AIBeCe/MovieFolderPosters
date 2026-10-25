@@ -132,10 +132,12 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// Storage boundaries retain the same live authorization checks for isolated consumers.
   private let environment: any MoviePosterActionEnvironment
   /// Optional metadata boundary supplied by an isolated consumer after token validation.
-  private let provider: (any MovieMetadataProvider)?
+  private let movieMetadataProvider: (any MovieMetadataProvider)?
 
   /// Retained best-effort recorder whose failure never changes a poster result.
   private let activity: any MovieFolderActivityServicing
+  /// Optional injected history boundary; the live boundary opens lazily only for real HTTP work.
+  private let networkHistory: (any MovieFolderNetworkHistoryServicing)?
   /// Holds admission through asynchronous suspension and cancellation unwinding.
   private var isConfigurationActionRunning = false
 
@@ -145,18 +147,21 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - credentials: The secure credential store used for TMDb access.
   ///   - activity: Best-effort operation recorder independent of action success.
   ///   - environment: Storage locations preserving the host authorization configuration.
-  ///   - provider: Optional metadata provider used after credential validation.
+  ///   - movieMetadataProvider: Optional metadata provider used after credential validation.
+  ///   - networkHistory: Optional history service supplied by application composition or an isolated consumer.
   init(
     credentials: any CredentialStoring = KeychainCredentialStore(
       accessGroup: MovieFolderEnvironment.env(.groupIdentifier)),
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     environment: any MoviePosterActionEnvironment = LiveMoviePosterActionEnvironment(),
-    provider: (any MovieMetadataProvider)? = .none
+    movieMetadataProvider: (any MovieMetadataProvider)? = .none,
+    networkHistory: (any MovieFolderNetworkHistoryServicing)? = .none
   ) {
     self.credentials = credentials
     self.activity = activity
     self.environment = environment
-    self.provider = provider
+    self.movieMetadataProvider = movieMetadataProvider
+    self.networkHistory = networkHistory
   }
 
   /// Refreshes a poster and records an independent typed operation outcome.
@@ -189,7 +194,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       try await recordAction(.posterRefresh, request: request) {
         try await withAuthorizedRoot(request) { context in
           try Task.checkCancellation()
-          let processor = try makeProcessor(for: context, provider: makeProvider(for: context.configuration))
+          let movieMetadataProvider = try makeMovieMetadataProvider(
+            for: context.configuration, collectionID: context.directory.id)
+          let processor = try makeProcessor(for: context, movieMetadataProvider: movieMetadataProvider)
           try checkConfigurationHasNotChanged(context)
 
           return try await processor.retryEligibleFolder(
@@ -256,8 +263,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     return try await withExclusiveAction {
       try await withAuthorizedRoot(request) { context in
         try Task.checkCancellation()
-        let provider = try makeProvider(for: context.configuration)
-        let result = try await provider.searchMovies(title: cleanQuery, year: year)
+        let movieMetadataProvider = try makeMovieMetadataProvider(
+          for: context.configuration, collectionID: context.directory.id)
+        let result = try await movieMetadataProvider.searchMovies(title: cleanQuery, year: year)
         try Task.checkCancellation()
         try checkConfigurationHasNotChanged(context)
         guard let current = try? fileSystem.readCurrentState(ofChild: request.childName, in: context.root),
@@ -280,8 +288,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   private func performRefreshPoster(for request: MoviePosterRequest) async throws -> Int {
     try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
-      let provider = try makeProvider(for: context.configuration)
-      let processor = try makeProcessor(for: context, provider: provider)
+      let movieMetadataProvider = try makeMovieMetadataProvider(
+        for: context.configuration, collectionID: context.directory.id)
+      let processor = try makeProcessor(for: context, movieMetadataProvider: movieMetadataProvider)
       try checkConfigurationHasNotChanged(context)
 
       return try await processor.refreshPoster(
@@ -307,8 +316,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
     return try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
-      let provider = try makeProvider(for: context.configuration)
-      let processor = try makeProcessor(for: context, provider: provider)
+      let movieMetadataProvider = try makeMovieMetadataProvider(
+        for: context.configuration, collectionID: context.directory.id)
+      let processor = try makeProcessor(for: context, movieMetadataProvider: movieMetadataProvider)
       try checkConfigurationHasNotChanged(context)
 
       return try await processor.applyMoviePoster(
@@ -325,7 +335,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   private func performRemovePoster(for request: MoviePosterRequest) async throws -> Bool {
     try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
-      let processor = try makeProcessor(for: context, provider: MissingTokenProvider())
+      let processor = try makeProcessor(for: context, movieMetadataProvider: MissingTokenProvider())
       try checkConfigurationHasNotChanged(context, requiresActiveCollection: false)
 
       return try await processor.removePoster(
@@ -343,7 +353,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     try await withExclusiveAction {
       try await withAuthorizedRoot(request) { context in
         try Task.checkCancellation()
-        let processor = try makeProcessor(for: context, provider: MissingTokenProvider())
+        let processor = try makeProcessor(for: context, movieMetadataProvider: MissingTokenProvider())
 
         return try await processor.matchedMovieID(
           root: context.root, child: request.childName,
@@ -428,11 +438,11 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     _ context: AuthorizedRoot,
     requiresActiveCollection: Bool = true
   ) throws {
-    let access = try environment.makeConfigurationRepository().configurationAccessForIconChange(
+    let persistenceAccess = try environment.makeConfigurationRepository().configurationAccessForIconChange(
       for: context.directory,
       requiresActiveCollection: requiresActiveCollection,
       expectedConfiguration: context.configuration)
-    defer { withExtendedLifetime(access) {} }
+    defer { withExtendedLifetime(persistenceAccess) {} }
     guard try fileSystem.persistentDirectoryIdentity(at: context.root) == context.rootIdentity
     else {
       throw MoviePosterActionServiceError.directoryUnavailable
@@ -441,17 +451,21 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
   /// Creates a TMDb provider, honoring opt-in development fixtures in Debug builds.
   ///
-  /// - Parameter configuration: The configuration processing state that controls fixture use.
+  /// - Parameters:
+  ///   - configuration: The configuration processing state that controls fixture use.
+  ///   - collectionID: The authorized collection used only for optional history eligibility.
   /// - Returns: A provider configured with the saved credential.
   /// - Throws: A credential or fixture error when no usable provider can be created.
-  private func makeProvider(for configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
+  private func makeMovieMetadataProvider(
+    for configuration: DirectoryConfiguration, collectionID: UUID
+  ) throws -> any MovieMetadataProvider {
     guard let token = try credentials.read() else {
       throw MoviePosterActionServiceError.credentialUnavailable
     }
     let accessToken = try TMDbAccessToken(token)
     let recovery = try environment.makeProcessingRecoveryService()
-    if let provider {
-      return RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: token)
+    if let movieMetadataProvider {
+      return RecoveryMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token)
     }
 
     #if DEBUG
@@ -467,8 +481,12 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       }
     #endif
 
+    let requestRecorder = MovieFolderNetworkRequestRecorder(
+      networkHistoryService: networkHistory ?? MovieFolderEnvironment.makeNetworkHistoryService(),
+      collectionID: collectionID)
+
     return RecoveryMovieMetadataProvider(
-      provider: TMDbClient(token: accessToken), recovery: recovery, credential: token)
+      provider: TMDbClient(token: accessToken, requestDelegate: requestRecorder), recovery: recovery, credential: token)
   }
 
   /// Captures the already authorized collection generation for authoritative action results.
@@ -487,12 +505,12 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///
   /// - Parameters:
   ///   - context: The validated root and configuration processing state.
-  ///   - provider: The metadata provider used for this operation.
+  ///   - movieMetadataProvider: The metadata provider used for this operation.
   /// - Returns: A processor configured for the current poster appearance.
   /// - Throws: A storage or configuration error when processor dependencies are unavailable.
   private func makeProcessor(
     for context: AuthorizedRoot,
-    provider: any MovieMetadataProvider
+    movieMetadataProvider: any MovieMetadataProvider
   ) throws -> MovieFolderProcessor {
     let container = try environment.appGroupContainerURL()
     let recordDirectory = container.appendingPathComponent(
@@ -506,7 +524,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
     return MovieFolderProcessor(
       persistence: try PersistenceStore(directory: recordDirectory),
-      provider: provider,
+      provider: movieMetadataProvider,
       cacheDirectory: container.appendingPathComponent("Posters"),
       coordinationStore: try PersistenceStore(directory: coordinationDirectory),
       processingVerifier: processingVerifier,
@@ -544,15 +562,15 @@ nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFol
   /// - Returns: The configuration access retained through change.
   /// - Throws: Configuration access failures or an action error if the root identity changed.
   func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
-    let access = try repository.configurationAccessForIconChange(
+    let persistenceAccess = try repository.configurationAccessForIconChange(
       for: directory, childIdentity: candidate.identity, requiresActiveCollection: change != .posterRemoval,
       expectedConfiguration: configuration)
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == rootIdentity else {
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
       throw MoviePosterActionServiceError.configurationChanged
     }
 
-    return access
+    return persistenceAccess
   }
 }
 

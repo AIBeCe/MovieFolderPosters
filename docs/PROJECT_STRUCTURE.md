@@ -71,7 +71,8 @@ executable targets. Finder remains the thin integration layer.
 
 Development contains StubTMDbTransport; the usesStubTMDbResponses setting explicitly selects its predefined
 responses in Debug. Configuration owns the shared environment and explicit processing-state namespace migration.
-The former HostActivityLog presentation model is ActivityLogViewModel under the host Log feature.
+The former HostActivityLog presentation model is LogViewModel under the host Log feature. R110-03 renamed the
+intermediate ActivityLogViewModel because the model now presents activity and network history.
 
 Log owns generic bounded activity storage and depends on Persistence. MovieFolderCommon depends on Log,
 Network, FileSystem, and Persistence; those services do not depend on MovieFolderCommon or either executable.

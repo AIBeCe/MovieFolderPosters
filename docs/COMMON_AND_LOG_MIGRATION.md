@@ -1,5 +1,9 @@
 # Common and Log package implementation
 
+R110-03 extends the existing service boundaries with separate optional network-purpose history and privacy-aware
+writers. See [Result filtering and private history](PRIVATE_HISTORY.md) for the approved scope, compatibility,
+contention policy and current implementation evidence. Historical delivery evidence below remains dated.
+
 Date: 2026-10-18
 Status: Implemented, independently reviewed, and committed as `e7d404b` on 2026-10-18.
 The commit is present in `develop` and the locally recorded `origin/develop` at `fd9eb83`.
@@ -246,6 +250,9 @@ projection, processingStateKey(for:), and the explicit async hasObservedWriteFai
 across Common, host, Finder, tests, and scripts. Configuration/context developmentFixtures and activity outcome
 remain only as legacy CodingKeys; canonical JSON compatibility tests retain their original encoding. The
 processing-outcome-v1- record key prefix and the existing Debug command-line flags also remain compatible.
+
+R110-03 later renames the two-source host presentation to `LogViewModel`/`LogViewModelDelegate`. The paragraph
+above records the original extraction checkpoint; see [current naming corrections](PRIVATE_HISTORY.md#approved-naming-corrections--2026-10-25).
 
 Current directory and notification names are CollectionProcessingState and CollectionProcessingStateChanged.
 The user chose physical migration after older app/extension processes have stopped. The

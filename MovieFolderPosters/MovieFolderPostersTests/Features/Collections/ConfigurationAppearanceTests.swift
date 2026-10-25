@@ -77,7 +77,7 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   let defaults = try #require(UserDefaults(suiteName: suite))
   defer { defaults.removePersistentDomain(forName: suite) }
   let settings = AppAppearanceSettings(defaults: defaults)
-  let log = ActivityLogViewModel(service: ActivityServiceFake())
+  let log = LogViewModel(activityHistoryService: ActivityServiceFake())
   var probe: SettingsLogDelegateProbe? = SettingsLogDelegateProbe()
   settings.delegate = probe
   log.delegate = probe

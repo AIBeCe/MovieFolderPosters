@@ -295,10 +295,10 @@ struct DirectoryConfigurationTests {
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
     try repository.update { $0.directories = [] }
     do {
-      let (configuration, access) = try repository.readHoldingAccess()
+      let (configuration, persistenceAccess) = try repository.readHoldingAccess()
       #expect(configuration.directories.isEmpty)
       #expect(throws: ConfigurationError.self) { try repository.update { $0.credentialRevision = UUID() } }
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
     }
     try repository.update { $0.credentialRevision = UUID() }
   }
@@ -324,7 +324,7 @@ struct DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 4 } }
+    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 5 } }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID())
@@ -422,7 +422,7 @@ struct DirectoryConfigurationTests {
     let gate: ConfigurationReadGate
     do {
       let held = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
-      gate = ConfigurationReadGate(access: held)
+      gate = ConfigurationReadGate(persistenceAccess: held)
     }
     let configuration = try await repository.readWhenAvailable(pause: { await gate.release() })
     #expect(configuration.directories == [directory])
@@ -437,7 +437,7 @@ struct DirectoryConfigurationTests {
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
     let held = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
-    let counter = ConfigurationReadGate(access: .none)
+    let counter = ConfigurationReadGate(persistenceAccess: .none)
     do {
       _ = try await repository.readWhenAvailable(pause: { await counter.release() })
       Issue.record("Persistent contention must fail after bounded attempts")
@@ -451,16 +451,16 @@ struct DirectoryConfigurationTests {
 /// Holds a real settings access until a retry test explicitly releases it.
 private actor ConfigurationReadGate {
   /// The real persistence access retained until the contention test releases it.
-  private var access: PersistenceAccess?
+  private var persistenceAccess: PersistenceAccess?
   /// The number of retry pauses observed while configuration was busy.
   private(set) var waitCount = Int.zero
   /// Creates the configuration read gate from the supplied dependencies and state.
   ///
-  /// - Parameter access: The already-held persistence access used throughout this operation.
-  init(access: PersistenceAccess?) { self.access = access }
+  /// - Parameter persistenceAccess: The already-held persistence access used throughout this operation.
+  init(persistenceAccess: PersistenceAccess?) { self.persistenceAccess = persistenceAccess }
   /// Releases the held continuation or access so the test can observe completion.
   func release() {
     waitCount += 1
-    access = .none
+    persistenceAccess = .none
   }
 }

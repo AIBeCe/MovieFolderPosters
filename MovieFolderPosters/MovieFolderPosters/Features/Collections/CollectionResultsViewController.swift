@@ -20,6 +20,10 @@ final class CollectionResultsViewController: NSViewController {
   private let viewModel: CollectionResultsViewModel
   /// Displays saved evidence without making cells editable.
   private let tableView = NSTableView()
+  /// Exact saved-state choice, including all states.
+  private let processingStateFilterPopUpButton = NSPopUpButton()
+  /// Exact saved-reason choice, including all reasons.
+  private let processingReasonFilterPopUpButton = NSPopUpButton()
   /// Wraps status and incomplete-evidence explanations.
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
   /// Opens explicit movie selection for one row.
@@ -57,6 +61,19 @@ final class CollectionResultsViewController: NSViewController {
     tableView.dataSource = self
     tableView.setAccessibilityLabel("Unresolved collection folders")
     configureColumns()
+    processingStateFilterPopUpButton.addItems(withTitles:
+      ["All states"] + FolderProcessingState.allCases.map(\.displayDescription))
+    processingReasonFilterPopUpButton.addItems(withTitles:
+      ["All reasons"] + FolderProcessingReason.allCases.map(\.displayDescription))
+    for (control, label) in [(processingStateFilterPopUpButton, "Filter by saved state"),
+      (processingReasonFilterPopUpButton, "Filter by saved reason")] {
+      control.target = self
+      control.action = #selector(filtersChanged)
+      control.setAccessibilityLabel(label)
+    }
+    let filters = NSStackView(views: [NSTextField(labelWithString: "State:"), processingStateFilterPopUpButton,
+      NSTextField(labelWithString: "Reason:"), processingReasonFilterPopUpButton])
+    filters.spacing = 8
     let scrollView = NSScrollView()
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = true
@@ -77,14 +94,17 @@ final class CollectionResultsViewController: NSViewController {
     let actions = NSStackView(views: [chooseButton, retryButton, cancelButton, reloadButton, doneButton])
     actions.orientation = .horizontal
     actions.spacing = 8
-    for child in [closeButton, scrollView, statusLabel, actions] {
+    for child in [closeButton, filters, scrollView, statusLabel, actions] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
     NSLayoutConstraint.activate([
       closeButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
       closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-      statusLabel.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+      filters.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+      filters.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      filters.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -16),
+      statusLabel.topAnchor.constraint(equalTo: filters.bottomAnchor, constant: 8),
       statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
       statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       scrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 12),
@@ -95,6 +115,11 @@ final class CollectionResultsViewController: NSViewController {
       actions.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
     ])
+    let keyboardControls: [NSView] = [processingStateFilterPopUpButton, processingReasonFilterPopUpButton,
+      tableView, chooseButton, retryButton, cancelButton, reloadButton, doneButton, closeButton]
+    for (current, next) in zip(keyboardControls, keyboardControls.dropFirst() + [processingStateFilterPopUpButton]) {
+      current.nextKeyView = next
+    }
     render()
   }
 
@@ -130,9 +155,26 @@ final class CollectionResultsViewController: NSViewController {
     retryButton.isEnabled = viewModel.canRetrySelected
     cancelButton.isEnabled = viewModel.isBusy && !viewModel.isCancelling
     cancelButton.title = viewModel.isCancelling ? "Cancelling…" : "Cancel"
+    processingStateFilterPopUpButton.isEnabled = viewModel.canFilter
+    processingReasonFilterPopUpButton.isEnabled = viewModel.canFilter
+    processingStateFilterPopUpButton.selectItem(at:
+      viewModel.stateFilter.flatMap { FolderProcessingState.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
+    processingReasonFilterPopUpButton.selectItem(at:
+      viewModel.reasonFilter.flatMap { FolderProcessingReason.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
     let selection = "\(viewModel.selectedRows.count) selected."
-    statusLabel.stringValue = selection + " " + viewModel.statusMessage
+    statusLabel.stringValue = viewModel.resultCountText + " " + selection + " " + viewModel.statusMessage
     tableView.setAccessibilityHelp(selection + " Select one folder to choose a movie, or multiple folders to retry.")
+  }
+
+  /// Changes only the local saved-evidence projection.
+  @objc private func filtersChanged() {
+    let stateIndex = processingStateFilterPopUpButton.indexOfSelectedItem - 1
+    let state: FolderProcessingState? = FolderProcessingState.allCases.indices.contains(stateIndex)
+      ? FolderProcessingState.allCases[stateIndex] : .none
+    let reasonIndex = processingReasonFilterPopUpButton.indexOfSelectedItem - 1
+    let reason: FolderProcessingReason? = FolderProcessingReason.allCases.indices.contains(reasonIndex)
+      ? FolderProcessingReason.allCases[reasonIndex] : .none
+    viewModel.setFilters(state: state, reason: reason)
   }
 
   /// Opens selection only when the model admits the explicit request.

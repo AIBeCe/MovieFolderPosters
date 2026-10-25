@@ -103,12 +103,12 @@ import Testing
 @Test func logIsBoundedAndClearDoesNotChangeConfiguration() async {
   let model = ConfigurationViewModel(service: ConfigurationServiceFake())
   await model.saveCredential("fake-secret")
-  let log = ActivityLogViewModel(service: ActivityServiceFake())
+  let log = LogViewModel(activityHistoryService: ActivityServiceFake())
   for _ in 0..<510 { await log.record(MovieFolderActivityEvent(action: .configurationLoaded, status: .succeeded)) }
-  #expect(log.entries.count == 500)
-  #expect(log.entries.first?.sequence == 11)
+  #expect(log.activityEntries.count == 500)
+  #expect(log.activityEntries.first?.sequence == 11)
   await log.clear()
-  #expect(log.entries.isEmpty)
+  #expect(log.activityEntries.isEmpty)
   #expect(model.credentialConfigured)
 }
 
@@ -124,7 +124,8 @@ import Testing
   await model.saveCredential(secret)
   #expect(!probe.events.isEmpty)
   #expect(probe.events.allSatisfy { !$0.text.contains(secret) })
-  #expect(probe.events.last?.category == "Error")
+  #expect(probe.events.last?.category == "Configuration")
+  #expect(probe.events.last?.severity == "Error")
 }
 
 /// Verifies that removing another collection preserves the selected identity.
@@ -165,7 +166,7 @@ import Testing
     let table = try #require(scroll.documentView as? NSTableView)
     #expect(table.rect(ofColumn: 5).maxX <= scroll.contentView.bounds.width + 0.5)
   }
-  let controller = LogViewController(log: ActivityLogViewModel(service: ActivityServiceFake()))
+  let controller = LogViewController(viewModel: LogViewModel(activityHistoryService: ActivityServiceFake()))
   let window = NSWindow(contentViewController: controller)
   window.setContentSize(NSSize(width: 650, height: 280))
   let scroll = try #require(

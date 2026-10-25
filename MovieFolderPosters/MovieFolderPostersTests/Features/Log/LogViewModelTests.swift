@@ -70,28 +70,92 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
 
 /// Verifies opening loads persisted history, Clear scope, and independent failures.
 @MainActor
-struct ActivityLogViewModelTests {
+struct LogViewModelTests {
+  /// Search and severity intersect while hidden selected rows stay deselected after clearing filters.
+  @Test func safeFiltersPruneHiddenSelection() async {
+    let service = ActivityServiceFake()
+    let log = LogViewModel(activityHistoryService: service)
+    await log.record(MovieFolderActivityEvent(action: .posterRefresh, status: .failed))
+    await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    log.selectRows(IndexSet(integersIn: 0..<2))
+    log.setFilters(searchText: "poster", category: "Poster Actions", severity: "Error")
+    #expect(log.filteredHistoryRows().count == 1)
+    #expect(log.selectedRows == IndexSet(integer: 0))
+    #expect(log.textForSelectedHistoryRows().contains("Error"))
+    #expect(!log.textForSelectedHistoryRows().contains(log.activityEntries[0].id.uuidString))
+    log.setFilters(searchText: "", category: .none, severity: .none)
+    #expect(log.selectedRows == IndexSet(integer: 0))
+  }
+
+  /// A source switch fences a suspended activity read and displays only the replacement source.
+  @Test func sourceSwitchFencesSuspendedReadAndClearTargetsAllNetworkRows() async throws {
+    let activity = ActivityServiceFake()
+    #expect(await activity.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded)))
+    let network = NetworkHistoryPresentationFake()
+    await network.append(.init(purpose: .movieSearch, result: .response(statusCode: 200)))
+    await network.append(.init(purpose: .posterDownload, result: .transportFailure))
+    let log = LogViewModel(activityHistoryService: activity, networkHistoryService: network)
+    await activity.holdNextRead()
+    let loading = Task { await log.reload() }
+    while !(await activity.isReadHeld) { await Task.yield() }
+    log.setSource(.network)
+    await Task.yield()
+    await activity.releaseRead()
+    await loading.value
+    #expect(log.historySource == .network)
+    #expect(log.filteredHistoryRows().count == 2)
+    log.selectRows(IndexSet(integersIn: 0..<2))
+    log.setFilters(searchText: "Movie Search", category: .none, severity: .none)
+    #expect(log.filteredHistoryRows().count == 1)
+    #expect(log.textForSelectedHistoryRows().contains("HTTP response 200"))
+    #expect(!log.textForSelectedHistoryRows().contains("transport failed"))
+    await log.clear()
+    #expect(await network.entries().isEmpty)
+    #expect(try await activity.entries().count == 1)
+    #expect(log.selectedRows.isEmpty)
+  }
+
+  /// Failed recording saves retain history and render the persisted choice, rather than the attempted choice.
+  @Test func failedNetworkPreferenceSaveRevertsToPersistedState() async throws {
+    let network = NetworkHistoryPresentationFake()
+    await network.append(.init(purpose: .movieSearch, result: .response(statusCode: 200)))
+    let log = LogViewModel(activityHistoryService: ActivityServiceFake(), networkHistoryService: network)
+    await log.reload()
+    #expect(!log.isNetworkHistoryRecordingEnabled)
+    await network.setSaveFailure(true)
+    await log.setNetworkHistoryRecordingEnabled(true)
+    #expect(log.hasNetworkRecordingPreferenceFailure)
+    #expect(!log.isNetworkHistoryRecordingEnabled)
+    #expect(await network.entries().count == 1)
+    await network.setSaveFailure(false)
+    await log.setNetworkHistoryRecordingEnabled(true)
+    #expect(log.isNetworkHistoryRecordingEnabled)
+    #expect(!log.hasNetworkRecordingPreferenceFailure)
+    await log.setNetworkHistoryRecordingEnabled(false)
+    #expect(await network.entries().count == 1)
+  }
+
   /// Verifies opening the log reloads committed service history.
   @Test func openingAndReopeningLoadsActualServiceHistory() async {
     let service = ActivityServiceFake()
     await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
-    let log = ActivityLogViewModel(service: service)
+    let log = LogViewModel(activityHistoryService: service)
     #expect(log.statusText.contains("Loading"))
     await log.reload()
-    #expect(log.entries.count == 1)
+    #expect(log.activityEntries.count == 1)
     await service.record(MovieFolderActivityEvent(action: .posterRefresh, status: .succeeded))
     await log.reload()
-    #expect(log.entries.count == 2)
+    #expect(log.activityEntries.count == 2)
   }
 
   /// Preserves displayed history and reports a distinct clear failure.
   @Test func clearFailureKeepsEntriesAndShowsDistinctMessage() async {
     let service = ActivityServiceFake()
-    let log = ActivityLogViewModel(service: service)
+    let log = LogViewModel(activityHistoryService: service)
     await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
     await service.setFailures(clear: true)
     await log.clear()
-    #expect(log.entries.count == 1)
+    #expect(log.activityEntries.count == 1)
     #expect(log.hasClearFailure)
     #expect(!log.hasLoadFailure)
     #expect(log.statusText.contains("Could not clear"))
@@ -100,7 +164,7 @@ struct ActivityLogViewModelTests {
   /// Verifies recording failures and history-loading failures have independent presentation state.
   @Test func failedWritesAndLoadsRemainSeparate() async {
     let service = ActivityServiceFake()
-    let log = ActivityLogViewModel(service: service)
+    let log = LogViewModel(activityHistoryService: service)
     await service.setFailures(write: true)
     await log.record(MovieFolderActivityEvent(action: .credentialSaved, status: .succeeded))
     #expect(log.hasObservedWriteFailure)
@@ -115,7 +179,7 @@ struct ActivityLogViewModelTests {
   @Test func clearFencesAnOlderCapturedReadAndCoalescesHints() async {
     let service = ActivityServiceFake()
     await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
-    let log = ActivityLogViewModel(service: service)
+    let log = LogViewModel(activityHistoryService: service)
     await service.holdNextRead()
     let reload = Task { await log.reload() }
     while !(await service.isReadHeld) { await Task.yield() }
@@ -123,7 +187,7 @@ struct ActivityLogViewModelTests {
     await log.clear()
     await service.releaseRead()
     await reload.value
-    #expect(log.entries.isEmpty)
+    #expect(log.activityEntries.isEmpty)
     #expect(!log.hasLoadFailure)
     #expect(await service.readCount == 2)
   }
@@ -132,7 +196,7 @@ struct ActivityLogViewModelTests {
   @Test func failedClearFencesCapturedReadAndReloadsHistoryWithoutLosingFailure() async {
     let service = ActivityServiceFake()
     await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
-    let log = ActivityLogViewModel(service: service)
+    let log = LogViewModel(activityHistoryService: service)
     await log.reload()
     await service.holdNextRead()
     let reload = Task { await log.reload() }
@@ -142,7 +206,7 @@ struct ActivityLogViewModelTests {
     await log.clear()
     await service.releaseRead()
     await reload.value
-    #expect(log.entries.map(\.sequence) == [1, 2])
+    #expect(log.activityEntries.map(\.sequence) == [1, 2])
     #expect(log.hasClearFailure)
     #expect(!log.hasLoadFailure)
     #expect(log.statusText.contains("Could not clear activity history"))
@@ -155,15 +219,15 @@ struct ActivityLogViewModelTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let first = MovieFolderActivityRecorder(directory: directory, notifier: IgnoredActivityChangeNotifier())
     #expect(await first.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded)))
-    let log = ActivityLogViewModel(service: first)
+    let log = LogViewModel(activityHistoryService: first)
     await log.reload()
-    #expect(log.entries.count == 1)
+    #expect(log.activityEntries.count == 1)
     let otherProcess = MovieFolderActivityRecorder(directory: directory, notifier: IgnoredActivityChangeNotifier())
     #expect(await otherProcess.record(MovieFolderActivityEvent(action: .automaticProcessing, status: .partial)))
-    #expect(log.entries.count == 1)
+    #expect(log.activityEntries.count == 1)
     await log.reload()
-    #expect(log.entries.map(\.sequence) == [1, 2])
-    #expect(log.entries.last?.event.status == .partial)
+    #expect(log.activityEntries.map(\.sequence) == [1, 2])
+    #expect(log.activityEntries.last?.event.status == .partial)
     #expect(!log.hasLoadFailure)
   }
 
@@ -197,4 +261,36 @@ struct ActivityLogViewModelTests {
 /// Deliberately drops committed hints to verify explicit persisted reload recovery.
 private struct IgnoredActivityChangeNotifier: MovieFolderActivityChangeNotifying {
   func movieFolderActivityDidChange() {}
+}
+
+/// Isolated network source with explicit saved preference and failure controls.
+private actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing {
+  /// Retained entries independent of activity storage.
+  private var history: [MovieFolderNetworkHistoryEntry] = []
+  /// Saved opt-in preference defaults off.
+  private var enabled = false
+  /// Whether preference writes fail while preserving saved state.
+  private var failsSave = false
+  /// Test-controlled storage failure.
+  enum Failure: Error { case unavailable }
+  /// Observed history failures remain independent of preference failures.
+  var hasObservedWriteFailure: Bool { false }
+  /// Persisted opt-in choice.
+  var isNetworkHistoryRecordingEnabled: Bool { enabled }
+  /// Changes preference failure injection.
+  func setSaveFailure(_ fails: Bool) { failsSave = fails }
+  /// Retains fixed safe evidence for source presentation tests.
+  func append(_ event: MovieFolderNetworkHistoryEvent) {
+    history.append(.init(id: UUID(), sequence: UInt64(history.count + 1), occurredAt: Date(), event: event))
+  }
+  func entries() -> [MovieFolderNetworkHistoryEntry] { history }
+  func clear() { history = [] }
+  func setNetworkHistoryRecordingEnabled(_ enabled: Bool) throws {
+    if failsSave { throw Failure.unavailable }
+    self.enabled = enabled
+  }
+  func prepareNetworkHistoryRecording(collectionID: UUID?) -> UUID? { .none }
+  func recordCompletedNetworkRequest(
+    purpose: TMDbRequestPurpose, result: TMDbRequestResult, completedAt: Date, expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
+  ) {}
 }

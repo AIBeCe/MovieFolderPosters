@@ -9,9 +9,9 @@ import Testing
 struct LogTableCoverageTests {
   /// The table distinguishes failure category from safe message text and keeps truncated content inspectable.
   @Test func activityColumnsRenderSafeTextAndFailureCategory() async throws {
-    let model = ActivityLogViewModel(service: ActivityServiceFake())
+    let model = LogViewModel(activityHistoryService: ActivityServiceFake())
     await model.record(MovieFolderActivityEvent(action: .applicationOpened, status: .failed))
-    let controller = LogViewController(log: model)
+    let controller = LogViewController(viewModel: model)
     let scroll = try #require(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)
     let table = try #require(scroll.documentView as? NSTableView)
     #expect(controller.numberOfRows(in: table) == 1)
@@ -23,7 +23,8 @@ struct LogTableCoverageTests {
       #expect(cell.lineBreakMode == .byTruncatingTail)
     }
     #expect(labels["text"]?.stringValue == "Application startup: failed.")
-    #expect(labels["category"]?.stringValue == "Error")
+    #expect(labels["category"]?.stringValue == "Application")
+    #expect(labels["severity"]?.stringValue == "Error")
     #expect(labels["time"]?.stringValue.isEmpty == false)
     await model.clear()
     #expect(controller.numberOfRows(in: table) == 0)

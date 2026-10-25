@@ -20,6 +20,8 @@ import MovieFolderCommon
   private let pathLabel = NSTextField(wrappingLabelWithString: "")
   /// Whole-collection automatic processing pause.
   private let pauseButton = NSButton(checkboxWithTitle: "Pause this collection", target: .none, action: .none)
+  /// Local optional history privacy choice, persisted only with the complete draft.
+  private let privateHistoryCheckbox = NSButton(checkboxWithTitle: "Private collection history", target: .none, action: .none)
   /// Explicit inheritance choice.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
@@ -79,7 +81,7 @@ import MovieFolderCommon
     originalButton.toolTip = "Include original-language TMDb titles in exact automatic title comparisons."
     yearButton.setAccessibilityHelp(yearButton.toolTip)
     originalButton.setAccessibilityHelp(originalButton.toolTip)
-    for button in [pauseButton, inheritButton, yearButton, originalButton] {
+    for button in [privateHistoryCheckbox, pauseButton, inheritButton, yearButton, originalButton] {
       button.target = self
       button.action = #selector(choicesChanged)
     }
@@ -115,6 +117,9 @@ import MovieFolderCommon
       separator(), heading("Excluded Folders"), exclusions,
       separator(), heading("Matching"), inheritButton, yearButton, originalButton,
       note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
+      separator(), heading("History"), privateHistoryCheckbox,
+      note("New activity omits collection identifiers and network history is omitted. "
+        + "Existing history is retained until you clear its source in Log."),
       errorLabel
     ])
     content.orientation = .vertical
@@ -198,6 +203,8 @@ import MovieFolderCommon
     nameField.stringValue = viewModel.displayName
     pathLabel.stringValue = viewModel.savedCollectionState?.directory.path ?? "Loading…"
     pauseButton.state = viewModel.processingConfiguration.isPaused ? .on : .off
+    privateHistoryCheckbox.state = viewModel.usesPrivateHistory ? .on : .off
+    privateHistoryCheckbox.isEnabled = !viewModel.isBusy
     inheritButton.state = viewModel.inheritsApplicationConfiguration ? .on : .off
     yearButton.state = viewModel.effectiveConfiguration.requiresReleaseYearForAutomaticMatching ? .on : .off
     originalButton.state = viewModel.effectiveConfiguration.comparesOriginalTitles ? .on : .off
@@ -222,6 +229,7 @@ import MovieFolderCommon
   /// Mutates only the finite local draft.
   @objc private func choicesChanged() {
     viewModel.setPaused(pauseButton.state == .on)
+    viewModel.usesPrivateHistory = privateHistoryCheckbox.state == .on
     viewModel.inheritsApplicationConfiguration = inheritButton.state == .on
     if !viewModel.inheritsApplicationConfiguration {
       viewModel.overrideConfiguration = MovieMatchingConfiguration(

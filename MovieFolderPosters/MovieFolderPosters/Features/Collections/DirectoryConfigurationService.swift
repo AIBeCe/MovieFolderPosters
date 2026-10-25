@@ -86,6 +86,8 @@ actor DirectoryConfigurationService: ConfigurationServicing {
 
   /// Always authenticates credentials against an explicit HTTP boundary, independent of movie fixtures.
   private let credentialTransport: any HTTPTransport
+  /// Optional scoped observer of actual credential HTTP attempts.
+  private let requestDelegate: (any TMDbClientRequestDelegate)?
   /// Shared diagnostic admission; absence fails closed for credential networking.
   private let recovery: ProcessingRecoveryService?
 
@@ -99,6 +101,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - authorization: Provider for resolving and creating security bookmarks.
   ///   - processingCleanup: Retained outcome cleaner; omit only when the caller owns no outcome storage.
   ///   - activity: Recorder for cleanup failures independent of committed configuration changes.
+  ///   - requestDelegate: Optional observer of actual credential HTTP attempts; fixture requests are omitted.
   init(
     repository: ConfigurationRepository, authorizations: PersistenceStore,
     credentials: any CredentialStoring = KeychainCredentialStore(
@@ -108,6 +111,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     processingCleanup: (any CollectionProcessingCleaning)? = .none,
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     credentialTransport: any HTTPTransport = URLSessionTransport(),
+    requestDelegate: (any TMDbClientRequestDelegate)? = .none,
     recovery: ProcessingRecoveryService? = .none
   ) {
     self.repository = repository
@@ -118,6 +122,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     self.processingCleanup = processingCleanup
     self.activity = activity
     self.credentialTransport = credentialTransport
+    self.requestDelegate = requestDelegate
     self.recovery = recovery
   }
 
@@ -142,7 +147,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
           path: refreshed[directory.id]?.path ?? directory.path,
           availability: availability, displayName: directory.displayName,
           processingConfiguration: directory.processingConfiguration, authorizationRevision: directory.authorizationVersion,
-          movieMatchingConfiguration: directory.movieMatchingConfiguration))
+          movieMatchingConfiguration: directory.movieMatchingConfiguration, usesPrivateHistory: directory.usesPrivateHistory))
     }
     var assessed = configuration
     assessed.directories = configuration.directories.map { refreshed[$0.id] ?? $0 }
@@ -152,7 +157,8 @@ actor DirectoryConfigurationService: ConfigurationServicing {
 
       return ConfiguredDirectoryStatus(id: status.id, path: status.path, availability: .overlapping,
         displayName: status.displayName, processingConfiguration: status.processingConfiguration,
-        authorizationRevision: status.authorizationRevision, movieMatchingConfiguration: status.movieMatchingConfiguration)
+        authorizationRevision: status.authorizationRevision,
+        movieMatchingConfiguration: status.movieMatchingConfiguration, usesPrivateHistory: status.usesPrivateHistory)
     }
     try persistRefreshedDirectories(refreshed, original: configuration)
 
@@ -325,6 +331,16 @@ extension DirectoryConfigurationService {
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
     processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
   ) throws {
+    try updateCollection(identifier, displayName: displayName, movieMatchingConfiguration: movieMatchingConfiguration,
+      processingConfiguration: processingConfiguration, usesPrivateHistory: expected.directory.usesPrivateHistory, expected: expected)
+  }
+
+  /// Saves privacy and the complete collection draft in the same configuration transaction.
+  func updateCollection(
+    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
+  ) throws {
+    var privacyChanged = false
     var processingChanged = false
     var presentationChanged = false
     try repository.update { configuration in
@@ -336,6 +352,8 @@ extension DirectoryConfigurationService {
         throw ConfigurationError.configurationChanged
       }
 
+      privacyChanged = configuration.directories[index].usesPrivateHistory != usesPrivateHistory
+      configuration.directories[index].usesPrivateHistory = usesPrivateHistory
       processingChanged = configuration.directories[index].movieMatchingConfiguration != movieMatchingConfiguration
         || configuration.directories[index].processingConfiguration != processingConfiguration
       presentationChanged = configuration.directories[index].displayName
@@ -346,6 +364,7 @@ extension DirectoryConfigurationService {
     }
     if processingChanged { notifier.configurationDidChange() }
     if presentationChanged { notifier.collectionPresentationDidChange() }
+    if privacyChanged { MovieFolderEnvironment.notifyHistoryConfigurationChanged() }
   }
 
   /// Changes processing inclusion while retaining root authorization and installed icons.
@@ -416,7 +435,17 @@ extension DirectoryConfigurationService {
     _ candidate: PreparedCollection, displayName: String?,
     movieMatchingConfiguration: MovieMatchingConfiguration?
   ) throws {
+    try commitCollection(candidate, displayName: displayName,
+      movieMatchingConfiguration: movieMatchingConfiguration, usesPrivateHistory: candidate.directory.usesPrivateHistory)
+  }
+
+  /// Commits the authorization and complete setup draft, including optional history privacy, atomically.
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    movieMatchingConfiguration: MovieMatchingConfiguration?, usesPrivateHistory: Bool
+  ) throws {
     var value = candidate.directory
+    value.usesPrivateHistory = usesPrivateHistory
     value.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
     value.movieMatchingConfiguration = movieMatchingConfiguration
     let access = try authorization.acquireAccess(bookmark: candidate.hostBookmark, expectedIdentity: value.identity)
@@ -438,6 +467,7 @@ extension DirectoryConfigurationService {
       configuration.directories.append(value)
     }
     notifier.configurationDidChange()
+    MovieFolderEnvironment.notifyHistoryConfigurationChanged()
   }
 
   /// Adds a selected folder after validating access and preventing duplicate or nested roots.
@@ -458,6 +488,7 @@ extension DirectoryConfigurationService {
       configuration.directories.removeAll { $0.id == identifier }
     }
     notifier.configurationDidChange()
+    MovieFolderEnvironment.notifyHistoryConfigurationChanged()
     do {
       _ = try processingCleanup?.pruneToConfiguredRoots()
     } catch {
@@ -491,9 +522,11 @@ extension DirectoryConfigurationService {
       value.displayName = configuration.directories[index].displayName
       value.movieMatchingConfiguration = configuration.directories[index].movieMatchingConfiguration
       value.processingConfiguration = configuration.directories[index].processingConfiguration
+      value.usesPrivateHistory = configuration.directories[index].usesPrivateHistory
       configuration.directories[index] = value
     }
     notifier.configurationDidChange()
+    MovieFolderEnvironment.notifyHistoryConfigurationChanged()
   }
 
   /// Holds the exact authorization generation through settings commit and restores it on later failure.
@@ -511,13 +544,13 @@ extension DirectoryConfigurationService {
       try repository.update { configuration in
         try change(&configuration)
 
-        guard let access = try authorizations.acquireAccess(for: authorizationKey(candidate.directory)) else {
+        guard let persistenceAccess = try authorizations.acquireAccess(for: authorizationKey(candidate.directory)) else {
           throw ConfigurationError.busy
         }
 
-        previousBookmark = try access.read()
-        authorizationAccess = access
-        try access.write(candidate.hostBookmark)
+        previousBookmark = try persistenceAccess.read()
+        authorizationAccess = persistenceAccess
+        try persistenceAccess.write(candidate.hostBookmark)
       }
     } catch {
       if let authorizationAccess {
@@ -662,8 +695,8 @@ private extension DirectoryConfigurationService {
   /// - Throws: Safe configuration or credential-store failures.
   func credentialSnapshot() throws -> (token: String?, revision: UUID?, configuration: DirectoryConfiguration?) {
     do {
-      let (configuration, access) = try repository.readIfPresentHoldingAccess()
-      let token = try withExtendedLifetime(access) { try credentials.read() }
+      let (configuration, persistenceAccess) = try repository.readIfPresentHoldingAccess()
+      let token = try withExtendedLifetime(persistenceAccess) { try credentials.read() }
 
       return (token, configuration?.credentialRevision, configuration)
     } catch {
@@ -710,7 +743,13 @@ private extension DirectoryConfigurationService {
     try recovery.validateCredentialTestAllowed()
     do {
       let accessToken = try TMDbAccessToken(normalizedCredential(token))
-      try await TMDbClient(token: accessToken, transport: credentialTransport).validateCredential()
+      #if DEBUG
+        let observer = credentialTransport is StubTMDbTransport ? .none : requestDelegate
+      #else
+        let observer = requestDelegate
+      #endif
+      try await TMDbClient(token: accessToken, transport: credentialTransport,
+        requestDelegate: observer).validateCredential()
     } catch {
       let safeError = safeCredentialError(error)
       if !(safeError is CancellationError) { try recovery.recordCredentialTestFailure(safeError) }

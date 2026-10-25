@@ -8,6 +8,45 @@ import Testing
 /// Exercises explicit results actions without using production filesystem or network services.
 @MainActor
 struct CollectionResultsViewModelTests {
+  /// Filters exact saved values together and permanently removes hidden selected identities.
+  @Test func filtersUseExactStateAndReasonAndPruneSelection() async {
+    let fixture = await makeFixture(folders: [
+      FolderProcessingRecord(name: "Movie 10", identity: "a", state: .failed, reason: .connectivity),
+      FolderProcessingRecord(name: "Movie 2", identity: "b", state: .deferred, reason: .connectivity),
+      FolderProcessingRecord(name: "Movie 3", identity: "c", state: .failed, reason: .authentication)
+    ])
+    fixture.model.selectRows(IndexSet(integersIn: 0..<3))
+    fixture.model.setFilters(state: .failed, reason: .connectivity)
+    #expect(fixture.model.rows.map(\.name) == ["Movie 10"])
+    #expect(fixture.model.recordedUnresolvedFolderCount == 3)
+    #expect(fixture.model.selectedRows.count == 1)
+    fixture.model.setFilters(state: .none, reason: .none)
+    #expect(fixture.model.selectedRows == IndexSet(integer: 2))
+  }
+
+  /// Filters never replace incomplete-evidence warnings, and retry ownership prevents filter edits.
+  @Test func noMatchCountsPreserveWarningsAndBusyFiltersStayFixed() async {
+    let fixture = await makeFixture(folders: [folder("Movie")])
+    fixture.model.setFilters(state: .failed, reason: .none)
+    #expect(fixture.model.rows.isEmpty)
+    #expect(fixture.model.resultCountText.contains("0 of 1"))
+    #expect(fixture.model.resultCountText.contains("No matches"))
+    #expect(fixture.model.statusMessage.contains("incomplete"))
+    fixture.model.setFilters(state: .none, reason: .none)
+    await fixture.retry.holdResponses()
+    fixture.model.selectRows(IndexSet(integer: 0))
+    fixture.model.retrySelected()
+    await settle()
+    #expect(!fixture.model.canFilter)
+    fixture.model.setFilters(state: .failed, reason: .authentication)
+    #expect(fixture.model.stateFilter == .none)
+    #expect(fixture.model.reasonFilter == .none)
+    #expect(fixture.model.rows.count == 1)
+    await fixture.retry.release(.notEligible)
+    await settle()
+    #expect(fixture.model.canFilter)
+  }
+
   /// Missing-year configuration outcomes require Choose Movie rather than a retry the processor will reject.
   @Test func manualMatchingRequiredDisablesRetryButAllowsSelection() async {
     let record = FolderProcessingRecord(name: "Dune", identity: "identity", state: .unresolved,

@@ -252,7 +252,7 @@ final class NavigationDelegateProbe: ConfigurationViewControllerDelegate {
 
 /// Records appearance and log delegate callbacks for lifetime tests.
 @MainActor
-final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, ActivityLogViewModelDelegate {
+final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, LogViewModelDelegate {
   /// Number of appearance changes received.
   var appearanceUpdates = Int.zero
   /// Entry counts observed after each log update.
@@ -260,15 +260,15 @@ final class SettingsLogDelegateProbe: AppAppearanceSettingsDelegate, ActivityLog
   /// Settings object that sent the latest appearance update.
   weak var lastAppearance: AppAppearanceSettings?
   /// Log object that sent the latest update.
-  weak var lastLog: ActivityLogViewModel?
+  weak var lastLog: LogViewModel?
   /// Records an appearance change from the settings store.
   func appAppearanceSettingsDidChange(_ settings: AppAppearanceSettings) {
     appearanceUpdates += 1
     lastAppearance = settings
   }
   /// Records the log size after an append or clear operation.
-  func activityLogViewModelDidChange(_ log: ActivityLogViewModel) {
-    logEntryCounts.append(log.entries.count)
+  func logViewModelDidChange(_ log: LogViewModel) {
+    logEntryCounts.append(log.activityEntries.count)
     lastLog = log
   }
 }

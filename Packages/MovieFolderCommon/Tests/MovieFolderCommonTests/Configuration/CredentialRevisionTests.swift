@@ -28,10 +28,11 @@ struct CredentialRevisionTests {
     let initial = MovieFolderProcessor(persistence: store, provider: provider, cacheDirectory: directory,
       credentialRevision: original.credentialRevision)
     do {
-      let access = try #require(try store.acquireAccess(for: MovieFolderProcessor.processingStateKey(for: root)))
+      let persistenceAccess = try #require(
+        try store.acquireAccess(for: MovieFolderProcessor.processingStateKey(for: root)))
       let explicit = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
         matchedMovieID: 4242, posterPath: "/explicit.jpg", movieIdentitySource: .explicitSelection)
-      try await initial.saveState(ProcessingState(folders: [child: explicit]), to: access)
+      try await initial.saveState(ProcessingState(folders: [child: explicit]), to: persistenceAccess)
     }
     for _ in 0..<3 {
       let before = try repository.read()
@@ -54,13 +55,13 @@ struct CredentialRevisionTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: directory))
     do {
-      let (configuration, access) = try repository.readIfPresentHoldingAccess()
+      let (configuration, persistenceAccess) = try repository.readIfPresentHoldingAccess()
       #expect(configuration == .none)
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
     }
     try repository.updateCredential(expectedRevision: .none)
     let first = try repository.read()
-    #expect(first.version == 3)
+    #expect(first.version == 4)
     #expect(throws: ConfigurationError.self) { try repository.updateCredential(expectedRevision: .none) }
     try repository.updateCredential(expectedRevision: first.credentialRevision)
     let second = try repository.read()
@@ -128,9 +129,9 @@ struct CredentialRevisionTests {
     try recovery.recordProviderFailure(TMDbError.authentication, credentialDigest: String(repeating: "a", count: 64))
     try recovery.setRecoveryModeEnabled(true)
     func payload() throws -> Data? {
-      let access = try #require(try store.acquireAccess(for: ProcessingRecoveryService.recordKey))
+      let persistenceAccess = try #require(try store.acquireAccess(for: ProcessingRecoveryService.recordKey))
 
-      return try access.read()
+      return try persistenceAccess.read()
     }
     let before = try payload()
     try recovery.validateCredentialTestAllowed()
@@ -152,18 +153,18 @@ struct CredentialRevisionTests {
       cacheDirectory: directory, credentialRevision: oldRevision)
     let current = MovieFolderProcessor(persistence: store, provider: CountingProvider(),
       cacheDirectory: directory, credentialRevision: currentRevision)
-    let access = try #require(try store.acquireAccess(for: "state"))
+    let persistenceAccess = try #require(try store.acquireAccess(for: "state"))
     let record = FolderRecord(fingerprint: "identity", status: .transientFailure,
       matchedMovieID: 42, posterPath: "/saved.jpg", processingReason: .authentication,
       movieIdentitySource: .explicitSelection)
-    try await old.saveState(ProcessingState(folders: ["Movie": record]), to: access)
-    let persisted = try #require(try access.read())
+    try await old.saveState(ProcessingState(folders: ["Movie": record]), to: persistenceAccess)
+    let persisted = try #require(try persistenceAccess.read())
     #expect(try JSONDecoder().decode(ProcessingState.self, from: persisted).credentialRevision == oldRevision)
-    let reconciled = try await current.loadState(from: access)
+    let reconciled = try await current.loadState(from: persistenceAccess)
     #expect(reconciled.folders["Movie"]?.processingReason == .none)
     #expect(reconciled.folders["Movie"]?.matchedMovieID == 42)
-    try await current.saveState(reconciled, to: access)
-    let updated = try #require(try access.read())
+    try await current.saveState(reconciled, to: persistenceAccess)
+    let updated = try #require(try persistenceAccess.read())
     #expect(try JSONDecoder().decode(ProcessingState.self, from: updated).credentialRevision == currentRevision)
   }
 
@@ -181,9 +182,9 @@ struct CredentialRevisionTests {
       }
     }
     await operation.value
-    let (saved, access) = try repository.readIfPresentHoldingAccess()
+    let (saved, persistenceAccess) = try repository.readIfPresentHoldingAccess()
     #expect(saved == .none)
-    withExtendedLifetime(access) {}
+    withExtendedLifetime(persistenceAccess) {}
   }
 
 }

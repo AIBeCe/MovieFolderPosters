@@ -43,13 +43,13 @@ struct CollectionSummaryCoverageTests {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     _ = try fixture.seedOutcome(completed: false)
-    let access = holdsAccess ? try fixture.coordination.acquireAccess(
+    let persistenceAccess = holdsAccess ? try fixture.coordination.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == (holdsAccess ? .busy : .interrupted))
     #expect(summary.presentation.state == summary.displayState)
     #expect(try fixture.outcomes.read(rootID: fixture.context.rootID)?.currentRun?.state == .running)
-    withExtendedLifetime(access) {}
+    withExtendedLifetime(persistenceAccess) {}
   }
 
   /// Old credentials invalidate headline counts without deleting historical folder evidence.
@@ -61,7 +61,7 @@ struct CollectionSummaryCoverageTests {
     #expect(previous.calculateCounts().done == 1)
     #expect(previous.calculateCounts().total == 1)
     try fixture.configuration.update { $0.credentialRevision = UUID() }
-    let access = holdsAccess ? try fixture.coordination.acquireAccess(
+    let persistenceAccess = holdsAccess ? try fixture.coordination.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == .stale)
@@ -71,7 +71,7 @@ struct CollectionSummaryCoverageTests {
     #expect(summary.processingState?.folders.first?.movieID == 7)
     #expect(summary.counts.done == .none)
     #expect(summary.presentation.state == .stale)
-    withExtendedLifetime(access) {}
+    withExtendedLifetime(persistenceAccess) {}
   }
 
   /// Missing and corrupt records both remain unknown rather than becoming successful empty results.
@@ -80,9 +80,9 @@ struct CollectionSummaryCoverageTests {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     if corrupt {
-      let access = try #require(try fixture.records.acquireAccess(
+      let persistenceAccess = try #require(try fixture.records.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)))
-      try access.write(Data("invalid outcome".utf8))
+      try persistenceAccess.write(Data("invalid outcome".utf8))
     }
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == .unavailable)
@@ -157,9 +157,9 @@ private struct SummaryStorageFixture {
 
   /// Commits running or completed evidence under the same root access required of production writers.
   func seedOutcome(completed: Bool) throws -> CollectionProcessingState {
-    let access = try #require(try coordination.acquireAccess(
+    let persistenceAccess = try #require(try coordination.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: root)))
-    defer { withExtendedLifetime(access) {} }
+    defer { withExtendedLifetime(persistenceAccess) {} }
     var savedState = try outcomes.recordProcessingStart(context: context, action: .automatic)
     guard completed else { return savedState }
     savedState.folders = [FolderProcessingRecord(name: "Dune (2021)", identity: "child-identity", state: .done,

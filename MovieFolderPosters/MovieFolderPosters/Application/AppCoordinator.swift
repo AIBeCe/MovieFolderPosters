@@ -28,7 +28,10 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
     let service = try DirectoryConfigurationService(
       repository: MovieFolderEnvironment.makeConfigurationRepository(),
       authorizations: MovieFolderEnvironment.makePrivateAuthorizationStore(),
-      processingCleanup: processingStore, activity: activity, recovery: recovery)
+      processingCleanup: processingStore, activity: activity,
+      requestDelegate: MovieFolderNetworkRequestRecorder(
+        networkHistoryService: MovieFolderEnvironment.makeNetworkHistoryService()),
+      recovery: recovery)
     Task.detached {
       do {
         _ = try processingStore.pruneToConfiguredRoots()
@@ -87,9 +90,11 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
     self.configurationBuilder = configurationBuilder
     self.appearance = appearance
     self.recoveryLaunch = recoveryLaunch
-    let sharedPosterService = posterService ?? MoviePosterActionService(activity: activity)
+    let networkHistory = MovieFolderEnvironment.makeNetworkHistoryService()
+    let sharedPosterService = posterService ?? MoviePosterActionService(
+      activity: activity, networkHistory: networkHistory)
     self.posterService = sharedPosterService
-    logCoordinator = LogCoordinator(activity: activity)
+    logCoordinator = LogCoordinator(activityHistoryService: activity, networkHistoryService: networkHistory)
     posterActionCoordinator = MoviePosterActionCoordinator(
       service: sharedPosterService)
     posterActionCoordinator.delegate = self

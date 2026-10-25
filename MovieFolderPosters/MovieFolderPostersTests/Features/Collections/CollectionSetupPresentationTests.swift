@@ -114,12 +114,13 @@ import Testing
   let chooseButton = try #require(buttons.first { $0.title == "Choose…" })
   let nameField = try #require(views.compactMap { $0 as? NSTextField }
     .first { $0.placeholderString == "Root folder name" })
+  let privateHistoryCheckbox = try #require(buttons.first { $0.title == "Private collection history" })
   let inheritButton = try #require(buttons.first { $0.title == "Use application matching settings" })
   let yearButton = try #require(buttons.first { $0.title == "Require a release year for automatic matching" })
   let originalButton = try #require(buttons.first { $0.title == "Compare TMDb original titles" })
   let cancelButton = try #require(buttons.first { $0.title == "Cancel" })
   let addButton = try #require(buttons.first { $0.title == "Add Collection" })
-  let controls: [NSView] = [chooseButton, nameField, inheritButton, yearButton, originalButton,
+  let controls: [NSView] = [chooseButton, nameField, privateHistoryCheckbox, inheritButton, yearButton, originalButton,
     cancelButton, addButton]
 
   for (current, next) in zip(controls, controls.dropFirst() + [controls[0]]) {
@@ -166,6 +167,7 @@ import Testing
   await model.prepare(URL(fileURLWithPath: "/Movies"))
   #expect(model.displayName == "Movies")
   model.displayName = "Family"
+  model.usesPrivateHistory = true
   model.inheritsApplicationConfiguration = false
   await model.prepare(URL(fileURLWithPath: "/Cinema"))
   #expect(model.displayName == "Cinema")
@@ -173,6 +175,7 @@ import Testing
   #expect(await model.commit())
   #expect(service.commitCount == 1)
   #expect(service.committedConfiguration == configuration)
+  #expect(service.committedPrivacy)
   let cancelled = CollectionSetupViewModel(service: service, applicationConfiguration: configuration)
   await cancelled.prepare(URL(fileURLWithPath: "/Cancelled"))
   cancelled.cancel()
@@ -183,6 +186,10 @@ import Testing
 
 /// Supplies prepared in-memory authorization without filesystem access to presentation tests.
 private final class SetupServiceProbe: ConfigurationServicing, Sendable {
+  /// Last privacy choice submitted only when the complete draft is committed.
+  private let privacy = Mutex(false)
+  /// Saved privacy evidence for the setup draft contract.
+  var committedPrivacy: Bool { privacy.withLock { $0 } }
   /// The submitted configuration snapshots; count also records successful commit calls.
   private let policies = Mutex<[MovieMatchingConfiguration?]>([])
   /// How many explicit Add actions reached persistence.
@@ -195,9 +202,10 @@ private final class SetupServiceProbe: ConfigurationServicing, Sendable {
   }
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
-    movieMatchingConfiguration: MovieMatchingConfiguration?
+    movieMatchingConfiguration: MovieMatchingConfiguration?, usesPrivateHistory: Bool
   ) throws {
     policies.withLock { $0.append(movieMatchingConfiguration) }
+    privacy.withLock { $0 = usesPrivateHistory }
   }
   func configurationSummary() throws -> ConfigurationSummary {
     ConfigurationSummary(directories: [], credentialConfigured: false)

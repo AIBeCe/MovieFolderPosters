@@ -12,7 +12,7 @@ nonisolated public protocol MovieFolderActivityChangeNotifying: Sendable {
 nonisolated public protocol MovieFolderActivityServicing: Sendable {
   /// Records an event without throwing into product operations.
   /// - Parameter event: A typed event containing only the approved vocabulary and opaque identifiers.
-  /// - Returns: Whether storage committed the event; logging failure must not replace the product result.
+  /// - Returns: Whether recording succeeded or privacy intentionally omitted it; false means an actual storage failure.
   @discardableResult func record(_ event: MovieFolderActivityEvent) async -> Bool
   /// Reports a logging write failure observed by this retained process-local recorder.
   /// - Returns: Whether this recorder has observed a write failure; this is separate from read or clear errors.
@@ -26,6 +26,14 @@ nonisolated public protocol MovieFolderActivityServicing: Sendable {
   func clear() async throws
 }
 
+/// Internal result of successful activity handling; storage errors remain thrown failures.
+private enum ActivityHistoryAppendResult: Sendable {
+  /// The event was durably committed.
+  case appended
+  /// Privacy policy intentionally omitted the event.
+  case omitted
+}
+
 /// Opens typed activity storage lazily so unavailable logging never prevents authorized product work.
 ///
 /// The caller supplies the dedicated directory and a strongly retained, payload-free notification publisher.
@@ -36,8 +44,10 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   private let directory: URL
   /// Strongly retained committed-change publisher.
   private let notifier: any MovieFolderActivityChangeNotifying
-  /// Successfully opened generic log, shared by operations in this process.
-  private var log: ActivityLog<MovieFolderActivityEvent>?
+  /// Required in production; explicit legacy test construction may omit privacy configuration.
+  private let configurationRepository: ConfigurationRepository?
+  /// Successfully opened generic history store, shared by operations in this process.
+  private var cachedActivityHistoryStore: ActivityLog<MovieFolderActivityEvent>?
   /// Sticky safe failure evidence, independent of product operation success or error.
   private var didObserveWriteFailure = false
   /// Safe diagnostics that contain no underlying error, path, or payload.
@@ -47,9 +57,14 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   /// - Parameters:
   ///   - directory: Dedicated caller-owned activity directory.
   ///   - notifier: Payload-free invalidation publisher retained for the recorder lifetime.
-  public init(directory: URL, notifier: any MovieFolderActivityChangeNotifying) {
+  ///   - configurationRepository: Shared privacy repository required in production; absence supports controlled tests.
+  public init(
+    directory: URL, notifier: any MovieFolderActivityChangeNotifying,
+    configurationRepository: ConfigurationRepository? = .none
+  ) {
     self.directory = directory
     self.notifier = notifier
+    self.configurationRepository = configurationRepository
   }
 
   /// Awaits a best-effort bounded write independently of the producer's cancellation.
@@ -57,17 +72,15 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   /// This allows terminal cancellation events to be recorded without changing the producer's original result.
   /// Failure is remembered by this recorder and returns `false`; no raw error or event data is logged.
   /// - Parameter event: The privacy-safe product event to append.
-  /// - Returns: Whether the event was committed and the notifier was called.
+  /// - Returns: True for a committed event or intentional privacy omission; false for an actual storage failure.
   public func record(_ event: MovieFolderActivityEvent) async -> Bool {
     do {
       // Terminal cancellation is useful activity evidence. The bounded append must not inherit the
       // producer's cancellation, while the product operation keeps its original cancellation result.
-      _ = try await Task.detached(priority: .utility) {
-        let storage = try await self.storage()
-
-        return try await storage.append(event: event)
+      let appendResult = try await Task.detached(priority: .utility) {
+        try await self.appendActivityEvent(event)
       }.value
-      notifier.movieFolderActivityDidChange()
+      if appendResult == .appended { notifier.movieFolderActivityDidChange() }
 
       return true
     } catch {
@@ -78,30 +91,59 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
     }
   }
 
+  /// Opens history before settings, then keeps settings stable through one nonwaiting append.
+  private func appendActivityEvent(_ event: MovieFolderActivityEvent) async throws -> ActivityHistoryAppendResult {
+    let activityHistoryStore = try await openActivityHistoryStore()
+
+    guard let configurationRepository, let collectionID = event.collectionID else {
+      try await activityHistoryStore.append(event: event)
+
+      return .appended
+    }
+
+    guard let (currentConfiguration, configurationPersistenceAccess) = try? configurationRepository.readHoldingAccess()
+    else { return .omitted }
+
+    let canRetainCollectionIdentifiers = currentConfiguration.directories.contains {
+      $0.id == collectionID && !$0.usesPrivateHistory
+    }
+    let activityEventToAppend = canRetainCollectionIdentifiers ? event
+      : MovieFolderActivityEvent(action: event.action, status: event.status)
+    do {
+      try await activityHistoryStore.append(event: activityEventToAppend, accessMode: .immediate)
+      withExtendedLifetime(configurationPersistenceAccess) {}
+
+      return .appended
+    } catch {
+      withExtendedLifetime(configurationPersistenceAccess) {}
+      throw error
+    }
+  }
+
   public var hasObservedWriteFailure: Bool { didObserveWriteFailure }
 
   public func entries() async throws -> [MovieFolderActivityEntry] {
-    let storage = try await storage()
+    let activityHistoryStore = try await openActivityHistoryStore()
 
-    return try await storage.entries().map {
+    return try await activityHistoryStore.entries().map {
       MovieFolderActivityEntry(id: $0.id, sequence: $0.sequence, occurredAt: $0.occurredAt, event: $0.event)
     }
   }
 
   public func clear() async throws {
-    let storage = try await storage()
-    try await storage.clear()
+    let activityHistoryStore = try await openActivityHistoryStore()
+    try await activityHistoryStore.clear()
     notifier.movieFolderActivityDidChange()
   }
 
   /// Opens the dedicated namespace, caching only successful initialization.
-  private func storage() async throws -> ActivityLog<MovieFolderActivityEvent> {
-    if let log { return log }
-    let opened = try await ActivityLog<MovieFolderActivityEvent>(
+  private func openActivityHistoryStore() async throws -> ActivityLog<MovieFolderActivityEvent> {
+    if let cachedActivityHistoryStore { return cachedActivityHistoryStore }
+    let activityHistoryStore = try await ActivityLog<MovieFolderActivityEvent>(
       directory: directory, namespace: "movie-activity", maximumEntries: 500)
-    log = opened
+    cachedActivityHistoryStore = activityHistoryStore
 
-    return opened
+    return activityHistoryStore
   }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import Network
 import Persistence
 
 /// Resolves storage and notifications in the calling host or Finder extension process.
@@ -33,10 +34,37 @@ nonisolated public enum MovieFolderEnvironment {
     do {
       return MovieFolderActivityRecorder(
         directory: try locations.appGroupContainerURL().appendingPathComponent("Activity"),
-        notifier: SharedActivityChangeNotifier())
+        notifier: SharedActivityChangeNotifier(),
+        configurationRepository: try makeConfigurationRepository(locations: locations))
     } catch {
       return UnavailableActivityService()
     }
+  }
+
+  /// Creates optional request history without making it a startup or provider requirement.
+  /// - Returns: A shared privacy-enforcing service, or an explicit unavailable fallback.
+  public static func makeNetworkHistoryService() -> any MovieFolderNetworkHistoryServicing {
+    makeNetworkHistoryService(locations: SystemMovieFolderStorageLocations())
+  }
+
+  /// Resolves testable process locations while always injecting shared privacy configuration.
+  static func makeNetworkHistoryService(
+    locations: any MovieFolderStorageLocations
+  ) -> any MovieFolderNetworkHistoryServicing {
+    do {
+      return MovieFolderNetworkHistoryService(
+        directory: try locations.appGroupContainerURL().appendingPathComponent("NetworkHistory"),
+        configurationRepository: try makeConfigurationRepository(locations: locations),
+        notifier: SharedNetworkHistoryChangeNotifier())
+    } catch {
+      return UnavailableNetworkHistoryService()
+    }
+  }
+
+  /// Announces committed history-only privacy settings after repository accesses are released.
+  public static func notifyHistoryConfigurationChanged() {
+    DistributedNotificationCenter.default().postNotificationName(
+      .movieFolderHistoryConfigurationChanged, object: .none, userInfo: .none, deliverImmediately: true)
   }
 
   /// Resolves the signed process's shared App Group container.
@@ -190,4 +218,30 @@ nonisolated private struct SystemMovieFolderStorageLocations: MovieFolderStorage
     try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: .none, create: true)
   }
+}
+
+/// Publishes payload-free optional history changes after the committing service has released its accesses.
+nonisolated private struct SharedNetworkHistoryChangeNotifier: MovieFolderNetworkHistoryChangeNotifying {
+  func movieFolderNetworkHistoryDidChange() {
+    DistributedNotificationCenter.default().postNotificationName(
+      .movieFolderNetworkHistoryChanged, object: .none, userInfo: .none, deliverImmediately: true)
+  }
+
+  func movieFolderHistoryConfigurationDidChange() { MovieFolderEnvironment.notifyHistoryConfigurationChanged() }
+}
+
+/// Keeps optional unavailable network history separate from provider results.
+nonisolated private struct UnavailableNetworkHistoryService: MovieFolderNetworkHistoryServicing {
+  /// An explicit availability error without sensitive underlying details.
+  private enum Failure: Error { case unavailable }
+  var hasObservedWriteFailure: Bool { true }
+  var isNetworkHistoryRecordingEnabled: Bool { get throws { throw Failure.unavailable } }
+  func entries() throws -> [MovieFolderNetworkHistoryEntry] { throw Failure.unavailable }
+  func clear() throws { throw Failure.unavailable }
+  func setNetworkHistoryRecordingEnabled(_ enabled: Bool) throws { throw Failure.unavailable }
+  func prepareNetworkHistoryRecording(collectionID: UUID?) -> UUID? { .none }
+  func recordCompletedNetworkRequest(
+    purpose: Network.TMDbRequestPurpose, result: Network.TMDbRequestResult,
+    completedAt: Date, expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
+  ) {}
 }

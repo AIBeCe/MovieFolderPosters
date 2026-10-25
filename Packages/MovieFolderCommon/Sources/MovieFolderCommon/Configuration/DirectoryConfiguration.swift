@@ -191,6 +191,8 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   public let authorizationRevision: UUID
   /// Explicit automatic matching choices, or absence to inherit application defaults.
   public let movieMatchingConfiguration: MovieMatchingConfiguration?
+  /// Whether new optional history must omit collection and activity-group identifiers.
+  public let usesPrivateHistory: Bool
   /// Verified collection processing state, or no value when counts have not been established.
   public var counts: CollectionCounts?
 
@@ -204,10 +206,12 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   ///   - processingConfiguration: Current pause and exclusion choices.
   ///   - authorizationRevision: Current bookmark authorization generation.
   ///   - movieMatchingConfiguration: Explicit choices, or absence to inherit application defaults.
+  ///   - usesPrivateHistory: Whether new optional history must omit collection context.
   public init(
     id: UUID, path: String, availability: DirectoryAvailability, counts: CollectionCounts? = .none,
     displayName: String? = .none, processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
-    authorizationRevision: UUID = UUID(), movieMatchingConfiguration: MovieMatchingConfiguration? = .none
+    authorizationRevision: UUID = UUID(), movieMatchingConfiguration: MovieMatchingConfiguration? = .none,
+    usesPrivateHistory: Bool = false
   ) {
     self.id = id
     self.path = path
@@ -217,6 +221,7 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
     self.processingConfiguration = processingConfiguration
     self.authorizationRevision = authorizationRevision
     self.movieMatchingConfiguration = movieMatchingConfiguration
+    self.usesPrivateHistory = usesPrivateHistory
   }
 }
 
@@ -354,6 +359,17 @@ nonisolated public protocol ConfigurationServicing: Sendable {
     _ candidate: PreparedCollection, displayName: String?,
     movieMatchingConfiguration: MovieMatchingConfiguration?
   ) async throws
+  /// Atomically commits setup and its privacy choice; implementations must never ignore privacy.
+  /// - Parameters:
+  ///   - candidate: Current in-memory authorized collection candidate.
+  ///   - displayName: Friendly name, with blank text clearing the override.
+  ///   - movieMatchingConfiguration: Explicit choices, or absence to inherit defaults.
+  ///   - usesPrivateHistory: Whether new collection history must omit linked identifiers.
+  /// - Throws: Duplicate, overlap, stale-directory, authorization, or persistence failures.
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    movieMatchingConfiguration: MovieMatchingConfiguration?, usesPrivateHistory: Bool
+  ) async throws
   /// Saves a presentation-only collection name without changing processing generations.
   /// - Parameters:
   ///   - identifier: Stable collection identity.
@@ -387,6 +403,19 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
     processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
+  ) async throws
+  /// Atomically saves collection setup, inclusion, and privacy against the captured state.
+  /// - Parameters:
+  ///   - identifier: Stable configured collection identity.
+  ///   - displayName: Friendly name, with blank text clearing the override.
+  ///   - movieMatchingConfiguration: Explicit matching choices, or absence to inherit defaults.
+  ///   - processingConfiguration: Requested inclusion choices.
+  ///   - usesPrivateHistory: Whether new collection history must omit linked identifiers.
+  ///   - expected: Captured state used to reject stale edits.
+  /// - Throws: Stale configuration, missing collection, authorization, or persistence failures.
+  func updateCollection(
+    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
   ) async throws
 }
 
@@ -436,6 +465,13 @@ nonisolated public extension ConfigurationServicing {
   ) throws {
     throw ConfigurationError.invalidConfiguration
   }
+  /// Rejects services that cannot persist a privacy choice atomically.
+  func commitCollection(
+    _ candidate: PreparedCollection, displayName: String?,
+    movieMatchingConfiguration: MovieMatchingConfiguration?, usesPrivateHistory: Bool
+  ) throws {
+    throw ConfigurationError.invalidConfiguration
+  }
   /// Rejects unsupported rename instead of reporting an unpersisted change.
   func renameCollection(_ identifier: UUID, displayName: String) throws {
     throw ConfigurationError.invalidConfiguration
@@ -467,6 +503,13 @@ nonisolated public extension ConfigurationServicing {
   func savedCollectionState(_ identifier: UUID) throws -> SavedCollectionState {
     throw ConfigurationError.configurationChanged
   }
+  /// Rejects services that cannot persist a privacy choice atomically.
+  func updateCollection(
+    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
+  ) throws {
+    throw ConfigurationError.configurationChanged
+  }
   /// Rejects collection editing when an older service lacks revision-checked updates.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
@@ -496,6 +539,8 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   public var movieMatchingConfiguration: MovieMatchingConfiguration?
   /// Pause and exclusion choices controlling automatic processing for this collection.
   public var processingConfiguration: CollectionProcessingConfiguration
+  /// Whether new optional activity is unlinked and network history is omitted for this collection.
+  public var usesPrivateHistory: Bool
   /// Whether automatic processing is paused for the whole collection.
   public var isPaused: Bool { processingConfiguration.isPaused }
   /// The friendly name shown in collection presentations.
@@ -522,10 +567,13 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   ///   - volumePath: The previously observed mount path, when available.
   ///   - displayName: Friendly collection name, trimmed and bounded to 120 characters; blank uses the folder name.
   ///   - movieMatchingConfiguration: Explicit automatic matching configuration, or absence to inherit defaults.
+  ///   - processingConfiguration: Saved pause and immediate-child exclusion choices.
+  ///   - usesPrivateHistory: Whether new optional activity is unlinked and network history is omitted.
   public init(id: UUID, path: String, transferBookmark: Data, authorizationVersion: UUID,
               identity: String? = .none, volumePath: String? = .none,
               displayName: String? = .none, movieMatchingConfiguration: MovieMatchingConfiguration? = .none,
-              processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration()) {
+              processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
+              usesPrivateHistory: Bool = false) {
     self.id = id
     self.path = path
     self.transferBookmark = transferBookmark
@@ -535,6 +583,7 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
     self.displayName = Self.normalizedDisplayName(displayName)
     self.movieMatchingConfiguration = movieMatchingConfiguration
     self.processingConfiguration = processingConfiguration
+    self.usesPrivateHistory = usesPrivateHistory
   }
 
   /// Reports whether an immediate child is excluded by stable filesystem identity.
@@ -546,6 +595,7 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   /// Stable persisted fields, including compatibility defaults for pre-configuration roots.
   private enum CodingKeys: String, CodingKey {
     case id, path, transferBookmark, authorizationVersion, identity, volumePath, displayName
+    case usesPrivateHistory = "isPrivate"
     case movieMatchingConfiguration = "identificationPolicy"
     case processingConfiguration = "participationPolicy"
   }
@@ -554,6 +604,7 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   /// - Parameter decoder: Decoder for the persisted root record.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
+    usesPrivateHistory = try values.decodeIfPresent(Bool.self, forKey: .usesPrivateHistory) ?? false
     id = try values.decode(UUID.self, forKey: .id)
     path = try values.decode(String.self, forKey: .path)
     transferBookmark = try values.decode(Data.self, forKey: .transferBookmark)
@@ -570,6 +621,7 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   /// - Parameter encoder: Encoder receiving the persisted root record.
   public func encode(to encoder: any Encoder) throws {
     var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(usesPrivateHistory, forKey: .usesPrivateHistory)
     try values.encode(id, forKey: .id)
     try values.encode(path, forKey: .path)
     try values.encode(transferBookmark, forKey: .transferBookmark)
@@ -608,13 +660,17 @@ nonisolated public struct ExtensionReadinessReceipt: Codable, Sendable, Equatabl
 /// Versioned shared settings read by the host and Finder extension.
 nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// The version of the serialized settings or activated extension, as appropriate to the payload.
-  public var version = 3
+  public var version = 4
   /// The configured roots in their saved presentation order.
   public var directories: [MonitoredDirectory] = []
   /// Authentication generation used to reject stale credential operations and change authorizations.
   public var credentialRevision = UUID()
   /// Stable namespace preserving decisions across production credential changes.
   public var processingCacheRevision: UUID
+  /// Whether optional terminal TMDb request history is retained; disabled by default.
+  public var isNetworkHistoryRecordingEnabled = false
+  /// History-only generation invalidating requests prepared under earlier privacy choices.
+  public var networkHistoryConfigurationRevision: UUID
   /// Whether Debug builds explicitly opt in to deterministic metadata responses.
   public var usesStubTMDbResponses = false
   /// The poster finish applied to new or restyled owned icons.
@@ -630,7 +686,10 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   }
 
   /// Creates empty settings with a fresh credential generation and the default poster finish.
-  public init() { processingCacheRevision = credentialRevision }
+  public init() {
+    processingCacheRevision = credentialRevision
+    networkHistoryConfigurationRevision = credentialRevision
+  }
 
   /// Compares configured roots and collects identifiers with shared identity or overlapping paths.
   /// - Returns: Every root participating in at least one identity or ancestor-path overlap.
@@ -662,6 +721,8 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// Stable field names for decoding persisted settings.
   private enum CodingKeys: String, CodingKey {
     case version, directories, credentialRevision, processingCacheRevision, posterAppearance, movieMatchingConfiguration
+    case isNetworkHistoryRecordingEnabled = "retainsNetworkHistory"
+    case networkHistoryConfigurationRevision = "historyRevision"
     case usesStubTMDbResponses = "developmentFixtures"
   }
 
@@ -672,11 +733,18 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)
-    guard (1...3).contains(version) else {
+    guard (1...4).contains(version) else {
       throw DecodingError.dataCorruptedError(forKey: .version, in: values, debugDescription: "Unsupported schema")
     }
     directories = try values.decode([MonitoredDirectory].self, forKey: .directories)
+    if version < 4 {
+      for index in directories.indices { directories[index].usesPrivateHistory = false }
+    }
     credentialRevision = try values.decode(UUID.self, forKey: .credentialRevision)
+    isNetworkHistoryRecordingEnabled = version < 4 ? false
+      : try values.decode(Bool.self, forKey: .isNetworkHistoryRecordingEnabled)
+    networkHistoryConfigurationRevision = version < 4 ? credentialRevision
+      : try values.decode(UUID.self, forKey: .networkHistoryConfigurationRevision)
     processingCacheRevision = version == 1 ? credentialRevision
       : try values.decode(UUID.self, forKey: .processingCacheRevision)
     usesStubTMDbResponses = try values.decode(Bool.self, forKey: .usesStubTMDbResponses)

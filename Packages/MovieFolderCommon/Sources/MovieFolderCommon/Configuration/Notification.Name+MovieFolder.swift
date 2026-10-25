@@ -10,6 +10,11 @@ public extension Notification.Name {
   /// Announces committed outcome changes so host collection summaries can reload persisted state.
   static let movieFolderCollectionProcessingStateChanged = Notification.Name(
     "dag.fikios.MovieFolderPosters.CollectionProcessingStateChanged")
+  /// Announces committed network history changes without request details.
+  static let movieFolderNetworkHistoryChanged = Notification.Name("dag.fikios.MovieFolderPosters.NetworkHistoryChanged")
+  /// Announces recording or collection privacy changes without configuration details.
+  static let movieFolderHistoryConfigurationChanged = Notification.Name(
+    "dag.fikios.MovieFolderPosters.HistoryConfigurationChanged")
   /// Announces a committed activity append or Clear without carrying activity content.
   static let movieFolderActivityChanged = Notification.Name("dag.fikios.MovieFolderPosters.ActivityChanged")
 }

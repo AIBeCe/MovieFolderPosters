@@ -30,6 +30,8 @@ import MovieFolderCommon
   private let chooseButton = NSButton(title: "Choose…", target: .none, action: .none)
   /// Friendly collection name, bounded to 120 characters.
   private let nameField = NSTextField(string: "")
+  /// Local optional history privacy choice, persisted only with the complete draft.
+  private let privateHistoryCheckbox = NSButton(checkboxWithTitle: "Private collection history", target: .none, action: .none)
   /// Default-on inheritance choice; overrides remain local until Add.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
@@ -92,7 +94,7 @@ import MovieFolderCommon
     nameField.placeholderString = "Root folder name"
     nameField.delegate = self
     nameField.setAccessibilityLabel("Collection display name")
-    for button in [inheritButton, yearButton, originalButton] {
+    for button in [privateHistoryCheckbox, inheritButton, yearButton, originalButton] {
       button.target = self
       button.action = #selector(policyChanged)
     }
@@ -123,6 +125,9 @@ import MovieFolderCommon
       note("Optional, up to 120 characters. A blank name uses the root folder name."),
       separator(), heading("Matching"), inheritButton, yearButton, originalButton,
       note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
+      separator(), heading("History"), privateHistoryCheckbox,
+      note("New activity omits collection identifiers and network history is omitted. "
+        + "Existing history is retained until you clear its source in Log."),
       errorLabel
     ])
     content.orientation = .vertical
@@ -189,7 +194,7 @@ import MovieFolderCommon
   /// Gives every keyboard-operable setup control a stable forward and reverse traversal order.
   private func configureKeyViewLoop() {
     let controls: [NSView] = [
-      chooseButton, nameField, inheritButton, yearButton, originalButton, cancelButton, addButton
+      chooseButton, nameField, privateHistoryCheckbox, inheritButton, yearButton, originalButton, cancelButton, addButton
     ]
     let wrappedControls = controls.dropFirst() + [controls[0]]
 
@@ -221,6 +226,8 @@ import MovieFolderCommon
     nameField.stringValue = viewModel.displayName
     nameField.isEnabled = !viewModel.isBusy
     chooseButton.isEnabled = !viewModel.isBusy
+    privateHistoryCheckbox.state = viewModel.usesPrivateHistory ? .on : .off
+    privateHistoryCheckbox.isEnabled = !viewModel.isBusy
     inheritButton.state = viewModel.inheritsApplicationConfiguration ? .on : .off
     inheritButton.isEnabled = !viewModel.isBusy
     yearButton.state = viewModel.effectiveConfiguration.requiresReleaseYearForAutomaticMatching ? .on : .off
@@ -241,6 +248,7 @@ import MovieFolderCommon
   @objc private func cancel() { delegate?.collectionSetupViewControllerDidRequestCancel(self) }
   /// Updates only local matching choices.
   @objc private func policyChanged() {
+    viewModel.usesPrivateHistory = privateHistoryCheckbox.state == .on
     viewModel.inheritsApplicationConfiguration = inheritButton.state == .on
     if !viewModel.inheritsApplicationConfiguration {
       viewModel.overrideConfiguration = MovieMatchingConfiguration(

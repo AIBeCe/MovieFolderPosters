@@ -37,7 +37,9 @@ select an App Group, publish notifications, render messages, or own application 
 - The default is the newest 500 entries. `maximumEntries` accepts 1 through 500. Each encoded event is limited
   to 2 KiB; the Persistence record envelope is limited to 2 MiB.
 - Append, read, and Clear use an exclusive cross-process lease. Contention retries are cancellation-aware and
-  bounded to approximately one second. Filesystem work runs outside the caller's actor.
+  bounded to approximately one second. Appends accept `accessMode: .immediate` for one nonwaiting attempt,
+  useful while holding another service access. Contention fails without changing bytes or sequence; existing
+  callers retain `.boundedWait` behavior. Filesystem work runs outside the caller's actor.
 - Clear removes this history's entries while preserving the last sequence and reusable lock file. It does not
   erase other persistence records. Unreadable, corrupt, oversized, or unsupported history fails explicitly,
   including on Clear, and remains unchanged.

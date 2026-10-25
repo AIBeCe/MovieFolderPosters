@@ -71,6 +71,11 @@ Light appearance references:
 
 ## Log
 
+R110-03 extends this native window with Activity/Network sources, safe text search, separate category and severity
+filters, selected-row copying and explicit source-specific Clear. Result filtering remains in the focused
+Unresolved Results sheet. See [Result filtering and private history](PRIVATE_HISTORY.md) for the approved behavior
+and current implementation status; the screenshots below predate these controls.
+
 Log is a separate, reusable window with native Time, Text, and Category columns and Clear at bottom right.
 R100-03 replaces the session journal with shared persisted host/Finder activity, retaining at most 500 entries.
 Typed events render fixed safe messages without credentials, user paths, URLs, or raw error descriptions.

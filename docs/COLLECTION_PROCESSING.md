@@ -1,5 +1,10 @@
 # Authoritative collection processing results — R100-02
 
+R110-03 adds presentation-only state/reason filtering to Unresolved Results. The combined implementation is in
+progress; see [Result filtering and private history](PRIVATE_HISTORY.md) for the approved contracts and evidence.
+Filters do not create outcomes, authorize actions, or start processing. Required saved processing evidence remains
+available for private collections.
+
 Status: Implemented, independently reviewed, verified, integrated into `develop`, and pushed to GitHub.
 Implementation commit: `049b74b`. Local integration uses `git merge --ff-only`.
 The user approved the complete proposal on 2026-10-17, with `FolderProcessingState` as the enum name.

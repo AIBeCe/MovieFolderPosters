@@ -4,13 +4,28 @@ import MovieFolderCommon
 /// Displays the host activity history in a table with a clear action.
 @MainActor
 final class LogViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate,
-  ActivityLogViewModelDelegate {
+  LogViewModelDelegate, NSSearchFieldDelegate {
   /// The activity log displayed by this controller.
-  private let log: ActivityLogViewModel
+  private let viewModel: LogViewModel
+  /// Selects an independently retained source.
+  private let historySourcePopUpButton = NSPopUpButton()
+  /// Searches safe displayed messages and categories.
+  private let historySearchField = NSSearchField()
+  /// Selects an exact category.
+  private let categoryFilterPopUpButton = NSPopUpButton()
+  /// Selects an evidence-based severity.
+  private let severityFilterPopUpButton = NSPopUpButton()
+  /// Saves optional network recording without clearing retained entries.
+  private let networkHistoryRecordingCheckbox = NSButton(checkboxWithTitle: "Record network history",
+    target: .none, action: .none)
+  /// Copies only selected visible safe fields.
+  private let copyButton = NSButton(title: "Copy", target: .none, action: .none)
+  /// Prevents table reload from replacing stable selection with transient row indexes.
+  private var isRendering = false
   /// The table displaying timestamp, message, and category columns.
-  private let table = NSTableView()
+  private let historyTableView = NSTableView()
   /// Provides scrolling for the activity table.
-  private let scroll = NSScrollView()
+  private let historyScrollView = NSScrollView()
   /// Clears persisted activity history only.
   private let clearButton = NSButton(title: "Clear", target: .none, action: .none)
 
@@ -19,9 +34,9 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
 
   /// Creates the log view for the supplied activity history.
   ///
-  /// - Parameter log: The log to display and observe.
-  init(log: ActivityLogViewModel) {
-    self.log = log
+  /// - Parameter viewModel: The log to display and observe.
+  init(viewModel: LogViewModel) {
+    self.viewModel = viewModel
     super.init(nibName: .none, bundle: .none)
   }
 
@@ -33,78 +48,128 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   override func loadView() {
     view = NSView()
     configureTable()
+    historySourcePopUpButton.addItems(withTitles: LogViewModel.HistorySource.allCases.map(\.rawValue))
+    severityFilterPopUpButton.addItems(withTitles: ["All severities", "Information", "Warning", "Error"])
+    historySearchField.placeholderString = "Search messages and categories"
+    historySearchField.delegate = self
+    historySearchField.setAccessibilityLabel("Search safe history messages and categories")
+    for (control, label) in [
+      (historySourcePopUpButton, "History source"), (categoryFilterPopUpButton, "History category"),
+      (severityFilterPopUpButton, "History severity")
+    ] {
+      control.target = self
+      control.action = #selector(filtersChanged)
+      control.setAccessibilityLabel(label)
+    }
+    networkHistoryRecordingCheckbox.target = self
+    networkHistoryRecordingCheckbox.action = #selector(recordingChanged)
+    copyButton.target = self
+    copyButton.action = #selector(copy(_:))
+    copyButton.keyEquivalent = "c"
+    copyButton.keyEquivalentModifierMask = .command
+    let sourceRow = NSStackView(views: [NSTextField(labelWithString: "Source:"),
+      historySourcePopUpButton, historySearchField])
+    sourceRow.spacing = 8
+    let filterRow = NSStackView(views: [NSTextField(labelWithString: "Category:"), categoryFilterPopUpButton,
+      NSTextField(labelWithString: "Severity:"), severityFilterPopUpButton])
+    filterRow.spacing = 8
+    let controls = NSStackView(views: [sourceRow, filterRow])
+    controls.orientation = .vertical
+    controls.alignment = .leading
+    controls.spacing = 8
+    sourceRow.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
+    let historyRetentionExplanationLabel = NSTextField(wrappingLabelWithString:
+      "Recording defaults off. Disabling recording and private collection choices retain existing history. "
+        + "Clear removes all retained entries from the selected source, including hidden rows.")
+    historyRetentionExplanationLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    historyRetentionExplanationLabel.textColor = .secondaryLabelColor
+    let recordingRow = NSStackView(views: [networkHistoryRecordingCheckbox, historyRetentionExplanationLabel])
+    recordingRow.spacing = 12
     clearButton.target = self
     clearButton.action = #selector(clear)
-    clearButton.setAccessibilityLabel("Clear retained activity history")
+    clearButton.setAccessibilityLabel("Clear all retained history from the selected source")
     clearButton.toolTip =
-      "Clears retained activity history for the app and Finder extension. Settings and posters are kept."
-    let scope = NSTextField(wrappingLabelWithString:
-      "Clear removes retained activity history for the app and Finder extension. Settings and posters are kept.")
-    scope.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-    scope.textColor = .secondaryLabelColor
-    scope.setAccessibilityLabel(scope.stringValue)
-    let footer = NSStackView(views: [scope, NSView(), clearButton])
+      "Clears all retained entries from the selected source, including filtered rows. Settings and posters are kept."
+    let clearHistoryExplanationLabel = NSTextField(wrappingLabelWithString:
+      "Clear removes every retained entry in the selected source. Settings and posters are kept.")
+    clearHistoryExplanationLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    clearHistoryExplanationLabel.textColor = .secondaryLabelColor
+    clearHistoryExplanationLabel.setAccessibilityLabel(clearHistoryExplanationLabel.stringValue)
+    let footer = NSStackView(views: [clearHistoryExplanationLabel, NSView(), copyButton, clearButton])
     footer.orientation = .horizontal
     footer.alignment = .centerY
-    for child in [statusLabel, scroll, footer] {
+    for child in [controls, recordingRow, statusLabel, historyScrollView, footer] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
     NSLayoutConstraint.activate([
-      scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-      scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      historyScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      historyScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
       statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-      statusLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-      scroll.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
-      scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
+      controls.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      controls.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      controls.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+      recordingRow.leadingAnchor.constraint(equalTo: controls.leadingAnchor),
+      recordingRow.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
+      recordingRow.topAnchor.constraint(equalTo: controls.bottomAnchor, constant: 8),
+      statusLabel.topAnchor.constraint(equalTo: recordingRow.bottomAnchor, constant: 8),
+      historyScrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
+      historyScrollView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
       footer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
       footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -14)
     ])
-    log.delegate = self
+    let keyboardControls: [NSView] = [historySourcePopUpButton, historySearchField, categoryFilterPopUpButton,
+      severityFilterPopUpButton, networkHistoryRecordingCheckbox, historyTableView, copyButton, clearButton]
+    for (current, next) in zip(keyboardControls, keyboardControls.dropFirst() + [historySourcePopUpButton]) {
+      current.nextKeyView = next
+    }
+    viewModel.delegate = self
     refresh()
   }
 
   /// Configures the activity columns and their scrolling container.
   private func configureTable() {
-    table.style = .plain
-    table.intercellSpacing = .zero
-    table.usesAlternatingRowBackgroundColors = true
-    table.rowHeight = 24
-    table.dataSource = self
-    table.delegate = self
-    table.columnAutoresizingStyle = .noColumnAutoresizing
+    historyTableView.style = .plain
+    historyTableView.allowsMultipleSelection = true
+    historyTableView.setAccessibilityLabel("History entries")
+    historyTableView.intercellSpacing = .zero
+    historyTableView.usesAlternatingRowBackgroundColors = true
+    historyTableView.rowHeight = 24
+    historyTableView.dataSource = self
+    historyTableView.delegate = self
+    historyTableView.columnAutoresizingStyle = .noColumnAutoresizing
     for (identifier, title, width) in [
-      ("time", "Time", 110.0), ("text", "Text", 480.0),
-      ("category", "Category", 140.0)
+      ("time", "Time", 180.0), ("text", "Text", 480.0),
+      ("category", "Category", 140.0), ("severity", "Severity", 100.0)
     ] {
       let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
       column.title = title
       column.width = width
       column.minWidth = 60
-      table.addTableColumn(column)
+      historyTableView.addTableColumn(column)
     }
-    scroll.documentView = table
-    scroll.hasVerticalScroller = true
-    scroll.autohidesScrollers = true
-    scroll.borderType = .bezelBorder
+    historyScrollView.documentView = historyTableView
+    historyScrollView.hasVerticalScroller = true
+    historyScrollView.autohidesScrollers = true
+    historyScrollView.borderType = .bezelBorder
   }
 
   /// Resizes the message column to fill the available table width.
   override func viewDidLayout() {
     super.viewDidLayout()
-    let width = scroll.contentView.bounds.width
+    let width = historyScrollView.contentView.bounds.width
     guard width > 0 else { return }
-    table.tableColumns[1].width = max(180, width - 250)
-    table.setFrameSize(NSSize(width: width, height: table.frame.height))
+    historyTableView.tableColumns[1].width = max(180, width - 420)
+    historyTableView.setFrameSize(NSSize(width: width, height: historyTableView.frame.height))
   }
 
   /// Returns the number of entries currently displayed.
   ///
   /// - Parameter tableView: The table requesting its row count.
   /// - Returns: The number of log entries.
-  func numberOfRows(in tableView: NSTableView) -> Int { log.entries.count }
+  func numberOfRows(in tableView: NSTableView) -> Int { viewModel.filteredHistoryRows().count }
 
   /// Creates a truncated text cell for the requested log field.
   ///
@@ -114,13 +179,14 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   ///   - row: The entry index to display.
   /// - Returns: The label for a valid row, or `nil` if the row is out of range.
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard log.entries.indices.contains(row) else { return .none }
-    let entry = log.entries[row]
+    guard viewModel.filteredHistoryRows().indices.contains(row) else { return .none }
+    let entry = viewModel.filteredHistoryRows()[row]
     let text: String
     switch tableColumn?.identifier.rawValue {
-    case "time": text = entry.occurredAt.formatted(.dateTime.hour().minute().second())
-    case "text": text = entry.event.text
-    default: text = entry.event.category
+    case "time": text = entry.timeText
+    case "text": text = entry.message
+    case "category": text = entry.category
+    default: text = entry.severity
     }
     let label = NSTextField(labelWithString: text)
     label.lineBreakMode = .byTruncatingTail
@@ -131,17 +197,65 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
 
   /// Refreshes the table after the observed log changes.
   ///
-  /// - Parameter log: The log that emitted the change.
-  func activityLogViewModelDidChange(_ log: ActivityLogViewModel) { refresh() }
+  /// - Parameter viewModel: The log that emitted the change.
+  func logViewModelDidChange(_ viewModel: LogViewModel) { refresh() }
 
-  /// Clears all current activity entries.
-  @objc private func clear() { Task { await log.clear() } }
+  /// Applies every local criterion together and fences source switches in the model.
+  @objc private func filtersChanged() {
+    if let selected = LogViewModel.HistorySource(rawValue: historySourcePopUpButton.titleOfSelectedItem ?? "") {
+      viewModel.setSource(selected)
+    }
+    viewModel.setFilters(searchText: historySearchField.stringValue,
+      category: categoryFilterPopUpButton.indexOfSelectedItem > .zero
+        ? categoryFilterPopUpButton.titleOfSelectedItem : .none,
+      severity: severityFilterPopUpButton.indexOfSelectedItem > .zero
+        ? severityFilterPopUpButton.titleOfSelectedItem : .none)
+  }
+
+  /// Applies safe text search as the user edits it.
+  func controlTextDidChange(_ notification: Notification) { filtersChanged() }
+
+  /// Tracks only stable visible row identity.
+  func tableViewSelectionDidChange(_ notification: Notification) {
+    guard !isRendering else { return }
+
+    viewModel.selectRows(historyTableView.selectedRowIndexes)
+  }
+
+  /// Copies exactly the currently displayed safe fields for selected visible rows.
+  @objc func copy(_ sender: Any?) {
+    guard !viewModel.textForSelectedHistoryRows().isEmpty else { return }
+
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(viewModel.textForSelectedHistoryRows(), forType: .string)
+  }
+
+  /// Persists the explicit network recording preference.
+  @objc private func recordingChanged() {
+    let enabled = networkHistoryRecordingCheckbox.state == .on
+    Task { await viewModel.setNetworkHistoryRecordingEnabled(enabled) }
+  }
+
+  /// Clears all retained entries from the explicitly selected source, including hidden rows.
+  @objc private func clear() { Task { await viewModel.clear() } }
 
   /// Reloads the table and updates the clear button's enabled state.
   private func refresh() {
     guard isViewLoaded else { return }
-    table.reloadData()
-    statusLabel.stringValue = log.statusText
-    clearButton.isEnabled = log.canClear
+    isRendering = true
+    historyTableView.reloadData()
+    historyTableView.selectRowIndexes(viewModel.selectedRows, byExtendingSelection: false)
+    isRendering = false
+    categoryFilterPopUpButton.removeAllItems()
+    categoryFilterPopUpButton.addItems(withTitles: ["All categories"] + viewModel.historyCategories())
+    categoryFilterPopUpButton.selectItem(withTitle: viewModel.categoryFilter ?? "All categories")
+    historySourcePopUpButton.selectItem(withTitle: viewModel.historySource.rawValue)
+    historySourcePopUpButton.isEnabled = !viewModel.isClearing
+    networkHistoryRecordingCheckbox.state = viewModel.isNetworkHistoryRecordingEnabled ? .on : .off
+    networkHistoryRecordingCheckbox.isEnabled = !viewModel.isSavingNetworkRecordingPreference
+    copyButton.isEnabled = !viewModel.selectedRows.isEmpty
+    clearButton.title = "Clear \(viewModel.historySource.rawValue)"
+    statusLabel.stringValue = viewModel.statusText
+    clearButton.isEnabled = viewModel.canClear
   }
 }

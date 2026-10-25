@@ -6,6 +6,11 @@ No background daemon, filesystem watcher, or periodic scan is installed.
 
 ## Set up
 
+R110-03 adds **Private collection history** to Add/Edit Collection and an opt-in **Record network history**
+control in Log. Private settings affect new optional history; previous history remains until its source is
+explicitly cleared. Necessary local processing state is retained. Implementation and qualification status:
+[Result filtering and private history](PRIVATE_HISTORY.md).
+
 1. Build and sign both targets with the same development team and registered App Group.
 2. Run the host application and enable Movie Folder Posters in macOS Finder extension settings.
 3. Choose **Add Folder** and select a movie collection directory in the native folder picker.

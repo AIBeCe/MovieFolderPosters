@@ -16,27 +16,27 @@ nonisolated public struct ConfigurationRepository: Sendable {
   /// - Returns: The validated configuration.
   /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   public func read() throws -> DirectoryConfiguration {
-    let (configuration, access) = try readHoldingAccess()
+    let (configuration, persistenceAccess) = try readHoldingAccess()
 
-    return withExtendedLifetime(access) { configuration }
+    return withExtendedLifetime(persistenceAccess) { configuration }
   }
 
   /// Returns validated settings together with the access that keeps them stable.
   /// - Returns: The validated configuration and the access keeping that configuration stable.
   /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   public func readHoldingAccess() throws -> (DirectoryConfiguration, PersistenceAccess) {
-    guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
+    guard let persistenceAccess = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
 
-    return (try read(access), access)
+    return (try read(persistenceAccess), persistenceAccess)
   }
 
   /// Reads persisted settings without manufacturing a generation for a missing record.
   /// - Returns: Optional validated settings and their exclusive access.
   /// - Throws: Busy, invalid settings, or persistence failures.
   public func readIfPresentHoldingAccess() throws -> (DirectoryConfiguration?, PersistenceAccess) {
-    guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
+    guard let persistenceAccess = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
 
-    return (try readIfPresent(access), access)
+    return (try readIfPresent(persistenceAccess), persistenceAccess)
   }
 
   /// Commits a credential generation before mutating Keychain under the same access.
@@ -45,15 +45,15 @@ nonisolated public struct ConfigurationRepository: Sendable {
   ///   - afterCommit: Credential change; failure never rolls the settings generation back.
   /// - Throws: Cancellation, stale configuration, persistence, or credential change failures.
   public func updateCredential(expectedRevision: UUID?, afterCommit: () throws -> Void = {}) throws {
-    let (saved, access) = try readIfPresentHoldingAccess()
+    let (saved, persistenceAccess) = try readIfPresentHoldingAccess()
     try Task.checkCancellation()
     guard saved?.credentialRevision == expectedRevision else { throw ConfigurationError.configurationChanged }
     var configuration = saved ?? DirectoryConfiguration()
-    configuration.version = 3
+    configuration.version = 4
     configuration.credentialRevision = UUID()
     try validate(configuration)
-    try access.write(JSONEncoder().encode(configuration))
-    try withExtendedLifetime(access) { try afterCommit() }
+    try persistenceAccess.write(JSONEncoder().encode(configuration))
+    try withExtendedLifetime(persistenceAccess) { try afterCommit() }
   }
 
   /// Checks that the captured root and settings generation still authorize change.
@@ -69,38 +69,38 @@ nonisolated public struct ConfigurationRepository: Sendable {
     requiresActiveCollection: Bool = true,
     expectedConfiguration: DirectoryConfiguration
   ) throws -> PersistenceAccess {
-    let (current, access) = try readHoldingAccess()
-    guard let configured = current.directories.first(where: { $0.id == directory.id }),
+    let (currentConfiguration, persistenceAccess) = try readHoldingAccess()
+    guard let configured = currentConfiguration.directories.first(where: { $0.id == directory.id }),
       configured.path == directory.path,
       configured.identity == directory.identity,
       configured.authorizationVersion == directory.authorizationVersion,
       configured.processingConfiguration.revision == directory.processingConfiguration.revision,
       expectedConfiguration.directories.first(where: { $0.id == directory.id })?.processingConfiguration.revision
         == directory.processingConfiguration.revision,
-      current.credentialRevision == expectedConfiguration.credentialRevision,
-      current.usesStubTMDbResponses == expectedConfiguration.usesStubTMDbResponses,
-      current.posterAppearance == expectedConfiguration.posterAppearance,
-      current.effectiveMovieMatchingConfiguration(for: configured)
+      currentConfiguration.credentialRevision == expectedConfiguration.credentialRevision,
+      currentConfiguration.usesStubTMDbResponses == expectedConfiguration.usesStubTMDbResponses,
+      currentConfiguration.posterAppearance == expectedConfiguration.posterAppearance,
+      currentConfiguration.effectiveMovieMatchingConfiguration(for: configured)
         == expectedConfiguration.effectiveMovieMatchingConfiguration(for: directory)
     else {
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
       throw ConfigurationError.configurationChanged
     }
 
     guard !requiresActiveCollection || !configured.isPaused else {
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
       throw ConfigurationError.collectionPaused
     }
     if let childIdentity, requiresActiveCollection, configured.excludesFolder(identity: childIdentity) {
-      withExtendedLifetime(access) {}
+      withExtendedLifetime(persistenceAccess) {}
       throw ConfigurationError.folderExcluded
     }
-    guard !current.findOverlappingDirectoryIDs().contains(directory.id) else {
-      withExtendedLifetime(access) {}
+    guard !currentConfiguration.findOverlappingDirectoryIDs().contains(directory.id) else {
+      withExtendedLifetime(persistenceAccess) {}
       throw ConfigurationError.configurationChanged
     }
 
-    return access
+    return persistenceAccess
   }
 
   /// Retries short-lived configuration contention within a fixed attempt budget.
@@ -131,30 +131,42 @@ nonisolated public struct ConfigurationRepository: Sendable {
     _ change: (inout DirectoryConfiguration) throws -> Void,
     afterCommit: () throws -> Void = {}
   ) throws {
-    guard let access = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
-    var configuration = try read(access)
+    guard let persistenceAccess = try store.acquireAccess(for: Self.recordKey) else { throw ConfigurationError.busy }
+    var configuration = try read(persistenceAccess)
+    let previous = configuration
     try change(&configuration)
     try validate(configuration)
-    configuration.version = 3
-    try access.write(JSONEncoder().encode(configuration))
-    try withExtendedLifetime(access) { try afterCommit() }
+    let previousRoots = Dictionary(uniqueKeysWithValues: previous.directories.map { ($0.id, $0) })
+    let currentRoots = Dictionary(uniqueKeysWithValues: configuration.directories.map { ($0.id, $0) })
+    let rootsChanged = previousRoots.keys != currentRoots.keys || currentRoots.contains { identifier, root in
+      guard let previousRoot = previousRoots[identifier] else { return true }
+
+      return previousRoot.usesPrivateHistory != root.usesPrivateHistory || previousRoot.path != root.path
+        || previousRoot.identity != root.identity || previousRoot.authorizationVersion != root.authorizationVersion
+    }
+    if previous.isNetworkHistoryRecordingEnabled != configuration.isNetworkHistoryRecordingEnabled || rootsChanged {
+      configuration.networkHistoryConfigurationRevision = UUID()
+    }
+    configuration.version = 4
+    try persistenceAccess.write(JSONEncoder().encode(configuration))
+    try withExtendedLifetime(persistenceAccess) { try afterCommit() }
   }
 
   /// Reads the stored configuration under a access and validates its schema.
   ///
-  /// - Parameter access: The already-held persistence access used throughout this operation.
+  /// - Parameter persistenceAccess: The already-held persistence access used throughout this operation.
   /// - Returns: The validated configuration.
   /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
-  private func read(_ access: PersistenceAccess) throws -> DirectoryConfiguration {
-    try readIfPresent(access) ?? DirectoryConfiguration()
+  private func read(_ persistenceAccess: PersistenceAccess) throws -> DirectoryConfiguration {
+    try readIfPresent(persistenceAccess) ?? DirectoryConfiguration()
   }
 
   /// Decodes only a genuinely persisted record, preserving absence for conditional mutations.
-  /// - Parameter access: The exclusive settings access.
+  /// - Parameter persistenceAccess: The exclusive settings access.
   /// - Returns: Validated settings or absence.
   /// - Throws: Persistence or schema failures.
-  private func readIfPresent(_ access: PersistenceAccess) throws -> DirectoryConfiguration? {
-    guard let data = try access.read() else { return .none }
+  private func readIfPresent(_ persistenceAccess: PersistenceAccess) throws -> DirectoryConfiguration? {
+    guard let data = try persistenceAccess.read() else { return .none }
     let configuration: DirectoryConfiguration
     do { configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: data) } catch {
       throw ConfigurationError.invalidConfiguration
@@ -169,7 +181,7 @@ nonisolated public struct ConfigurationRepository: Sendable {
   /// - Parameter configuration: The complete settings payload to validate or retain.
   /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   private func validate(_ configuration: DirectoryConfiguration) throws {
-    guard (1...3).contains(configuration.version),
+    guard (1...4).contains(configuration.version),
       Set(configuration.directories.map(\.id)).count == configuration.directories.count,
       Set(configuration.directories.map(\.path)).count == configuration.directories.count,
       configuration.directories.allSatisfy({

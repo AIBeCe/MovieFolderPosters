@@ -254,7 +254,7 @@ struct CoordinatorLifecycleTests {
 
   /// Feature delegates and notification subscriptions must not keep abandoned flows alive.
   @Test func featureOwnersAreReleasedAfterTheirWindowsClose() async throws {
-    var log: LogCoordinator? = LogCoordinator(activity: ActivityServiceFake())
+    var log: LogCoordinator? = LogCoordinator(activityHistoryService: ActivityServiceFake())
     let logIsReleased = { [weak log] in log == .none }
     log?.show()
     log?.windowController?.close()

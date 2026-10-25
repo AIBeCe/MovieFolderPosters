@@ -41,6 +41,20 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   weak var delegate: (any CollectionResultsViewModelDelegate)?
   /// Naturally sorted saved unresolved records.
   private(set) var rows: [FolderProcessingRecord] = []
+  /// Exact saved-state filter; absence includes every state.
+  private(set) var stateFilter: FolderProcessingState?
+  /// Exact saved-reason filter; absence includes every reason.
+  private(set) var reasonFilter: FolderProcessingReason?
+  /// Number of unresolved records before local filtering.
+  private(set) var recordedUnresolvedFolderCount = Int.zero
+  /// Whether local filters may be changed without altering a running retry selection.
+  var canFilter: Bool { !isBusy }
+  /// Displayed and recorded counts, independent of completeness and operation warnings.
+  var resultCountText: String {
+    let count = "Showing \(rows.count) of \(recordedUnresolvedFolderCount) recorded unresolved folders."
+
+    return recordedUnresolvedFolderCount > .zero && rows.isEmpty ? count + " No matches for these filters." : count
+  }
   /// Safe current status, including incomplete or unavailable evidence.
   private(set) var statusMessage = "No saved results are available. Outcome is unknown."
   /// Whether cancellation is waiting for the active operation to unwind.
@@ -96,6 +110,16 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// - Parameter indexes: User-selected rows in the current table.
   func selectRows(_ indexes: IndexSet) {
     selection = Set(indexes.filter { rows.indices.contains($0) }.map { key(for: rows[$0]) })
+    publish()
+  }
+
+  /// Applies exact saved state and reason together without reading or processing folders.
+  func setFilters(state: FolderProcessingState?, reason: FolderProcessingReason?) {
+    guard canFilter else { return }
+
+    stateFilter = state
+    reasonFilter = reason
+    updateRows()
     publish()
   }
 
@@ -255,7 +279,11 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// Rebuilds the read-only projection while retaining selection only for unchanged identities.
   private func updateRows() {
     let summary = summaries.summary(for: rootID)
-    rows = summary?.unresolvedFolders() ?? []
+    let recordedUnresolvedFolders = summary?.unresolvedFolders() ?? []
+    recordedUnresolvedFolderCount = recordedUnresolvedFolders.count
+    rows = recordedUnresolvedFolders.filter {
+      (stateFilter == .none || $0.state == stateFilter) && (reasonFilter == .none || $0.reason == reasonFilter)
+    }
     selection.formIntersection(Set(rows.map { key(for: $0) }))
     guard !isBusy, !preservesRunStatus else { return }
     guard let summary, summary.processingState != .none else {
@@ -266,6 +294,8 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
       statusMessage = "Saved evidence is stale, unavailable, or busy. Actions require current results."
     } else if summary.processingState?.isInventoryComplete != true {
       statusMessage = "Saved inventory is incomplete. Only recorded unresolved folders are shown; outcome is unknown."
+    } else if recordedUnresolvedFolderCount > .zero && rows.isEmpty {
+      statusMessage = "No recorded unresolved folders match these filters."
     } else if rows.isEmpty {
       statusMessage = "No unresolved folders are recorded in this saved inventory."
     } else {
