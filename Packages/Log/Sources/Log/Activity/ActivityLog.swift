@@ -55,6 +55,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
     }
 
     guard (1...2).contains(writerRecordVersion) else { throw ActivityLogError.unsupportedVersion }
+
     store = try await Self.offActor { try PersistenceStore(directory: directory, maximumRecordBytes: 2 * 1024 * 1024) }
     key = "Log.Activity.v1." + namespace
     self.maximumEntries = maximumEntries

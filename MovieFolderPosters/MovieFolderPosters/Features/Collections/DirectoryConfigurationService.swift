@@ -365,6 +365,15 @@ extension DirectoryConfigurationService {
   }
 
   /// Commits a complete draft synchronously so callers can retain authorization through its compare-and-swap.
+  /// - Parameters:
+  ///   - identifier: The collection being updated.
+  ///   - displayName: The proposed display name; `nil` removes a custom name and uses the default.
+  ///   - movieMatchingConfiguration: The matching choices to persist; `nil` is assigned as supplied.
+  ///   - processingConfiguration: The proposed processing settings.
+  ///   - usesPrivateHistory: Whether future activity entries should omit collection details.
+  ///   - expected: The previously read collection state used to detect concurrent changes.
+  /// - Returns: Committed values and notifications to publish after authorization access is released.
+  /// - Throws: A configuration or persistence error if the compare-and-swap cannot commit.
   private func commitCollectionUpdate(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
     processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
@@ -402,6 +411,7 @@ extension DirectoryConfigurationService {
   }
 
   /// Publishes only committed evidence after the caller has released configuration and directory authorization.
+  /// - Parameter committedUpdate: The committed values and change flags to publish.
   private func publishCommittedCollectionUpdate(_ committedUpdate: CommittedCollectionUpdate) async {
     if committedUpdate.processingChanged { notifier.configurationDidChange() }
     if committedUpdate.presentationChanged { notifier.collectionPresentationDidChange() }

@@ -1,6 +1,7 @@
 import Foundation
 
 /// Historical display facts captured for one configured collection, never a search query or a full path.
+/// Construction remains internal to root-bound context and committed removal evidence.
 nonisolated public struct MovieFolderActivityLogTarget: Codable, Sendable, Equatable {
   /// Collection display name observed when the event was produced.
   public let collectionName: String?
@@ -12,15 +13,6 @@ nonisolated public struct MovieFolderActivityLogTarget: Codable, Sendable, Equat
   public let movieTitle: String?
   /// Release year associated with a confirmed movie identity.
   public let movieYear: Int?
-
-  /// Construction is restricted to root-bound context and committed removal evidence.
-  init(collectionName: String?, childFolderName: String?, movieID: Int?, movieTitle: String?, movieYear: Int?) {
-    self.collectionName = collectionName
-    self.childFolderName = childFolderName
-    self.movieID = movieID
-    self.movieTitle = movieTitle
-    self.movieYear = movieYear
-  }
 }
 
 /// Immutable collection provenance and privacy captured before asynchronous work starts.

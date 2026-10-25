@@ -231,8 +231,8 @@ struct LogViewModelTests {
     #expect(!log.hasLoadFailure)
   }
 
-  /// Verifies manual-action events retain safe failure and correlation data without user text.
-  @Test func actualManualProducerRetainsFailureAndCorrelationWithoutUserText() async throws {
+  /// Unverified collection context retains failure evidence while omitting names and correlation identifiers.
+  @Test func actualManualProducerRetainsFailureWithoutUnverifiedCollectionContext() async throws {
     let activity = ActivityServiceFake()
     let service = MoviePosterActionService(activity: activity)
     let rootID = UUID()
@@ -246,9 +246,8 @@ struct LogViewModelTests {
     let events = try await activity.entries().map(\.event)
     #expect(events.map(\.action) == [.posterSelection, .posterSelection])
     #expect(events.map(\.status) == [.started, .failed])
-    #expect(events.first?.activityGroupID != .none)
-    #expect(events.first?.activityGroupID == events.last?.activityGroupID)
-    #expect(events.allSatisfy { $0.collectionID == rootID })
+    #expect(events.allSatisfy { $0.activityGroupID == .none && $0.collectionID == .none && $0.target == .none })
+    #expect(events.last?.failure?.reason == .invalidSelection)
     #expect(events.allSatisfy { !$0.text.contains("private") })
     await activity.setFailures(write: true)
     await #expect(throws: MoviePosterActionServiceError.invalidSelection) {

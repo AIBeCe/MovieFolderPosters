@@ -33,6 +33,10 @@ final class ProcessorActivityLog {
   }
 
   /// Begins a new folder attempt without reusing another folder's confirmed identity.
+  /// - Parameters:
+  ///   - child: The immediate child folder name for this attempt.
+  ///   - movie: A confirmed movie identity, when available.
+  ///   - stage: The operation stage where the attempt begins.
   func begin(_ child: String, movie: MovieMetadata? = .none, stage: FolderProcessingStage = .validateIdentity) {
     self.child = child
     self.movie = movie
@@ -42,6 +46,11 @@ final class ProcessorActivityLog {
   }
 
   /// Captures an actual terminal result using fixed typed facts, without writing while processing locks are held.
+  /// - Parameters:
+  ///   - result: The terminal outcome for the current folder.
+  ///   - reason: The processing reason, when known.
+  ///   - failure: Safe failure evidence, when the operation failed.
+  ///   - retryAt: The earliest retry eligibility time for the folder or provider, when known.
   func append(
     _ result: MovieFolderActivityLogEvent.FolderResult, reason: FolderProcessingReason? = .none,
     failure: FolderProcessingFailure? = .none, retryAt: Date? = .none
@@ -66,6 +75,7 @@ final class ProcessorActivityLog {
   }
 
   /// Retains an actual required write failure alongside any already completed icon or matching operation.
+  /// - Parameter failure: The required persistence failure to retain.
   func appendPersistenceFailure(_ failure: FolderProcessingFailure) {
     guard !hasRecordedPersistenceFailure else { return }
 
@@ -73,6 +83,10 @@ final class ProcessorActivityLog {
   }
 
   /// Captures this attempt's explicit assessment rather than reconstructing the latest stored folder after the run.
+  /// - Parameters:
+  ///   - record: The folder assessment produced by this operation.
+  ///   - onlyWhenChanged: Whether to omit an assessment identical to the prior saved assessment.
+  ///   - failure: Safe failure evidence associated with this assessment, when present.
   func append(
     _ record: FolderProcessingRecord, onlyWhenChanged: Bool = false, failure: FolderProcessingFailure? = .none
   ) {
@@ -103,6 +117,10 @@ final class ProcessorActivityLog {
 
 extension MovieFolderProcessor {
   /// Supplies only a saved identity whose fingerprint still identifies this child.
+  /// - Parameters:
+  ///   - record: The saved folder decision, when one exists.
+  ///   - candidate: The currently inspected child whose fingerprint must match the saved decision.
+  /// - Returns: The saved movie identity when it is still tied to this child.
   func savedActivityMovie(_ record: FolderRecord?, candidate: FolderCandidate) -> MovieMetadata? {
     guard let record, record.fingerprint == candidate.fingerprint, let movieID = record.matchedMovieID else {
       return .none
@@ -113,6 +131,7 @@ extension MovieFolderProcessor {
   }
 
   /// Flushes best-effort reporting only after the operation's configuration, recovery and root locks have unwound.
+  /// - Parameter activity: The buffered operation events to record.
   func flushActivityLog(_ activity: ProcessorActivityLog) async {
     guard let activityHistoryService else { return }
 
@@ -120,6 +139,9 @@ extension MovieFolderProcessor {
   }
 
   /// Captures a thrown operation's active folder and safe stage without changing the error returned to the caller.
+  /// - Parameters:
+  ///   - error: The error thrown by the operation.
+  ///   - activity: The operation buffer receiving its terminal failure event.
   func recordActivityFailure(_ error: any Error, in activity: ProcessorActivityLog) {
     guard activity.child != .none, !activity.hasTerminalResult else { return }
 

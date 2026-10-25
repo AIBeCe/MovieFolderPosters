@@ -122,12 +122,15 @@ private final class FinderProviderCollections: Sendable {
 
 /// Shares only the test-controlled availability of a current settings read.
 private final class FinderConfigurationReadControl: Sendable {
+  /// Test switch that makes only the current configuration read unavailable.
   let failsCurrentRead = Mutex(false)
 }
 
 /// Restores public history during the request to verify that unknown capture privacy remains private.
 private struct PublicHistoryRestoringProvider: MovieMetadataProvider {
+  /// Repository whose privacy choice is changed while the simulated provider request is in flight.
   let repository: ConfigurationRepository
+  /// Controls whether the production composition can read current collection settings.
   let configurationReadControl: FinderConfigurationReadControl
 
   func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {

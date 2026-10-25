@@ -1,8 +1,9 @@
 # Informative activity Log — additional R110-03 implementation point
 
 Status: Proposal and final `MovieFolderActivityLog…` names approved on 2026-10-25. Implementation complete; independent review PASS.
-Baseline: `bfd2b25` on `feature/result-log-private-history`. The user approved the implementation on 2026-10-25; commit follows resolved review findings and focused checks.
-Formal Validation Phase is not authorized.
+Baseline: `bfd2b25` on `feature/result-log-private-history`. The user approved the implementation on 2026-10-25;
+it was committed as `e4d8ad5` after review findings were resolved and focused checks passed.
+Formal Validation Phase was authorized on 2026-10-25; see [formal validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md).
 
 ## Approved behavior
 
@@ -57,8 +58,9 @@ Formal Validation Phase is not authorized.
 - [x] Record current evidence and limitations here and link from PRIVATE_HISTORY.md/NATIVE_APPKIT_UI.md.
 
 Meaningful new behavior uses failing tests before implementation, then focused Swift Testing runs. Apply the
-installed swift-style-guide skill. No SwiftLint, whole-project test suite or formal/native qualification is
-authorized by this implementation approval. Leave changes uncommitted for user review.
+installed swift-style-guide skill. Implementation approval originally excluded formal validation and commit;
+implementation was subsequently approved and committed as `e4d8ad5`. The separately authorized formal validation
+and its pending approval are recorded in [formal validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md).
 
 ## Review focus
 
@@ -96,5 +98,5 @@ run after required accesses release. The focused lifetime probe verifies committ
 Independent review resolved all Important findings (I2–I8), then returned PASS. A final indentation-only correction
 requires no behavioral rerun. The implementation remains on the feature branch; no merge or push is authorized.
 
-Formal Validation Phase, SwiftLint, native keyboard/VoiceOver, signed builds and live host/Finder qualification
-remain unperformed.
+The implementation evidence above predates formal validation. See [formal validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md)
+for current verification, tests, SwiftLint, style review and remaining native qualification limits.

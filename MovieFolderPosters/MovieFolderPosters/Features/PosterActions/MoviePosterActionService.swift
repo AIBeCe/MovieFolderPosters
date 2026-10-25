@@ -260,6 +260,14 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   }
 
   /// Describes an action from captured facts without exposing arbitrary error descriptions.
+  /// - Parameters:
+  ///   - action: The explicit poster action being recorded.
+  ///   - status: The action's outcome status.
+  ///   - request: The collection and immediate child involved in the action.
+  ///   - activityGroupID: The identifier shared by events from this action.
+  ///   - capturedActivityLogContext: The previously captured collection details, when available.
+  ///   - error: The action error, when the action failed.
+  /// - Returns: An activity event using only the captured collection context and safe failure evidence.
   private func actionActivityLogEvent(
     _ action: MovieFolderActivityLogEvent.Action, status: MovieFolderActivityLogEvent.Status,
     request: MoviePosterRequest, activityGroupID: UUID,
@@ -283,6 +291,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   }
 
   /// Preserves host action failure categories without retaining arbitrary error descriptions.
+  /// - Parameter error: The error raised by the host poster action.
+  /// - Returns: A safe failure category and stage for activity history.
   private func actionFailureEvidence(for error: any Error) -> FolderProcessingFailure {
     guard let actionError = error as? MoviePosterActionServiceError else {
       return MovieFolderActivityLogEvent.failureEvidence(for: error)

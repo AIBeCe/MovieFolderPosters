@@ -130,7 +130,9 @@ extension MovieFolderProcessor {
     let access = try acquireRootAccess(for: root)
     defer { withExtendedLifetime(access) {} }
     var state = try loadState(from: access)
+
     guard movie.id > 0 else { throw PosterActionError.unresolved }
+
     activity.movie = movie
     activity.stage = .artwork
 
@@ -139,6 +141,7 @@ extension MovieFolderProcessor {
     else {
       throw PosterActionError.noPoster
     }
+
     var candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
     do {
@@ -254,8 +257,10 @@ extension MovieFolderProcessor {
       if case .invalidChild = error { throw PosterActionError.changedIdentity }
       throw error
     }
+
     guard removed else {
       activity.append(.noPosterToRemove)
+
       return false
     }
 
