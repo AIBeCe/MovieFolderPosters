@@ -2,7 +2,11 @@
 
 R110-03 extends the existing service boundaries with separate optional network-purpose history and privacy-aware
 writers. See [Result filtering and private history](PRIVATE_HISTORY.md) for the approved scope, compatibility,
-contention policy and current implementation evidence. Historical delivery evidence below remains dated.
+contention policy and current implementation evidence. Its informative Activity increment adds structured historical
+context, actual folder/run evidence and fully wrapped native Log rows, with 8 KiB Activity events and a 1 MiB
+payload budget. Activity record version 2 preserves legacy reads and prevents older writers from replacing new
+records. R110-03 was integrated into `develop` through `87d0567` on 2026-10-25; see
+[formal increment validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md). Historical delivery evidence below remains dated.
 
 Date: 2026-10-18
 Status: Implemented, independently reviewed, and committed as `e7d404b` on 2026-10-18.

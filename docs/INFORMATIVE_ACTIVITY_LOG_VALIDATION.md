@@ -1,9 +1,11 @@
 # Informative Activity Log — formal validation
 
-Status: Issue-scoped validation complete on 2026-10-25; awaiting user approval of validation changes.
+Status: Issue-scoped validation completed and approved on 2026-10-25; committed as `87d0567`.
+The feature was fast-forwarded into `develop` under the user's feature-completion authorization.
 Implementation: `e4d8ad5` on `feature/result-log-private-history`.
 Scope: approved [informative Activity Log point](INFORMATIVE_ACTIVITY_LOG.md), compared with `bfd2b25`.
-No merge, push, release qualification, or validation commit is authorized by starting this phase.
+Starting validation did not authorize integration. The later explicit “finish the feature” instruction authorized
+the validation commit, fast-forward integration, documentation commit and push. Release qualification is separate.
 
 ## Verification
 
@@ -97,5 +99,7 @@ release qualification were not performed. These results cover issue-scoped code,
 copy behavior; they do not claim those wider platform qualifications. No live credential operation or network
 request was required.
 
-Validation changes remain uncommitted for user review. Approval of completed validation authorizes its commit;
-only “finish the feature” authorizes final integration and push.
+Validation changes were approved and committed as `87d0567` before integration. The fast-forward merged tree
+was verified identical to the validated feature tree; only delivery documentation changed afterward. No tests
+were repeated for an identical tree or documentation-only changes. The feature-completion instruction authorizes
+publishing the resulting `develop` commits; it does not publish a release or close a GitHub issue.

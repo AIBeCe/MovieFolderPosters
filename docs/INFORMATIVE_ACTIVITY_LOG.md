@@ -1,8 +1,9 @@
 # Informative activity Log — additional R110-03 implementation point
 
-Status: Proposal and final `MovieFolderActivityLog…` names approved on 2026-10-25. Implementation complete; independent review PASS.
-Baseline: `bfd2b25` on `feature/result-log-private-history`. The user approved the implementation on 2026-10-25;
-it was committed as `e4d8ad5` after review findings were resolved and focused checks passed.
+Status: Implemented, validated and integrated into `develop` on 2026-10-25. Independent implementation review PASS.
+Approved `MovieFolderActivityLog…` names are reflected throughout sources and callers.
+Increment baseline: `bfd2b25`; source branch: `feature/result-log-private-history`.
+Implementation: `e4d8ad5`. Approved validation: `87d0567`. The user authorized final integration and push on 2026-10-25.
 Formal Validation Phase was authorized on 2026-10-25; see [formal validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md).
 
 ## Approved behavior
@@ -96,7 +97,8 @@ privacy emits unlinked history. Diagnostics exports project only fixed action/st
 Inclusion retains bookmark/root authorization through the synchronous settings commit; notifications and history
 run after required accesses release. The focused lifetime probe verifies committed state and access release.
 Independent review resolved all Important findings (I2–I8), then returned PASS. A final indentation-only correction
-requires no behavioral rerun. The implementation remains on the feature branch; no merge or push is authorized.
+requires no behavioral rerun. Subsequent validation approval and feature completion authorized integration into
+`develop`; current formal results and qualification limits are recorded in the validation report.
 
 The implementation evidence above predates formal validation. See [formal validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md)
 for current verification, tests, SwiftLint, style review and remaining native qualification limits.

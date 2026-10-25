@@ -334,10 +334,16 @@ GitHub issue: [#11](https://github.com/AIBeCe/MovieFolderPosters/issues/11); mil
 
 GitHub issue: [#12](https://github.com/AIBeCe/MovieFolderPosters/issues/12); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
-- [ ] Scope: Add result filters plus Log search/category/severity controls and an optional bounded network-purpose ledger. Private collection settings minimize identifying optional history without breaking necessary local state.
+- [x] Scope: Add result filters plus Log search/category/severity controls and an optional bounded network-purpose ledger. Private collection settings minimize identifying optional history without breaking necessary local state.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Filters operate on actual structured outcomes/events, remain keyboard accessible, and never expose tokens or raw bookmarks. Private mode applies to new events and has an explicit policy for existing history.
 - Source ideas: E10, N58, N60.
+- Delivery: Implemented in `5b046c7`, extended with informative and fully wrapped Activity messages in `e4d8ad5`,
+  and validated in `87d0567`; fast-forward integrated into `develop` on 2026-10-25. The focused formal increment
+  checks passed, including actual copy behavior outside the restricted sandbox. SwiftLint reports 0 errors and
+  40 warnings (23 unchanged, 17 reviewed numerical metrics). Native keyboard/VoiceOver and live signed host/Finder
+  qualification remain unperformed. See [private history](PRIVATE_HISTORY.md) and
+  [validation evidence](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md). No release publication or tracker closure is implied.
 
 <a id="r110-04"></a>
 

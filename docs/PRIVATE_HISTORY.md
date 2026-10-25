@@ -1,15 +1,15 @@
 # Result filtering and private history — R110-03
 
-Status: Combined proposal approved on 2026-10-24; initial implementation and focused checks completed with review
-PASS. User-approved naming corrections (points 1–7) completed on 2026-10-25 with focused checks and independent
-review PASS. The user approved the completed implementation for commit on 2026-10-25. Formal validation of the
-informative Activity Log increment was authorized and completed separately; see
-[validation evidence](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md) for checks, corrections and limitations.
-The additional informative Activity Log point was approved on 2026-10-25. It adds historical collection/folder/
-confirmed-movie context, actual processing results and counters, safe failure guidance, and fully wrapped text.
-See [Informative Activity Log](INFORMATIVE_ACTIVITY_LOG.md) for implementation evidence and remaining checks.
-Issue: [#12](https://github.com/AIBeCe/MovieFolderPosters/issues/12).
-Branch: `feature/result-log-private-history`; baseline: `5b14ea8`.
+Status: Implemented and integrated into `develop` on 2026-10-25 through a fast-forward merge.
+Initial R110-03 implementation and naming corrections: `5b046c7`. Informative Activity Log: `e4d8ad5`.
+Approved validation corrections and evidence: `87d0567`. The user authorized feature completion on 2026-10-25.
+The focused formal validation of the informative increment passed with documented nonblocking lint metrics;
+see [validation evidence](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md) for exact scope and native limitations.
+[Informative Activity Log](INFORMATIVE_ACTIVITY_LOG.md) records historical collection/folder/confirmed-movie context,
+actual outcomes/counters, safe failure guidance and fully wrapped text. This delivery handoff supersedes the
+historical proposal/implementation approval boundaries below. It is development integration, not a published release.
+Issue: [#12](https://github.com/AIBeCe/MovieFolderPosters/issues/12). No issue closure was performed by this workflow.
+Source branch: `feature/result-log-private-history`; original baseline: `5b14ea8`.
 
 ## Approved scope and contracts
 
@@ -21,8 +21,10 @@ Branch: `feature/result-log-private-history`; baseline: `5b14ea8`.
   including hidden rows. Filter changes must never restore hidden selections; late reads cannot cross sources/Clear.
 - Derive activity category from action, severity from status: started/succeeded/cancelled information, partial
   warning, failed/unavailable error. Copy only displayed time/message/category/severity, never stored identifiers.
-- Optional network history defaults off, with its control in Log. Activity and Network use separate bounded
-  namespaces, each at most 500 entries under the existing 2 KiB event/2 MiB record limits.
+- Optional network history defaults off, with its control in Log. Activity and Network use separate namespaces,
+  each retaining at most 500 entries. Network keeps its 2 KiB event limit; detailed Activity uses 8 KiB events,
+  a 1 MiB serialized payload budget and record version 2. Persistence envelopes remain limited to 2 MiB.
+  Activity reads legacy version 1; older writers reject version 2 without modifying stored bytes.
 - Observe actual TMDb HTTP attempts for credential validation, search, poster configuration and poster download.
   Record terminal HTTP result/time only, optionally a nonprivate collection UUID. No queries, titles, years,
   request URLs/headers/body, credentials, paths, bookmarks or arbitrary errors. A 2xx response is not movie/poster
@@ -31,8 +33,10 @@ Branch: `feature/result-log-private-history`; baseline: `5b14ea8`.
   sending. Report exactly once per dispatched ticketed attempt. Completion requires recording still enabled,
   a matching history revision, and an existing nonprivate collection when collection-scoped.
 - Add/Edit Collection saves Private collection history atomically with the draft. New private activity drops both
-  collection/group identifiers; private network history is omitted. Removed-root activity keeps only unlinked
-  fixed text. Unreadable configuration skips linked optional writes. Intentional omission is not a storage error.
+  collection/group identifiers; private network history is omitted. A repository-minted committed-removal receipt
+  may retain a public collection's former name; private capture or a reused private ID prevents identifying history.
+  Unknown capture privacy produces unlinked Activity. Unreadable current configuration omits linked optional
+  writes. Intentional omission is not a storage error.
 - Existing history is retained unchanged until the user explicitly clears its source; explain this beside privacy
   controls. Disabling recording retains history. Omitted history is never reconstructed.
 - Keep required local outcomes/decisions/caches/authorization and processing behavior. Privacy settings do not
@@ -58,8 +62,9 @@ Branch: `feature/result-log-private-history`; baseline: `5b14ea8`.
 - [x] Update documentation with implementation evidence and remaining formal/native qualification.
 
 Workers use meaningful failing behavioral tests before implementation, then relevant filtered Swift Testing runs.
-No project-wide suite, SwiftLint, formal Validation Phase, commit, merge, push or extension registration is authorized.
-The user's lifecycle takes precedence over skill defaults suggesting intermediate commits or repeat approval gates.
+At the original proposal checkpoint, this plan did not authorize project-wide tests, SwiftLint, formal validation,
+commits, integration, push or extension registration. Subsequent user approvals authorized implementation,
+issue-scoped validation and the feature-completion sequence recorded in the current delivery handoff.
 
 ## Review focus
 
@@ -155,7 +160,8 @@ wording. The owner restored that activity message while retaining source-specifi
 and the associated Log model tests passed. Independent review then returned PASS with no remaining Critical or
 Important findings. The same owners handled fixes and re-review.
 
-Formal validation, SwiftLint, a formal issue-wide Swift style review, native keyboard/VoiceOver, updated host/Finder,
-visual/runtime qualification and signed native builds remain unperformed. Implementation approval authorizes its
-commit only; no merge, push, issue closure or release has occurred. Existing untracked user/build/Xcode files
-remain untouched.
+The historical runs above are implementation evidence. The later informative increment's formal verification,
+tests, SwiftLint and Swift style results are recorded in [formal validation](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md).
+They do not imply a project-wide validation run or native keyboard/VoiceOver, live host/Finder and signed-build
+qualification. The current delivery handoff records approved integration; no issue closure or release publication
+is part of this workflow. Existing untracked user/build/Xcode files remain untouched.

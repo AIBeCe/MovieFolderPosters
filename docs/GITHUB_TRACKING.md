@@ -1,8 +1,12 @@
 # GitHub Roadmap Tracking
 
-Updated: 2026-10-24. Tracking was initially created and verified on 2026-10-16.
+Updated: 2026-10-25. Tracking was initially created and verified on 2026-10-16.
 Status: R100-01 and R100-02 are completed; issues #1 and #2 are closed as completed. R110-02 is implemented,
 validated, and integrated locally in `develop`. No GitHub issue closure was performed for #11.
+R110-03 is implemented and integrated into `develop` through `87d0567` on 2026-10-25, including informative Activity
+messages and full-text presentation. Its increment's issue-scoped validation and remaining native qualification
+are recorded in [validation evidence](INFORMATIVE_ACTIVITY_LOG_VALIDATION.md). No issue #12 closure was performed
+by this completion workflow; integration is not a published 1.1.0 release.
 R100-02 implementation commit: `049b74b`. Both features are integrated into `develop`; their feature branches
 were deleted. `develop` was pushed to GitHub through `b48d44d` on 2026-10-18. No release was published.
 See [Processing results](COLLECTION_PROCESSING.md) for verification and native qualification limits.
@@ -80,7 +84,7 @@ release/decision criteria; a supporting issue is not automatically an applicatio
 | R100-09 | [#9 — Qualify and distribute the first production release](https://github.com/AIBeCe/MovieFolderPosters/issues/9) | [1.0.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/2) | Planned delivery |
 | R110-01 | [#10 — Simplify collection setup and naming](https://github.com/AIBeCe/MovieFolderPosters/issues/10) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Implemented, validated, and integrated locally at `3c447e0`; Finder Sync/File Providers Settings presentation remains unresolved |
 | R110-02 | [#11 — Pause collections and exclude folders reversibly](https://github.com/AIBeCe/MovieFolderPosters/issues/11) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Implemented, validated, and integrated locally in `develop`; native Finder/icon qualification remains |
-| R110-03 | [#12 — Improve result and Log filtering with private history](https://github.com/AIBeCe/MovieFolderPosters/issues/12) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Planned delivery |
+| R110-03 | [#12 — Improve result and Log filtering with private history](https://github.com/AIBeCe/MovieFolderPosters/issues/12) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Implemented and integrated into `develop` through `87d0567`; informative increment validated; native keyboard/VoiceOver and signed host/Finder qualification remain |
 | R110-04 | [#13 — Connect results with focused Finder utilities](https://github.com/AIBeCe/MovieFolderPosters/issues/13) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Planned delivery |
 | R110-05 | [#14 — Explain local data and produce focused support exports](https://github.com/AIBeCe/MovieFolderPosters/issues/14) | [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3) | Planned delivery |
 | R120-01 | [#15 — Add verified aliases and language preferences](https://github.com/AIBeCe/MovieFolderPosters/issues/15) | [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4) | Planned delivery |
