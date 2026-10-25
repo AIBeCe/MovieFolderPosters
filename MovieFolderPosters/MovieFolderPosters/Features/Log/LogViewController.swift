@@ -24,6 +24,10 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   private var isRendering = false
   /// The table displaying timestamp, message, and category columns.
   private let historyTableView = NSTableView()
+  /// Last viewport width used to distribute columns without overriding explicit column drags on height-only layouts.
+  private var historyViewportWidth = CGFloat.zero
+  /// Column widths whose automatic row-height measurements have already been invalidated.
+  private var measuredHistoryColumnWidths: [CGFloat] = []
   /// Provides scrolling for the activity table.
   private let historyScrollView = NSScrollView()
   /// Clears persisted activity history only.
@@ -137,6 +141,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     historyTableView.intercellSpacing = .zero
     historyTableView.usesAlternatingRowBackgroundColors = true
     historyTableView.rowHeight = 24
+    historyTableView.usesAutomaticRowHeights = true
     historyTableView.dataSource = self
     historyTableView.delegate = self
     historyTableView.columnAutoresizingStyle = .noColumnAutoresizing
@@ -147,7 +152,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
       let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
       column.title = title
       column.width = width
-      column.minWidth = 60
+      column.minWidth = 40
       historyTableView.addTableColumn(column)
     }
     historyScrollView.documentView = historyTableView
@@ -160,9 +165,19 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   override func viewDidLayout() {
     super.viewDidLayout()
     let width = historyScrollView.contentView.bounds.width
-    guard width > 0 else { return }
-    historyTableView.tableColumns[1].width = max(180, width - 420)
-    historyTableView.setFrameSize(NSSize(width: width, height: historyTableView.frame.height))
+
+    guard width > .zero else { return }
+
+    if historyViewportWidth != width {
+      historyViewportWidth = width
+      let columns = historyTableView.tableColumns
+      columns[0].width = max(40, min(180, width * 0.22))
+      columns[2].width = max(40, min(140, width * 0.17))
+      columns[3].width = max(40, min(100, width * 0.12))
+      columns[1].width = max(40, width - columns[0].width - columns[2].width - columns[3].width)
+      historyTableView.setFrameSize(NSSize(width: width, height: historyTableView.frame.height))
+    }
+    invalidateHistoryRowHeightsIfNeeded()
   }
 
   /// Returns the number of entries currently displayed.
@@ -171,28 +186,52 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   /// - Returns: The number of log entries.
   func numberOfRows(in tableView: NSTableView) -> Int { viewModel.filteredHistoryRows().count }
 
-  /// Creates a truncated text cell for the requested log field.
+  /// Reuses a constrained wrapping cell containing the complete rendered history field.
   ///
   /// - Parameters:
   ///   - tableView: The table requesting a cell.
   ///   - tableColumn: The column whose value should be displayed.
   ///   - row: The entry index to display.
-  /// - Returns: The label for a valid row, or `nil` if the row is out of range.
+  /// - Returns: The complete multiline cell for a valid row, or absence when the row is out of range.
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard viewModel.filteredHistoryRows().indices.contains(row) else { return .none }
+    guard viewModel.filteredHistoryRows().indices.contains(row), let tableColumn else { return .none }
+
     let entry = viewModel.filteredHistoryRows()[row]
     let text: String
-    switch tableColumn?.identifier.rawValue {
+    switch tableColumn.identifier.rawValue {
     case "time": text = entry.timeText
     case "text": text = entry.message
     case "category": text = entry.category
     default: text = entry.severity
     }
-    let label = NSTextField(labelWithString: text)
-    label.lineBreakMode = .byTruncatingTail
-    label.toolTip = text
+    let identifier = tableColumn.identifier
+    let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? LogHistoryTextCellView
+      ?? LogHistoryTextCellView(frame: .zero)
+    cell.identifier = identifier
+    cell.configure(text: text, columnWidth: tableColumn.width)
 
-    return label
+    return cell
+  }
+
+  /// Recalculates automatic row heights after a user changes any history column width.
+  func tableViewColumnDidResize(_ notification: Notification) { invalidateHistoryRowHeightsIfNeeded() }
+
+  /// Invalidates wrapped measurements only when column geometry changes or a reload requests it.
+  /// - Parameter force: Whether changed history content requires fresh automatic measurements at the same width.
+  private func invalidateHistoryRowHeightsIfNeeded(force: Bool = false) {
+    let widths = historyTableView.tableColumns.map(\.width)
+
+    guard force || widths != measuredHistoryColumnWidths else { return }
+
+    measuredHistoryColumnWidths = widths
+    for row in 0..<historyTableView.numberOfRows {
+      for column in historyTableView.tableColumns.indices {
+        let cell = historyTableView.view(atColumn: column, row: row, makeIfNecessary: false)
+          as? LogHistoryTextCellView
+        cell?.updateLayoutWidth(widths[column])
+      }
+    }
+    historyTableView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<historyTableView.numberOfRows))
   }
 
   /// Refreshes the table after the observed log changes.
@@ -244,6 +283,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     guard isViewLoaded else { return }
     isRendering = true
     historyTableView.reloadData()
+    invalidateHistoryRowHeightsIfNeeded(force: true)
     historyTableView.selectRowIndexes(viewModel.selectedRows, byExtendingSelection: false)
     isRendering = false
     categoryFilterPopUpButton.removeAllItems()

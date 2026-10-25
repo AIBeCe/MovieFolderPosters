@@ -55,7 +55,7 @@ struct PersistedModelNamingCompatibilityTests {
       "operationID": "11111111-1111-1111-1111-111111111111",
       "collectionID": "22222222-2222-2222-2222-222222222222"
     ], options: [.sortedKeys])
-    let decoded = try JSONDecoder().decode(MovieFolderActivityEvent.self, from: legacy)
+    let decoded = try JSONDecoder().decode(MovieFolderActivityLogEvent.self, from: legacy)
     #expect(decoded.status.rawValue == rawStatus)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -76,7 +76,7 @@ struct PersistedModelNamingCompatibilityTests {
     let legacy = try JSONSerialization.data(withJSONObject: [
       "action": "applicationOpened", "outcome": "succeeded"
     ], options: [.sortedKeys])
-    let decoded = try JSONDecoder().decode(MovieFolderActivityEvent.self, from: legacy)
+    let decoded = try JSONDecoder().decode(MovieFolderActivityLogEvent.self, from: legacy)
     #expect(decoded.activityGroupID == .none)
     #expect(decoded.collectionID == .none)
     let encoder = JSONEncoder()

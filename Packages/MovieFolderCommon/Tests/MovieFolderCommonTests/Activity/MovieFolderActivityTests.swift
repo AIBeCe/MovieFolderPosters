@@ -18,12 +18,12 @@ private final class ActivityNotifierProbe: MovieFolderActivityChangeNotifying {
 struct MovieFolderActivityTests {
   /// Checks that persisted events accept only the closed, path-free event vocabulary.
   @Test func closedEventVocabularyRoundTripsWithoutPathsOrSecrets() throws {
-    for action in MovieFolderActivityEvent.Action.allCases {
-      for status in MovieFolderActivityEvent.Status.allCases {
-        let event = MovieFolderActivityEvent(
+    for action in MovieFolderActivityLogEvent.Action.allCases {
+      for status in MovieFolderActivityLogEvent.Status.allCases {
+        let event = MovieFolderActivityLogEvent(
           action: action, status: status, activityGroupID: UUID(), collectionID: UUID())
         let encoded = try JSONEncoder().encode(event)
-        let decoded = try JSONDecoder().decode(MovieFolderActivityEvent.self, from: encoded)
+        let decoded = try JSONDecoder().decode(MovieFolderActivityLogEvent.self, from: encoded)
         #expect(decoded == event)
         #expect(encoded.count < 2048)
         #expect(!decoded.text.contains("/"))
@@ -32,20 +32,21 @@ struct MovieFolderActivityTests {
       }
     }
     let arbitrary = Data("{\"action\":\"/private/movie\",\"outcome\":\"succeeded\"}".utf8)
-    #expect(throws: DecodingError.self) { try JSONDecoder().decode(MovieFolderActivityEvent.self, from: arbitrary) }
+    #expect(throws: DecodingError.self) { try JSONDecoder().decode(MovieFolderActivityLogEvent.self, from: arbitrary) }
   }
 
   /// Checks that deferred, failed, or blocked work cannot report complete success.
   @Test func automaticSummaryNeverClaimsCompletionForDeferredOrFailedWork() {
-    #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary()) == .succeeded)
+    #expect(MovieFolderActivityLogEvent.automaticProcessingStatus(for: ProcessingSummary()) == .succeeded)
     #expect(
-      MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(transientFailures: 1)) == .partial)
+      MovieFolderActivityLogEvent.automaticProcessingStatus(for: ProcessingSummary(transientFailures: 1)) == .partial)
     #expect(
-      MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(skippedRetryWindow: 1)) == .partial)
+      MovieFolderActivityLogEvent.automaticProcessingStatus(for: ProcessingSummary(skippedRetryWindow: 1)) == .partial)
     #expect(
-      MovieFolderActivityEvent.automaticProcessingStatus(for: ProcessingSummary(providerRetryAt: Date())) == .partial)
+      MovieFolderActivityLogEvent.automaticProcessingStatus(
+        for: ProcessingSummary(providerRetryAt: Date())) == .partial)
     let blockedSummary = ProcessingSummary(rootAccessUnavailable: true)
-    #expect(MovieFolderActivityEvent.automaticProcessingStatus(for: blockedSummary) == .unavailable)
+    #expect(MovieFolderActivityLogEvent.automaticProcessingStatus(for: blockedSummary) == .unavailable)
   }
 
   /// Checks that clearing durable history preserves configuration and processing outcomes.
@@ -74,7 +75,7 @@ struct MovieFolderActivityTests {
     let savedOutcome = try outcomes.recordProcessingStart(context: context, action: .automatic)
     let activityDirectory = directory.appendingPathComponent("Activity")
     let first = MovieFolderActivityRecorder(directory: activityDirectory, notifier: notifier)
-    let event = MovieFolderActivityEvent(action: .posterSelection, status: .succeeded)
+    let event = MovieFolderActivityLogEvent(action: .posterSelection, status: .succeeded)
     #expect(await first.record(event))
     #expect(notifier.changes == 1)
     let reopened = MovieFolderActivityRecorder(directory: activityDirectory, notifier: notifier)
@@ -102,12 +103,12 @@ struct MovieFolderActivityTests {
     let notifier = ActivityNotifierProbe()
     let recorder = MovieFolderActivityRecorder(directory: directory, notifier: notifier)
     let activityGroupID = UUID()
-    #expect(await recorder.record(MovieFolderActivityEvent(
+    #expect(await recorder.record(MovieFolderActivityLogEvent(
       action: .automaticProcessing, status: .started, activityGroupID: activityGroupID)))
     let terminalCommitted = await Task {
       withUnsafeCurrentTask { $0?.cancel() }
 
-      return await recorder.record(MovieFolderActivityEvent(
+      return await recorder.record(MovieFolderActivityLogEvent(
         action: .automaticProcessing, status: .cancelled, activityGroupID: activityGroupID))
     }.value
     #expect(terminalCommitted)
@@ -125,7 +126,7 @@ struct MovieFolderActivityTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let notifier = ActivityNotifierProbe()
     let recorder = MovieFolderActivityRecorder(directory: directory, notifier: notifier)
-    let first = MovieFolderActivityEvent(action: .configurationLoaded, status: .succeeded)
+    let first = MovieFolderActivityLogEvent(action: .configurationLoaded, status: .succeeded)
     let service: any MovieFolderActivityServicing = recorder
     #expect(!(await recorder.hasObservedWriteFailure))
     #expect(!(await service.hasObservedWriteFailure))
@@ -134,7 +135,7 @@ struct MovieFolderActivityTests {
     #expect(await service.hasObservedWriteFailure)
     #expect(notifier.changes == 0)
     try FileManager.default.removeItem(at: directory)
-    let recovered = MovieFolderActivityEvent(action: .posterRefresh, status: .succeeded)
+    let recovered = MovieFolderActivityLogEvent(action: .posterRefresh, status: .succeeded)
     #expect(await recorder.record(recovered))
     #expect(await recorder.hasObservedWriteFailure)
     #expect(await service.hasObservedWriteFailure)
@@ -151,7 +152,7 @@ struct MovieFolderActivityTests {
     defer { try? FileManager.default.removeItem(at: file) }
     let notifier = ActivityNotifierProbe()
     let recorder = MovieFolderActivityRecorder(directory: file, notifier: notifier)
-    #expect(!(await recorder.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))))
+    #expect(!(await recorder.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))))
     #expect(notifier.changes == 0)
     await #expect(throws: (any Error).self) { try await recorder.entries() }
     await #expect(throws: (any Error).self) { try await recorder.clear() }
@@ -169,7 +170,7 @@ struct MovieFolderActivityTests {
   try repository.update { $0.directories = [root] }
   let recorder = MovieFolderActivityRecorder(directory: directory.appendingPathComponent("Activity"),
     notifier: ActivityNotifierProbe(), configurationRepository: repository)
-  let event = MovieFolderActivityEvent(action: .posterRefresh, status: .started,
+  let event = MovieFolderActivityLogEvent(action: .posterRefresh, status: .started,
     activityGroupID: UUID(), collectionID: root.id)
   #expect(await recorder.record(event))
   try repository.update { $0.directories[0].usesPrivateHistory = true }
@@ -192,7 +193,7 @@ struct MovieFolderActivityTests {
   let recorder = MovieFolderActivityRecorder(directory: directory.appendingPathComponent("Activity"),
     notifier: notifier, configurationRepository: repository)
   let persistenceAccess = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
-  #expect(await recorder.record(MovieFolderActivityEvent(action: .posterRefresh, status: .started,
+  #expect(await recorder.record(MovieFolderActivityLogEvent(action: .posterRefresh, status: .started,
     activityGroupID: UUID(), collectionID: UUID())))
   #expect(!(await recorder.hasObservedWriteFailure))
   #expect(notifier.changes == 0)

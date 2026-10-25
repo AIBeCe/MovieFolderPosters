@@ -241,3 +241,80 @@ func invalidActivityHistoryIsNeverReplaced(data: Data) async throws {
   #expect(try await activityHistoryStore.entries().map(\.event) == [1])
   #expect(try await activityHistoryStore.append(event: 3).sequence == 2)
 }
+
+/// Version-two activity storage reads legacy events and prevents older writers from changing detailed records.
+@Test func detailedHistoryVersionRejectsLegacyWritersWithoutChangingBytes() async throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let legacyStore = try await ActivityLog<String>(directory: directory, namespace: "test")
+  try await legacyStore.append(event: "legacy")
+  let detailedStore = try await ActivityLog<String>(directory: directory, namespace: "test",
+    maximumEventBytes: 8192, maximumHistoryPayloadBytes: 1024 * 1024, writerRecordVersion: 2)
+  #expect(try await detailedStore.entries().map(\.event) == ["legacy"])
+  try await detailedStore.append(event: String(repeating: "é", count: 3000))
+  let persistenceStore = try PersistenceStore(directory: directory)
+  let originalBytes: Data?
+  do {
+    let persistenceAccess = try #require(try persistenceStore.acquireAccess(for: "Log.Activity.v1.test"))
+    originalBytes = try persistenceAccess.read()
+  }
+  await #expect(throws: ActivityLogError.unsupportedVersion) { try await legacyStore.entries() }
+  await #expect(throws: ActivityLogError.unsupportedVersion) { try await legacyStore.append(event: "old writer") }
+  await #expect(throws: ActivityLogError.unsupportedVersion) { try await legacyStore.clear() }
+  let persistenceAccess = try #require(try persistenceStore.acquireAccess(for: "Log.Activity.v1.test"))
+  #expect(try persistenceAccess.read() == originalBytes)
+}
+
+/// Byte retention trims old events while keeping the newest sequence inside the envelope's base64-safe budget.
+@Test func detailedHistoryTrimsBySerializedPayloadBytes() async throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let activityHistoryStore = try await ActivityLog<String>(directory: directory, namespace: "test",
+    maximumEventBytes: 8192, maximumHistoryPayloadBytes: 1024 * 1024, writerRecordVersion: 2)
+  for sequence in 1...150 {
+    try await activityHistoryStore.append(event: "\(sequence):" + String(repeating: "x", count: 7500))
+  }
+  let entries = try await activityHistoryStore.entries()
+  #expect(entries.count < 150)
+  #expect(entries.last?.sequence == 150)
+  #expect(entries.last?.event.hasPrefix("150:") == true)
+  let persistenceStore = try PersistenceStore(directory: directory)
+  do {
+    let persistenceAccess = try #require(try persistenceStore.acquireAccess(for: "Log.Activity.v1.test"))
+    let payload = try #require(try persistenceAccess.read())
+    #expect(payload.count <= 1024 * 1024)
+  }
+  try await activityHistoryStore.clear()
+  #expect(try await activityHistoryStore.append(event: "after clear").sequence == 151)
+}
+
+/// A newest entry that cannot fit a caller's byte budget leaves existing payload and sequence unchanged.
+@Test func unretainableNewestEntryPreservesHistoryAndSequence() async throws {
+  let directory = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let activityHistoryStore = try await ActivityLog<String>(directory: directory, namespace: "test",
+    maximumEventBytes: 8192, maximumHistoryPayloadBytes: 400, writerRecordVersion: 2)
+  try await activityHistoryStore.append(event: "original")
+  await #expect(throws: ActivityLogError.historyPayloadTooLarge) {
+    try await activityHistoryStore.append(event: String(repeating: "x", count: 500))
+  }
+  #expect(try await activityHistoryStore.entries().map(\.event) == ["original"])
+  #expect(try await activityHistoryStore.append(event: "next").sequence == 2)
+}
+
+/// Invalid caller byte/version options fail before creating the storage namespace.
+@Test func invalidDetailedHistoryOptionsDoNotCreateStorage() async throws {
+  let directory = temporaryDirectory()
+  await #expect(throws: ActivityLogError.invalidEventByteLimit) {
+    try await ActivityLog<String>(directory: directory, namespace: "test", maximumEventBytes: 0)
+  }
+  for budget in [0, 1024 * 1024 + 1] {
+    await #expect(throws: ActivityLogError.invalidHistoryPayloadLimit) {
+      try await ActivityLog<String>(directory: directory, namespace: "test", maximumHistoryPayloadBytes: budget)
+    }
+  }
+  await #expect(throws: ActivityLogError.unsupportedVersion) {
+    try await ActivityLog<String>(directory: directory, namespace: "test", writerRecordVersion: 3)
+  }
+  #expect(!FileManager.default.fileExists(atPath: directory.path))
+}

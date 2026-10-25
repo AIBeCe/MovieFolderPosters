@@ -11,6 +11,69 @@ import Testing
 
 /// Covers persistence, folder-access, overlap, and credential behavior in the host service.
 struct DirectoryConfigurationServiceTests {
+  /// The normal setup and edit drafts report their committed historical collection names exactly once.
+  @Test @MainActor func setupAndEditDraftsRecordCommittedContext() async throws {
+    let activity = ActivityServiceFake()
+    let fixture = try ConfigurationServiceFixture(activity: activity)
+    defer { fixture.cleanup() }
+    let folder = fixture.root.appendingPathComponent("ActualSetupFolder")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let setup = CollectionSetupViewModel(service: fixture.service,
+      applicationConfiguration: MovieMatchingConfiguration())
+    await setup.prepare(folder)
+    setup.displayName = "Historical collection name"
+    #expect(await setup.commit())
+    let directory = try #require(try fixture.repository.read().directories.first)
+    let added = try await activity.entries().map(\.event)
+    #expect(added.count == 1)
+    #expect(added.first?.action == .collectionAdded)
+    #expect(added.first?.status == .succeeded)
+    #expect(added.first?.target?.collectionName == "Historical collection name")
+    #expect(added.first?.collectionID == directory.id)
+    let edit = CollectionEditViewModel(identifier: directory.id, service: fixture.service)
+    await edit.load()
+    edit.displayName = "Committed edited name"
+    edit.setPaused(true)
+    #expect(await edit.save())
+    let recorded = try await activity.entries().map(\.event)
+    #expect(recorded.count == 2)
+    #expect(recorded.last?.status == .succeeded)
+    #expect(recorded.last?.action == .collectionConfigurationSaved)
+    #expect(recorded.last?.target?.collectionName == "Committed edited name")
+    #expect(recorded.first?.target?.collectionName == "Historical collection name")
+    #expect(try fixture.repository.read().directories.first?.processingConfiguration.isPaused == true)
+  }
+
+  /// Unprivating a draft cannot expose names captured while its original saved configuration was private.
+  @Test(arguments: [(true, false), (false, true)]) @MainActor
+  func editHistoryPreservesOriginalPrivateChoiceAndCommittedSuccessOnWriteFailure(
+    _ previouslyUsedPrivateHistory: Bool, _ usesPrivateHistory: Bool
+  ) async throws {
+    let activity = ActivityServiceFake()
+    let fixture = try ConfigurationServiceFixture(activity: activity)
+    defer { fixture.cleanup() }
+    let directory = MonitoredDirectory(id: UUID(), path: fixture.root.path, transferBookmark: Data([1]),
+      authorizationVersion: UUID(), displayName: "Original collection",
+      usesPrivateHistory: previouslyUsedPrivateHistory)
+    try fixture.repository.update { $0.directories = [directory] }
+    let edit = CollectionEditViewModel(identifier: directory.id, service: fixture.service)
+    await edit.load()
+    edit.usesPrivateHistory = usesPrivateHistory
+    edit.displayName = "Committed after save"
+    #expect(await edit.save())
+    let event = try #require(try await activity.entries().last?.event)
+    #expect(event.target == .none)
+    #expect(event.collectionID == .none)
+    #expect(event.activityGroupID == .none)
+    #expect(try fixture.repository.read().directories.first?.usesPrivateHistory == usesPrivateHistory)
+    await activity.setFailures(write: true)
+    let nextEdit = CollectionEditViewModel(identifier: directory.id, service: fixture.service)
+    await nextEdit.load()
+    nextEdit.displayName = "Saved despite optional history failure"
+    #expect(await nextEdit.save())
+    #expect(try fixture.repository.read().directories.first?.displayName == "Saved despite optional history failure")
+  }
+
   /// Privacy-only edits rotate optional history without invalidating processing or authorization evidence.
   @Test func privacyOnlySaveKeepsProductGenerations() async throws {
     let fixture = try ConfigurationServiceFixture()
@@ -29,6 +92,34 @@ struct DirectoryConfigurationServiceTests {
     #expect(after.directories.first?.processingConfiguration == directory.processingConfiguration)
     #expect(after.directories.first?.authorizationVersion == directory.authorizationVersion)
     #expect(after.credentialRevision == before.credentialRevision)
+  }
+
+  /// Inclusion commits before optional history, which must observe all authorization and settings accesses released.
+  @Test func inclusionHistoryObservesCommittedStateAndReleasedAccesses() async throws {
+    let authorization = InclusionAuthorizationLifetimeProbe()
+    let fixture = try ConfigurationServiceFixture(authorization: authorization)
+    defer { fixture.cleanup() }
+    let root = fixture.root.appendingPathComponent("Movies")
+    let child = root.appendingPathComponent("Arrival (2016)")
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+    try await fixture.service.addDirectory(root)
+    let directory = try #require(try fixture.repository.read().directories.first)
+    let identity = try FileSystemService().readCurrentState(ofChild: child.lastPathComponent, in: root).identity
+    let activity = InclusionCommittedHistoryProbe(repository: fixture.repository,
+      authorizations: fixture.authorizations, directory: directory, childIdentity: identity,
+      authorization: authorization)
+    let service = DirectoryConfigurationService(repository: fixture.repository,
+      authorizations: fixture.authorizations, credentials: fixture.credentials,
+      notifier: SilentConfigurationNotifier(), authorization: authorization, activity: activity)
+    let request = MovieFolderInclusionRequest(action: .exclude, collectionID: directory.id,
+      folderURL: child, folderIdentity: identity,
+      expectedProcessingConfigurationRevision: directory.processingConfiguration.revision)
+    try await service.applyInclusionRequest(request)
+    #expect(await activity.observedCommittedExclusion)
+    #expect(await activity.observedReleasedBookmarkAccess)
+    #expect(await activity.observedReleasedDirectoryAccess)
+    #expect(await activity.observedReleasedConfigurationAccess)
+    #expect(await activity.recordedEvents.count == 1)
   }
 
   /// Confirmation evidence is revalidated against both the actual child and the persisted inclusion revision.
@@ -385,9 +476,9 @@ extension DirectoryConfigurationServiceTests {
       processingCleanup: FailingProcessingCleanup(), activity: activity)
     try await service.removeDirectory(directory.id)
     #expect(try fixture.repository.read().directories.isEmpty)
-    #expect(try await activity.entries().map(\.event) == [
-      MovieFolderActivityEvent(action: .collectionCleanup, status: .failed)
-    ])
+    let events = try await activity.entries().map(\.event)
+    #expect(events.map(\.action) == [.collectionRemoved, .collectionCleanup])
+    #expect(events.map(\.status) == [.succeeded, .failed])
   }
 
   /// Verifies that configuration changes reach retained notifier after persistence.
@@ -644,7 +735,10 @@ private struct ConfigurationServiceFixture {
   let service: DirectoryConfigurationService
 
   /// Creates an isolated service fixture with the requested authorization behavior.
-  init(authorization: any DirectoryAuthorizationProviding = TestDirectoryAuthorization(mode: .implicit)) throws {
+  init(
+    authorization: any DirectoryAuthorizationProviding = TestDirectoryAuthorization(mode: .implicit),
+    activity: (any MovieFolderActivityServicing)? = .none
+  ) throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     repository = ConfigurationRepository(
       store: try PersistenceStore(
@@ -656,7 +750,8 @@ private struct ConfigurationServiceFixture {
       repository: repository,
       authorizations: authorizations,
       credentials: credentials, notifier: SilentConfigurationNotifier(),
-      authorization: authorization, credentialTransport: CredentialTestTransport(),
+      authorization: authorization, activity: activity ?? ActivityServiceFake(),
+      credentialTransport: CredentialTestTransport(),
       recovery: ProcessingRecoveryService(
         store: try PersistenceStore(directory: root.appendingPathComponent("Recovery"))))
   }
@@ -737,4 +832,85 @@ private struct FailingSummaryCredentials: CredentialStoring {
 private struct FailingProcessingCleanup: CollectionProcessingCleaning {
   /// Rejects cleanup so removal's independent failure handling is observable.
   func pruneToConfiguredRoots() throws -> Set<String> { throw CocoaError(.fileWriteUnknown) }
+}
+
+/// Observes directory access lifetime without retaining the authorization it measures.
+private final class InclusionAuthorizationLifetimeProbe: DirectoryAuthorizationProviding {
+  /// A weak reference retains neither the directory access nor its security scope.
+  private struct WeakDirectoryAccess: Sendable {
+    /// Latest authorized access, cleared automatically when its owner releases it.
+    weak var directoryAccess: DirectoryAccess?
+  }
+  /// Serializes observation independently of the service actor.
+  private let latestDirectoryAccess = Mutex(WeakDirectoryAccess())
+  /// Whether an authorization returned by this probe is still held by its caller.
+  var hasActiveDirectoryAccess: Bool { latestDirectoryAccess.withLock { $0.directoryAccess != nil } }
+
+  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccess {
+    let directoryAccess = try FileSystemService().acquireDirectoryAccess(
+      bookmark: bookmark, securityScoped: false, expectedIdentity: expectedIdentity)
+    latestDirectoryAccess.withLock { $0.directoryAccess = directoryAccess }
+
+    return directoryAccess
+  }
+
+  func makeBookmark(for directory: URL) throws -> Data {
+    try FileSystemService().makeTransferBookmark(for: directory)
+  }
+}
+
+/// Reacquires real shared grants at the postcommit history boundary instead of relying on scheduling races.
+private actor InclusionCommittedHistoryProbe: MovieFolderActivityServicing {
+  /// Committed collection repository, which must already be released by the mutating service.
+  private let repository: ConfigurationRepository
+  /// Shared authorization records whose prior lease must have drained.
+  private let authorizations: PersistenceStore
+  /// Configured root represented by the explicit inclusion action.
+  private let directory: MonitoredDirectory
+  /// Validated child whose committed exclusion must precede history.
+  private let childIdentity: String
+  /// Weak directory-access lifetime observer.
+  private let authorization: InclusionAuthorizationLifetimeProbe
+  /// Whether the history callback observed the actual committed exclusion.
+  private(set) var observedCommittedExclusion = false
+  /// Whether the history callback could reacquire the bookmark's exclusive record access.
+  private(set) var observedReleasedBookmarkAccess = false
+  /// Whether the prior directory access had drained before optional history.
+  private(set) var observedReleasedDirectoryAccess = false
+  /// Whether the history callback could read settings through a newly acquired configuration access.
+  private(set) var observedReleasedConfigurationAccess = false
+  /// Actual events crossing this optional history boundary.
+  private(set) var recordedEvents: [MovieFolderActivityLogEvent] = []
+
+  /// Retains the independent stores and observers needed to verify the history boundary.
+  init(
+    repository: ConfigurationRepository, authorizations: PersistenceStore, directory: MonitoredDirectory,
+    childIdentity: String, authorization: InclusionAuthorizationLifetimeProbe
+  ) {
+    self.repository = repository
+    self.authorizations = authorizations
+    self.directory = directory
+    self.childIdentity = childIdentity
+    self.authorization = authorization
+  }
+
+  func record(_ event: MovieFolderActivityLogEvent) -> Bool {
+    recordedEvents.append(event)
+    observedReleasedDirectoryAccess = !authorization.hasActiveDirectoryAccess
+    do {
+      let key = "host-\(directory.id)-\(directory.authorizationVersion)"
+      let bookmarkAccess = try authorizations.acquireAccess(for: key)
+      observedReleasedBookmarkAccess = bookmarkAccess != nil
+      let configuration = try repository.read()
+      observedReleasedConfigurationAccess = true
+      observedCommittedExclusion = configuration.directories.first { $0.id == directory.id }?
+        .processingConfiguration.excludesFolder(identity: childIdentity) == true
+      withExtendedLifetime(bookmarkAccess) {}
+    } catch { return false }
+
+    return true
+  }
+
+  func entries() -> [MovieFolderActivityLogEntry] { [] }
+  func clear() {}
 }

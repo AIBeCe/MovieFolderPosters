@@ -15,6 +15,26 @@ extension MovieFolderProcessor {
   public func retryEligibleFolder(
     root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext
   ) async throws -> FolderRetryResult {
+    let activity = ProcessorActivityLog(context: activityLogContext, action: .automaticProcessing, child: child)
+    do {
+      let result = try await performRetryEligibleFolder(
+        root: root, child: child, expectedIdentity: expectedIdentity,
+        processingContext: processingContext, activity: activity)
+      await flushActivityLog(activity)
+
+      return result
+    } catch {
+      recordActivityFailure(error, in: activity)
+      await flushActivityLog(activity)
+      throw error
+    }
+  }
+
+  /// Executes the operation while retaining its existing processing access and safety fences.
+  private func performRetryEligibleFolder(
+    root: URL, child: String, expectedIdentity: String,
+    processingContext: CollectionProcessingContext, activity: ProcessorActivityLog
+  ) async throws -> FolderRetryResult {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
     let coordinationAccess = try acquireCoordinationAccess(for: root)
@@ -44,15 +64,20 @@ extension MovieFolderProcessor {
 
     let cache = try loadState(from: access)
     let prior = cache.folders[child]
+    activity.movie = savedActivityMovie(prior, candidate: candidate)
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
     if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
     let needsLegacyReassessment = sameFingerprint && prior?.needsLegacyReassessment == true
     if !needsLegacyReassessment, let deadline = cache.providerRetryAt, deadline > now() {
+      activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
+
       return .waiting(until: deadline)
     }
     if !needsLegacyReassessment, prior?.processingReason != .interrupted, record.reason != .interrupted {
       let cacheDeadline = sameFingerprint ? prior?.retryDate : .none
       if let deadline = [cacheDeadline, record.retryAt].compactMap({ $0 }).max(), deadline > now() {
+        activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
+
         return .waiting(until: deadline)
       }
     }
@@ -64,7 +89,7 @@ extension MovieFolderProcessor {
 
     var visit = AutomaticProcessingVisit(
       cache: cache, recording: try recordProcessingStart(context: processingContext, action: .manual, child: child),
-      selectedChild: child)
+      activity: activity, selectedChild: child)
     defer { interruptUnfinishedProcessing(&visit.recording, child: child) }
 
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
@@ -72,7 +97,8 @@ extension MovieFolderProcessor {
       visit.didStopEarly = try await processCandidate(candidate, root: root, access: access, visit: &visit)
     }
 
-    try finishProcessingRun(&visit.recording, state: visit.didStopEarly ? .partial : .completed)
+    try finishProcessingRun(
+      &visit.recording, state: visit.didStopEarly ? .partial : .completed, activity: visit.activity)
 
     return .attempted(visit.summary, stopSelection: visit.didStopEarly)
   }

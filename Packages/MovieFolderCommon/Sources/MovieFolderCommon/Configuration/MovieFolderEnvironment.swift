@@ -186,7 +186,7 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
   /// Records only an operational diagnostic when history storage is unavailable.
   /// - Parameter event: Product event that cannot be written to history.
   /// - Returns: False because no history entry was committed.
-  func record(_ event: MovieFolderActivityEvent) -> Bool {
+  func record(_ event: MovieFolderActivityLogEvent) -> Bool {
     Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Activity")
       .error("Activity storage unavailable; the product operation result is unchanged")
 
@@ -197,7 +197,7 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
   var hasObservedWriteFailure: Bool { true }
   /// Always throws the explicit unavailable-history failure.
   /// - Throws: `Failure.unavailable` for every request.
-  func entries() throws -> [MovieFolderActivityEntry] { throw Failure.unavailable }
+  func entries() throws -> [MovieFolderActivityLogEntry] { throw Failure.unavailable }
   /// Always throws because there is no available history store to clear.
   /// - Throws: `Failure.unavailable` for every request.
   func clear() throws { throw Failure.unavailable }

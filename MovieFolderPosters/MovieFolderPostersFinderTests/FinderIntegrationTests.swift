@@ -120,6 +120,26 @@ private final class FinderProviderCollections: Sendable {
   let collectionIDs = Mutex<[UUID]>([])
 }
 
+/// Shares only the test-controlled availability of a current settings read.
+private final class FinderConfigurationReadControl: Sendable {
+  let failsCurrentRead = Mutex(false)
+}
+
+/// Restores public history during the request to verify that unknown capture privacy remains private.
+private struct PublicHistoryRestoringProvider: MovieMetadataProvider {
+  let repository: ConfigurationRepository
+  let configurationReadControl: FinderConfigurationReadControl
+
+  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+    try repository.update { $0.directories[0].usesPrivateHistory = false }
+    configurationReadControl.failsCurrentRead.withLock { $0 = false }
+
+    return MovieSearchResult(movies: [], hasMorePages: false)
+  }
+
+  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidImage }
+}
+
 /// Redirects system boundaries into one test-owned container while retaining runtime configuration.
 private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   /// Real test-owned repositories and collection.
@@ -134,6 +154,8 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   var buildVersion: (String, String)? = ("1.2.3", "45")
   /// Forces creation failure at the provider boundary.
   var providerFailure = false
+  /// Injects an unavailable current-privacy read independently of retained processing authorization.
+  let configurationReadControl = FinderConfigurationReadControl()
   /// Injects a controlled metadata source while the production processor remains real.
   var movieMetadataProvider: any MovieMetadataProvider = NoMatchesProvider()
   /// Captures collection-specific composition without exposing request or folder contents.
@@ -145,10 +167,14 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
     self.fixture = fixture
     registrations = FinderRegistrations()
     activity = MovieFolderActivityRecorder(directory: fixture.container.appendingPathComponent("Activity"),
-      notifier: QuietActivityNotifier())
+      notifier: QuietActivityNotifier(), configurationRepository: fixture.repository)
   }
 
-  func configurationRepository() throws -> ConfigurationRepository { fixture.repository }
+  func configurationRepository() throws -> ConfigurationRepository {
+    if configurationReadControl.failsCurrentRead.withLock({ $0 }) { throw ConfigurationError.busy }
+
+    return fixture.repository
+  }
   func authorizationStore() throws -> PersistenceStore {
     try PersistenceStore(directory: fixture.container.appendingPathComponent("Authorization"))
   }
@@ -229,6 +255,44 @@ private final class FinderMenuActionTarget: NSObject {
 /// Exercises Finder menu capture, runtime authorization, and persisted processing boundaries.
 @Suite("Finder integration")
 struct FinderIntegrationTests {
+  /// A failed current privacy read cannot reuse an earlier public choice when privacy changes during work.
+  @Test @MainActor func unavailablePrivacyCaptureRemainsPrivateAfterPublicHistoryRestored() async throws {
+    let fixture = try FinderFixture()
+    defer { fixture.remove() }
+    _ = try fixture.movie()
+    var environment = IsolatedFinderEnvironment(fixture)
+    environment.movieMetadataProvider = PublicHistoryRestoringProvider(repository: fixture.repository,
+      configurationReadControl: environment.configurationReadControl)
+    let runtime = FinderConfigurationRuntime(environment: environment)
+    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
+    try fixture.repository.update { $0.directories[0].usesPrivateHistory = true }
+    environment.configurationReadControl.failsCurrentRead.withLock { $0 = true }
+    _ = try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
+    let events = try await environment.activity.entries().map(\.event)
+      .filter { $0.action == .automaticProcessing }
+
+    #expect(!events.isEmpty)
+    #expect(events.allSatisfy { $0.target == .none && $0.collectionID == .none && $0.activityGroupID == .none })
+    #expect(try fixture.repository.read().directories.first?.usesPrivateHistory == false)
+  }
+
+  /// Completed runs name the observed collection and report this visit's actual counters.
+  @Test @MainActor func automaticActivityIdentifiesCollectionAndRunCounts() async throws {
+    let fixture = try FinderFixture()
+    defer { fixture.remove() }
+    _ = try fixture.movie()
+    let environment = IsolatedFinderEnvironment(fixture)
+    let runtime = FinderConfigurationRuntime(environment: environment)
+    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
+    _ = try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
+    let recordedMessages = try await environment.activity.entries().map { $0.event.text }
+
+    #expect(recordedMessages.contains { $0.contains("Collection") && $0.contains("unresolved") && $0.contains("1") })
+    #expect(recordedMessages.contains { $0.contains("Arrival (2016)") })
+  }
+
   /// Pausing keeps Finder registration and a credential-free Include action available.
   @Test @MainActor func pausedExcludedFolderOffersIncludeWithoutMutatingConfiguration() throws {
     let fixture = try FinderFixture()
@@ -352,7 +416,8 @@ extension FinderIntegrationTests {
     #expect(try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) == .none)
     #expect(await movieMetadataProvider.searchCount == .zero)
     #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
-    #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded])
     #expect(environment.registrations.roots == [[fixture.root]])
   }
 
@@ -404,7 +469,10 @@ extension FinderIntegrationTests {
     let receipt = try JSONDecoder().decode(ExtensionReadinessReceipt.self, from: #require(try persistenceAccess.read()))
     #expect(receipt.version == "1.2.3" && receipt.build == "45")
     let activity = try await environment.activity.entries()
-    #expect(activity.map(\.event.status) == [.succeeded, .started, .succeeded])
+    #expect(activity.map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded, .started, .succeeded])
+    #expect(activity.contains { $0.event.folderResult == .notFound })
+    #expect(activity.last?.event.processingSummary?.unresolved == 1)
     #expect(activity.allSatisfy { $0.event.activityGroupID == .none || $0.event.collectionID == fixture.directory.id })
   }
   /// Keeps authorized roots registered while coalescing missing-credential diagnostics.
@@ -420,7 +488,8 @@ extension FinderIntegrationTests {
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
-    #expect(try await environment.activity.entries().map(\.event.status) == [.unavailable])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.unavailable])
     #expect(environment.registrations.roots == [[fixture.root], [fixture.root]])
   }
 
@@ -433,7 +502,8 @@ extension FinderIntegrationTests {
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = DirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
-    #expect(try await environment.activity.entries().map(\.event.status) == [.unavailable])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.unavailable])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
   }
@@ -450,7 +520,8 @@ extension FinderIntegrationTests {
     await #expect(throws: (any Error).self) {
       try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     }
-    #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .failed])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded, .started, .failed])
     #expect(try environment.processingStore().read(rootID: fixture.directory.id) == .none)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
@@ -475,7 +546,8 @@ extension FinderIntegrationTests {
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     #expect(environment.registrations.roots == [[fixture.root], []])
-    #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .unavailable])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded, .unavailable])
   }
 
   /// Rejects roots whose authorization or overlap violates registration boundaries.
@@ -509,7 +581,8 @@ extension FinderIntegrationTests {
     await #expect(throws: DirectoryAccessError.identityChanged) {
       try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     }
-    #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .failed])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded, .started, .failed])
   }
 
   /// Records cancellation without converting it into a processing failure.
@@ -525,7 +598,8 @@ extension FinderIntegrationTests {
       try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     }
     await #expect(throws: CancellationError.self) { try await visit.value }
-    #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .cancelled])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded, .started, .cancelled])
   }
 
 }
@@ -671,7 +745,8 @@ extension FinderIntegrationTests {
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     #expect(try environment.processingStore().read(rootID: fixture.directory.id)?.currentRun?.state == .completed)
-    #expect(try await environment.activity.entries().map(\.event.status) == [.succeeded, .started, .succeeded])
+    #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.succeeded, .started, .succeeded])
   }
 
   /// Verifies the live authorization adapter retains a temporary root identity.

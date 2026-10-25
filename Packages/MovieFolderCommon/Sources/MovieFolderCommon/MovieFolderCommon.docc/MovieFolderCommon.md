@@ -16,12 +16,15 @@ records and reusable locks and leaves a permanent legacy-path marker to prevent 
 a second writable namespace. Normal opening never performs the legacy migration implicitly.
 
 Activity is distinct from collection processing state, configuration, caches, and icon ownership.
-``MovieFolderActivityEvent`` supplies a closed vocabulary and fixed local display text without arbitrary
+``MovieFolderActivityLogEvent`` supplies closed result vocabulary, historical root-bound target facts, and fixed
+local display templates without arbitrary
 message strings, paths, tokens, bookmarks, movie/folder names, URLs, or raw errors. The caller must report actual
 operation evidence. ``MovieFolderActivityRecorder`` lazily opens bounded storage and strongly retains its
 required payload-free notifier. Change notifications are invalidation hints; consumers reload committed data.
 
-The activity recorder retains 500 entries, with a 2 KiB event limit and 2 MiB Persistence envelope limit.
+The activity recorder retains at most 500 entries, with an 8 KiB event limit, a 1 MiB serialized history
+payload budget before base64 expansion, and a 2 MiB Persistence envelope limit. Activity reads version-one
+records and writes version two; older writers reject version two without modifying its bytes.
 Persistence access contention retries are cancellation-aware and bounded to approximately one second. Entries retain commit
 order independently of occurrence time. Clear preserves the latest sequence; corrupt or unsupported history
 fails explicitly, including on Clear. Recording independently awaits a bounded best-effort append so producer
@@ -31,8 +34,8 @@ cancellation can be recorded without replacing the producer's result. Read and C
 
 ### Typed activity
 
-- ``MovieFolderActivityEvent``
-- ``MovieFolderActivityEntry``
+- ``MovieFolderActivityLogEvent``
+- ``MovieFolderActivityLogEntry``
 - ``MovieFolderActivityServicing``
 - ``MovieFolderActivityRecorder``
 - ``MovieFolderActivityChangeNotifying``

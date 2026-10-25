@@ -16,13 +16,18 @@ extension MovieFolderProcessor {
   }
 
   /// Commits a complete revision while preserving the caller's expected operation and revision.
-  func commitProcessingState(_ processingState: inout CollectionProcessingState?) throws {
+  func commitProcessingState(
+    _ processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog? = .none
+  ) throws {
     guard let processingStore, let current = processingState else { return }
     do {
       processingState = try processingStore.commit(current, expectedRevision: current.revision)
     } catch let error as CollectionProcessingError {
+      activity?.appendPersistenceFailure(
+        MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .persist, occurredAt: now()))
       throw error
     } catch {
+      activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       // Storage errors must escape folder recovery before any subsequent icon change.
       throw CollectionProcessingError.unavailable
     }
@@ -64,7 +69,8 @@ extension MovieFolderProcessor {
 
   /// Ends one attempt without confusing action completion with a completed collection traversal.
   func finishProcessingRun(
-    _ processingState: inout CollectionProcessingState?, state: CollectionProcessingRunState
+    _ processingState: inout CollectionProcessingState?, state: CollectionProcessingRunState,
+    activity: ProcessorActivityLog? = .none
   ) throws {
     guard processingState != .none else { return }
     processingState?.currentRun?.state = state
@@ -75,13 +81,13 @@ extension MovieFolderProcessor {
       let completed = processingState?.currentRun
       processingState?.lastCompletedRun = completed
     }
-    try commitProcessingState(&processingState)
+    try commitProcessingState(&processingState, activity: activity)
   }
 
   /// Updates one member and bounds whole-document checkpoint writes to batches of 32 assessments.
   func recordFolderProcessing(
     _ record: FolderProcessingRecord,
-    in processingState: inout CollectionProcessingState?
+    in processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog? = .none
   ) throws {
     guard processingState != .none else { return }
     guard let index = processingState?.folders.firstIndex(where: { $0.name == record.name }) else {
@@ -89,12 +95,13 @@ extension MovieFolderProcessor {
     }
     processingState?.folders[index] = record
     let assessed = processingState?.folders.lazy.filter { $0.state != .pending }.count ?? .zero
-    if assessed.isMultiple(of: 32) { try commitProcessingState(&processingState) }
+    if assessed.isMultiple(of: 32) { try commitProcessingState(&processingState, activity: activity) }
   }
 
   /// Explains a root backoff for members that have not yet been assessed.
   func deferPendingFolderAssessments(
-    _ processingState: inout CollectionProcessingState?, until date: Date, child: String? = .none
+    _ processingState: inout CollectionProcessingState?, until date: Date, child: String? = .none,
+    activity: ProcessorActivityLog? = .none
   ) {
     guard let current = processingState else { return }
     processingState?.folders = current.folders.map { record in
@@ -104,6 +111,7 @@ extension MovieFolderProcessor {
       deferred.reason = .retryDeferred
       deferred.retryAt = date
       deferred.assessedAt = now()
+      activity?.append(deferred)
 
       return deferred
     }

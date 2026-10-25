@@ -10,7 +10,10 @@ namespace/schema stability, payload privacy, presentation, and change-notificati
 
 Each ``ActivityEntry`` records identity, occurrence time, and increasing commit sequence. Retained history is
 ordered by commit sequence, not occurrence time. The default retention is 500 entries (configurable from 1
-through 500), with a 2 KiB encoded event limit and a 2 MiB Persistence envelope limit.
+through 500), with a default 2 KiB encoded event limit and a 2 MiB Persistence envelope limit. Callers may
+configure event bytes and an optional complete serialized payload budget up to 1 MiB; retention then trims
+oldest entries on either bound. Version-one writers reject version-two records unchanged. Version-two
+instances read versions one and two, and write version two.
 
 Operations acquire exclusive cross-process leases with approximately one second of cancellation-aware
 contention retries. Generic operations propagate cancellation; cancellation after the final append check may

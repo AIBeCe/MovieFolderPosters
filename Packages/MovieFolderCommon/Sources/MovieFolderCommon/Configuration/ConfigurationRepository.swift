@@ -152,6 +152,26 @@ nonisolated public struct ConfigurationRepository: Sendable {
     try withExtendedLifetime(persistenceAccess) { try afterCommit() }
   }
 
+  /// Removes one collection and returns historical evidence only after the configuration commit succeeds.
+  /// - Parameter identifier: Stable configured collection identity selected for removal.
+  /// - Returns: Repository-minted name and privacy evidence from the committed removal.
+  /// - Throws: Missing collection, configuration contention, cancellation, or persistence failures.
+  public func removeCollection(_ identifier: UUID) throws -> CommittedCollectionRemoval {
+    try Task.checkCancellation()
+    var removedDirectory: MonitoredDirectory?
+    try update { configuration in
+      guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
+        throw ConfigurationError.directoryNotFound
+      }
+
+      removedDirectory = configuration.directories.remove(at: index)
+    }
+
+    guard let removedDirectory else { throw ConfigurationError.directoryNotFound }
+
+    return CommittedCollectionRemoval(directory: removedDirectory)
+  }
+
   /// Reads the stored configuration under a access and validates its schema.
   ///
   /// - Parameter persistenceAccess: The already-held persistence access used throughout this operation.

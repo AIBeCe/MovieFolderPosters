@@ -386,8 +386,8 @@ private actor PresentationConfigurationService: ConfigurationServicing {
 
 /// Accepts activity events without using shared storage.
 private actor PresentationActivityService: MovieFolderActivityServicing {
-  func record(_ event: MovieFolderActivityEvent) -> Bool { true }
-  func entries() throws -> [MovieFolderActivityEntry] { [] }
+  func record(_ event: MovieFolderActivityLogEvent) -> Bool { true }
+  func entries() throws -> [MovieFolderActivityLogEntry] { [] }
   func clear() throws {}
 }
 

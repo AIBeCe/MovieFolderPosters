@@ -17,6 +17,26 @@ extension MovieFolderProcessor {
   public func refreshPoster(
     root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = .none
   ) async throws -> Int {
+    let activity = ProcessorActivityLog(context: activityLogContext, action: .posterRefresh, child: child)
+    do {
+      let result = try await performRefreshPoster(
+        root: root, child: child, expectedIdentity: expectedIdentity,
+        processingContext: processingContext, activity: activity)
+      await flushActivityLog(activity)
+
+      return result
+    } catch {
+      recordActivityFailure(error, in: activity)
+      await flushActivityLog(activity)
+      throw error
+    }
+  }
+
+  /// Executes the operation while retaining its existing processing access and safety fences.
+  private func performRefreshPoster(
+    root: URL, child: String, expectedIdentity: String,
+    processingContext: CollectionProcessingContext? = .none, activity: ProcessorActivityLog
+  ) async throws -> Int {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
     let coordinationAccess = try acquireCoordinationAccess(for: root)
@@ -35,20 +55,25 @@ extension MovieFolderProcessor {
     var processingState = try recordProcessingStart(context: processingContext, action: .refresh, child: child)
     defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
     let selection = try await refreshSelection(
-      root: root, child: child, expectedIdentity: expectedIdentity, candidate: &candidate, state: &state)
+      root: root, child: child, expectedIdentity: expectedIdentity,
+      candidate: &candidate, state: &state, activity: activity)
     let movieID = selection.movieID
     let posterPath = selection.posterPath
-
+    activity.movie = MovieMetadata(id: movieID, title: selection.movieTitle ?? "",
+      originalTitle: selection.movieTitle ?? "", releaseYear: selection.movieYear, posterPath: posterPath)
+    activity.stage = .artwork
     let imageData = try await provider.downloadPoster(path: posterPath)
     try Task.checkCancellation()
     guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
     candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
+    activity.stage = .assignPoster
     do {
       let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
       defer { withExtendedLifetime(settingsAccess) {} }
       try replacePoster(imageData, candidate: candidate, root: root)
     }
+    activity.append(.posterApplied)
     try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
     var refreshedRecord = processedRecord(for: candidate, movieID: movieID, posterPath: posterPath)
     refreshedRecord.movieTitle = selection.movieTitle
@@ -57,8 +82,9 @@ extension MovieFolderProcessor {
     refreshedRecord.requiresAutomaticReassessment = state.folders[child]?.requiresAutomaticReassessment
     state.folders[child] = refreshedRecord
     state.providerRetryAt = .none
-    try saveAssignedState(state, to: access, candidate: candidate, root: root, processingState: &processingState)
-    try finishProcessingRun(&processingState, state: .completed)
+    try saveAssignedState(
+      state, to: access, candidate: candidate, root: root, processingState: &processingState, activity: activity)
+    try finishProcessingRun(&processingState, state: .completed, activity: activity)
 
     return movieID
   }
@@ -77,6 +103,26 @@ extension MovieFolderProcessor {
     _ movie: MovieMetadata, root: URL, child: String, expectedIdentity: String,
     processingContext: CollectionProcessingContext? = .none
   ) async throws -> Int {
+    let activity = ProcessorActivityLog(context: activityLogContext, action: .posterSelection, child: child)
+    do {
+      let result = try await performApplyMoviePoster(
+        movie, root: root, child: child, expectedIdentity: expectedIdentity,
+        processingContext: processingContext, activity: activity)
+      await flushActivityLog(activity)
+
+      return result
+    } catch {
+      recordActivityFailure(error, in: activity)
+      await flushActivityLog(activity)
+      throw error
+    }
+  }
+
+  /// Executes the operation while retaining its existing processing access and safety fences.
+  private func performApplyMoviePoster(
+    _ movie: MovieMetadata, root: URL, child: String, expectedIdentity: String,
+    processingContext: CollectionProcessingContext? = .none, activity: ProcessorActivityLog
+  ) async throws -> Int {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
     let coordinationAccess = try acquireCoordinationAccess(for: root)
@@ -85,6 +131,9 @@ extension MovieFolderProcessor {
     defer { withExtendedLifetime(access) {} }
     var state = try loadState(from: access)
     guard movie.id > 0 else { throw PosterActionError.unresolved }
+    activity.movie = movie
+    activity.stage = .artwork
+
     guard let posterPath = movie.posterPath,
       !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else {
@@ -99,16 +148,19 @@ extension MovieFolderProcessor {
 
     var processingState = try recordProcessingStart(context: processingContext, action: .selection, child: child)
     defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
+    activity.stage = .artwork
     let imageData = try await provider.downloadPoster(path: posterPath)
     try Task.checkCancellation()
     guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
     candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
+    activity.stage = .assignPoster
     do {
       let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
       defer { withExtendedLifetime(settingsAccess) {} }
       try replacePoster(imageData, candidate: candidate, root: root)
     }
+    activity.append(.posterApplied)
     try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
     var selectedRecord = processedRecord(for: candidate, movieID: movie.id, posterPath: posterPath)
     selectedRecord.movieTitle = movie.title
@@ -116,8 +168,9 @@ extension MovieFolderProcessor {
     selectedRecord.movieIdentitySource = .explicitSelection
     state.folders[child] = selectedRecord
     state.providerRetryAt = .none
-    try saveAssignedState(state, to: access, candidate: candidate, root: root, processingState: &processingState)
-    try finishProcessingRun(&processingState, state: .completed)
+    try saveAssignedState(
+      state, to: access, candidate: candidate, root: root, processingState: &processingState, activity: activity)
+    try finishProcessingRun(&processingState, state: .completed, activity: activity)
 
     return movie.id
   }
@@ -133,6 +186,26 @@ extension MovieFolderProcessor {
   /// - Throws: Contention, persistence, authorization, ownership, or changed-identity errors.
   public func removePoster(
     root: URL, child: String, expectedIdentity: String, processingContext: CollectionProcessingContext? = .none
+  ) async throws -> Bool {
+    let activity = ProcessorActivityLog(context: activityLogContext, action: .posterRemoval, child: child)
+    do {
+      let result = try performRemovePoster(
+        root: root, child: child, expectedIdentity: expectedIdentity,
+        processingContext: processingContext, activity: activity)
+      await flushActivityLog(activity)
+
+      return result
+    } catch {
+      recordActivityFailure(error, in: activity)
+      await flushActivityLog(activity)
+      throw error
+    }
+  }
+
+  /// Executes the operation while retaining its existing processing access and safety fences.
+  private func performRemovePoster(
+    root: URL, child: String, expectedIdentity: String,
+    processingContext: CollectionProcessingContext? = .none, activity: ProcessorActivityLog
   ) throws -> Bool {
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
@@ -144,6 +217,7 @@ extension MovieFolderProcessor {
     var processingState = try recordProcessingStart(context: processingContext, action: .removal, child: child)
     defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
+    activity.movie = savedActivityMovie(state.folders[child], candidate: candidate)
     let isOwned: Bool
     do {
       isOwned = try fileSystem.hasAssignedPoster(
@@ -158,12 +232,15 @@ extension MovieFolderProcessor {
 
       if processingState != .none {
         let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[child])
-        try recordFolderProcessing(record, in: &processingState)
-        try finishProcessingRun(&processingState, state: .completed)
+        try recordFolderProcessing(record, in: &processingState, activity: activity)
+        try finishProcessingRun(&processingState, state: .completed, activity: activity)
       }
+      activity.append(.noPosterToRemove)
+
       return false
     }
     try Task.checkCancellation()
+    activity.stage = .assignPoster
     let removed: Bool
     do {
       let recoveryAccess = try recovery?.acquireProcessingAccess()
@@ -177,10 +254,16 @@ extension MovieFolderProcessor {
       if case .invalidChild = error { throw PosterActionError.changedIdentity }
       throw error
     }
-    guard removed else { return false }
+    guard removed else {
+      activity.append(.noPosterToRemove)
+      return false
+    }
+
+    activity.append(.posterRemoved)
     state.folders.removeValue(forKey: child)
-    try saveAssignedState(state, to: access, candidate: candidate, root: root, processingState: &processingState)
-    try finishProcessingRun(&processingState, state: .completed)
+    try saveAssignedState(
+      state, to: access, candidate: candidate, root: root, processingState: &processingState, activity: activity)
+    try finishProcessingRun(&processingState, state: .completed, activity: activity)
 
     return true
   }
@@ -331,7 +414,8 @@ extension MovieFolderProcessor {
 
   /// Resolves the saved refresh identity or searches and rechecks the manual target after suspension.
   private func refreshSelection(
-    root: URL, child: String, expectedIdentity: String, candidate: inout FolderCandidate, state: inout ProcessingState
+    root: URL, child: String, expectedIdentity: String, candidate: inout FolderCandidate, state: inout ProcessingState,
+    activity: ProcessorActivityLog
   ) async throws -> RefreshMovieSelection {
     let movieID: Int
     let posterPath: String
@@ -345,7 +429,12 @@ extension MovieFolderProcessor {
       movieID = savedMovieID
       posterPath = savedPosterPath
     } else {
-      guard case .parsed(let parsed) = parser.parse(child) else { throw PosterActionError.unresolved }
+      guard case .parsed(let parsed) = parser.parse(child) else {
+        activity.append(.unresolved, reason: .parsingProblem)
+        throw PosterActionError.unresolved
+      }
+
+      activity.stage = .search
       let key = Self.queryKey(title: parsed.title, year: parsed.year)
       let search = try await provider.searchMovies(title: parsed.title, year: parsed.year)
       try Task.checkCancellation()
@@ -354,6 +443,14 @@ extension MovieFolderProcessor {
       freshSearch = CachedSearch(result: search, createdAt: now())
       let match = matcher.match(title: parsed.title, year: parsed.year, search: search)
       guard case .matched(let movie) = match, let matchedPosterPath = movie.posterPath else {
+        let (reason, identifiedMovie) = unresolvedIdentity(match)
+        activity.movie = identifiedMovie
+        let result: MovieFolderActivityLogEvent.FolderResult = switch reason {
+        case .noSuitableMovie: .notFound
+        case .ambiguousMovie: .severalMatches
+        default: .unresolved
+        }
+        activity.append(result, reason: reason)
         if match == .unresolved(.missingPoster) { throw PosterActionError.noPoster }
         throw PosterActionError.unresolved
       }

@@ -39,7 +39,7 @@ The migration preserves original record bytes, keys, and lock identities; a lega
 stores from recreating a separate namespace. Do not delete that marker.
 
 Source naming changes retain the existing JSON keys `developmentFixtures` and `outcome` through CodingKeys.
-`usesStubTMDbResponses`, `MovieFolderActivityEvent.Status`, and `status` are the current Swift API names.
+`usesStubTMDbResponses`, `MovieFolderActivityLogEvent.Status`, and `status` are the current Swift API names.
 
 ## Typed activity
 
@@ -57,7 +57,7 @@ func recordExample(in authorizedActivityDirectory: URL) async throws {
   let recorder = MovieFolderActivityRecorder(
     directory: authorizedActivityDirectory, notifier: ExampleActivityNotifier())
   let didRecordWithoutFailure = await recorder.record(
-    MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
   if didRecordWithoutFailure {
     let history = try await recorder.entries()
     assert(history.last?.event.action == .applicationOpened)
@@ -71,34 +71,50 @@ commit. Notifications contain no event payload and are only invalidation hints: 
 storage, including on opening/reopening or activation to recover missed notifications. The example notifier
 is intentionally a no-op; a real signed application supplies the transport.
 
-`MovieFolderActivityEvent` accepts only fixed actions/statuses and optional opaque UUIDs. Fixed text and
-categories are rendered locally; serialized events contain no tokens, bookmarks, user paths, movie/folder
-names, remote URLs, or raw underlying error descriptions. Producers must report actual operation evidence.
+`MovieFolderActivityLogEvent` combines closed action/status/result vocabulary with historical display facts from
+`MovieFolderActivityLogContext`. Capture context from a configured directory or its trusted status before
+asynchronous work, then use `context.event(...)` with the actual child result and confirmed movie facts.
+`MovieFolderActivityLogTarget` contains collection name, immediate child folder name, and optional confirmed
+movie ID/title/year. It never accepts a full child path or arbitrary rendered message. All presentation surfaces
+consume the same full `event.text`. Legacy collection events explicitly state that details were not recorded.
+`failureEvidence(for:stage:occurredAt:)` classifies known typed errors without retaining raw descriptions.
+Actual `ProcessingSummary` counters keep unresolved, applied, restyled, deferred, and unchanged work distinct.
+Retry dates describe eligibility and never promise that a retry has been scheduled.
 
-The recorder lazily opens the `movie-activity` namespace with 500-entry retention, 2 KiB events and a 2 MiB
-Persistence envelope. Entries are returned in committed sequence, independently of occurrence timestamps;
-Clear preserves the latest sequence. Unlinked writes retain cancellation-aware bounded contention.
-Collection-linked writes open history first, then retain shared settings through an immediate append; they
-never carry the history retry window into configuration access. Generic `Log` APIs propagate cancellation, while `record(_:)` independently awaits a bounded
-best-effort append so a cancelled producer can still record its terminal event. It returns `false` on write
-failure and preserves the product operation's result. The async property `hasObservedWriteFailure` retains process-local write-failure
-evidence separately from throwing read/Clear failures. Corrupt or unsupported history remains an explicit
-error, including on Clear, and is not silently replaced.
+The recorder lazily opens `movie-activity` with at most 500 retained entries, 8 KiB encoded events, and a 1 MiB
+serialized payload budget before the Persistence envelope's base64 expansion. Oldest entries are trimmed on
+count or byte limits. Complete oversized details fall back to explicit fixed omission evidence; names are never
+silently shortened by the recorder. Activity reads legacy version 1 and writes version 2, which older writers
+reject without changing stored bytes. Network keeps its separate version-one 2 KiB event default.
+
+Unlinked writes retain cancellation-aware bounded contention. Collection-linked writes open history first,
+then retain shared settings through an immediate append. Generic `Log` APIs propagate cancellation, while
+`record(_:)` independently awaits its bounded append so a cancelled producer can record terminal evidence.
+It returns `false` for an actual history write failure and preserves the product result. The async property
+`hasObservedWriteFailure` tracks process-local write failures separately from throwing read/Clear failures.
+Corrupt or unsupported history remains explicit and is not silently replaced, including on Clear.
 
 ## Private activity and optional network history
 
 Configuration schema 4 stores `MonitoredDirectory.usesPrivateHistory`, `isNetworkHistoryRecordingEnabled` (default off),
 and `networkHistoryConfigurationRevision`. Explicit CodingKeys preserve the on-disk `isPrivate`,
-`retainsNetworkHistory`, and `historyRevision` fields unchanged. Legacy schemas 1–3 default to public collections and recording off, with a stable
-history revision derived from their credential revision. All repository writers upgrade to version 4.
+`retainsNetworkHistory`, and `historyRevision` fields unchanged. Legacy schemas 1–3 default to public collections
+and recording off, with a stable history revision derived from their credential revision. All repository writers upgrade to version 4.
 Changing history recording, collection privacy, root membership, or root identity/authorization rotates only
 history revision. Processing, cache, and authorization generations are unaffected by privacy choices.
 
 Production `MovieFolderEnvironment.makeActivityRecorder()` always injects shared configuration. Each new
 collection-linked write checks current settings; private or removed roots drop both collection/group UUIDs.
-Unreadable settings intentionally omit linked optional activity. `record(_:)` returns true for intentional
+Both capture-time and current privacy remove target fields and collection/group UUIDs. Names-bearing events
+without a collection ID are redacted even in explicitly configured test recorders. Unreadable settings
+intentionally omit linked optional activity. `record(_:)` returns true for intentional
 omission, sends no change notification, and does not report a storage failure. Explicit test construction may
 omit configuration for legacy controlled scenarios; production composition must retain enforcement.
+
+Successful removal uses `ConfigurationRepository.removeCollection(_:)` and its immutable, non-Codable
+`CommittedCollectionRemoval` receipt. Only `recordCollectionRemoval(_:)` may preserve a public removed name;
+it rechecks current settings and any reused identifier. Generic missing-root events remain unlinked, and a
+private capture or a reintroduced private collection prevents retention. Existing retained history is unchanged.
 
 `MovieFolderEnvironment.makeNetworkHistoryService()` is nonthrowing. It supplies a bounded independent
 `movie-network` history or an explicit unavailable fallback. A `MovieFolderNetworkRequestRecorder` binds a
@@ -112,7 +128,8 @@ Actual storage/append contention failures are tracked separately and never repla
 Network events contain only closed request purpose, HTTP/transport outcome, terminal timestamp, and an optional
 nonprivate collection UUID. They contain no query, title, year, URL, header, body, credential, path, bookmark, or
 arbitrary error. HTTP 2xx evidence does not claim successful movie matching or poster decoding. Each history
-retains at most 500 entries under 2 KiB event and 2 MiB record limits. Disabling recording and making a collection
+retains at most 500 entries. Network uses 2 KiB events; Activity uses 8 KiB events and a 1 MiB payload budget.
+Both retain the 2 MiB outer Persistence record limit. Disabling recording and making a collection
 private retain old entries unchanged until explicit source-specific Clear. Omitted history is never reconstructed.
 Payload-free change hints are published after shared accesses are released. Updated host/Finder binaries are
 required for these checks; older running binaries cannot inherit them.

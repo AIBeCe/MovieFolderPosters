@@ -68,14 +68,22 @@ struct CollectionProcessingIntegrationTests {
       credentialRevision: fixture.context.credentialRevision,
       usesStubTMDbResponses: false, appearance: .raw,
       processingConfigurationRevision: fixture.context.processingConfigurationRevision)
+    let activity = ProcessingActivityProbe()
+    let directory = try #require(try configuration.read().directories.first)
     let processor = MovieFolderProcessor(
       persistence: fixture.processing, provider: CollectionProcessingMetadataProvider(),
       cacheDirectory: fixture.base.appendingPathComponent("Posters"), coordinationStore: fixture.coordination,
-      processingVerifier: RefusingRestyleVerifier(), appearance: .raw, processingStore: fixture.processingStore)
+      processingVerifier: RefusingRestyleVerifier(), appearance: .raw, processingStore: fixture.processingStore,
+      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: directory))
     _ = try await processor.process(root: fixture.root, processingContext: context)
     let processingState = try #require(try fixture.processingStore.read(rootID: context.rootID))
     #expect(processingState.folders.first?.state == .done)
     #expect(processingState.folders.first?.lastFailure?.stage == .assignPoster)
+    let failure = try #require(await activity.events.first { $0.folderResult == .failed })
+    #expect(failure.target?.movieID == 7)
+    #expect(failure.target?.movieTitle == "Chosen")
+    #expect(failure.failure?.stage == .assignPoster)
+    #expect(failure.failure?.reason == .filesystem)
     #expect(try FileSystemService().assignedPosterAppearance(toChild: "Movie (2021)", in: fixture.root) == .softFinish)
   }
 
@@ -107,6 +115,40 @@ struct CollectionProcessingIntegrationTests {
     #expect(processingState.currentRun?.state == .failed)
     #expect(try FileSystemService().hasAssignedPoster(toChild: "Alpha (2021)", in: fixture.root))
     #expect(try !FileSystemService().readCurrentState(ofChild: "Beta (2021)", in: fixture.root).hasCustomIcon)
+  }
+
+  /// A result-store failure after a real assignment retains both operation success and failed persistence.
+  @Test func authoritativePersistenceFailureRetainsActualOperationHistory() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    #if SWIFT_PACKAGE
+      let image = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
+    #else
+      let image = try #require(
+        Bundle(for: MoviePosterActionTests.self).url(forResource: "TestPoster", withExtension: "png"))
+    #endif
+    let configuration = ConfigurationRepository(
+      store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Settings")))
+    let directory = try #require(try configuration.read().directories.first)
+    let activity = ProcessingActivityProbe()
+    let processor = MovieFolderProcessor(
+      persistence: fixture.processing,
+      provider: CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image)),
+      cacheDirectory: fixture.base.appendingPathComponent("Posters"),
+      posterAssigner: CacheFailurePosterAssigner(directory: fixture.base.appendingPathComponent("Outcomes")),
+      coordinationStore: fixture.coordination, processingStore: fixture.processingStore,
+      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: directory))
+    await #expect(throws: CollectionProcessingError.unavailable) {
+      try await processor.process(root: fixture.root, processingContext: fixture.context)
+    }
+    let events = await activity.events
+    #expect(events.contains { $0.folderResult == .posterApplied && $0.target?.movieID == 7 })
+    let failure = try #require(events.first { $0.folderResult == .failed })
+    #expect(failure.target?.childFolderName == "Movie (2021)")
+    #expect(failure.target?.movieID == 7)
+    #expect(failure.failure?.stage == .persist)
+    #expect(failure.failure?.reason == .storage)
+    #expect(try FileSystemService().hasAssignedPoster(toChild: "Movie (2021)", in: fixture.root))
   }
 
   /// Manual selection/removal share collection evidence without claiming a new full collection run.

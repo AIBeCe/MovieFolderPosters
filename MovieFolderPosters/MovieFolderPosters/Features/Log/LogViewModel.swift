@@ -84,7 +84,7 @@ final class LogViewModel {
     }.joined(separator: "\n")
   }
   /// Committed entries in retained sequence order.
-  private(set) var activityEntries: [MovieFolderActivityEntry] = []
+  private(set) var activityEntries: [MovieFolderActivityLogEntry] = []
   /// Whether a history read is outstanding.
   private(set) var isLoading = false
   /// Whether a history clear is outstanding.
@@ -244,7 +244,7 @@ final class LogViewModel {
             }
           }
         }
-        let loadedActivityEntries: [MovieFolderActivityEntry]
+        let loadedActivityEntries: [MovieFolderActivityLogEntry]
         let loadedNetworkHistoryRows: [HistoryEntryRow]
         let observedWriteFailure: Bool
         if expectedHistorySource == .activity {
@@ -287,7 +287,7 @@ final class LogViewModel {
   }
 
   /// Records typed activity without altering the product operation's outcome on failure.
-  func record(_ event: MovieFolderActivityEvent) async {
+  func record(_ event: MovieFolderActivityLogEvent) async {
     if !(await activityHistoryService.record(event)) {
       historyOperationFailures[.activity, default: HistoryOperationFailures()].hasWriteFailure = true
     }

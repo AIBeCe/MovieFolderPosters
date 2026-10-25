@@ -22,9 +22,9 @@ struct InstallationDiagnosticsExportTests {
       TMDb token at last load: Configured; provider validation was not performed. \(privateText)
       \(privateText)
       """)
-    let entry = MovieFolderActivityEntry(
+    let entry = MovieFolderActivityLogEntry(
       id: entryID, sequence: 123456789, occurredAt: Date(timeIntervalSince1970: 0),
-      event: MovieFolderActivityEvent(
+      event: MovieFolderActivityLogEvent(
         action: .posterRefresh, status: .failed, activityGroupID: activityGroupID, collectionID: collectionID))
 
     let text = InstallationDiagnosticsExport.format(report: report, entries: [entry])
@@ -44,12 +44,30 @@ struct InstallationDiagnosticsExportTests {
     #expect(!text.contains("123456789"))
   }
 
+  /// Rich local Log context must never enter the deliberately non-identifying diagnostics export.
+  @Test func excludesContextualActivityNamesAndMovieIdentity() {
+    let directory = MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data(),
+      authorizationVersion: UUID(), displayName: "Secret collection")
+    let event = MovieFolderActivityLogContext(directory: directory).event(action: .posterRefresh, status: .failed,
+      childFolderName: "Private folder", movieID: 987654, movieTitle: "Private movie", movieYear: 2024,
+      failure: FolderProcessingFailure(reason: .timeout, stage: .artwork, occurredAt: Date()))
+    let entry = MovieFolderActivityLogEntry(id: UUID(), sequence: 1, occurredAt: Date(), event: event)
+    let text = InstallationDiagnosticsExport.format(report: InstallationReadinessReport(text: ""), entries: [entry])
+
+    #expect(text.contains("Refresh poster: failed."))
+    #expect(text.contains("timed out"))
+    #expect(!text.contains("Secret collection"))
+    #expect(!text.contains("Private folder"))
+    #expect(!text.contains("Private movie"))
+    #expect(!text.contains("987654"))
+  }
+
   /// Bounds retained entries by commit order even when occurrence timestamps are out of order.
   @Test func exportsOnlyTheLatestFiftyCommittedEntries() {
     let entries = (0..<60).map { index in
-      MovieFolderActivityEntry(
+      MovieFolderActivityLogEntry(
         id: UUID(), sequence: UInt64(index), occurredAt: Date(timeIntervalSince1970: Double(60 - index)),
-        event: MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+        event: MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     }
 
     let text = InstallationDiagnosticsExport.format(report: InstallationReadinessReport(text: ""), entries: entries)

@@ -76,6 +76,11 @@ filters, selected-row copying and explicit source-specific Clear. Result filteri
 Unresolved Results sheet. See [Result filtering and private history](PRIVATE_HISTORY.md) for the approved behavior
 and current implementation status; the screenshots below predate these controls.
 
+The informative Activity Log increment uses reusable constrained cells in all four columns (Time, Text, Category,
+Severity), unlimited lines and automatic row heights. Resizing recalculates heights while preserving selection.
+Display, search, copying and accessibility share the full rendered text. See
+[Informative Activity Log](INFORMATIVE_ACTIVITY_LOG.md) for focused AppKit geometry evidence and native limitations.
+
 Log is a separate, reusable window with native Time, Text, and Category columns and Clear at bottom right.
 R100-03 replaces the session journal with shared persisted host/Finder activity, retaining at most 500 entries.
 Typed events render fixed safe messages without credentials, user paths, URLs, or raw error descriptions.

@@ -104,7 +104,7 @@ import Testing
   let model = ConfigurationViewModel(service: ConfigurationServiceFake())
   await model.saveCredential("fake-secret")
   let log = LogViewModel(activityHistoryService: ActivityServiceFake())
-  for _ in 0..<510 { await log.record(MovieFolderActivityEvent(action: .configurationLoaded, status: .succeeded)) }
+  for _ in 0..<510 { await log.record(MovieFolderActivityLogEvent(action: .configurationLoaded, status: .succeeded)) }
   #expect(log.activityEntries.count == 500)
   #expect(log.activityEntries.first?.sequence == 11)
   await log.clear()

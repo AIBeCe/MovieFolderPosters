@@ -16,8 +16,11 @@ extension MovieFolderProcessor {
     _ assignment: CachedPosterAssignment, candidate: FolderCandidate, root: URL,
     access: PersistenceAccess, visit: inout AutomaticProcessingVisit
   ) throws {
+    visit.activity?.begin(candidate.name, movie: savedActivityMovie(assignment.record, candidate: candidate),
+      stage: .assignPoster)
     do {
       let result = try assign(assignment.bytes, to: candidate, in: root)
+      visit.activity?.append(result == .assigned ? .posterApplied : .preserved)
 
       var cachedRecord = FolderRecord(
         fingerprint: candidate.fingerprint,
@@ -33,7 +36,9 @@ extension MovieFolderProcessor {
       cachedRecord.requiresAutomaticReassessment = assignment.record.requiresAutomaticReassessment
       visit.cache.folders[candidate.name] = cachedRecord
 
-      try saveAssignedState(visit.cache, to: access, candidate: candidate, root: root, processingState: &visit.recording)
+      try saveAssignedState(
+        visit.cache, to: access, candidate: candidate, root: root,
+        processingState: &visit.recording, activity: visit.activity)
       if case .assigned = result { visit.summary.assigned += 1 }
     } catch let error as CollectionProcessingError {
       throw error
@@ -53,12 +58,13 @@ extension MovieFolderProcessor {
 
       recordTransientFailure(candidate, in: &visit.cache, stage: .assignPoster, movie: movie)
       visit.cache.folders[candidate.name]?.movieIdentitySource = assignment.record.movieIdentitySource
-      try saveState(visit.cache, to: access)
-
-      visit.summary.transientFailures += 1
       var failureRecord = failedFolderAssessment(candidate, stage: .assignPoster, movie: movie)
       failureRecord.movieIdentitySource = assignment.record.movieIdentitySource
-      try recordFolderProcessing(failureRecord, in: &visit.recording)
+      visit.activity?.append(failureRecord,
+        failure: MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .assignPoster, occurredAt: now()))
+      try saveState(visit.cache, to: access, activity: visit.activity)
+      visit.summary.transientFailures += 1
+      try recordFolderProcessing(failureRecord, in: &visit.recording, activity: visit.activity)
     }
   }
 
@@ -72,6 +78,7 @@ extension MovieFolderProcessor {
   func repairCachedPoster(
     _ decision: SavedPosterDecision, context: ArtworkRepairContext, visit: inout AutomaticProcessingVisit
   ) async throws -> Bool {
+    visit.activity?.begin(context.candidate.name, movie: decision.movie, stage: .artwork)
     do {
       let bytes = try await posterBytes(for: decision.posterPath, visit: &visit)
       try assignCachedPoster(
@@ -133,14 +140,14 @@ extension MovieFolderProcessor {
     if let identitySource = decision.record.movieIdentitySource {
       visit.cache.folders[context.candidate.name]?.movieIdentitySource = identitySource
     }
-    try saveState(visit.cache, to: context.access)
-
-    visit.summary.transientFailures += 1
     var failureRecord = failedFolderAssessment(
       context.candidate, stage: .artwork, movie: decision.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
     failureRecord.movieIdentitySource = decision.record.movieIdentitySource
-    try recordFolderProcessing(failureRecord, in: &visit.recording)
+    visit.activity?.append(failureRecord)
+    try saveState(visit.cache, to: context.access, activity: visit.activity)
+    visit.summary.transientFailures += 1
+    try recordFolderProcessing(failureRecord, in: &visit.recording, activity: visit.activity)
 
     return false
   }
@@ -157,6 +164,9 @@ extension MovieFolderProcessor {
     visit: inout AutomaticProcessingVisit
   ) async throws {
     for candidate in candidates where candidate.hasCustomIcon {
+      visit.activity?.begin(candidate.name,
+        movie: savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate))
+
       guard let record = visit.cache.folders[candidate.name], record.fingerprint == candidate.fingerprint,
         let movieID = record.matchedMovieID, let posterPath = record.posterPath
       else { continue }
@@ -184,6 +194,7 @@ extension MovieFolderProcessor {
       let decision = SavedPosterDecision(movieID: movieID, posterPath: posterPath, record: record)
       let context = ArtworkRepairContext(candidate: candidate, root: root, access: access)
 
+      visit.activity?.begin(candidate.name, movie: decision.movie, stage: .artwork)
       do {
         let bytes = try await downloadAndCachePoster(
           for: posterPath, visit: &visit, requireCacheWrite: true)
@@ -201,6 +212,8 @@ extension MovieFolderProcessor {
         continue
       }
 
+      // Repairing source bytes leaves the existing owned folder icon unchanged.
+      visit.activity?.append(.preserved)
       var repairedRecord = FolderRecord(
         fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
         matchedMovieID: movieID, posterPath: posterPath, movieTitle: record.movieTitle,
@@ -211,7 +224,8 @@ extension MovieFolderProcessor {
       visit.cache.folders[candidate.name] = repairedRecord
 
       try saveAssignedState(
-        visit.cache, to: access, candidate: candidate, root: root, processingState: &visit.recording)
+        visit.cache, to: access, candidate: candidate, root: root,
+        processingState: &visit.recording, activity: visit.activity)
     }
   }
 

@@ -44,7 +44,7 @@ struct MovieFolderEnvironmentTests {
     }
     let recorder = MovieFolderEnvironment.makeActivityRecorder(locations: locations)
     #expect(await recorder.hasObservedWriteFailure)
-    #expect(!(await recorder.record(MovieFolderActivityEvent(action: .posterSelection, status: .succeeded))))
+    #expect(!(await recorder.record(MovieFolderActivityLogEvent(action: .posterSelection, status: .succeeded))))
     await #expect(throws: (any Error).self) { try await recorder.entries() }
     await #expect(throws: (any Error).self) { try await recorder.clear() }
   }

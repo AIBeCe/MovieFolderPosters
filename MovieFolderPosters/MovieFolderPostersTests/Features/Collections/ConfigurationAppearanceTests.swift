@@ -83,7 +83,7 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   log.delegate = probe
   settings.select(.dark)
   settings.select(.dark)
-  await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+  await log.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
   await log.clear()
   #expect(probe?.appearanceUpdates == 1)
   #expect(probe?.logEntryCounts.contains(1) == true)

@@ -16,7 +16,7 @@ protocol ConfigurationViewModelDelegate: AnyObject {
 protocol ConfigurationViewModelActivityDelegate: AnyObject {
   /// Reports a typed operation outcome and independent logging success.
   func configurationViewModel(
-    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityEvent, saved: Bool)
+    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityLogEvent, saved: Bool)
 }
 
 /// Holds configuration presentation state and forwards user actions to its service.
@@ -194,13 +194,31 @@ final class ConfigurationViewModel {
   ///
   /// - Parameter identifier: The stable identifier of the collection to remove.
   func removeDirectory(_ identifier: UUID) async {
-    await perform(
-      action: .collectionRemoved, collectionID: identifier, failureMessage: "Could not remove this folder."
-    ) {
-      try await self.service.removeDirectory(identifier)
+    guard !isBusy else { return }
 
-      return try await self.service.configurationSummary()
+    let capturedActivityLogContext = directories.first(where: { $0.id == identifier })
+      .map { MovieFolderActivityLogContext(directoryStatus: $0) }
+    isBusy = true
+    errorMessage = .none
+    publish()
+    do {
+      try await service.removeDirectory(identifier)
+    } catch {
+      errorMessage = "Could not remove this folder."
+      await recordActivity(action: .collectionRemoved, status: .failed,
+        activityLogContext: capturedActivityLogContext,
+        failure: MovieFolderActivityLogEvent.failureEvidence(for: error))
+      isBusy = false
+      publish()
+      return
     }
+
+    // The service records committed removal before cleanup or presentation refresh can fail.
+    do { apply(try await service.configurationSummary()) } catch {
+      errorMessage = "The collection was removed, but its displayed status could not be refreshed. Try Refresh Status."
+    }
+    isBusy = false
+    publish()
   }
 
   /// Replaces a collection's folder authorization with access to a newly selected folder.
@@ -280,7 +298,7 @@ final class ConfigurationViewModel {
   ///   - onFailure: Local state restoration performed after failure.
   ///   - operation: The service request whose summary becomes the new model state.
   private func perform(
-    action: MovieFolderActivityEvent.Action,
+    action: MovieFolderActivityLogEvent.Action,
     collectionID: UUID? = .none,
     failureMessage: String,
     onFailure: @MainActor () -> Void = {},
@@ -290,11 +308,21 @@ final class ConfigurationViewModel {
 
     isBusy = true
     errorMessage = .none
+    let capturedActivityLogContext = collectionID.flatMap { identifier in
+      directories.first(where: { $0.id == identifier }).map { MovieFolderActivityLogContext(directoryStatus: $0) }
+    }
     publish()
 
     do {
       apply(try await operation())
-      await recordActivity(action: action, status: .succeeded, collectionID: collectionID)
+      let completedDirectory = collectionID.flatMap { identifier in directories.first { $0.id == identifier } }
+      let completedActivityLogContext = completedDirectory.map { MovieFolderActivityLogContext(directoryStatus: $0) }
+      let activityLogContext = capturedActivityLogContext?.usesPrivateHistory == true
+        ? capturedActivityLogContext : completedActivityLogContext ?? capturedActivityLogContext
+      if action != .collectionAdded {
+        await recordActivity(action: action, status: .succeeded,
+          activityLogContext: activityLogContext)
+      }
     } catch {
       onFailure()
       let explanation: String
@@ -307,7 +335,9 @@ final class ConfigurationViewModel {
         explanation = failureMessage
       }
       errorMessage = explanation
-      await recordActivity(action: action, status: .failed, collectionID: collectionID)
+      await recordActivity(action: action, status: .failed,
+        activityLogContext: capturedActivityLogContext,
+        failure: MovieFolderActivityLogEvent.failureEvidence(for: error))
     }
 
     isBusy = false
@@ -316,9 +346,11 @@ final class ConfigurationViewModel {
 
   /// Persists only typed evidence and reports logging failure separately from configuration results.
   private func recordActivity(
-    action: MovieFolderActivityEvent.Action, status: MovieFolderActivityEvent.Status, collectionID: UUID?
+    action: MovieFolderActivityLogEvent.Action, status: MovieFolderActivityLogEvent.Status,
+    activityLogContext: MovieFolderActivityLogContext? = .none, failure: FolderProcessingFailure? = .none
   ) async {
-    let event = MovieFolderActivityEvent(action: action, status: status, collectionID: collectionID)
+    let event = activityLogContext?.event(action: action, status: status, failure: failure)
+      ?? MovieFolderActivityLogEvent(action: action, status: status, failure: failure)
     let saved = await activity.record(event)
     activityDelegate?.configurationViewModel(self, didRecordActivity: event, saved: saved)
   }
@@ -436,7 +468,7 @@ extension ConfigurationViewModel {
   ///   - action: Change activity to record, or no activity for a diagnostic.
   ///   - operation: The service call owned and cancelled by this finite action.
   private func performCredentialAction(
-    status: String, success: String, action: MovieFolderActivityEvent.Action?,
+    status: String, success: String, action: MovieFolderActivityLogEvent.Action?,
     operation: @escaping @Sendable () async throws -> Void
   ) async {
     guard !isBusy else { return }
@@ -461,16 +493,22 @@ extension ConfigurationViewModel {
       } else {
         credentialMessage = success
       }
-      if let action { await recordActivity(action: action, status: .succeeded, collectionID: .none) }
+      if let action { await recordActivity(action: action, status: .succeeded) }
     } catch is CancellationError {
       credentialMessage = action == .none
         ? "Credential test cancelled." : "Credential action cancelled before completion. Reloaded current state."
-      if let action { await recordActivity(action: action, status: .cancelled, collectionID: .none) }
+      if let action {
+        await recordActivity(action: action, status: .cancelled,
+          failure: MovieFolderActivityLogEvent.failureEvidence(for: CancellationError()))
+      }
     } catch {
       isCredentialError = true
       credentialMessage = credentialFailureMessage(error, action: action)
       errorMessage = credentialMessage
-      if let action { await recordActivity(action: action, status: .failed, collectionID: .none) }
+      if let action {
+        await recordActivity(action: action, status: .failed,
+          failure: MovieFolderActivityLogEvent.failureEvidence(for: error))
+      }
     }
     credentialTask = .none
     isCredentialActionRunning = false
@@ -483,7 +521,7 @@ extension ConfigurationViewModel {
   }
 
   /// Maps credential failures to fixed corrective guidance without rendering underlying error content.
-  private func credentialFailureMessage(_ error: any Error, action: MovieFolderActivityEvent.Action?) -> String {
+  private func credentialFailureMessage(_ error: any Error, action: MovieFolderActivityLogEvent.Action?) -> String {
     switch error {
     case TMDbError.authentication:
       return "TMDb rejected the token. Check the API Read Access Token and try again."

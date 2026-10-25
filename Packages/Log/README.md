@@ -34,8 +34,15 @@ select an App Group, publish notifications, render messages, or own application 
 
 - Entries have a UUID, caller-supplied occurrence timestamp, typed event, and increasing committed sequence.
   Reads return oldest-to-newest **commit order**; timestamps can arrive out of order.
-- The default is the newest 500 entries. `maximumEntries` accepts 1 through 500. Each encoded event is limited
-  to 2 KiB; the Persistence record envelope is limited to 2 MiB.
+- The default is the newest 500 entries. `maximumEntries` accepts 1 through 500. `maximumEventBytes` defaults
+  to 2 KiB. `maximumHistoryPayloadBytes` optionally caps the complete serialized history before base64 envelope
+  expansion, from 1 byte through 1 MiB. Appends trim the oldest entries to satisfy both count and byte bounds;
+  if the newest entry alone cannot fit, the operation fails without consuming a sequence or changing history.
+  The Persistence record envelope remains limited to 2 MiB.
+- `writerRecordVersion` defaults to 1. Version-one instances reject version-two records on read, append, and
+  Clear without changing their bytes. Version-two instances read versions 1–2 and write version 2, preserving
+  the existing namespace and lock identity. Movie activity uses 8 KiB events, 1 MiB payloads, and version 2;
+  Network and ordinary generic callers retain their defaults.
 - Append, read, and Clear use an exclusive cross-process lease. Contention retries are cancellation-aware and
   bounded to approximately one second. Appends accept `accessMode: .immediate` for one nonwaiting attempt,
   useful while holding another service access. Contention fails without changing bytes or sequence; existing

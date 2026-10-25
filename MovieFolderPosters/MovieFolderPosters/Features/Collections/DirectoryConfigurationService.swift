@@ -283,36 +283,53 @@ actor DirectoryConfigurationService: ConfigurationServicing {
 }
 
 extension DirectoryConfigurationService {
+  /// Captured committed settings evidence, safe to publish after every authorization access has been released.
+  private struct CommittedCollectionUpdate {
+    /// Historical names and conservative capture-time privacy from the committed transaction.
+    let activityLogContext: MovieFolderActivityLogContext
+    /// Whether processing consumers require a settings invalidation.
+    let processingChanged: Bool
+    /// Whether presentation consumers require refreshed names.
+    let presentationChanged: Bool
+    /// Whether optional history privacy changed.
+    let privacyChanged: Bool
+  }
+
   /// Revalidates a confirmed Finder request without provider credentials or processing admission.
-  func applyInclusionRequest(_ request: MovieFolderInclusionRequest) throws {
+  func applyInclusionRequest(_ request: MovieFolderInclusionRequest) async throws {
     let savedState = try savedCollectionState(request.collectionID)
     let directory = savedState.directory
 
-    guard directory.processingConfiguration.revision == request.expectedProcessingConfigurationRevision,
-      let bookmarkAccess = try authorizations.acquireAccess(for: authorizationKey(directory)),
-      let bookmark = try bookmarkAccess.read() else { throw ConfigurationError.configurationChanged }
+    let committedUpdate: CommittedCollectionUpdate
+    do {
+      guard directory.processingConfiguration.revision == request.expectedProcessingConfigurationRevision,
+        let bookmarkAccess = try authorizations.acquireAccess(for: authorizationKey(directory)),
+        let bookmark = try bookmarkAccess.read() else { throw ConfigurationError.configurationChanged }
 
-    let access = try authorization.acquireAccess(bookmark: bookmark, expectedIdentity: directory.identity)
-    defer { withExtendedLifetime(access) {}; withExtendedLifetime(bookmarkAccess) {} }
-    let root = access.url.resolvingSymlinksInPath().standardizedFileURL
-    let folder = request.folderURL.standardizedFileURL
+      let rootDirectoryAccess = try authorization.acquireAccess(
+        bookmark: bookmark, expectedIdentity: directory.identity)
+      defer { withExtendedLifetime(rootDirectoryAccess) {}; withExtendedLifetime(bookmarkAccess) {} }
+      let root = rootDirectoryAccess.url.resolvingSymlinksInPath().standardizedFileURL
+      let folder = request.folderURL.standardizedFileURL
 
-    guard folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL == root else {
-      throw ConfigurationError.configurationChanged
+      guard folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL == root else {
+        throw ConfigurationError.configurationChanged
+      }
+
+      let child = try fileSystem.readCurrentState(ofChild: folder.lastPathComponent, in: root)
+
+      guard child.identity == request.folderIdentity else { throw ConfigurationError.configurationChanged }
+
+      var configuration = directory.processingConfiguration
+      switch request.action {
+      case .exclude: configuration.excludeFolder(identity: child.identity, lastKnownName: child.name)
+      case .include: configuration.includeFolder(identity: child.identity)
+      }
+      committedUpdate = try commitCollectionUpdate(directory.id, displayName: directory.displayName,
+        movieMatchingConfiguration: directory.movieMatchingConfiguration,
+        processingConfiguration: configuration, usesPrivateHistory: directory.usesPrivateHistory, expected: savedState)
     }
-
-    let child = try fileSystem.readCurrentState(ofChild: folder.lastPathComponent, in: root)
-
-    guard child.identity == request.folderIdentity else { throw ConfigurationError.configurationChanged }
-
-    var configuration = directory.processingConfiguration
-    switch request.action {
-    case .exclude: configuration.excludeFolder(identity: child.identity, lastKnownName: child.name)
-    case .include: configuration.includeFolder(identity: child.identity)
-    }
-    try updateCollection(directory.id, displayName: directory.displayName,
-      movieMatchingConfiguration: directory.movieMatchingConfiguration,
-      processingConfiguration: configuration, expected: savedState)
+    await publishCommittedCollectionUpdate(committedUpdate)
   }
 
   /// Captures an edit draft without requiring provider credentials or unpausing processing.
@@ -330,16 +347,29 @@ extension DirectoryConfigurationService {
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
     processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
-  ) throws {
-    try updateCollection(identifier, displayName: displayName, movieMatchingConfiguration: movieMatchingConfiguration,
-      processingConfiguration: processingConfiguration, usesPrivateHistory: expected.directory.usesPrivateHistory, expected: expected)
+  ) async throws {
+    try await updateCollection(identifier, displayName: displayName,
+      movieMatchingConfiguration: movieMatchingConfiguration, processingConfiguration: processingConfiguration,
+      usesPrivateHistory: expected.directory.usesPrivateHistory, expected: expected)
   }
 
   /// Saves privacy and the complete collection draft in the same configuration transaction.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
     processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
-  ) throws {
+  ) async throws {
+    let committedUpdate = try commitCollectionUpdate(identifier, displayName: displayName,
+      movieMatchingConfiguration: movieMatchingConfiguration, processingConfiguration: processingConfiguration,
+      usesPrivateHistory: usesPrivateHistory, expected: expected)
+    await publishCommittedCollectionUpdate(committedUpdate)
+  }
+
+  /// Commits a complete draft synchronously so callers can retain authorization through its compare-and-swap.
+  private func commitCollectionUpdate(
+    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
+  ) throws -> CommittedCollectionUpdate {
+    var committedActivityLogContext = MovieFolderActivityLogContext(directory: expected.directory)
     var privacyChanged = false
     var processingChanged = false
     var presentationChanged = false
@@ -352,7 +382,8 @@ extension DirectoryConfigurationService {
         throw ConfigurationError.configurationChanged
       }
 
-      privacyChanged = configuration.directories[index].usesPrivateHistory != usesPrivateHistory
+      let previouslyUsedPrivateHistory = configuration.directories[index].usesPrivateHistory
+      privacyChanged = previouslyUsedPrivateHistory != usesPrivateHistory
       configuration.directories[index].usesPrivateHistory = usesPrivateHistory
       processingChanged = configuration.directories[index].movieMatchingConfiguration != movieMatchingConfiguration
         || configuration.directories[index].processingConfiguration != processingConfiguration
@@ -361,10 +392,22 @@ extension DirectoryConfigurationService {
       configuration.directories[index].displayName = MonitoredDirectory.normalizedDisplayName(displayName)
       configuration.directories[index].movieMatchingConfiguration = movieMatchingConfiguration
       configuration.directories[index].processingConfiguration = processingConfiguration
+      var committedDirectory = configuration.directories[index]
+      committedDirectory.usesPrivateHistory = previouslyUsedPrivateHistory || usesPrivateHistory
+      committedActivityLogContext = MovieFolderActivityLogContext(directory: committedDirectory)
     }
-    if processingChanged { notifier.configurationDidChange() }
-    if presentationChanged { notifier.collectionPresentationDidChange() }
-    if privacyChanged { MovieFolderEnvironment.notifyHistoryConfigurationChanged() }
+
+    return CommittedCollectionUpdate(activityLogContext: committedActivityLogContext,
+      processingChanged: processingChanged, presentationChanged: presentationChanged, privacyChanged: privacyChanged)
+  }
+
+  /// Publishes only committed evidence after the caller has released configuration and directory authorization.
+  private func publishCommittedCollectionUpdate(_ committedUpdate: CommittedCollectionUpdate) async {
+    if committedUpdate.processingChanged { notifier.configurationDidChange() }
+    if committedUpdate.presentationChanged { notifier.collectionPresentationDidChange() }
+    if committedUpdate.privacyChanged { MovieFolderEnvironment.notifyHistoryConfigurationChanged() }
+    _ = await activity.record(committedUpdate.activityLogContext.event(
+      action: .collectionConfigurationSaved, status: .succeeded))
   }
 
   /// Changes processing inclusion while retaining root authorization and installed icons.
@@ -434,49 +477,57 @@ extension DirectoryConfigurationService {
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
     movieMatchingConfiguration: MovieMatchingConfiguration?
-  ) throws {
-    try commitCollection(candidate, displayName: displayName,
-      movieMatchingConfiguration: movieMatchingConfiguration, usesPrivateHistory: candidate.directory.usesPrivateHistory)
+  ) async throws {
+    try await commitCollection(candidate, displayName: displayName,
+      movieMatchingConfiguration: movieMatchingConfiguration,
+      usesPrivateHistory: candidate.directory.usesPrivateHistory)
   }
 
   /// Commits the authorization and complete setup draft, including optional history privacy, atomically.
   func commitCollection(
     _ candidate: PreparedCollection, displayName: String?,
     movieMatchingConfiguration: MovieMatchingConfiguration?, usesPrivateHistory: Bool
-  ) throws {
+  ) async throws {
     var value = candidate.directory
     value.usesPrivateHistory = usesPrivateHistory
     value.displayName = MonitoredDirectory.normalizedDisplayName(displayName)
     value.movieMatchingConfiguration = movieMatchingConfiguration
-    let access = try authorization.acquireAccess(bookmark: candidate.hostBookmark, expectedIdentity: value.identity)
-    defer { withExtendedLifetime(access) {} }
+    var committedActivityLogContext = MovieFolderActivityLogContext(directory: value)
+    do {
+      let access = try authorization.acquireAccess(bookmark: candidate.hostBookmark, expectedIdentity: value.identity)
+      defer { withExtendedLifetime(access) {} }
 
-    guard access.url.resolvingSymlinksInPath().standardizedFileURL.path == value.path else {
-      throw ConfigurationError.configurationChanged
-    }
-
-    try commitAuthorization(candidate) { configuration in
-      guard !configuration.directories.contains(where: { $0.path == value.path || $0.id == value.id }) else {
-        throw ConfigurationError.duplicateDirectory
+      guard access.url.resolvingSymlinksInPath().standardizedFileURL.path == value.path else {
+        throw ConfigurationError.configurationChanged
       }
 
-      guard !configuration.directories.contains(where: { DirectoryConfiguration.overlaps($0, value) }) else {
-        throw ConfigurationError.overlappingDirectory
-      }
+      try commitAuthorization(candidate) { configuration in
+        guard !configuration.directories.contains(where: { $0.path == value.path || $0.id == value.id }) else {
+          throw ConfigurationError.duplicateDirectory
+        }
 
-      configuration.directories.append(value)
+        guard !configuration.directories.contains(where: { DirectoryConfiguration.overlaps($0, value) }) else {
+          throw ConfigurationError.overlappingDirectory
+        }
+
+        configuration.directories.append(value)
+        var committedDirectory = value
+        committedDirectory.usesPrivateHistory = candidate.directory.usesPrivateHistory || usesPrivateHistory
+        committedActivityLogContext = MovieFolderActivityLogContext(directory: committedDirectory)
+      }
     }
     notifier.configurationDidChange()
     MovieFolderEnvironment.notifyHistoryConfigurationChanged()
+    _ = await activity.record(committedActivityLogContext.event(action: .collectionAdded, status: .succeeded))
   }
 
   /// Adds a selected folder after validating access and preventing duplicate or nested roots.
   ///
   /// - Parameter directory: The folder selected as a collection root.
   /// - Throws: A configuration or filesystem error if the root is invalid or overlaps another.
-  func addDirectory(_ directory: URL) throws {
+  func addDirectory(_ directory: URL) async throws {
     let candidate = try prepareCollection(directory)
-    try commitCollection(candidate, displayName: .none, movieMatchingConfiguration: .none)
+    try await commitCollection(candidate, displayName: .none, movieMatchingConfiguration: .none)
   }
 
   /// Removes a configured collection and notifies shared components.
@@ -484,15 +535,14 @@ extension DirectoryConfigurationService {
   /// - Parameter identifier: The stable identifier of the collection to remove.
   /// - Throws: A persistence error if the configuration update cannot be committed.
   func removeDirectory(_ identifier: UUID) async throws {
-    try repository.update { configuration in
-      configuration.directories.removeAll { $0.id == identifier }
-    }
+    let committedRemoval = try repository.removeCollection(identifier)
+    await activity.recordCollectionRemoval(committedRemoval)
     notifier.configurationDidChange()
     MovieFolderEnvironment.notifyHistoryConfigurationChanged()
     do {
       _ = try processingCleanup?.pruneToConfiguredRoots()
     } catch {
-      await activity.record(MovieFolderActivityEvent(action: .collectionCleanup, status: .failed))
+      await activity.record(MovieFolderActivityLogEvent(action: .collectionCleanup, status: .failed))
     }
   }
 

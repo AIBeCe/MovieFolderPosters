@@ -46,7 +46,7 @@ import Testing
   let clear = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Clear Activity" })
   #expect(table.numberOfRows == 0)
   #expect(!clear.isEnabled)
-  await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+  await log.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
   #expect(table.numberOfRows == 1)
   #expect(clear.isEnabled)
   clear.performClick(.none)

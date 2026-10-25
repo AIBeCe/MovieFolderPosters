@@ -88,23 +88,24 @@ extension MovieFolderProcessor {
   /// Keeps a verified icon outcome distinct from failure to persist its operational cache.
   func saveAssignedState(
     _ state: ProcessingState, to access: PersistenceAccess, candidate: FolderCandidate,
-    root: URL, processingState: inout CollectionProcessingState?
+    root: URL, processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog? = .none
   ) throws {
     do {
       try saveState(state, to: access)
     } catch {
+      activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       if processingState != .none {
         var record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
         record.reason = .cachePersistenceFailure
         record.lastFailure = FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now())
-        try recordFolderProcessing(record, in: &processingState)
-        try finishProcessingRun(&processingState, state: .failed)
+        try recordFolderProcessing(record, in: &processingState, activity: activity)
+        try finishProcessingRun(&processingState, state: .failed, activity: activity)
       }
       throw error
     }
     if processingState != .none {
       let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
-      try recordFolderProcessing(record, in: &processingState)
+      try recordFolderProcessing(record, in: &processingState, activity: activity)
     }
   }
 
@@ -114,7 +115,9 @@ extension MovieFolderProcessor {
   ///   - state: The root processing state being inspected or updated.
   ///   - access: The already-held persistence access used throughout this operation.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func saveState(_ state: ProcessingState, to access: PersistenceAccess) throws {
+  func saveState(
+    _ state: ProcessingState, to access: PersistenceAccess, activity: ProcessorActivityLog? = .none
+  ) throws {
     var state = state
     state.credentialRevision = credentialRevision
     state.movieMatchingConfiguration = movieMatchingConfiguration
@@ -123,6 +126,7 @@ extension MovieFolderProcessor {
     do {
       try access.write(encoder.encode(state))
     } catch {
+      activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       // A recorded operation must stop before another change if its operational cache cannot commit.
       if processingStore != nil { throw CollectionProcessingError.unavailable }
       throw error

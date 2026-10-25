@@ -28,6 +28,9 @@ nonisolated public enum FolderProcessingFailureReason: String, Codable, Sendable
   case cancelled, unavailable, invalidResponse, authentication, rateLimited, timeout
   case filesystem, ownershipChanged, storage, capacity, unknown
   case connectivity, serverFailure, recoveryMode
+  case duplicateCollection, overlappingCollection, configurationChanged, authorizationDenied
+  case invalidSelection, invalidQuery, credentialStorage, invalidConfiguration, busy, collectionPaused, folderExcluded
+  case movieIdentityUnresolved, foreignIcon, missingPoster
 }
 /// Processing stage associated with the latest safe failure category.
 nonisolated public enum FolderProcessingStage: String, Codable, Sendable {

@@ -8,7 +8,7 @@ import Testing
 /// Controlled in-memory history used only by explicitly injected host tests.
 actor ActivityServiceFake: MovieFolderActivityServicing {
   /// Retained fake committed entries.
-  private var history: [MovieFolderActivityEntry] = []
+  private var history: [MovieFolderActivityLogEntry] = []
   /// Increasing sequence preserved across Clear.
   private var sequence = UInt64.zero
   /// Failure controls independent of configuration operations.
@@ -41,16 +41,16 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
   /// Whether a read is currently suspended.
   var isReadHeld: Bool { heldRead != nil }
 
-  func record(_ event: MovieFolderActivityEvent) -> Bool {
+  func record(_ event: MovieFolderActivityLogEvent) -> Bool {
     guard !failsWrites else { return false }
     sequence += 1
-    history.append(MovieFolderActivityEntry(id: UUID(), sequence: sequence, occurredAt: Date(), event: event))
+    history.append(MovieFolderActivityLogEntry(id: UUID(), sequence: sequence, occurredAt: Date(), event: event))
     if history.count > 500 { history.removeFirst(history.count - 500) }
 
     return true
   }
 
-  func entries() async throws -> [MovieFolderActivityEntry] {
+  func entries() async throws -> [MovieFolderActivityLogEntry] {
     readCount += 1
     if failsReads { throw Failure.unavailable }
     let snapshot = history
@@ -75,8 +75,8 @@ struct LogViewModelTests {
   @Test func safeFiltersPruneHiddenSelection() async {
     let service = ActivityServiceFake()
     let log = LogViewModel(activityHistoryService: service)
-    await log.record(MovieFolderActivityEvent(action: .posterRefresh, status: .failed))
-    await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    await log.record(MovieFolderActivityLogEvent(action: .posterRefresh, status: .failed))
+    await log.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     log.selectRows(IndexSet(integersIn: 0..<2))
     log.setFilters(searchText: "poster", category: "Poster Actions", severity: "Error")
     #expect(log.filteredHistoryRows().count == 1)
@@ -90,7 +90,7 @@ struct LogViewModelTests {
   /// A source switch fences a suspended activity read and displays only the replacement source.
   @Test func sourceSwitchFencesSuspendedReadAndClearTargetsAllNetworkRows() async throws {
     let activity = ActivityServiceFake()
-    #expect(await activity.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded)))
+    #expect(await activity.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded)))
     let network = NetworkHistoryPresentationFake()
     await network.append(.init(purpose: .movieSearch, result: .response(statusCode: 200)))
     await network.append(.init(purpose: .posterDownload, result: .transportFailure))
@@ -138,12 +138,12 @@ struct LogViewModelTests {
   /// Verifies opening the log reloads committed service history.
   @Test func openingAndReopeningLoadsActualServiceHistory() async {
     let service = ActivityServiceFake()
-    await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    await service.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     let log = LogViewModel(activityHistoryService: service)
     #expect(log.statusText.contains("Loading"))
     await log.reload()
     #expect(log.activityEntries.count == 1)
-    await service.record(MovieFolderActivityEvent(action: .posterRefresh, status: .succeeded))
+    await service.record(MovieFolderActivityLogEvent(action: .posterRefresh, status: .succeeded))
     await log.reload()
     #expect(log.activityEntries.count == 2)
   }
@@ -152,7 +152,7 @@ struct LogViewModelTests {
   @Test func clearFailureKeepsEntriesAndShowsDistinctMessage() async {
     let service = ActivityServiceFake()
     let log = LogViewModel(activityHistoryService: service)
-    await log.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    await log.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     await service.setFailures(clear: true)
     await log.clear()
     #expect(log.activityEntries.count == 1)
@@ -166,7 +166,7 @@ struct LogViewModelTests {
     let service = ActivityServiceFake()
     let log = LogViewModel(activityHistoryService: service)
     await service.setFailures(write: true)
-    await log.record(MovieFolderActivityEvent(action: .credentialSaved, status: .succeeded))
+    await log.record(MovieFolderActivityLogEvent(action: .credentialSaved, status: .succeeded))
     #expect(log.hasObservedWriteFailure)
     #expect(!log.hasLoadFailure)
     await service.setFailures(read: true)
@@ -178,7 +178,7 @@ struct LogViewModelTests {
   /// Prevents an older read from restoring cleared history and coalesces reload notifications.
   @Test func clearFencesAnOlderCapturedReadAndCoalescesHints() async {
     let service = ActivityServiceFake()
-    await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    await service.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     let log = LogViewModel(activityHistoryService: service)
     await service.holdNextRead()
     let reload = Task { await log.reload() }
@@ -195,13 +195,13 @@ struct LogViewModelTests {
   /// Rejects stale reads after failed clearing while preserving its failure message.
   @Test func failedClearFencesCapturedReadAndReloadsHistoryWithoutLosingFailure() async {
     let service = ActivityServiceFake()
-    await service.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    await service.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     let log = LogViewModel(activityHistoryService: service)
     await log.reload()
     await service.holdNextRead()
     let reload = Task { await log.reload() }
     while !(await service.isReadHeld) { await Task.yield() }
-    await service.record(MovieFolderActivityEvent(action: .posterRemoval, status: .succeeded))
+    await service.record(MovieFolderActivityLogEvent(action: .posterRemoval, status: .succeeded))
     await service.setFailures(clear: true)
     await log.clear()
     await service.releaseRead()
@@ -218,12 +218,12 @@ struct LogViewModelTests {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let first = MovieFolderActivityRecorder(directory: directory, notifier: IgnoredActivityChangeNotifier())
-    #expect(await first.record(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded)))
+    #expect(await first.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded)))
     let log = LogViewModel(activityHistoryService: first)
     await log.reload()
     #expect(log.activityEntries.count == 1)
     let otherProcess = MovieFolderActivityRecorder(directory: directory, notifier: IgnoredActivityChangeNotifier())
-    #expect(await otherProcess.record(MovieFolderActivityEvent(action: .automaticProcessing, status: .partial)))
+    #expect(await otherProcess.record(MovieFolderActivityLogEvent(action: .automaticProcessing, status: .partial)))
     #expect(log.activityEntries.count == 1)
     await log.reload()
     #expect(log.activityEntries.map(\.sequence) == [1, 2])

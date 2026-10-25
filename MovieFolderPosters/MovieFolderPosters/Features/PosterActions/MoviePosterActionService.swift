@@ -224,24 +224,80 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
   /// Keeps logging failures separate from the original authorized operation result or thrown error.
   private func recordAction<Value: Sendable>(
-    _ action: MovieFolderActivityEvent.Action, request: MoviePosterRequest,
+    _ action: MovieFolderActivityLogEvent.Action, request: MoviePosterRequest,
     operation: () async throws -> Value
   ) async throws -> Value {
     let activityGroupID = UUID()
-    await activity.record(MovieFolderActivityEvent(
-      action: action, status: .started, activityGroupID: activityGroupID, collectionID: request.rootID))
+    let capturedActivityLogContext = activityLogContext(for: request)
+    await activity.record(actionActivityLogEvent(
+      action, status: .started, request: request, activityGroupID: activityGroupID,
+      capturedActivityLogContext: capturedActivityLogContext))
     do {
       let result = try await operation()
-      await activity.record(MovieFolderActivityEvent(
-        action: action, status: .succeeded, activityGroupID: activityGroupID, collectionID: request.rootID))
+      await activity.record(actionActivityLogEvent(
+        action, status: .succeeded, request: request, activityGroupID: activityGroupID,
+        capturedActivityLogContext: capturedActivityLogContext))
 
       return result
     } catch {
-      await activity.record(MovieFolderActivityEvent(
-        action: action, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
-        activityGroupID: activityGroupID, collectionID: request.rootID))
+      await activity.record(actionActivityLogEvent(
+        action, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
+        request: request, activityGroupID: activityGroupID,
+        capturedActivityLogContext: capturedActivityLogContext, error: error))
       throw error
     }
+  }
+
+  /// Captures optional history context without making history reads a prerequisite for the action.
+  /// - Parameter request: The collection and immediate child involved in the explicit action.
+  /// - Returns: Saved naming and capture-time privacy, or absence if configuration cannot be read.
+  private func activityLogContext(for request: MoviePosterRequest) -> MovieFolderActivityLogContext? {
+    guard let configuration = try? environment.makeConfigurationRepository().read(),
+      let directory = configuration.directories.first(where: { $0.id == request.rootID })
+    else { return .none }
+
+    return MovieFolderActivityLogContext(directory: directory)
+  }
+
+  /// Describes an action from captured facts without exposing arbitrary error descriptions.
+  private func actionActivityLogEvent(
+    _ action: MovieFolderActivityLogEvent.Action, status: MovieFolderActivityLogEvent.Status,
+    request: MoviePosterRequest, activityGroupID: UUID,
+    capturedActivityLogContext: MovieFolderActivityLogContext?, error: (any Error)? = .none
+  ) -> MovieFolderActivityLogEvent {
+    let failure = error.map { actionFailureEvidence(for: $0) }
+    let retryAt: Date?
+    if let recoveryError = error as? ProcessingRecoveryError,
+      case .providerBackoff(let deadline, _) = recoveryError {
+      retryAt = deadline
+    } else {
+      retryAt = .none
+    }
+
+    guard let capturedActivityLogContext else {
+      return MovieFolderActivityLogEvent(action: action, status: status, failure: failure, retryAt: retryAt)
+    }
+
+    return capturedActivityLogContext.event(action: action, status: status, activityGroupID: activityGroupID,
+      childFolderName: request.childName, failure: failure, retryAt: retryAt)
+  }
+
+  /// Preserves host action failure categories without retaining arbitrary error descriptions.
+  private func actionFailureEvidence(for error: any Error) -> FolderProcessingFailure {
+    guard let actionError = error as? MoviePosterActionServiceError else {
+      return MovieFolderActivityLogEvent.failureEvidence(for: error)
+    }
+
+    let reason: FolderProcessingFailureReason = switch actionError {
+    case .directoryNotConfigured, .configurationChanged: .configurationChanged
+    case .directoryUnavailable: .authorizationDenied
+    case .childChanged: .ownershipChanged
+    case .credentialUnavailable: .authentication
+    case .invalidSelection: .invalidSelection
+    case .invalidQuery: .invalidQuery
+    }
+
+    return FolderProcessingFailure(reason: reason, stage: .validateIdentity, occurredAt: Date())
   }
 
   /// Validates the query and searches TMDb under the folder's current authorization.
@@ -533,7 +589,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       recovery: try environment.makeProcessingRecoveryService(),
       credentialRevision: context.configuration.credentialRevision,
       movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
-      processingConfiguration: context.directory.processingConfiguration)
+      processingConfiguration: context.directory.processingConfiguration,
+      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: context.directory))
 
   }
 }

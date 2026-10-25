@@ -338,7 +338,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 
   /// Reports local persistence results without depending on the sibling Log's presentation state.
   func configurationViewModel(
-    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityEvent, saved: Bool
+    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityLogEvent, saved: Bool
   ) {
     delegate?.configurationCoordinator(self, didRecordActivitySaved: saved)
   }

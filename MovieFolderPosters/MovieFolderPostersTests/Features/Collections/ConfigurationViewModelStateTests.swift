@@ -166,12 +166,10 @@ struct ConfigurationViewModelTests {
     await viewModel.load()
     await viewModel.reauthorizeDirectory(directoryID, with: replacementURL)
 
-    #expect(
-      viewModel.directories == [
-        ConfiguredDirectoryStatus(
-          id: directoryID, path: "/Volumes/Movies", availability: .available
-        )
-      ])
+    #expect(viewModel.directories.count == 1)
+    #expect(viewModel.directories.first?.id == directoryID)
+    #expect(viewModel.directories.first?.path == "/Volumes/Movies")
+    #expect(viewModel.directories.first?.availability == .available)
 
     await viewModel.removeDirectory(directoryID)
 
@@ -184,6 +182,24 @@ struct ConfigurationViewModelTests {
         .remove(directoryID),
         .configurationSummary
       ])
+  }
+
+  /// A failed presentation read must not report an already committed removal as a failed removal.
+  @Test @MainActor
+  func removalRefreshFailureDoesNotRecordFalseFailureOrDuplicateSuccess() async throws {
+    let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
+    let service = ConfigurationServiceFake(
+      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false),
+      failsSummaryAfterRemoval: true)
+    let activityHistoryService = ActivityServiceFake()
+    let viewModel = ConfigurationViewModel(service: service, activity: activityHistoryService)
+    await viewModel.load()
+    await viewModel.removeDirectory(directory.id)
+
+    #expect(service.calls.contains(.remove(directory.id)))
+    #expect(viewModel.errorMessage?.contains("was removed") == true)
+    #expect(try await activityHistoryService.entries().allSatisfy { $0.event.action != .collectionRemoved })
+    #expect(!viewModel.isBusy)
   }
 
   /// Verifies operation failures expose a safe message without repeating credential text.

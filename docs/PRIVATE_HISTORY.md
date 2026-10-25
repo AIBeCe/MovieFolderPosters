@@ -4,6 +4,9 @@ Status: Combined proposal approved on 2026-10-24; initial implementation and foc
 PASS. User-approved naming corrections (points 1–7) completed on 2026-10-25 with focused checks and independent
 review PASS. The user approved the completed implementation for commit on 2026-10-25. Formal Validation Phase has
 not started and requires separate authorization.
+The additional informative Activity Log point was approved on 2026-10-25. It adds historical collection/folder/
+confirmed-movie context, actual processing results and counters, safe failure guidance, and fully wrapped text.
+See [Informative Activity Log](INFORMATIVE_ACTIVITY_LOG.md) for implementation evidence and remaining checks.
 Issue: [#12](https://github.com/AIBeCe/MovieFolderPosters/issues/12).
 Branch: `feature/result-log-private-history`; baseline: `5b14ea8`.
 

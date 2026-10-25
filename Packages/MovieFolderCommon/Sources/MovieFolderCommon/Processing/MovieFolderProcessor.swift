@@ -36,6 +36,10 @@ public actor MovieFolderProcessor {
   let recovery: ProcessingRecoveryService?
   /// Credential generation captured at composition, never refreshed by an in-flight operation.
   let credentialRevision: UUID?
+  /// Optional retained reporting service; logging never participates in processing authorization.
+  let activityHistoryService: (any MovieFolderActivityServicing)?
+  /// Immutable collection provenance and privacy captured when this processor is composed.
+  let activityLogContext: MovieFolderActivityLogContext?
   /// The conservative folder-name parser used before metadata searches.
   let parser = ReleaseNameParser()
   /// The conservative movie matcher used after a complete provider response.
@@ -57,6 +61,8 @@ public actor MovieFolderProcessor {
   ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon change.
   ///   - credentialRevision: Production credential generation stamped on every saved operational state.
   ///   - configuration: Validated retry and cache timings for this processor instance.
+  ///   - activityHistoryService: Optional retained best-effort activity writer.
+  ///   - activityLogContext: Trusted root-bound names and capture-time privacy for this processor.
   ///   - movieMatchingConfiguration: Effective choices captured for this collection's automatic matching.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
@@ -73,8 +79,12 @@ public actor MovieFolderProcessor {
     credentialRevision: UUID? = .none,
     configuration: MovieFolderProcessorConfiguration = .standard,
     movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
-    processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration()
+    processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
+    activityHistoryService: (any MovieFolderActivityServicing)? = .none,
+    activityLogContext: MovieFolderActivityLogContext? = .none
   ) {
+    self.activityHistoryService = activityHistoryService
+    self.activityLogContext = activityLogContext
     self.credentialRevision = credentialRevision
     self.configuration = configuration
     self.fileSystem = fileSystem

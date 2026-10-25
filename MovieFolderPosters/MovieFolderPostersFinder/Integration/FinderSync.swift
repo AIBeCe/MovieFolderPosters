@@ -31,7 +31,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   private let environment: any FinderRuntimeEnvironment
 
   /// Last configuration availability, suppressing repeated reload floods.
-  private var lastConfigurationStatus: MovieFolderActivityEvent.Status?
+  private var lastConfigurationStatus: MovieFolderActivityLogEvent.Status?
   /// Privacy-preserving diagnostic events for this component.
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
 
@@ -106,7 +106,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         processingStore: try environment.processingStore(), recovery: recovery,
         credentialRevision: configuration.credentialRevision,
         movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
-        processingConfiguration: root.directory.processingConfiguration)
+        processingConfiguration: root.directory.processingConfiguration,
+        activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: root.directory))
     }
     processingConfiguration = configuration
     logger.notice("Shared Keychain credential available")
@@ -174,9 +175,10 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     guard !root.directory.processingConfiguration.isPaused else { return .none }
 
     let activityGroupID = UUID()
-    await activity.record(MovieFolderActivityEvent(
+    let capturedActivityLogContext = currentActivityLogContext(for: root)
+    await activity.record(capturedActivityLogContext.event(
       action: .automaticProcessing, status: .started,
-      activityGroupID: activityGroupID, collectionID: root.directory.id))
+      activityGroupID: activityGroupID))
     do {
       guard try fileSystem.persistentDirectoryIdentity(at: root.access.url) == root.identity else {
         throw DirectoryAccessError.identityChanged
@@ -188,27 +190,47 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance,
         movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
         processingConfigurationRevision: root.directory.processingConfiguration.revision)
-      let result = try await processor.process(root: root.access.url, processingContext: context)
+      let result = try await processor.process(root: root.access.url, processingContext: context,
+        activityLogContext: capturedActivityLogContext)
       withExtendedLifetime(root.access) {}
-      await activity.record(MovieFolderActivityEvent(
-        action: .automaticProcessing, status: MovieFolderActivityEvent.automaticProcessingStatus(for: result),
-        activityGroupID: activityGroupID, collectionID: root.directory.id))
+      await activity.record(capturedActivityLogContext.event(
+        action: .automaticProcessing, status: MovieFolderActivityLogEvent.automaticProcessingStatus(for: result),
+        activityGroupID: activityGroupID, processingSummary: result))
       logger.notice("Processing returned: examined=\(result.examined), assigned=\(result.assigned)")
 
       return result.providerRetryAt ?? result.nextAutomaticRetryAt
     } catch {
-      await activity.record(MovieFolderActivityEvent(
+      await activity.record(capturedActivityLogContext.event(
         action: .automaticProcessing, status: error is CancellationError || Task.isCancelled ? .cancelled : .failed,
-        activityGroupID: activityGroupID, collectionID: root.directory.id))
+        activityGroupID: activityGroupID, failure: MovieFolderActivityLogEvent.failureEvidence(for: error)))
       throw error
     }
   }
 
+  /// Refreshes capture-time history choices for each invocation without weakening processing authorization.
+  /// - Parameter root: The loaded authorized root whose identity must still match saved configuration.
+  /// - Returns: Fresh naming/privacy for the same grant, or private context when current choices cannot be verified.
+  private func currentActivityLogContext(for root: AuthorizedRoot) -> MovieFolderActivityLogContext {
+    guard let configuration = try? environment.configurationRepository().read(),
+      let directory = configuration.directories.first(where: { $0.id == root.directory.id }),
+      directory.identity == root.directory.identity,
+      directory.authorizationVersion == root.directory.authorizationVersion,
+      directory.path == root.directory.path
+    else {
+      var privateDirectory = root.directory
+      privateDirectory.usesPrivateHistory = true
+
+      return MovieFolderActivityLogContext(directory: privateDirectory)
+    }
+
+    return MovieFolderActivityLogContext(directory: directory)
+  }
+
   /// Records availability transitions once per configuration state, without per-folder events.
-  private func recordConfigurationStatus(_ status: MovieFolderActivityEvent.Status) async {
+  private func recordConfigurationStatus(_ status: MovieFolderActivityLogEvent.Status) async {
     guard status != lastConfigurationStatus else { return }
     lastConfigurationStatus = status
-    await activity.record(MovieFolderActivityEvent(action: .finderConfiguration, status: status))
+    await activity.record(MovieFolderActivityLogEvent(action: .finderConfiguration, status: status))
   }
 
   /// Resolves retained extension access or establishes an extension-owned bookmark from transferred evidence.

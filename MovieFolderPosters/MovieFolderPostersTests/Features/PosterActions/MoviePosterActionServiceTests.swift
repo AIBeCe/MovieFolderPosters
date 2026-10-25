@@ -10,6 +10,37 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// Actual user-requested actions identify their authorized collection and immediate child folder.
+  @Test func activityIdentifiesTheCollectionFolderAndMovie() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let activityHistoryService = ActivityServiceFake()
+    let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: "/chosen.png")
+    _ = try await fixture.service(activity: activityHistoryService).applyPoster(movie, for: fixture.request)
+    let recordedMessages = try await activityHistoryService.entries().map { $0.event.text }
+
+    #expect(recordedMessages.contains { $0.contains("Movies") && $0.contains("Dune (2021)") })
+    #expect(recordedMessages.contains { $0.contains("Confirmed movie: “Dune” (2021)") })
+    #expect(try await activityHistoryService.entries().contains { $0.event.target?.movieID == 7 })
+  }
+
+  /// An action without verified collection capture must not retain correlation or collection identifiers.
+  @Test func missingCollectionContextRecordsOnlyUnlinkedActivity() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let activityHistoryService = ActivityServiceFake()
+    let request = MoviePosterRequest(rootID: UUID(), childName: fixture.request.childName,
+      identity: fixture.request.identity, action: .refresh)
+    await #expect(throws: MoviePosterActionServiceError.directoryNotConfigured) {
+      try await fixture.service(activity: activityHistoryService).refreshPoster(for: request)
+    }
+    let events = try await activityHistoryService.entries().map(\.event)
+
+    #expect(events.map(\.status) == [.started, .failed])
+    #expect(events.allSatisfy { $0.target == .none && $0.collectionID == .none && $0.activityGroupID == .none })
+  }
+
   /// Pausing collection inclusion still permits explicit owned-poster removal and retains suppression.
   @Test func pausedCollectionAllowsExplicitRemoval() async throws {
     let fixture = try PosterActionFixture()
@@ -245,6 +276,8 @@ struct MoviePosterActionServiceTests {
     let events = try await activity.entries().map(\.event)
     #expect(events.map(\.status) == [.started, .failed])
     #expect(events.first?.activityGroupID == events.last?.activityGroupID)
+    #expect(events.last?.failure?.reason == .invalidSelection)
+    #expect(events.last?.text.contains("Dune (2021)") == true)
     #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
   }
@@ -266,7 +299,11 @@ struct MoviePosterActionServiceTests {
     #expect(try await service.matchedMovieID(for: fixture.request) == .none)
     #expect(await movieMetadataProvider.downloads == ["/chosen.png", "/chosen.png"])
     #expect(await movieMetadataProvider.searches.isEmpty)
-    #expect(try await activity.entries().map(\.event.status) == [
+    let folderResults = try await activity.entries().compactMap(\.event.folderResult)
+    #expect(folderResults.contains(.posterApplied))
+    #expect(folderResults.contains(.posterRemoved))
+    #expect(folderResults.contains(.noPosterToRemove))
+    #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status) == [
       .started, .succeeded, .started, .succeeded, .started, .succeeded, .started, .succeeded
     ])
   }
@@ -313,7 +350,8 @@ struct MoviePosterActionServiceTests {
     } catch ConfigurationError.configurationChanged {}
     #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
-    #expect(try await activity.entries().map(\.event.status) == [.started, .failed])
+    #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.started, .failed])
   }
 
   /// Provider cancellation keeps a distinct cancelled event and leaves the folder untouched.
@@ -326,7 +364,8 @@ struct MoviePosterActionServiceTests {
       try await fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
         .refreshPoster(for: fixture.request)
     }
-    #expect(try await activity.entries().map(\.event.status) == [.started, .cancelled])
+    #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.started, .cancelled])
     #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
   }

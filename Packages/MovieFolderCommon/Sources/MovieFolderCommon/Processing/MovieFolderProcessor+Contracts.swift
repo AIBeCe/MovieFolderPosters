@@ -99,7 +99,7 @@ nonisolated public enum PosterActionError: Error, Equatable {
 }
 
 /// Outcomes from one processing visit, including work skipped by safety and retry checks.
-nonisolated public struct ProcessingSummary: Equatable, Sendable {
+nonisolated public struct ProcessingSummary: Codable, Equatable, Sendable {
   /// Folders for which this visit attempted to establish a movie match.
   public var examined: Int
   /// Immediate child folders intentionally excluded from automatic work.

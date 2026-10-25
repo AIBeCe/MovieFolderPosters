@@ -24,6 +24,12 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   private let key: String
   /// The number of most recently committed entries to retain.
   private let maximumEntries: Int
+  /// Maximum encoded bytes accepted for one caller event.
+  private let maximumEventBytes: Int
+  /// Optional bound on the complete serialized history payload before envelope expansion.
+  private let maximumHistoryPayloadBytes: Int?
+  /// Record version written by this instance; a version-one writer rejects version two.
+  private let writerRecordVersion: Int
 
   /// Opens a history away from the caller's actor.
   ///
@@ -31,21 +37,38 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   ///   - directory: A dedicated history directory opened by Persistence without following symlinks.
   ///   - namespace: A nonempty stable identifier; callers must use the same event schema for this identifier.
   ///   - maximumEntries: Retained entry limit, from 1 through 500; defaults to 500.
+  ///   - maximumEventBytes: Encoded event byte limit; defaults to 2 KiB.
+  ///   - maximumHistoryPayloadBytes: Optional complete payload limit up to 1 MiB, before base64 envelope expansion.
+  ///   - writerRecordVersion: Version one by default; version two reads both versions and writes version two.
   /// - Throws: A configuration, cancellation, or persistence error.
-  public init(directory: URL, namespace: String, maximumEntries: Int = 500) async throws {
+  public init(
+    directory: URL, namespace: String, maximumEntries: Int = 500, maximumEventBytes: Int = 2048,
+    maximumHistoryPayloadBytes: Int? = .none, writerRecordVersion: Int = 1
+  ) async throws {
     guard !namespace.isEmpty else { throw ActivityLogError.invalidNamespace }
     guard (1...500).contains(maximumEntries) else { throw ActivityLogError.invalidRetentionLimit }
+
+    guard maximumEventBytes > 0 else { throw ActivityLogError.invalidEventByteLimit }
+
+    guard maximumHistoryPayloadBytes.map({ $0 > 0 && $0 <= 1024 * 1024 }) ?? true else {
+      throw ActivityLogError.invalidHistoryPayloadLimit
+    }
+
+    guard (1...2).contains(writerRecordVersion) else { throw ActivityLogError.unsupportedVersion }
     store = try await Self.offActor { try PersistenceStore(directory: directory, maximumRecordBytes: 2 * 1024 * 1024) }
     key = "Log.Activity.v1." + namespace
     self.maximumEntries = maximumEntries
+    self.maximumEventBytes = maximumEventBytes
+    self.maximumHistoryPayloadBytes = maximumHistoryPayloadBytes
+    self.writerRecordVersion = writerRecordVersion
   }
 
   /// Atomically commits an event, trims oldest entries, and returns its durable identity and order.
   ///
-  /// Encoded events are limited to 2 KiB. Cancellation before the commit prevents change; cancellation
-  /// arriving after the final cancellation check may race with the atomic commit.
+  /// Encoded events respect this instance's configured limit. Cancellation before the commit prevents change.
+  /// Cancellation arriving after the final check may race with the atomic commit.
   /// - Parameters:
-  ///   - event: The caller-defined Codable payload, whose encoded size must not exceed 2 KiB.
+  ///   - event: The caller-defined Codable payload, whose encoded size must not exceed the configured event limit.
   ///   - occurredAt: A finite observation timestamp; this does not determine the committed order.
   ///   - accessMode: Bounded retry by default, or a single immediate attempt when holding another service access.
   /// - Returns: The committed entry, including its stable identity and increasing sequence.
@@ -55,17 +78,18 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
     event: Event, occurredAt: Date = Date(), accessMode: ActivityLogAppendAccessMode = .boundedWait
   ) async throws -> ActivityEntry<Event> {
     try await Self.offActor {
-      try Self.validate(event)
+      try validate(event)
       guard occurredAt.timeIntervalSinceReferenceDate.isFinite else { throw ActivityLogError.invalidOccurrenceTime }
       let persistenceAccess = try await acquireAccess(mode: accessMode)
       var activityHistoryRecord = try readActivityHistory(using: persistenceAccess)
       guard activityHistoryRecord.lastSequence < UInt64.max else { throw ActivityLogError.sequenceExhausted }
       let entry = ActivityEntry(
         id: UUID(), sequence: activityHistoryRecord.lastSequence + 1, occurredAt: occurredAt, event: event)
+      activityHistoryRecord.version = writerRecordVersion
       activityHistoryRecord.lastSequence = entry.sequence
       activityHistoryRecord.entries.append(entry)
       activityHistoryRecord.entries = Array(activityHistoryRecord.entries.suffix(maximumEntries))
-      let encoded = try JSONEncoder().encode(activityHistoryRecord)
+      let encoded = try encodeRetainedHistory(&activityHistoryRecord)
       try Task.checkCancellation()
       try persistenceAccess.write(encoded)
 
@@ -97,7 +121,8 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
       let persistenceAccess = try await acquireAccess()
       var activityHistoryRecord = try readActivityHistory(using: persistenceAccess)
       activityHistoryRecord.entries.removeAll()
-      let encoded = try JSONEncoder().encode(activityHistoryRecord)
+      activityHistoryRecord.version = writerRecordVersion
+      let encoded = try encodeRetainedHistory(&activityHistoryRecord)
       try Task.checkCancellation()
       try persistenceAccess.write(encoded)
     }
@@ -124,7 +149,9 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
     } catch {
       throw ActivityLogError.corruptActivityHistory
     }
-    guard activityHistoryRecord.version == 1 else { throw ActivityLogError.unsupportedVersion }
+    guard (1...writerRecordVersion).contains(activityHistoryRecord.version) else {
+      throw ActivityLogError.unsupportedVersion
+    }
     guard activityHistoryRecord.entries.count <= 500 else { throw ActivityLogError.corruptActivityHistory }
     var previousSequence = UInt64.zero
     var identities = Set<UUID>()
@@ -132,7 +159,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
       guard entry.sequence > previousSequence, entry.sequence <= activityHistoryRecord.lastSequence,
         entry.occurredAt.timeIntervalSinceReferenceDate.isFinite, identities.insert(entry.id).inserted
       else { throw ActivityLogError.corruptActivityHistory }
-      try Self.validate(entry.event)
+      try validate(entry.event)
       previousSequence = entry.sequence
     }
     guard activityHistoryRecord.entries.isEmpty || previousSequence == activityHistoryRecord.lastSequence else {
@@ -143,8 +170,35 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   }
 
   /// Rejects unbounded event payloads before acquiring a change access.
-  private static func validate(_ event: Event) throws {
-    guard try JSONEncoder().encode(event).count <= 2 * 1024 else { throw ActivityLogError.eventTooLarge }
+  private func validate(_ event: Event) throws {
+    guard try JSONEncoder().encode(event).count <= maximumEventBytes else { throw ActivityLogError.eventTooLarge }
+  }
+
+  /// Trims a prefix with logarithmically many encodings, preserving the newest event and durable sequence.
+  private func encodeRetainedHistory(_ activityHistoryRecord: inout ActivityHistoryRecord<Event>) throws -> Data {
+    let encoder = JSONEncoder()
+    let encoded = try encoder.encode(activityHistoryRecord)
+
+    guard let maximumHistoryPayloadBytes, encoded.count > maximumHistoryPayloadBytes else { return encoded }
+
+    var lowerBound = 1
+    var upperBound = activityHistoryRecord.entries.count
+    while lowerBound < upperBound {
+      let removedCount = (lowerBound + upperBound) / 2
+      var candidate = activityHistoryRecord
+      candidate.entries = Array(activityHistoryRecord.entries.dropFirst(removedCount))
+      if try encoder.encode(candidate).count <= maximumHistoryPayloadBytes {
+        upperBound = removedCount
+      } else {
+        lowerBound = removedCount + 1
+      }
+    }
+
+    guard lowerBound < activityHistoryRecord.entries.count else { throw ActivityLogError.historyPayloadTooLarge }
+
+    activityHistoryRecord.entries.removeFirst(lowerBound)
+
+    return try encoder.encode(activityHistoryRecord)
   }
 
   /// Keeps synchronous filesystem work off UI actors and forwards cancellation to detached work.

@@ -124,7 +124,7 @@ struct ConfigurationCoordinatorCoverageTests {
     let model = ConfigurationViewModel(
       service: ConfigurationCoverageService(), activity: ConfigurationCoverageActivity())
     let controller = ConfigurationViewController(viewModel: model)
-    let event = MovieFolderActivityEvent(action: .collectionAdded, status: .failed)
+    let event = MovieFolderActivityLogEvent(action: .collectionAdded, status: .failed)
 
     coordinator.configurationViewControllerDidRequestLog(controller)
     coordinator.configurationViewModel(model, didRecordActivity: event, saved: false)
@@ -236,13 +236,13 @@ private actor ConfigurationCoverageActivity: MovieFolderActivityServicing {
   private(set) var recordCount = Int.zero
 
   /// Counts the event and reports successful local recording.
-  func record(_ event: MovieFolderActivityEvent) -> Bool {
+  func record(_ event: MovieFolderActivityLogEvent) -> Bool {
     recordCount += 1
 
     return true
   }
 
-  func entries() throws -> [MovieFolderActivityEntry] { [] }
+  func entries() throws -> [MovieFolderActivityLogEntry] { [] }
   func clear() throws {}
 
   /// Yields until the requested number of activity writes has been attempted.

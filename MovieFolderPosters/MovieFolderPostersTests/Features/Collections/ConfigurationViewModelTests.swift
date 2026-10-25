@@ -36,16 +36,19 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
   private var nextError: TestServiceError?
   /// Optional gate used to hold one operation in progress for serialization tests.
   private let gate: AsyncTaskGate?
+  /// Makes the post-removal presentation refresh fail after the mutation succeeds.
+  private let failsSummaryAfterRemoval: Bool
 
   /// Creates a fake with an initial summary and optional operation gate.
   init(
     summary: ConfigurationSummary = ConfigurationSummary(
       directories: [], credentialConfigured: false, posterAppearance: .softFinish
     ),
-    gate: AsyncTaskGate? = .none
+    gate: AsyncTaskGate? = .none, failsSummaryAfterRemoval: Bool = false
   ) {
     currentSummary = summary
     self.gate = gate
+    self.failsSummaryAfterRemoval = failsSummaryAfterRemoval
   }
 
   /// Recorded service calls in invocation order.
@@ -86,6 +89,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
         credentialConfigured: currentSummary.credentialConfigured,
         posterAppearance: currentSummary.posterAppearance
       )
+      if failsSummaryAfterRemoval { nextError = TestServiceError(message: "Refresh unavailable") }
     }
   }
 
@@ -202,13 +206,13 @@ final class ConfigurationDelegateProbe: ConfigurationViewModelDelegate,
   /// Number of model-state updates received.
   var updates = Int.zero
   /// Activity log used to inspect messages sent by the view model.
-  var events: [MovieFolderActivityEvent] = []
+  var events: [MovieFolderActivityLogEvent] = []
 
   /// Counts a state update from the configuration model.
   func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) { updates += 1 }
   /// Records activity in the probe's host log.
   func configurationViewModel(
-    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityEvent, saved: Bool
+    _ viewModel: ConfigurationViewModel, didRecordActivity event: MovieFolderActivityLogEvent, saved: Bool
   ) {
     events.append(event)
   }

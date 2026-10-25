@@ -51,7 +51,7 @@ nonisolated enum InstallationDiagnosticsExport {
   ///   - report: The displayed readiness snapshot; no original report text is copied to the export.
   ///   - entries: Committed activity in sequence order, or `.none` when history could not be read.
   /// - Returns: A plain-text summary containing only allowed statuses, timestamps, and action descriptions.
-  static func format(report: InstallationReadinessReport, entries: [MovieFolderActivityEntry]?) -> String {
+  static func format(report: InstallationReadinessReport, entries: [MovieFolderActivityLogEntry]?) -> String {
     let lines = report.text.components(separatedBy: .newlines)
     var output = ["Movie Folder Posters diagnostics", "Readiness snapshot (may be stale)"]
     let statuses: [(label: String, choices: [String])] = [
@@ -94,7 +94,9 @@ nonisolated enum InstallationDiagnosticsExport {
     for entry in entries.suffix(maximumActivityCount) {
       let timestamp = entry.occurredAt.timeIntervalSince1970.isFinite
         ? formatter.string(from: entry.occurredAt) : "Unknown time"
-      output.append("\(timestamp) \(entry.event.text)")
+      let diagnosticEvent = MovieFolderActivityLogEvent(
+        action: entry.event.action, status: entry.event.status, failure: entry.event.failure)
+      output.append("\(timestamp) \(diagnosticEvent.text)")
     }
     if entries.isEmpty { output.append("No retained activity.") }
 

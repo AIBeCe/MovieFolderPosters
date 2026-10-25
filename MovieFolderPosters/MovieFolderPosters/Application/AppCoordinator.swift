@@ -36,7 +36,7 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
       do {
         _ = try processingStore.pruneToConfiguredRoots()
       } catch {
-        await activity.record(MovieFolderActivityEvent(action: .collectionCleanup, status: .failed))
+        await activity.record(MovieFolderActivityLogEvent(action: .collectionCleanup, status: .failed))
       }
     }
     #if DEBUG
@@ -105,7 +105,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// - Throws: Configuration startup errors; independent routes remain available.
   func start() throws {
     applyAppearance()
-    recordActivity(MovieFolderActivityEvent(action: .applicationOpened, status: .succeeded))
+    recordActivity(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     try showConfiguration()
   }
 
@@ -190,12 +190,12 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
 
   func appAppearanceSettingsDidChange(_ settings: AppAppearanceSettings) {
     applyAppearance()
-    recordActivity(MovieFolderActivityEvent(action: .applicationAppearanceChanged, status: .succeeded))
+    recordActivity(MovieFolderActivityLogEvent(action: .applicationAppearanceChanged, status: .succeeded))
   }
 
   /// Records independently of Log and forwards the local result through the root's routing boundary.
   /// - Parameter event: Typed, privacy-safe application event.
-  private func recordActivity(_ event: MovieFolderActivityEvent) {
+  private func recordActivity(_ event: MovieFolderActivityLogEvent) {
     Task { [activity, weak self] in
       let saved = await activity.record(event)
       self?.logCoordinator.producerDidRecord(saved: saved)
