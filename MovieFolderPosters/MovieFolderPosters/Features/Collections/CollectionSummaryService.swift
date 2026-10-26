@@ -12,6 +12,25 @@ nonisolated struct CollectionProcessingSummary: Sendable, Equatable {
   let counts: CollectionProcessingCounts
   /// Lifecycle state after a nonblocking persisted-operation orphan check.
   let displayState: CollectionProcessingDisplayState
+  /// Safe recovery guidance when this collection's persisted results cannot be read.
+  let readFailureMessage: String?
+
+  /// Retains collection evidence and optional per-root recovery guidance without affecting other roots.
+  /// - Parameters:
+  ///   - processingState: Current saved results, when readable.
+  ///   - presentation: Lifecycle projection supported by the results.
+  ///   - counts: Counts supported by the current evidence.
+  ///   - displayState: Current freshness and availability state.
+  ///   - readFailureMessage: Safe actionable explanation, excluding raw storage errors.
+  init(processingState: CollectionProcessingState?, presentation: CollectionProcessingPresentation,
+       counts: CollectionProcessingCounts, displayState: CollectionProcessingDisplayState,
+       readFailureMessage: String? = .none) {
+    self.processingState = processingState
+    self.presentation = presentation
+    self.counts = counts
+    self.displayState = displayState
+    self.readFailureMessage = readFailureMessage
+  }
 
   /// Returns saved folders that lack a verified or intentional terminal outcome.
   ///
@@ -112,7 +131,8 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       guard let previous = result[root.id], let processingState = previous.processingState else {
         currentResult[root.id] = CollectionProcessingSummary(
           processingState: .none, presentation: CollectionProcessingPresentation(processingState: .none),
-          counts: Self.unknownCounts, displayState: .unavailable)
+          counts: unknownCounts, displayState: .unavailable,
+          readFailureMessage: result[root.id]?.readFailureMessage)
         continue
       }
       let isStale = !Self.matches(processingState.context, root: root, configuration: latestConfiguration)
@@ -120,7 +140,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
         ? CollectionProcessingSummary(
           processingState: processingState,
           presentation: CollectionProcessingPresentation(processingState: processingState, isStale: true),
-          counts: Self.unknownCounts,
+          counts: unknownCounts,
           displayState: .stale
         )
         : previous
@@ -134,7 +154,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       currentResult[rootID] = CollectionProcessingSummary(
         processingState: processingState,
         presentation: CollectionProcessingPresentation(processingState: processingState, isStale: true),
-        counts: Self.unknownCounts,
+        counts: unknownCounts,
         displayState: .stale
       )
     }
@@ -157,8 +177,10 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       return CollectionProcessingSummary(
         processingState: .none,
         presentation: CollectionProcessingPresentation(processingState: .none),
-        counts: Self.unknownCounts,
-        displayState: .unavailable
+        counts: unknownCounts,
+        displayState: .unavailable,
+        readFailureMessage: (error as? MovieFolderStorageMigrationError)?.localizedDescription
+          ?? "Saved results could not be read. Open Log for details; keep existing records."
       )
     }
 
@@ -182,7 +204,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
         presentation: CollectionProcessingPresentation(
           processingState: processingState, isStale: isStale,
           isBusy: hasRunningRun && !isStale),
-        counts: isStale ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
+        counts: isStale ? unknownCounts : (processingState?.calculateCounts() ?? unknownCounts),
         displayState: displayState
       )
     }
@@ -222,7 +244,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       presentation: CollectionProcessingPresentation(
         processingState: refreshed, isStale: remainsStale,
         stateOverride: isOrphaned ? .interrupted : .none),
-      counts: remainsStale ? Self.unknownCounts : (refreshed?.calculateCounts() ?? Self.unknownCounts),
+      counts: remainsStale ? unknownCounts : (refreshed?.calculateCounts() ?? unknownCounts),
       displayState: displayState
     )
   }
@@ -252,13 +274,14 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
         isStale: isStale,
         isBusy: !isStale && !isUnavailable),
       counts: isStale || isUnavailable
-        ? Self.unknownCounts : (processingState?.calculateCounts() ?? Self.unknownCounts),
-      displayState: displayState
+        ? unknownCounts : (processingState?.calculateCounts() ?? unknownCounts),
+      displayState: displayState,
+      readFailureMessage: (error as? MovieFolderStorageMigrationError)?.localizedDescription
     )
   }
 
   /// Values used when no current-context evidence can support a headline count.
-  private static var unknownCounts: CollectionProcessingCounts {
+  private var unknownCounts: CollectionProcessingCounts {
     CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)
   }
 

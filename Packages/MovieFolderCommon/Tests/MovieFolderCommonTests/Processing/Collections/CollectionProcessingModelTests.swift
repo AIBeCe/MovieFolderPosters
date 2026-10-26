@@ -131,8 +131,9 @@ struct CollectionProcessingModelTests {
   /// Checks that unsupported schemas and duplicate folder membership fail validation.
   @Test func unknownSchemaAndDuplicateMembershipAreRejected() {
     var processingState = CollectionProcessingState(schemaVersion: 99, context: context)
-    #expect(throws: CollectionProcessingError.unsupportedSchema) { try processingState.validate() }
-    processingState.schemaVersion = 1
+    #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(
+      record: .collectionOutcomes(context.rootID), version: 99)) { try processingState.validate() }
+    processingState.schemaVersion = 2
     processingState.folders = [FolderProcessingRecord(name: "Film"), FolderProcessingRecord(name: "Film")]
     #expect(throws: CollectionProcessingError.invalidState) { try processingState.validate() }
   }
@@ -140,8 +141,7 @@ struct CollectionProcessingModelTests {
   /// Checks that renamed Swift declarations retain their historical persisted keys and values.
   @Test func legacyJSONKeepsRenamedFieldsAndRunValues() throws {
 
-    let processingState = try JSONDecoder().decode(
-      CollectionProcessingState.self, from: Data(Self.legacyJSONFixture.utf8))
+    let processingState = try convertLegacyOutcomeFixture(Data(Self.legacyJSONFixture.utf8))
     try processingState.validate()
 
     #expect(processingState.folders.first?.lastFailure?.reason == .storage)

@@ -25,9 +25,16 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
 
   /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey {
-    case schemaVersion, revision, context, currentRun = "operation", folders
+    case schemaVersion = "schemaVersion"
+    case revision = "revision"
+    case context = "context"
+    case currentRun = "operation"
+    case folders = "folders"
     case isInventoryComplete = "inventoryComplete"
-    case inspectedAt, inventoryIssue, lastCompletedRun, lastCompletedRunContext
+    case inspectedAt = "inspectedAt"
+    case inventoryIssue = "inventoryIssue"
+    case lastCompletedRun = "lastCompletedRun"
+    case lastCompletedRunContext = "lastCompletedRunContext"
   }
 
   /// Creates saved collection membership, assessments, and run history.
@@ -43,7 +50,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   ///   - inventoryIssue: Safe explanation of an incomplete inventory.
   ///   - lastCompletedRun: Latest completed collection-wide run, when available.
   ///   - lastCompletedRunContext: Generation captured for the historical completed run.
-  public init(schemaVersion: Int = 1, revision: UInt64 = .zero, context: CollectionProcessingContext,
+  public init(schemaVersion: Int = 2, revision: UInt64 = .zero, context: CollectionProcessingContext,
               currentRun: CollectionProcessingRun? = .none, folders: [FolderProcessingRecord] = [],
               isInventoryComplete: Bool = false, inspectedAt: Date? = .none,
               inventoryIssue: FolderProcessingReason? = .none, lastCompletedRun: CollectionProcessingRun? = .none,
@@ -60,12 +67,70 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
     self.lastCompletedRunContext = lastCompletedRunContext
   }
 
+  /// Decodes current outcomes without mutating or silently converting saved legacy data.
+  /// - Parameter decoder: Current schema-two collection outcome fields.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
+    let contextFields = try values.nestedContainer(keyedBy: ContextIdentityKeys.self, forKey: .context)
+    let rootID = try contextFields.decode(UUID.self, forKey: .rootID)
+
+    guard schemaVersion == 2 else {
+      if schemaVersion == 1 {
+        throw MovieFolderStorageMigrationError.migrationRequired(record: .collectionOutcomes(rootID), version: 1)
+      }
+      throw MovieFolderStorageMigrationError.unsupportedVersion(
+        record: .collectionOutcomes(rootID), version: schemaVersion)
+    }
+
+    revision = try values.decode(UInt64.self, forKey: .revision)
+    context = try values.decode(CollectionProcessingContext.self, forKey: .context)
+    currentRun = try values.decodeIfPresent(CollectionProcessingRun.self, forKey: .currentRun)
+    folders = try values.decode([FolderProcessingRecord].self, forKey: .folders)
+    isInventoryComplete = try values.decode(Bool.self, forKey: .isInventoryComplete)
+    inspectedAt = try values.decodeIfPresent(Date.self, forKey: .inspectedAt)
+    inventoryIssue = try values.decodeIfPresent(FolderProcessingReason.self, forKey: .inventoryIssue)
+    lastCompletedRun = try values.decodeIfPresent(CollectionProcessingRun.self, forKey: .lastCompletedRun)
+    lastCompletedRunContext = try values.decodeIfPresent(
+      CollectionProcessingContext.self, forKey: .lastCompletedRunContext)
+  }
+
+  /// Encodes only current outcomes; legacy payload changes belong to the explicit migrator.
+  /// - Parameter encoder: Destination for current collection outcome fields.
+  public func encode(to encoder: any Encoder) throws {
+    guard schemaVersion == 2 else {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: .collectionOutcomes(context.rootID))
+    }
+
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(schemaVersion, forKey: .schemaVersion)
+    try values.encode(revision, forKey: .revision)
+    try values.encode(context, forKey: .context)
+    try values.encodeIfPresent(currentRun, forKey: .currentRun)
+    try values.encode(folders, forKey: .folders)
+    try values.encode(isInventoryComplete, forKey: .isInventoryComplete)
+    try values.encodeIfPresent(inspectedAt, forKey: .inspectedAt)
+    try values.encodeIfPresent(inventoryIssue, forKey: .inventoryIssue)
+    try values.encodeIfPresent(lastCompletedRun, forKey: .lastCompletedRun)
+    try values.encodeIfPresent(lastCompletedRunContext, forKey: .lastCompletedRunContext)
+  }
+
+  /// Root identity is sufficient to describe an old schema before decoding renamed nested fields.
+  private enum ContextIdentityKeys: String, CodingKey { case rootID }
+
   /// Whether headline folder counts are supported by a complete inspected inventory.
   public var hasKnownTotal: Bool { isInventoryComplete && inspectedAt != .none }
 
   /// Validates schema, unique membership, capacity, and Done evidence invariants.
   public func validate() throws {
-    guard schemaVersion == 1 else { throw CollectionProcessingError.unsupportedSchema }
+    guard schemaVersion == 2 else {
+      if schemaVersion == 1 {
+        throw MovieFolderStorageMigrationError.migrationRequired(
+          record: .collectionOutcomes(context.rootID), version: 1)
+      }
+      throw MovieFolderStorageMigrationError.unsupportedVersion(
+        record: .collectionOutcomes(context.rootID), version: schemaVersion)
+    }
     guard folders.count <= 10_000, Set(folders.map(\.name)).count == folders.count else {
       throw CollectionProcessingError.invalidState
     }

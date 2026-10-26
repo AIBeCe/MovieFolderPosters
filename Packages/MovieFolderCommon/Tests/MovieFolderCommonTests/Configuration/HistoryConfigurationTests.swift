@@ -12,8 +12,8 @@ struct HistoryConfigurationTests {
     let json = """
       {"version":1,"directories":[],"credentialRevision":"\(revision)","developmentFixtures":false}
       """
-    let first = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(json.utf8))
-    let second = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(json.utf8))
+    let first = try convertLegacySettingsFixture(Data(json.utf8))
+    let second = try convertLegacySettingsFixture(Data(json.utf8))
     #expect(!first.isNetworkHistoryRecordingEnabled)
     #expect(first.networkHistoryConfigurationRevision == revision)
     #expect(first.networkHistoryConfigurationRevision == second.networkHistoryConfigurationRevision)
@@ -30,7 +30,7 @@ struct HistoryConfigurationTests {
     let initial = try repository.read()
     try repository.update { $0.isNetworkHistoryRecordingEnabled = true }
     let enabled = try repository.read()
-    #expect(enabled.version == 4)
+    #expect(enabled.version == 5)
     #expect(enabled.networkHistoryConfigurationRevision != initial.networkHistoryConfigurationRevision)
     #expect(enabled.credentialRevision == initial.credentialRevision)
     #expect(enabled.processingCacheRevision == initial.processingCacheRevision)
@@ -43,7 +43,7 @@ struct HistoryConfigurationTests {
     #expect(try repository.read().networkHistoryConfigurationRevision
       == privateSettings.networkHistoryConfigurationRevision)
     try repository.updateCredential(expectedRevision: privateSettings.credentialRevision)
-    #expect(try repository.read().version == 4)
+    #expect(try repository.read().version == 5)
     #expect(try repository.read().networkHistoryConfigurationRevision
       == privateSettings.networkHistoryConfigurationRevision)
   }
@@ -66,20 +66,20 @@ struct HistoryConfigurationTests {
     #expect(after.processingCacheRevision == before.processingCacheRevision)
   }
 
-  /// Privacy fields in an older payload cannot opt legacy schemas into the new recording contract.
-  @Test func legacySchemasCannotEnablePrivacyOrNetworkRecording() throws {
+  /// Normal readers reject retagged legacy data instead of resetting explicitly supplied privacy choices.
+  @Test func normalReadersRequireExplicitMigrationForLegacyPrivacy() throws {
     var configuration = DirectoryConfiguration()
     configuration.isNetworkHistoryRecordingEnabled = true
     configuration.directories = [MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID(), usesPrivateHistory: true)]
-    for version in 1...3 {
-      configuration.version = version
-      let encoded = try JSONEncoder().encode(configuration)
-      let decoded = try JSONDecoder().decode(DirectoryConfiguration.self, from: encoded)
-      #expect(!decoded.isNetworkHistoryRecordingEnabled)
-      #expect(!decoded.directories[0].usesPrivateHistory)
-      #expect(decoded.networkHistoryConfigurationRevision == configuration.credentialRevision)
+    let current = try JSONEncoder().encode(configuration)
+    for version in 1...4 {
+      var object = try #require(JSONSerialization.jsonObject(with: current) as? [String: Any])
+      object["version"] = version
+      let encoded = try JSONSerialization.data(withJSONObject: object)
+      #expect(throws: MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: version)) {
+        try JSONDecoder().decode(DirectoryConfiguration.self, from: encoded)
+      }
     }
   }
-
 }

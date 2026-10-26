@@ -11,6 +11,23 @@ import Testing
 /// Exercises actual root routing and reusable AppKit window lifetimes with isolated services.
 @Suite(.serialized) @MainActor
 struct CoordinatorLifecycleTests {
+  /// Early composition errors remain visible in Activity even when no configuration ViewModel exists.
+  @Test func migrationRequiredStartupRecordsTheRecoveryAction() async throws {
+    let activity = ActivityServiceFake()
+    let root = AppCoordinator(activity: activity, configurationBuilder: MigrationRequiredConfigurationBuilder(),
+      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+    #expect(throws: MovieFolderStorageMigrationError.self) { try root.start() }
+    for _ in 0..<100 {
+      if try await activity.entries().contains(where: { $0.event.action == .configurationLoaded }) { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let event = try #require(try await activity.entries().map(\.event).first { $0.action == .configurationLoaded })
+    #expect(event.status == .failed)
+    #expect(event.failure?.reason == .storageMigrationRequired)
+    #expect(event.text.contains("Migrate Saved Data"))
+    #expect(root.configurationCoordinator == .none)
+  }
+
   /// Recovery is persisted before configuration composition and the first action URL can route safely.
   @Test func recoveryLaunchPrecedesCompositionAndColdActionRouting() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -416,4 +433,12 @@ private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRe
   func applyPoster(_ movie: MovieMetadata, for request: MoviePosterRequest) throws -> Int { movie.id }
   func removePoster(for request: MoviePosterRequest) throws -> Bool { true }
   func matchedMovieID(for request: MoviePosterRequest) throws -> Int? { .none }
+}
+
+/// Simulates an old settings record without opening application data.
+private struct MigrationRequiredConfigurationBuilder: ConfigurationCoordinatorBuilding {
+  func makeCoordinator(activity: any MovieFolderActivityServicing, appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
+    throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: 3)
+  }
 }

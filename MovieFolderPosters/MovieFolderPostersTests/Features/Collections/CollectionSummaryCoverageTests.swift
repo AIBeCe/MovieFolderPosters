@@ -8,6 +8,38 @@ import Testing
 
 /// Verifies read-only projections against real disposable configuration, outcome, and coordination stores.
 struct CollectionSummaryCoverageTests {
+  /// One legacy collection exposes its recovery action while healthy collections retain current counts.
+  @Test func mixedCurrentAndLegacyOutcomesKeepHealthyCollectionsAvailable() async throws {
+    let fixture = try SummaryStorageFixture()
+    defer { fixture.cleanup() }
+    let current = try fixture.seedOutcome(completed: true)
+    let legacyRoot = MonitoredDirectory(id: UUID(), path: "/OtherMovies", transferBookmark: Data([1]),
+      authorizationVersion: UUID(), identity: "other-root")
+    try fixture.configuration.update { $0.directories.append(legacyRoot) }
+    let saved = try fixture.configuration.read()
+    let legacyContext = CollectionProcessingContext(rootID: legacyRoot.id, rootIdentity: "other-root",
+      authorizationVersion: legacyRoot.authorizationVersion, credentialRevision: saved.credentialRevision,
+      usesStubTMDbResponses: false, appearance: .softFinish,
+      processingConfigurationRevision: legacyRoot.processingConfiguration.revision)
+    var object = try #require(JSONSerialization.jsonObject(with:
+      JSONEncoder().encode(CollectionProcessingState(context: legacyContext))) as? [String: Any])
+    object["schemaVersion"] = 1
+    do {
+      let persistenceAccess = try #require(try fixture.records.acquireAccess(
+        for: CollectionProcessingStore.processingStateKey(for: legacyRoot.id)))
+      try persistenceAccess.write(JSONSerialization.data(withJSONObject: object))
+    }
+    let summaries = await fixture.service().summaries()
+    let healthy = try #require(summaries[current.context.rootID])
+    let legacy = try #require(summaries[legacyRoot.id])
+    #expect(healthy.displayState == .current)
+    #expect(healthy.counts.total == 1)
+    #expect(healthy.readFailureMessage == .none)
+    #expect(legacy.displayState == .unavailable)
+    #expect(legacy.readFailureMessage?.contains("Migrate Saved Data") == true)
+    #expect(try fixture.configuration.read().directories.count == 2)
+  }
+
   /// Inclusion edits stale the old processing generation while retaining its historical evidence.
   @Test func inclusionChangeInvalidatesSummary() async throws {
     let fixture = try SummaryStorageFixture()

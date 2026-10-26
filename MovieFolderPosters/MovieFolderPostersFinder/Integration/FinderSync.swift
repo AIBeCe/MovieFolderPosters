@@ -32,6 +32,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
 
   /// Last configuration availability, suppressing repeated reload floods.
   private var lastConfigurationStatus: MovieFolderActivityLogEvent.Status?
+  /// Distinguishes a changed recovery action even when configuration remains unavailable.
+  private var lastConfigurationFailureReason: FolderProcessingFailureReason?
   /// Privacy-preserving diagnostic events for this component.
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
 
@@ -53,20 +55,23 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       let updated = loadAuthorizedRoots(configuration, store: authorizations)
       roots = updated
       processors = [:]
+      var configurationFailure: FolderProcessingFailure?
       do {
         if let token = try environment.credential() {
           try configureProcessors(token: token, configuration: configuration, roots: updated)
         } else {
           logger.notice("TMDb credential is not configured")
+          configurationFailure = MovieFolderActivityLogEvent.failureEvidence(for: TMDbError.missingToken)
         }
       } catch {
         logger.error("Secure credential or processing storage unavailable")
+        configurationFailure = MovieFolderActivityLogEvent.failureEvidence(for: error)
       }
       let registered = Set(updated.keys)
       await environment.register(registered)
       logger.notice("Configuration loaded; registered=\(registered.count)")
       await recordConfigurationStatus(processors.isEmpty || updated.count != configuration.directories.count
-        ? .unavailable : .succeeded)
+        ? .unavailable : .succeeded, failure: configurationFailure)
 
       return registered
     } catch {
@@ -74,7 +79,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       processors = [:]
       await environment.register([])
       logger.error("Shared directory configuration unavailable")
-      await recordConfigurationStatus(.unavailable)
+      await recordConfigurationStatus(.unavailable, failure: MovieFolderActivityLogEvent.failureEvidence(for: error))
 
       return []
     }
@@ -226,11 +231,17 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     return MovieFolderActivityLogContext(directory: directory)
   }
 
-  /// Records availability transitions once per configuration state, without per-folder events.
-  private func recordConfigurationStatus(_ status: MovieFolderActivityLogEvent.Status) async {
-    guard status != lastConfigurationStatus else { return }
+  /// Records availability transitions once per cause, without flooding repeated unchanged failures.
+  /// - Parameters:
+  ///   - status: Current configuration and processing availability.
+  ///   - failure: Safe cause and recovery guidance when configuration or composition failed.
+  private func recordConfigurationStatus(
+    _ status: MovieFolderActivityLogEvent.Status, failure: FolderProcessingFailure? = .none
+  ) async {
+    guard status != lastConfigurationStatus || failure?.reason != lastConfigurationFailureReason else { return }
     lastConfigurationStatus = status
-    await activity.record(MovieFolderActivityLogEvent(action: .finderConfiguration, status: status))
+    lastConfigurationFailureReason = failure?.reason
+    await activity.record(MovieFolderActivityLogEvent(action: .finderConfiguration, status: status, failure: failure))
   }
 
   /// Resolves retained extension access or establishes an extension-owned bookmark from transferred evidence.

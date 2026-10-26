@@ -8,6 +8,36 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
   /// Whether exact automatic comparison also considers the provider's original title.
   public var comparesOriginalTitles: Bool
 
+  /// Current field names; the old inner spelling is recognized only to reject unconverted data.
+  private enum CodingKeys: String, CodingKey {
+    case requiresReleaseYearForAutomaticMatching = "requiresReleaseYearForAutomaticMatching"
+    case comparesOriginalTitles = "comparesOriginalTitles"
+    case legacyRequiredYear = "requiresReleaseYearForAutomaticIdentification"
+  }
+
+  /// Decodes current choices without selecting between conflicting historical aliases.
+  /// - Parameter decoder: Current matching configuration fields.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+
+    guard !values.contains(.legacyRequiredYear) else {
+      throw DecodingError.dataCorruptedError(forKey: .legacyRequiredYear, in: values,
+        debugDescription: "Matching configuration requires explicit storage migration")
+    }
+
+    requiresReleaseYearForAutomaticMatching = try values.decode(
+      Bool.self, forKey: .requiresReleaseYearForAutomaticMatching)
+    comparesOriginalTitles = try values.decode(Bool.self, forKey: .comparesOriginalTitles)
+  }
+
+  /// Encodes only the current matching choice names.
+  /// - Parameter encoder: Destination for current matching fields.
+  public func encode(to encoder: any Encoder) throws {
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(requiresReleaseYearForAutomaticMatching, forKey: .requiresReleaseYearForAutomaticMatching)
+    try values.encode(comparesOriginalTitles, forKey: .comparesOriginalTitles)
+  }
+
   /// Creates automatic matching choices; defaults preserve established behavior.
   /// - Parameters:
   ///   - requiresReleaseYearForAutomaticMatching: Reject yearless automatic matching when enabled.
@@ -604,7 +634,7 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
   /// - Parameter decoder: Decoder for the persisted root record.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
-    usesPrivateHistory = try values.decodeIfPresent(Bool.self, forKey: .usesPrivateHistory) ?? false
+    usesPrivateHistory = try values.decode(Bool.self, forKey: .usesPrivateHistory)
     id = try values.decode(UUID.self, forKey: .id)
     path = try values.decode(String.self, forKey: .path)
     transferBookmark = try values.decode(Data.self, forKey: .transferBookmark)
@@ -613,8 +643,8 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
     volumePath = try values.decodeIfPresent(String.self, forKey: .volumePath)
     displayName = Self.normalizedDisplayName(try values.decodeIfPresent(String.self, forKey: .displayName))
     movieMatchingConfiguration = try values.decodeIfPresent(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
-    processingConfiguration = try values.decodeIfPresent(CollectionProcessingConfiguration.self, forKey: .processingConfiguration)
-      ?? CollectionProcessingConfiguration.legacyDefault
+    processingConfiguration = try values.decode(
+      CollectionProcessingConfiguration.self, forKey: .processingConfiguration)
   }
 
   /// Encodes all root state, including its collection processing configuration.
@@ -660,7 +690,7 @@ nonisolated public struct ExtensionReadinessReceipt: Codable, Sendable, Equatabl
 /// Versioned shared settings read by the host and Finder extension.
 nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// The version of the serialized settings or activated extension, as appropriate to the payload.
-  public var version = 4
+  public var version = 5
   /// The configured roots in their saved presentation order.
   public var directories: [MonitoredDirectory] = []
   /// Authentication generation used to reject stale credential operations and change authorizations.
@@ -720,37 +750,61 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
 
   /// Stable field names for decoding persisted settings.
   private enum CodingKeys: String, CodingKey {
-    case version, directories, credentialRevision, processingCacheRevision, posterAppearance, movieMatchingConfiguration
+    case version = "version"
+    case directories = "directories"
+    case credentialRevision = "credentialRevision"
+    case processingCacheRevision = "processingCacheRevision"
+    case posterAppearance = "posterAppearance"
+    case movieMatchingConfiguration = "movieMatchingConfiguration"
+    case legacyGlobalMatching = "identificationPolicy"
     case isNetworkHistoryRecordingEnabled = "retainsNetworkHistory"
     case networkHistoryConfigurationRevision = "historyRevision"
     case usesStubTMDbResponses = "developmentFixtures"
   }
 
-  /// Decodes saved settings, defaulting legacy records to the soft poster finish.
+  /// Encodes only the current schema; legacy conversion belongs to the explicit storage migrator.
+  /// - Parameter encoder: Destination for current shared settings.
+  public func encode(to encoder: any Encoder) throws {
+    guard version == 5 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
+
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(version, forKey: .version)
+    try values.encode(directories, forKey: .directories)
+    try values.encode(credentialRevision, forKey: .credentialRevision)
+    try values.encode(processingCacheRevision, forKey: .processingCacheRevision)
+    try values.encode(isNetworkHistoryRecordingEnabled, forKey: .isNetworkHistoryRecordingEnabled)
+    try values.encode(networkHistoryConfigurationRevision, forKey: .networkHistoryConfigurationRevision)
+    try values.encode(usesStubTMDbResponses, forKey: .usesStubTMDbResponses)
+    try values.encode(posterAppearance, forKey: .posterAppearance)
+    try values.encode(movieMatchingConfiguration, forKey: .movieMatchingConfiguration)
+  }
+
+  /// Decodes current settings without silently upgrading a saved record.
   ///
   /// - Parameter decoder: The decoder providing the versioned persisted configuration fields.
   /// - Throws: Decoding errors for missing required fields, invalid field types, or malformed encoded values.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)
-    guard (1...4).contains(version) else {
-      throw DecodingError.dataCorruptedError(forKey: .version, in: values, debugDescription: "Unsupported schema")
+    guard version == 5 else {
+      if (1...4).contains(version) {
+        throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: version)
+      }
+      throw MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: version)
     }
+
+    guard !values.contains(.legacyGlobalMatching) else {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: .settings)
+    }
+
     directories = try values.decode([MonitoredDirectory].self, forKey: .directories)
-    if version < 4 {
-      for index in directories.indices { directories[index].usesPrivateHistory = false }
-    }
     credentialRevision = try values.decode(UUID.self, forKey: .credentialRevision)
-    isNetworkHistoryRecordingEnabled = version < 4 ? false
-      : try values.decode(Bool.self, forKey: .isNetworkHistoryRecordingEnabled)
-    networkHistoryConfigurationRevision = version < 4 ? credentialRevision
-      : try values.decode(UUID.self, forKey: .networkHistoryConfigurationRevision)
-    processingCacheRevision = version == 1 ? credentialRevision
-      : try values.decode(UUID.self, forKey: .processingCacheRevision)
+    isNetworkHistoryRecordingEnabled = try values.decode(Bool.self, forKey: .isNetworkHistoryRecordingEnabled)
+    networkHistoryConfigurationRevision = try values.decode(UUID.self, forKey: .networkHistoryConfigurationRevision)
+    processingCacheRevision = try values.decode(UUID.self, forKey: .processingCacheRevision)
     usesStubTMDbResponses = try values.decode(Bool.self, forKey: .usesStubTMDbResponses)
-    posterAppearance = try values.decodeIfPresent(PosterAppearance.self, forKey: .posterAppearance) ?? .softFinish
-    movieMatchingConfiguration = try values.decodeIfPresent(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
-      ?? MovieMatchingConfiguration()
+    posterAppearance = try values.decode(PosterAppearance.self, forKey: .posterAppearance)
+    movieMatchingConfiguration = try values.decode(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
   }
 }
 

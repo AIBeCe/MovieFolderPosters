@@ -96,10 +96,13 @@ Corrupt or unsupported history remains explicit and is not silently replaced, in
 
 ## Private activity and optional network history
 
-Configuration schema 4 stores `MonitoredDirectory.usesPrivateHistory`, `isNetworkHistoryRecordingEnabled` (default off),
+Configuration schema 5 stores `MonitoredDirectory.usesPrivateHistory`, `isNetworkHistoryRecordingEnabled` (default off),
 and `networkHistoryConfigurationRevision`. Explicit CodingKeys preserve the on-disk `isPrivate`,
-`retainsNetworkHistory`, and `historyRevision` fields unchanged. Legacy schemas 1–3 default to public collections
-and recording off, with a stable history revision derived from their credential revision. All repository writers upgrade to version 4.
+`retainsNetworkHistory`, and `historyRevision` fields unchanged. Normal readers/writers use only schema 5.
+The explicit `MovieFolderStorageMigrator` upgrades settings versions 1–4 and collection processing schema 1 to 2,
+with verified original-payload backups in a dedicated namespace. Missing historical privacy/history fields receive
+established defaults; explicit choices and generations are preserved. Normal reads return a typed upgrade-required
+error rather than migrating or resetting records. See [saved-data schema migration](../../docs/STORAGE_SCHEMA_MIGRATION.md).
 Changing history recording, collection privacy, root membership, or root identity/authorization rotates only
 history revision. Processing, cache, and authorization generations are unaffected by privacy choices.
 

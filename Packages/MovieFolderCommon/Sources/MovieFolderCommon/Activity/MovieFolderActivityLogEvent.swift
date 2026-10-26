@@ -7,6 +7,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
     case applicationOpened, configurationLoaded, collectionAdded, collectionRemoved, collectionAccessRestored
     case credentialSaved, credentialRemoved, posterAppearanceSaved, applicationAppearanceChanged
     case collectionRenamed, movieMatchingConfigurationSaved, collectionConfigurationSaved
+    case storageMigration
     case collectionCleanup, finderConfiguration, automaticProcessing, posterRefresh, posterSelection, posterRemoval
   }
 

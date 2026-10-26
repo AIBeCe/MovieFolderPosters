@@ -23,10 +23,11 @@ struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
+    let repository = try MovieFolderEnvironment.makeConfigurationRepository()
     let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
     let recovery = try? MovieFolderEnvironment.makeProcessingRecoveryService()
     let service = try DirectoryConfigurationService(
-      repository: MovieFolderEnvironment.makeConfigurationRepository(),
+      repository: repository,
       authorizations: MovieFolderEnvironment.makePrivateAuthorizationStore(),
       processingCleanup: processingStore, activity: activity,
       requestDelegate: MovieFolderNetworkRequestRecorder(
@@ -73,6 +74,10 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   private let recoveryLaunch: ProcessingRecoveryLaunchController
   /// One admission owner shared by selected retries and all poster-action operations.
   private let posterService: any MoviePosterActionServicing & CollectionRetryServicing
+  /// Independent migration command retained even when configuration cannot be composed.
+  private let savedDataMigrationService: any SavedDataMigrationServicing
+  /// Prevents duplicate migration commands while a background upgrade is in progress.
+  private(set) var isMigratingSavedData = false
 
   /// Creates child flows without opening configuration storage.
   /// - Parameters:
@@ -81,15 +86,18 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   ///   - posterService: Injected service, or live composition sharing the recorder.
   ///   - appearance: Preferences exposed by Settings and applied by this root.
   ///   - recoveryLaunch: Launch recovery preparation completed before configuration starts.
+  ///   - savedDataMigrationService: Explicit migration command independent of readable configuration.
   init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
        configurationBuilder: any ConfigurationCoordinatorBuilding = ConfigurationCoordinatorBuilder(),
        posterService: (any MoviePosterActionServicing & CollectionRetryServicing)? = .none,
        appearance: AppAppearanceSettings = AppAppearanceSettings(),
-       recoveryLaunch: ProcessingRecoveryLaunchController = ProcessingRecoveryLaunchController()) {
+       recoveryLaunch: ProcessingRecoveryLaunchController = ProcessingRecoveryLaunchController(),
+       savedDataMigrationService: any SavedDataMigrationServicing = SavedDataMigrationService()) {
     self.activity = activity
     self.configurationBuilder = configurationBuilder
     self.appearance = appearance
     self.recoveryLaunch = recoveryLaunch
+    self.savedDataMigrationService = savedDataMigrationService
     let networkHistory = MovieFolderEnvironment.makeNetworkHistoryService()
     let sharedPosterService = posterService ?? MoviePosterActionService(
       activity: activity, networkHistory: networkHistory)
@@ -127,6 +135,29 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// Routes history directly to its independent owner.
   func showLog() { logCoordinator.show() }
 
+  /// Runs the independent explicit migration without requiring readable configuration or credentials.
+  /// - Returns: Actual committed and unchanged record counts.
+  /// - Throws: Busy, cancellation or typed migration failures, preserving earlier completed upgrades.
+  func migrateSavedData() async throws -> MovieFolderStorageMigrationReport {
+    guard !isMigratingSavedData else { throw MovieFolderStorageMigrationError.busy(record: .settings) }
+
+    isMigratingSavedData = true
+    defer { isMigratingSavedData = false }
+    await activity.record(MovieFolderActivityLogEvent(action: .storageMigration, status: .started))
+    do {
+      let report = try await savedDataMigrationService.migrateSavedData()
+      await activity.record(MovieFolderActivityLogEvent(action: .storageMigration, status: .succeeded))
+      configurationCoordinator?.applicationDidBecomeActive()
+
+      return report
+    } catch {
+      await activity.record(MovieFolderActivityLogEvent(
+        action: .storageMigration, status: error is CancellationError ? .cancelled : .failed,
+        failure: MovieFolderActivityLogEvent.failureEvidence(for: error)))
+      throw error
+    }
+  }
+
   /// Routes an already validated Finder request.
   /// - Parameter request: Bounded action and expected folder identity.
   func openPosterAction(_ request: MoviePosterRequest) {
@@ -148,8 +179,14 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
     if let existing = configurationCoordinator {
       configuration = existing
     } else {
-      configuration = try configurationBuilder.makeCoordinator(
-        activity: activity, appearance: appearance, retryService: posterService)
+      do {
+        configuration = try configurationBuilder.makeCoordinator(
+          activity: activity, appearance: appearance, retryService: posterService)
+      } catch {
+        recordActivity(MovieFolderActivityLogEvent(action: .configurationLoaded, status: .failed,
+          failure: MovieFolderActivityLogEvent.failureEvidence(for: error)))
+        throw error
+      }
       configuration.delegate = self
       configurationCoordinator = configuration
     }

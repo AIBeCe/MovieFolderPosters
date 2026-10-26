@@ -51,7 +51,7 @@ struct DirectoryConfigurationTests {
   }
 
   /// Legacy roots default to active inclusion; v3 roots preserve saved policies.
-  @Test func processingConfigurationDecodesLegacyAndRoundTripsV3() throws {
+  @Test func explicitMigrationPreservesInclusionAndRoundTripsCurrentSchema() throws {
     let rootID = UUID()
     let revision = UUID()
     let authorization = UUID()
@@ -60,7 +60,7 @@ struct DirectoryConfigurationTests {
       "authorizationVersion":"\(authorization)"}],"credentialRevision":"\(revision)",
       "processingCacheRevision":"\(revision)","developmentFixtures":false}
       """
-    let legacy = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(legacyJSON.utf8))
+    let legacy = try convertLegacySettingsFixture(Data(legacyJSON.utf8))
     #expect(legacy.directories[0].processingConfiguration.isPaused == false)
     #expect(legacy.directories[0].processingConfiguration.excludedFolders.isEmpty)
 
@@ -71,7 +71,6 @@ struct DirectoryConfigurationTests {
     #expect(paused)
     #expect(excluded)
     current.directories[0].processingConfiguration = configuration
-    current.version = 3
     let data = try JSONEncoder().encode(current)
     let reopened = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
     #expect(reopened.directories[0].processingConfiguration == configuration)
@@ -90,8 +89,8 @@ struct DirectoryConfigurationTests {
       "processingCacheRevision":"\(revision)","developmentFixtures":false}
       """
     let data = Data(legacyJSON.utf8)
-    let firstDecode = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
-    let secondDecode = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
+    let firstDecode = try convertLegacySettingsFixture(data)
+    let secondDecode = try convertLegacySettingsFixture(data)
     let firstConfigurationRevision = try #require(firstDecode.directories.first?.processingConfiguration.revision)
     #expect(secondDecode.directories.first?.processingConfiguration.revision == firstConfigurationRevision)
 
@@ -105,6 +104,13 @@ struct DirectoryConfigurationTests {
     }
 
     let repository = ConfigurationRepository(store: store)
+    #expect(throws: MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: 2)) {
+      try repository.read()
+    }
+    let migrator = MovieFolderStorageMigrator(configurationStore: store,
+      collectionOutcomeStore: try PersistenceStore(directory: directory.appendingPathComponent("Outcomes")),
+      backupStore: try PersistenceStore(directory: directory.appendingPathComponent("Backups")))
+    _ = try migrator.migrate()
     let configuration = try repository.read()
     let savedDirectory = try #require(configuration.directories.first)
     let configurationAccessForIconChange = try repository.configurationAccessForIconChange(
@@ -241,7 +247,7 @@ struct DirectoryConfigurationTests {
       "authorizationVersion":"\(authorization)"}],"credentialRevision":"\(revision)",
       "developmentFixtures":false}
       """
-    let configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(json.utf8))
+    let configuration = try convertLegacySettingsFixture(Data(json.utf8))
     #expect(configuration.directories.first?.identity == .none)
     #expect(configuration.directories.first?.volumePath == .none)
     #expect(configuration.directories.first?.id == rootID)
@@ -261,9 +267,8 @@ struct DirectoryConfigurationTests {
       JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
         as? [String: Any])
     old.removeValue(forKey: "posterAppearance")
-    let migrated = try JSONDecoder().decode(
-      DirectoryConfiguration.self,
-      from: JSONSerialization.data(withJSONObject: old))
+    old["version"] = 4
+    let migrated = try convertLegacySettingsFixture(JSONSerialization.data(withJSONObject: old))
     #expect(migrated.posterAppearance == .softFinish)
     #expect(migrated.directories == configuration.directories)
     #expect(migrated.credentialRevision == configuration.credentialRevision)
@@ -324,7 +329,7 @@ struct DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 5 } }
+    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 6 } }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID())

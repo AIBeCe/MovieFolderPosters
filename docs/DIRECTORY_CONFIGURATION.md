@@ -137,3 +137,11 @@ See [Phase 6 verification](PHASE_6_VERIFICATION.md) for executed results and unp
 - [Sharing Keychain access](https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps)
 - [Data Protection Keychain](https://developer.apple.com/documentation/security/ksecusedataprotectionkeychain)
 - [Finder Sync lifecycle](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/Finder.html)
+
+## Explicit schema upgrades — 2026-10-26 implementation
+
+Current settings use schema 5. Existing schemas 1–4 require the app's **Migrate Saved Data…** command; normal
+repository reads no longer silently upgrade data. The migration preserves saved choices and generations,
+backs up original payloads and upgrades collection processing records separately. See
+[saved-data schema migration](STORAGE_SCHEMA_MIGRATION.md) for the current implementation, checks and remaining
+formal/native qualification. Earlier dated schema and approval checkpoints above remain historical evidence.

@@ -61,7 +61,7 @@ struct CredentialRevisionTests {
     }
     try repository.updateCredential(expectedRevision: .none)
     let first = try repository.read()
-    #expect(first.version == 4)
+    #expect(first.version == 5)
     #expect(throws: ConfigurationError.self) { try repository.updateCredential(expectedRevision: .none) }
     try repository.updateCredential(expectedRevision: first.credentialRevision)
     let second = try repository.read()
@@ -78,12 +78,12 @@ struct CredentialRevisionTests {
     let json = """
       {"version":1,"directories":[],"credentialRevision":"\(revision)","developmentFixtures":false}
       """
-    let legacy = try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(json.utf8))
+    let legacy = try convertLegacySettingsFixture(Data(json.utf8))
     #expect(legacy.processingCacheRevision == revision)
     for version in [2, 3, 4] {
       let malformed = json.replacingOccurrences(of: "\"version\":1", with: "\"version\":\(version)")
       #expect(throws: (any Error).self) {
-        try JSONDecoder().decode(DirectoryConfiguration.self, from: Data(malformed.utf8))
+        try convertLegacySettingsFixture(Data(malformed.utf8))
       }
     }
   }

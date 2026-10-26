@@ -8,24 +8,36 @@ protocol AppDelegateAlertPresenting {
   /// Presents the already configured failure alert.
   /// - Parameter alert: Sanitized startup explanation owned by the caller.
   func present(_ alert: NSAlert)
+  /// Obtains explicit confirmation before application records are upgraded.
+  /// - Parameter alert: Explanation of migration scope and automatic backups.
+  /// - Returns: Whether the user chose to migrate saved data.
+  func confirmMigration(_ alert: NSAlert) -> Bool
+}
+
+extension AppDelegateAlertPresenting {
+  /// Alternative presenters decline migration unless they explicitly implement confirmation.
+  func confirmMigration(_ alert: NSAlert) -> Bool { false }
 }
 
 /// Uses AppKit's standard modal presentation for normal application launches.
 @MainActor
 struct ModalAppDelegateAlertPresenter: AppDelegateAlertPresenting {
   func present(_ alert: NSAlert) { alert.runModal() }
+  func confirmMigration(_ alert: NSAlert) -> Bool { alert.runModal() == .alertFirstButtonReturn }
 }
 
 @main
 /// Creates the host app's configuration flow and routes Finder poster actions.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidations {
   /// Owns the application root independently of configuration startup success.
   private let coordinator: AppCoordinator
   /// Platform presentation boundary, independent of failure content and routing.
   private let alerts: any AppDelegateAlertPresenting
   /// Retains the application's attribution window across close and reopen.
   private var aboutWindowController: NSWindowController?
+  /// Retains the user-requested operation independently of configuration windows.
+  private var savedDataMigrationTask: Task<Void, Never>?
 
   /// Builds the live root for AppKit's normal launch path.
   override convenience init() { self.init(coordinator: AppCoordinator()) }
@@ -71,17 +83,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// Presents a configuration-specific failure without removing independent feature routes.
-  /// - Parameter error: Startup failure sanitized before display or logging.
-  private func presentConfigurationFailure(_ error: Error) {
+  /// - Parameters:
+  ///   - error: Failure sanitized before display or logging.
+  ///   - migrationStopped: Whether a manual run stopped after possibly committing earlier records.
+  private func presentConfigurationFailure(_ error: Error, migrationStopped: Bool = false) {
     let alert = NSAlert()
-    alert.messageText = "Configuration storage is unavailable"
+    alert.messageText = "Saved data could not be opened"
     let failure = error as NSError
     let logger = Logger(
       subsystem: "dag.fikios.MovieFolderPosters", category: "ConfigurationStartup")
     logger.error(
       "Storage startup failed: \(failure.domain, privacy: .public), code=\(failure.code)")
     alert.informativeText =
-      "The app could not open its settings. Quit and reopen it using a signed build."
+      "The app could not read its saved settings or collection results. "
+      + "Your movie folders were not changed. Open Log for details."
+    if let migrationError = error as? MovieFolderStorageMigrationError {
+      alert.messageText = migrationError.presentationTitle
+      alert.informativeText = migrationError.localizedDescription
+    }
     if let recoveryError = error as? ProcessingRecoveryError {
       alert.messageText = "Processing is blocked"
       alert.informativeText = recoveryError.localizedDescription
@@ -92,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       alert.informativeText =
         "Quit older app copies and disable older Finder extension copies. "
         + "Complete the documented offline storage migration, then reopen the app."
+    }
+    if migrationStopped {
+      alert.informativeText += " Any earlier completed upgrades were kept with their recovery copies. "
+        + "After resolving this issue, run Migrate Saved Data… again to continue."
     }
     alerts.present(alert)
   }
@@ -108,6 +131,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Opens Log even if configuration storage could not initialize.
   @objc private func showLog() { coordinator.showLog() }
+
+  /// Offers the explicit recovery action even when configuration startup has failed.
+  @objc private func migrateSavedData() {
+    guard savedDataMigrationTask == .none else { return }
+
+    let confirmation = NSAlert()
+    confirmation.messageText = "Migrate saved data?"
+    confirmation.informativeText = "The app will back up and upgrade outdated settings and collection results. "
+      + "Movie folders, poster icons and Keychain credentials are not modified."
+    confirmation.addButton(withTitle: "Migrate Saved Data")
+    confirmation.addButton(withTitle: "Cancel")
+
+    guard alerts.confirmMigration(confirmation) else { return }
+
+    savedDataMigrationTask = Task { [weak self] in
+      guard let self else { return }
+
+      defer { savedDataMigrationTask = .none }
+      do {
+        let report = try await coordinator.migrateSavedData()
+        let result = NSAlert()
+        result.messageText = report.migratedRecordCount == 0 ? "Saved data is up to date" : "Saved data upgraded"
+        result.informativeText = report.completionMessage
+        alerts.present(result)
+        do { try coordinator.showConfiguration() } catch { presentConfigurationFailure(error) }
+      } catch {
+        presentConfigurationFailure(error, migrationStopped: true)
+      }
+    }
+  }
+
+  /// Keeps the migration action single-flight while leaving independent application routes available.
+  /// - Parameter item: Menu or toolbar item being validated by AppKit.
+  /// - Returns: Whether this item can currently be invoked.
+  func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+    item.action != #selector(migrateSavedData) || (savedDataMigrationTask == .none && !coordinator.isMigratingSavedData)
+  }
 
   /// Presents the product's About and required TMDb attribution.
   @objc private func showAbout() {
@@ -187,6 +247,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     applicationMenu.insertItem(
       withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", at: 1).target = self
+    applicationMenu.insertItem(
+      withTitle: "Migrate Saved Data…", action: #selector(migrateSavedData), keyEquivalent: "", at: 2).target = self
     let windowItem = NSMenuItem(title: "Window", action: .none, keyEquivalent: "")
     let windowMenu = NSMenu(title: "Window")
     windowMenu.addItem(withTitle: "Movie Folder Posters", action: #selector(showConfiguration), keyEquivalent: "")

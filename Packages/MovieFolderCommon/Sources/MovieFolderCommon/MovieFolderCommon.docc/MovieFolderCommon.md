@@ -63,3 +63,11 @@ cancellation can be recorded without replacing the producer's result. Read and C
 - ``MoviePosterRequest``
 - ``DirectoryObservationScheduler``
 - ``DirectoryObservationSchedulerDelegate``
+
+## Explicit saved-data schema upgrades
+
+``MovieFolderStorageMigrator`` upgrades settings schemas 1–4 to 5 and collection-result schema 1 to 2. Normal
+repository reads require current schemas and return ``MovieFolderStorageMigrationError`` with an actionable cause
+when manual migration is required. Each replacement is validated and preceded by an immutable original-payload
+backup outside the pruned outcomes namespace. Interrupted upgrades resume by skipping current records; generation
+identifiers and existing folder assessments are retained. The host exposes the explicit Migrate Saved Data command.

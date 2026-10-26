@@ -260,16 +260,18 @@ struct CollectionProcessingStoreTests {
   /// Checks that unsupported persisted schemas are reported without replacing their records.
   @Test func unsupportedSchemaIsPreservedAndReported() throws {
     let fixture = try Fixture()
-    let unsupported = CollectionProcessingState(schemaVersion: 2, context: fixture.context)
-    let encoder = JSONEncoder()
+    let current = CollectionProcessingState(context: fixture.context)
+    var unsupported = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
+    unsupported["schemaVersion"] = 3
     do {
       let access = try #require(try fixture.processingStorePersistence.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)
       ))
-      try access.write(encoder.encode(unsupported))
+      try access.write(JSONSerialization.data(withJSONObject: unsupported))
     }
 
-    #expect(throws: CollectionProcessingError.unsupportedSchema) {
+    #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(
+      record: .collectionOutcomes(fixture.context.rootID), version: 3)) {
       try fixture.processingStore.read(rootID: fixture.context.rootID)
     }
     let access = try #require(try fixture.processingStorePersistence.acquireAccess(

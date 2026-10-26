@@ -56,7 +56,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     child: String? = .none, now: Date = Date()
   ) throws -> CollectionProcessingState {
     let processingState = try withLocks(context: context, requiresActiveCollection: action != .removal) { access, configuration in
-      let stored = try decode(access.read(), expectedRootID: context.rootID)
+      let stored = try readProcessingState(using: access, expectedRootID: context.rootID)
       var processingState: CollectionProcessingState
       if let stored,
         stored.context.rootIdentity != context.rootIdentity ||
@@ -128,7 +128,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     let committed = try withLocks(
       context: processingState.context, requiresActiveCollection: processingState.currentRun?.action != .removal
     ) { access, _ in
-      guard let current = try decode(access.read(), expectedRootID: processingState.context.rootID) else {
+      guard let current = try readProcessingState(using: access, expectedRootID: processingState.context.rootID) else {
         throw CollectionProcessingError.staleRevision
       }
       guard current.revision == expectedRevision else { throw CollectionProcessingError.staleRevision }
@@ -166,7 +166,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       throw CollectionProcessingError.busy
     }
 
-    return try decode(access.read(), expectedRootID: rootID)
+    return try readProcessingState(using: access, expectedRootID: rootID)
   }
 
   /// Removes only saved states whose roots are absent from the current validated settings.
@@ -257,16 +257,45 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   }
 
   /// Decodes a bounded record and rejects mismatched or unsupported states.
+  private func readProcessingState(
+    using persistenceAccess: PersistenceAccess, expectedRootID: UUID
+  ) throws -> CollectionProcessingState? {
+    let payload: Data?
+    do { payload = try persistenceAccess.read() } catch {
+      throw MovieFolderStorageMigrationError.storageUnavailable(record: .collectionOutcomes(expectedRootID))
+    }
+
+    return try decode(payload, expectedRootID: expectedRootID)
+  }
+
+  /// Distinguishes legacy, future, and malformed saved payloads without rewriting them.
   private func decode(_ data: Data?, expectedRootID: UUID) throws -> CollectionProcessingState? {
     guard let data else { return .none }
     let processingState: CollectionProcessingState
     do {
+      let version = try JSONDecoder().decode(CollectionOutcomeSchemaVersion.self, from: data).schemaVersion
+
+      guard version == 2 else {
+        if version == 1 {
+          throw MovieFolderStorageMigrationError.migrationRequired(
+            record: .collectionOutcomes(expectedRootID), version: 1)
+        }
+        throw MovieFolderStorageMigrationError.unsupportedVersion(
+          record: .collectionOutcomes(expectedRootID), version: version)
+      }
+
       processingState = try JSONDecoder().decode(CollectionProcessingState.self, from: data)
+
+      guard processingState.context.rootID == expectedRootID else {
+        throw MovieFolderStorageMigrationError.invalidRecord(record: .collectionOutcomes(expectedRootID))
+      }
+
+      try processingState.validate()
+    } catch let error as MovieFolderStorageMigrationError {
+      throw error
     } catch {
-      throw CollectionProcessingError.unavailable
+      throw MovieFolderStorageMigrationError.invalidRecord(record: .collectionOutcomes(expectedRootID))
     }
-    guard processingState.context.rootID == expectedRootID else { throw CollectionProcessingError.invalidState }
-    try processingState.validate()
 
     return processingState
   }
@@ -277,4 +306,10 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     encoder.outputFormatting = [.sortedKeys]
     try access.write(encoder.encode(processingState))
   }
+}
+
+/// Reads the outer outcome version before inspecting potentially renamed nested context fields.
+private struct CollectionOutcomeSchemaVersion: Decodable {
+  /// Saved record format, independent of processing revision.
+  let schemaVersion: Int
 }

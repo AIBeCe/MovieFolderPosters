@@ -89,6 +89,19 @@ nonisolated public enum MovieFolderEnvironment {
     try makeConfigurationRepository(locations: SystemMovieFolderStorageLocations())
   }
 
+  /// Opens only app-owned namespaces for an explicitly requested saved-data upgrade.
+  /// - Returns: The shared migrator with backups isolated from normal collection-result cleanup.
+  /// - Throws: Container, namespace or persistence access failures before migration begins.
+  public static func makeStorageMigrator() throws -> MovieFolderStorageMigrator {
+    let container = try MovieFolderEnvironment.appGroupContainerURL()
+
+    return MovieFolderStorageMigrator(
+      configurationStore: try PersistenceStore(directory: container.appendingPathComponent("Settings")),
+      collectionOutcomeStore: try CollectionProcessingStorageNamespace.open(in: container),
+      backupStore: try PersistenceStore(
+        directory: container.appendingPathComponent("MigrationBackups"), maximumRecordBytes: 8 * 1024 * 1024))
+  }
+
   /// Opens settings at the supplied process container location.
   static func makeConfigurationRepository(
     locations: any MovieFolderStorageLocations

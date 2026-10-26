@@ -10,6 +10,108 @@ import Testing
 /// Tests the application's actual lifecycle and menu routing with isolated feature dependencies.
 @Suite(.serialized) @MainActor
 struct AppDelegateCoverageTests {
+  /// Data repair remains reachable when saved data prevents configuration startup.
+  @Test func migrationMenuRemainsAvailableAfterConfigurationStartupFailure() throws {
+    let fixture = try DelegateFixture(failure: .storage)
+    defer { fixture.cleanup() }
+    let alerts = DelegateAlertRecorder()
+    let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let applicationMenu = try #require(NSApplication.shared.mainMenu?.items.first?.submenu)
+    let migration = applicationMenu.items.first { $0.title == "Migrate Saved Data…" }
+
+    #expect(migration != .none)
+    #expect(migration?.isEnabled == true)
+    #expect(migration?.target === delegate)
+  }
+
+  /// Storage startup errors offer a useful next action without assuming a signing problem.
+  @Test func storageFailureDoesNotMisdiagnoseSigning() throws {
+    let fixture = try DelegateFixture(failure: .storage)
+    defer { fixture.cleanup() }
+    let alerts = DelegateAlertRecorder()
+    let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let alert = try #require(alerts.alerts.first)
+
+    #expect(!alert.informativeText.contains("signed build"))
+    #expect(alert.informativeText.contains("Log"))
+  }
+
+  /// The menu confirms and executes the independent service even when configuration cannot open.
+  @Test func migrationCommandRunsWithoutConfigurationAndReportsActualCounts() async throws {
+    let migrationService = SavedDataMigrationProbe()
+    let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
+    defer { fixture.cleanup() }
+    let alerts = DelegateAlertRecorder()
+    alerts.shouldConfirmMigration = true
+    let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let applicationMenu = try #require(NSApplication.shared.mainMenu?.items.first?.submenu)
+    let item = try #require(applicationMenu.items.first { $0.title == "Migrate Saved Data…" })
+    #expect(NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item))
+    #expect(NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item))
+    for _ in 0..<100 where !alerts.alerts.contains(where: { $0.messageText == "Saved data upgraded" }) {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(migrationService.callCount == 1)
+    let result = try #require(alerts.alerts.first { $0.messageText == "Saved data upgraded" })
+    #expect(result.informativeText.contains("Upgraded 2 saved records"))
+    #expect(!fixture.root.isMigratingSavedData)
+  }
+
+  /// Cancelling the confirmation must not open or modify any migration storage.
+  @Test func cancellingMigrationDoesNotInvokeTheService() async throws {
+    let migrationService = SavedDataMigrationProbe()
+    let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
+    defer { fixture.cleanup() }
+    let alerts = DelegateAlertRecorder()
+    let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let item = try #require(NSApplication.shared.mainMenu?.items.first?.submenu?.items.first {
+      $0.title == "Migrate Saved Data…"
+    })
+    #expect(NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item))
+    #expect(migrationService.callCount == 0)
+  }
+
+  /// An outdated schema alert points to the menu action rather than suggesting permission repair.
+  @Test func outdatedSchemaAlertNamesTheMigrationAction() throws {
+    let fixture = try DelegateFixture(failure: .schemaMigration)
+    defer { fixture.cleanup() }
+    let alerts = DelegateAlertRecorder()
+    let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let alert = try #require(alerts.alerts.first)
+    #expect(alert.messageText == "Saved data needs an upgrade")
+    #expect(alert.informativeText.contains("Migrate Saved Data"))
+    #expect(!alert.informativeText.contains("signed build"))
+    #expect(!alert.informativeText.contains("permissions"))
+  }
+
+  /// A stopped run explains that completed records and backups remain available for a safe retry.
+  @Test func stoppedMigrationExplainsPreservedProgress() async throws {
+    let migrationService = SavedDataMigrationProbe(failure: .busy(record: .collectionOutcomes(UUID())))
+    let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
+    defer { fixture.cleanup() }
+    let alerts = DelegateAlertRecorder()
+    alerts.shouldConfirmMigration = true
+    let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let item = try #require(NSApplication.shared.mainMenu?.items.first?.submenu?.items.first {
+      $0.title == "Migrate Saved Data…"
+    })
+    #expect(NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item))
+    for _ in 0..<100 where !alerts.alerts.contains(where: { $0.messageText == "Saved data is in use" }) {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let error = try #require(alerts.alerts.first { $0.messageText == "Saved data is in use" })
+    #expect(error.informativeText.contains("earlier completed upgrades were kept"))
+    #expect(error.informativeText.contains("again to continue"))
+    #expect(!fixture.root.isMigratingSavedData)
+    #expect(delegate.validateUserInterfaceItem(item))
+  }
+
   /// The About menu leads with product identity and keeps TMDb attribution compact.
   @Test func aboutPanelDisplaysRequiredTMDbAttribution() throws {
     let fixture = try DelegateFixture()
@@ -105,8 +207,8 @@ struct AppDelegateCoverageTests {
       #expect(alert.messageText == "Processing storage needs migration")
       #expect(alert.informativeText.contains("offline storage migration"))
     } else {
-      #expect(alert.messageText == "Configuration storage is unavailable")
-      #expect(alert.informativeText.contains("signed build"))
+      #expect(alert.messageText == "Saved data could not be opened")
+      #expect(alert.informativeText.contains("Log"))
     }
     #expect(!alert.informativeText.contains("/private/"))
     let menu = try #require(NSApplication.shared.mainMenu)
@@ -139,7 +241,8 @@ private struct DelegateFixture {
   let applicationIconImage: NSImage?
 
   /// Builds an isolated feature root with an optional deterministic startup failure.
-  init(failure: DelegateConfigurationBuilder.Failure? = .none) throws {
+  init(failure: DelegateConfigurationBuilder.Failure? = .none,
+       savedDataMigrationService: (any SavedDataMigrationServicing)? = .none) throws {
     suite = "AppDelegateCoverageTests.\(UUID().uuidString)"
     defaults = try #require(UserDefaults(suiteName: suite))
     appearance = NSApplication.shared.appearance
@@ -147,7 +250,8 @@ private struct DelegateFixture {
     applicationIconImage = NSApplication.shared.applicationIconImage
     root = AppCoordinator(
       activity: ActivityServiceFake(), configurationBuilder: DelegateConfigurationBuilder(failure: failure),
-      posterService: DelegatePosterService(), appearance: AppAppearanceSettings(defaults: defaults))
+      posterService: DelegatePosterService(), appearance: AppAppearanceSettings(defaults: defaults),
+      savedDataMigrationService: savedDataMigrationService ?? SavedDataMigrationService())
   }
 
   /// Closes all owned windows and restores the application's pre-test preferences and menus.
@@ -167,7 +271,7 @@ private struct DelegateFixture {
 @MainActor
 private struct DelegateConfigurationBuilder: ConfigurationCoordinatorBuilding {
   /// Distinct recovery conditions that must produce different user guidance.
-  enum Failure { case migration, storage }
+  enum Failure { case migration, schemaMigration, storage }
   /// Failure delivered by dependency construction without inspecting live storage.
   let failure: Failure?
 
@@ -177,6 +281,7 @@ private struct DelegateConfigurationBuilder: ConfigurationCoordinatorBuilding {
     if let failure {
       switch failure {
       case .migration: throw CollectionProcessingStorageNamespaceError.legacyMigrationRequired
+      case .schemaMigration: throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: 3)
       case .storage: throw NSError(domain: "TestStorage", code: 42,
         userInfo: [NSLocalizedDescriptionKey: "/private/sensitive/movie/path"])
       }
@@ -223,5 +328,12 @@ private actor DelegatePosterService: MoviePosterActionServicing, CollectionRetry
 private final class DelegateAlertRecorder: AppDelegateAlertPresenting {
   /// Alerts in the order that startup or menu routing requested presentation.
   private(set) var alerts: [NSAlert] = []
+  /// Controlled confirmation choice; declining is the safe default in isolated tests.
+  var shouldConfirmMigration = false
   func present(_ alert: NSAlert) { alerts.append(alert) }
+  func confirmMigration(_ alert: NSAlert) -> Bool {
+    alerts.append(alert)
+
+    return shouldConfirmMigration
+  }
 }

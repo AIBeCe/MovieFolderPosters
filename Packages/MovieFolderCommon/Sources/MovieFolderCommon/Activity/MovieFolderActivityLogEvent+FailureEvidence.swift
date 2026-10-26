@@ -15,6 +15,15 @@ public extension MovieFolderActivityLogEvent {
     let reason: FolderProcessingFailureReason
     if error is CancellationError {
       reason = .cancelled
+    } else if let migrationError = error as? MovieFolderStorageMigrationError {
+      reason = switch migrationError {
+      case .migrationRequired: .storageMigrationRequired
+      case .unsupportedVersion: .unsupportedStorageVersion
+      case .invalidRecord, .conflictingValues: .invalidSavedData
+      case .busy: .busy
+      case .backupUnavailable, .backupConflict: .migrationBackupFailed
+      case .storageUnavailable: .storage
+      }
     } else if let configurationError = error as? ConfigurationError {
       reason = configurationFailureReason(configurationError)
     } else if let recoveryError = error as? ProcessingRecoveryError {

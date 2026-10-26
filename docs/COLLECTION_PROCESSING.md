@@ -336,3 +336,11 @@ Naming-cleanup verification:
 
 Prior feature verification above describes the pre-cleanup implementation. The final renamed implementation
 was committed as `049b74b`. `develop` was pushed through `b48d44d` on 2026-10-18. GitHub issue #2 is closed as completed.
+
+## Explicit processing-record schema upgrades — 2026-10-26 implementation
+
+Current collection processing records use schema 2. The explicit **Migrate Saved Data…** command converts schema 1,
+including historical matching keys in the current and last-completed contexts, after backing up original payloads.
+Settings upgrade first to fence older writers. Normal processing never migrates a record implicitly. An old or
+invalid result record produces per-collection recovery guidance while healthy collections/settings remain usable.
+See [saved-data schema migration](STORAGE_SCHEMA_MIGRATION.md) for tests, interruption handling and limitations.

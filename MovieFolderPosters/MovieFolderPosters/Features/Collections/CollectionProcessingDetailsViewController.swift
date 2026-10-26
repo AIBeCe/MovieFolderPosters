@@ -291,6 +291,10 @@ private extension FolderProcessingFailureReason {
     case .movieIdentityUnresolved: "Movie identity unresolved"
     case .foreignIcon: "Existing icon is not app-owned"
     case .missingPoster: "Poster unavailable"
+    case .storageMigrationRequired: "Saved data needs an upgrade"
+    case .unsupportedStorageVersion: "Saved data requires a compatible app version"
+    case .invalidSavedData: "Saved data could not be validated"
+    case .migrationBackupFailed: "Recovery copy could not be verified"
     case .unknown: "Unclassified attempt"
     }
   }

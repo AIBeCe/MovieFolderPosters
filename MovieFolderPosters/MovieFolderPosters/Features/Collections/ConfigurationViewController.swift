@@ -310,6 +310,9 @@ extension ConfigurationViewController {
   /// Keeps result freshness and inspection evidence distinct from folder access evidence.
   private func collectionProcessingDescription(_ summary: CollectionProcessingSummary?) -> String {
     guard let summary else { return "Results: unavailable" }
+
+    if let message = summary.readFailureMessage { return "Results: \(message)" }
+
     let state = summary.displayState.displayName
     let inspected = summary.processingState?.inspectedAt.map {
       DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short)

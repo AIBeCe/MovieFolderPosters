@@ -49,9 +49,9 @@ nonisolated public struct ConfigurationRepository: Sendable {
     try Task.checkCancellation()
     guard saved?.credentialRevision == expectedRevision else { throw ConfigurationError.configurationChanged }
     var configuration = saved ?? DirectoryConfiguration()
-    configuration.version = 4
+    configuration.version = 5
     configuration.credentialRevision = UUID()
-    try validate(configuration)
+    try Self.validate(configuration)
     try persistenceAccess.write(JSONEncoder().encode(configuration))
     try withExtendedLifetime(persistenceAccess) { try afterCommit() }
   }
@@ -135,7 +135,7 @@ nonisolated public struct ConfigurationRepository: Sendable {
     var configuration = try read(persistenceAccess)
     let previous = configuration
     try change(&configuration)
-    try validate(configuration)
+    try Self.validate(configuration)
     let previousRoots = Dictionary(uniqueKeysWithValues: previous.directories.map { ($0.id, $0) })
     let currentRoots = Dictionary(uniqueKeysWithValues: configuration.directories.map { ($0.id, $0) })
     let rootsChanged = previousRoots.keys != currentRoots.keys || currentRoots.contains { identifier, root in
@@ -147,7 +147,7 @@ nonisolated public struct ConfigurationRepository: Sendable {
     if previous.isNetworkHistoryRecordingEnabled != configuration.isNetworkHistoryRecordingEnabled || rootsChanged {
       configuration.networkHistoryConfigurationRevision = UUID()
     }
-    configuration.version = 4
+    configuration.version = 5
     try persistenceAccess.write(JSONEncoder().encode(configuration))
     try withExtendedLifetime(persistenceAccess) { try afterCommit() }
   }
@@ -186,12 +186,22 @@ nonisolated public struct ConfigurationRepository: Sendable {
   /// - Returns: Validated settings or absence.
   /// - Throws: Persistence or schema failures.
   private func readIfPresent(_ persistenceAccess: PersistenceAccess) throws -> DirectoryConfiguration? {
-    guard let data = try persistenceAccess.read() else { return .none }
-    let configuration: DirectoryConfiguration
-    do { configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: data) } catch {
-      throw ConfigurationError.invalidConfiguration
+    let storedData: Data?
+    do { storedData = try persistenceAccess.read() } catch {
+      throw MovieFolderStorageMigrationError.storageUnavailable(record: .settings)
     }
-    try validate(configuration)
+
+    guard let data = storedData else { return .none }
+
+    let configuration: DirectoryConfiguration
+    do {
+      configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: data)
+      try Self.validate(configuration)
+    } catch let error as MovieFolderStorageMigrationError {
+      throw error
+    } catch {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: .settings)
+    }
 
     return configuration
   }
@@ -200,8 +210,8 @@ nonisolated public struct ConfigurationRepository: Sendable {
   ///
   /// - Parameter configuration: The complete settings payload to validate or retain.
   /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
-  private func validate(_ configuration: DirectoryConfiguration) throws {
-    guard (1...4).contains(configuration.version),
+  static func validate(_ configuration: DirectoryConfiguration) throws {
+    guard configuration.version == 5,
       Set(configuration.directories.map(\.id)).count == configuration.directories.count,
       Set(configuration.directories.map(\.path)).count == configuration.directories.count,
       configuration.directories.allSatisfy({
