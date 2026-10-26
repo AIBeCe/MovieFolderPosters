@@ -1,10 +1,10 @@
 # Saved-data version migration
 
-Status: Approved for implementation on 2026-10-25; implementation completed on 2026-10-26.
-Independent implementation review PASS. The user approved the implementation and applied review corrections.
-Branch: `bugfix/storage-schema-migration`; baseline: `21a105d`.
-The implementation commit is authorized. Formal validation, live app-data migration and extension registration
-require separate authorization.
+Status: Implemented, validated and integrated into `develop` on 2026-10-26.
+Independent implementation and validation reviews PASS.
+Feature branch: `bugfix/storage-schema-migration`; baseline: `21a105d`; implementation: `d685a93`;
+validation: `5eb86b1`. Validation evidence is in [the validation report](STORAGE_SCHEMA_MIGRATION_VALIDATION.md).
+Live app-data migration, installed-app accessibility checks and extension registration were not part of validation.
 
 ## Problem and approved behavior
 
@@ -48,7 +48,7 @@ makes both affected copied records decode and validate (37 and 334 folders). The
   Finder/Log error classification and corresponding host tests.
 - Architecture reviewer: bounded storage/old-writer/interruption critique; independent implementation review follows.
 - Apply swift-style-guide and meaningful Swift Testing RED→GREEN checks. Focused implementation checks only;
-  SwiftLint/formal validation require the separately authorized phase.
+  The implementation phase used focused checks; formal validation results are recorded below and in the validation report.
 
 ## Delivered command and error behavior
 
@@ -70,8 +70,8 @@ Explicit wire-key strings protect the affected current fields from automatic Swi
 
 ## Focused implementation evidence
 
-These runs are implementation coherence checks, not the separately authorized formal Validation Phase. Counts
-overlap and must not be summed into a unique test total.
+These are the earlier implementation coherence checks; final issue-scoped validation appears in the linked report.
+Counts overlap and must not be summed into a unique test total.
 
 | Check | Result | Raw local evidence |
 | --- | --- | --- |
@@ -108,11 +108,11 @@ PASS with no remaining Important/Critical findings. `git diff --check` passes.
 - SwiftPM nested sandboxing failed in this environment. Focused tests use `--disable-sandbox` and writable caches.
   A temporary-copy probe path initially failed a pinned Persistence directory open; using the native temporary
   directory succeeded. Neither failure changed production app data.
-- SwiftLint, formal Validation Phase, installed-app menu/keyboard/VoiceOver checks and live Finder upgrade
-  qualification have not started. Implementation approval authorizes its commit, but no merge or push.
+- Installed-app menu, keyboard and VoiceOver checks and live Finder upgrade qualification remain unperformed.
+  See the validation report for completed issue-scoped tests, SwiftLint and style review.
 
-Unrelated untracked Xcode/build files remain untouched. Implementation approval authorizes its commit; formal
-validation requires a separate instruction under the project lifecycle.
+Unrelated untracked Xcode/build files remain untouched. The feature was fast-forwarded into `develop`; release and
+extension registration remain separate work.
 
 ## Applied review decisions
 
@@ -128,4 +128,5 @@ The user completed the review and authorized applying the agreed corrections.
 
 Review-correction check: `CollectionSummaryCoverageTests` passed all 7 tests, including mixed current/legacy
 collections and unavailable-count handling (`/private/tmp/storage-migration-review-corrections.log`).
-`git diff --check` passes. The user approved committing these corrections; formal validation has not started.
+`git diff --check` passed. These implementation corrections are included in `d685a93`; formal validation is
+recorded in [the validation report](STORAGE_SCHEMA_MIGRATION_VALIDATION.md).
