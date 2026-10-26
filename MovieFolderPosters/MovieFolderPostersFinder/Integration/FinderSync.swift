@@ -239,6 +239,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     _ status: MovieFolderActivityLogEvent.Status, failure: FolderProcessingFailure? = .none
   ) async {
     guard status != lastConfigurationStatus || failure?.reason != lastConfigurationFailureReason else { return }
+
     lastConfigurationStatus = status
     lastConfigurationFailureReason = failure?.reason
     await activity.record(MovieFolderActivityLogEvent(action: .finderConfiguration, status: status, failure: failure))

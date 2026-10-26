@@ -5,6 +5,9 @@ import Testing
 @testable import MovieFolderCommon
 
 /// Runs the explicit converter in memory for focused legacy-model fixtures; normal model readers never migrate.
+/// - Parameter payload: Encoded settings fixture using a supported historical schema.
+/// - Returns: The validated configuration produced by the converter.
+/// - Throws: Persistence setup, fixture decoding, or typed migration errors.
 func convertLegacySettingsFixture(_ payload: Data) throws -> DirectoryConfiguration {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: directory) }
@@ -17,6 +20,9 @@ func convertLegacySettingsFixture(_ payload: Data) throws -> DirectoryConfigurat
 }
 
 /// Converts a historical outcome fixture through the centralized raw-data converter before current-model decode.
+/// - Parameter payload: Encoded outcome fixture using a supported historical schema.
+/// - Returns: The current processing state decoded from the converted fixture.
+/// - Throws: Persistence setup, fixture extraction, conversion, or decoding errors.
 func convertLegacyOutcomeFixture(_ payload: Data) throws -> CollectionProcessingState {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: directory) }

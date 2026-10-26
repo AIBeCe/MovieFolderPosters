@@ -61,7 +61,7 @@ struct AppDelegateCoverageTests {
   }
 
   /// Cancelling the confirmation must not open or modify any migration storage.
-  @Test func cancellingMigrationDoesNotInvokeTheService() async throws {
+  @Test func cancellingMigrationDoesNotInvokeTheService() throws {
     let migrationService = SavedDataMigrationProbe()
     let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
     defer { fixture.cleanup() }

@@ -257,6 +257,11 @@ nonisolated public struct CollectionProcessingStore: Sendable {
   }
 
   /// Decodes a bounded record and rejects mismatched or unsupported states.
+  /// - Parameters:
+  ///   - persistenceAccess: Held access for the outcome record.
+  ///   - expectedRootID: Root identity that the decoded outcome must match.
+  /// - Returns: Decoded state, or `nil` when the record has no payload.
+  /// - Throws: A migration error when reading or validating the saved state fails.
   private func readProcessingState(
     using persistenceAccess: PersistenceAccess, expectedRootID: UUID
   ) throws -> CollectionProcessingState? {

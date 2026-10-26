@@ -69,6 +69,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
 
   /// Decodes current outcomes without mutating or silently converting saved legacy data.
   /// - Parameter decoder: Current schema-two collection outcome fields.
+  /// - Throws: Decoding errors for malformed fields, or a migration error for an unsupported schema.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
@@ -97,6 +98,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
 
   /// Encodes only current outcomes; legacy payload changes belong to the explicit migrator.
   /// - Parameter encoder: Destination for current collection outcome fields.
+  /// - Throws: A migration error for a noncurrent schema, or an encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
     guard schemaVersion == 2 else {
       throw MovieFolderStorageMigrationError.invalidRecord(record: .collectionOutcomes(context.rootID))

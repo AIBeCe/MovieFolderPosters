@@ -11,6 +11,28 @@ import Testing
 
 /// Covers persistence, folder-access, overlap, and credential behavior in the host service.
 struct DirectoryConfigurationServiceTests {
+  /// Normal loading of old settings shows the recovery action without a separate discarded startup read.
+  @Test @MainActor func configurationLoadExplainsRequiredMigration() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    var object = try #require(JSONSerialization.jsonObject(with:
+      JSONEncoder().encode(DirectoryConfiguration())) as? [String: Any])
+    object["version"] = 3
+    let source = try PersistenceStore(directory: fixture.root.appendingPathComponent("Shared"))
+    do {
+      let persistenceAccess = try #require(try source.acquireAccess(for: ConfigurationRepository.recordKey))
+      try persistenceAccess.write(JSONSerialization.data(withJSONObject: object))
+    }
+    let activity = ActivityServiceFake()
+    let model = ConfigurationViewModel(service: fixture.service, activity: activity)
+    await model.load()
+
+    #expect(model.errorMessage?.contains("Migrate Saved Data") == true)
+    #expect(model.errorMessage?.contains("older data format") == true)
+    #expect(try await activity.entries().contains { $0.event.text.contains("Migrate Saved Data") })
+    #expect(!model.isBusy)
+  }
+
   /// The normal setup and edit drafts report their committed historical collection names exactly once.
   @Test @MainActor func setupAndEditDraftsRecordCommittedContext() async throws {
     let activity = ActivityServiceFake()

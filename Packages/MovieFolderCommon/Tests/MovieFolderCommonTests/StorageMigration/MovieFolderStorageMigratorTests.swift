@@ -10,9 +10,11 @@ private struct MigrationFixture {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   /// Configured root retained across conversion.
   let root = MonitoredDirectory(id: UUID(), path: "/Movies", transferBookmark: Data([1]), authorizationVersion: UUID())
-  /// Real source and backup stores.
+  /// Settings namespace used as the source record store.
   let settings: PersistenceStore
+  /// Collection outcome records used as migration sources.
   let outcomes: PersistenceStore
+  /// Protected namespace for immutable copies of original source bytes.
   let backups: PersistenceStore
   /// Explicit migration service using the isolated namespaces.
   var migrator: MovieFolderStorageMigrator {
@@ -20,6 +22,7 @@ private struct MigrationFixture {
   }
 
   /// Creates no saved records until a test explicitly writes a fixture.
+  /// - Throws: An error if any isolated persistence namespace cannot be created.
   init() throws {
     settings = try PersistenceStore(directory: directory.appendingPathComponent("Settings"))
     outcomes = try PersistenceStore(directory: directory.appendingPathComponent("Outcomes"))
@@ -27,6 +30,11 @@ private struct MigrationFixture {
   }
 
   /// Writes current values using a legacy envelope and both historically renamed matching keys.
+  /// - Parameters:
+  ///   - settingsVersion: Historical settings schema version to encode.
+  ///   - outcomeVersion: Historical outcome schema version to encode.
+  /// - Returns: The original encoded settings and outcome payloads.
+  /// - Throws: Fixture encoding, persistence, or assertion errors.
   func seed(settingsVersion: Int = 4, outcomeVersion: Int = 1) throws -> (Data, Data) {
     var configuration = DirectoryConfiguration()
     configuration.directories = [root]
@@ -60,12 +68,22 @@ private struct MigrationFixture {
   }
 
   /// Acquires one source access for a complete test fixture write.
+  /// - Parameters:
+  ///   - payload: Bytes to write.
+  ///   - store: Persistence namespace receiving the fixture.
+  ///   - key: Record key within that namespace.
+  /// - Throws: An error if access cannot be acquired or the payload cannot be written.
   func write(_ payload: Data, to store: PersistenceStore, key: String) throws {
     let persistenceAccess = try #require(try store.acquireAccess(for: key))
     try persistenceAccess.write(payload)
   }
 
   /// Reads one source record under its real lease.
+  /// - Parameters:
+  ///   - store: Persistence namespace containing the record.
+  ///   - key: Record key within that namespace.
+  /// - Returns: Saved record bytes, or `nil` when no record exists.
+  /// - Throws: An error if access cannot be acquired or the record cannot be read.
   func read(_ store: PersistenceStore, key: String) throws -> Data? {
     let persistenceAccess = try #require(try store.acquireAccess(for: key))
 
@@ -151,6 +169,7 @@ private struct MigrationFixture {
   let (settings, outcomes) = try fixture.seed()
   let migration = Task {
     withUnsafeCurrentTask { $0?.cancel() }
+
     return try fixture.migrator.migrate()
   }
 
@@ -189,6 +208,8 @@ private struct MigrationFixture {
 }
 
 /// All supported settings schemas preserve explicit privacy, history, and generation values.
+/// - Parameter version: Supported legacy settings schema version to migrate.
+/// - Throws: Fixture setup, persistence, conversion, or assertion errors.
 @Test(arguments: [1, 2, 3, 4])
 func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: Int) throws {
   let fixture = try MigrationFixture()

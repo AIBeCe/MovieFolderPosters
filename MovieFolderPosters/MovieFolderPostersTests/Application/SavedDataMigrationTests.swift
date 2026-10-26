@@ -26,6 +26,9 @@ nonisolated final class SavedDataMigrationProbe: SavedDataMigrationServicing, Se
   var callCount: Int { operationState.withLock { $0.callCount } }
 
   /// Retains deterministic results and optional operation suspension.
+  /// - Parameters:
+  ///   - failure: Safe migration failure returned instead of a successful report, when supplied.
+  ///   - holdsOperation: Whether the operation waits for explicit release by the test.
   init(failure: MovieFolderStorageMigrationError? = .none, holdsOperation: Bool = false) {
     report = MovieFolderStorageMigrationReport(migratedRecordCount: 2, skippedCurrentRecordCount: 1,
       missingCollectionOutcomeRecordCount: 0)

@@ -17,6 +17,7 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
 
   /// Decodes current choices without selecting between conflicting historical aliases.
   /// - Parameter decoder: Current matching configuration fields.
+  /// - Throws: Decoding errors for malformed fields or a legacy alias that requires migration.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -32,6 +33,7 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
 
   /// Encodes only the current matching choice names.
   /// - Parameter encoder: Destination for current matching fields.
+  /// - Throws: An encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
     var values = encoder.container(keyedBy: CodingKeys.self)
     try values.encode(requiresReleaseYearForAutomaticMatching, forKey: .requiresReleaseYearForAutomaticMatching)
@@ -764,6 +766,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
 
   /// Encodes only the current schema; legacy conversion belongs to the explicit storage migrator.
   /// - Parameter encoder: Destination for current shared settings.
+  /// - Throws: A migration error for a noncurrent schema, or an encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
     guard version == 5 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
 
@@ -782,7 +785,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// Decodes current settings without silently upgrading a saved record.
   ///
   /// - Parameter decoder: The decoder providing the versioned persisted configuration fields.
-  /// - Throws: Decoding errors for missing required fields, invalid field types, or malformed encoded values.
+  /// - Throws: Decoding errors for malformed fields, or a migration error for an unsupported schema.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)

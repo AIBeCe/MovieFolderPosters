@@ -327,6 +327,8 @@ final class ConfigurationViewModel {
       onFailure()
       let explanation: String
       switch error {
+      case let migrationError as MovieFolderStorageMigrationError:
+        explanation = migrationError.localizedDescription
       case ConfigurationError.overlappingDirectory:
         explanation = "This folder overlaps another collection. Choose separate collection roots."
       case ConfigurationError.duplicateDirectory:
