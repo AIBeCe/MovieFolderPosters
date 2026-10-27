@@ -331,5 +331,11 @@ All nine initial warnings are fixed. Final checks on this tree: 80 host tests ac
 tests passed, no failures or skips; app and Finder extension Debug build succeeded; SwiftLint completed with 0
 findings across 18 changed/new Swift files; reviewer PASS; `git diff --check` passed. Compiler warnings were
 limited to pre-existing weak-variable and unused-result diagnostics in test sources; the Common final run emitted
-none. The validation corrections and this record are uncommitted pending user approval. Native Finder activation,
+none. The validation corrections were committed as `23a419a` and fast-forwarded to `develop`. Native Finder activation,
 clipboard/Finder effects, and rendered accessibility checks remain unobserved.
+
+## Integration and publication
+
+On 2026-10-27, `feature/finder-result-utilities` was fast-forwarded into `develop`. The integrated implementation
+and validation commits are `e2cf2eb` and `23a419a`. The issue documentation was then updated on `develop`; native
+Finder activation, clipboard interaction, and accessibility qualification remain outstanding.
