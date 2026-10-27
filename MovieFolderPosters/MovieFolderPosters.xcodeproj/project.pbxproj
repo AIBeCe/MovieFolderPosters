@@ -25,7 +25,7 @@
 		FC0000000000000000000003 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000013 /* MovieFolderCommon */; };
 		FC0000000000000000000031 /* MovieFolderParsing in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000032 /* MovieFolderParsing */; };
 		FD1000000000000000000001 /* FinderRuntimeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000003 /* FinderRuntimeEnvironment.swift */; };
-		FD1000000000000000000002 /* FinderMenuController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000004 /* FinderMenuController.swift */; };
+		FD1000000000000000000002 /* MovieFolderContextMenuHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000004 /* MovieFolderContextMenuHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,7 +76,7 @@
 		F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MovieFolderPostersFinder.entitlements; sourceTree = "<group>"; };
 		F50000000000000000000002 /* TestPoster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = TestPoster.png; sourceTree = "<group>"; };
 		FD1000000000000000000003 /* FinderRuntimeEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderRuntimeEnvironment.swift; sourceTree = "<group>"; };
-		FD1000000000000000000004 /* FinderMenuController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderMenuController.swift; sourceTree = "<group>"; };
+		FD1000000000000000000004 /* MovieFolderContextMenuHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderContextMenuHandler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -192,7 +192,7 @@
 			children = (
 				F10000000000000000000004 /* FinderSync.swift */,
 				FD1000000000000000000003 /* FinderRuntimeEnvironment.swift */,
-				FD1000000000000000000004 /* FinderMenuController.swift */,
+				FD1000000000000000000004 /* MovieFolderContextMenuHandler.swift */,
 			);
 			path = Integration;
 			sourceTree = "<group>";
@@ -432,7 +432,7 @@
 			files = (
 				F10000000000000000000007 /* FinderSync.swift in Sources */,
 				FD1000000000000000000001 /* FinderRuntimeEnvironment.swift in Sources */,
-				FD1000000000000000000002 /* FinderMenuController.swift in Sources */,
+				FD1000000000000000000002 /* MovieFolderContextMenuHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

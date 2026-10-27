@@ -165,6 +165,11 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
     posterActionCoordinator.start(request)
   }
 
+  /// Opens read-only results independently of provider admission.
+  func showProcessingDetails(for request: MovieFolderContextMenuRequest) {
+    do { try presentConfiguration { $0.showProcessingDetails(for: request) } } catch { return }
+  }
+
   /// Routes inclusion independently from processing recovery and provider credentials.
   func openInclusionAction(_ request: MovieFolderInclusionRequest) {
     do { try presentConfiguration { $0.openInclusionAction(request) } } catch { return }

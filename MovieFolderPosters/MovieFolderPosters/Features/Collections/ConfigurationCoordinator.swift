@@ -57,6 +57,14 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private let retryService: any CollectionRetryServicing
   /// Processing-details sheet retained until explicit dismissal or parent closure.
   private var detailsWindow: NSWindow?
+  /// Fences delayed Finder presentation after closing Main or replacing the request.
+  private var contextMenuPresentationGeneration: UInt64 = .zero
+  /// Live inspection effect owner retained through its sheet.
+  private var detailsViewModel: CollectionProcessingDetailsViewModel?
+  /// Read-only utility admission and immediate platform boundary.
+  private let utilityService: any MovieFolderFinderActionServicing
+  /// Immediate native effect adapter owned for the lifetime of configuration sheets.
+  private let utilityPlatform: any MovieFolderUtilityPlatform
   /// Results presentation retained until explicit dismissal or parent closure.
   private(set) var resultsWindow: NSWindow?
   /// Owns selected retry lifetime independently of view rendering.
@@ -87,13 +95,17 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     appearance: AppAppearanceSettings = AppAppearanceSettings(),
     installationService: any InstallationReadinessServicing = InstallationReadinessService(),
     recovery: ProcessingRecoveryService? = .none,
-    retryService: any CollectionRetryServicing = UnavailableCollectionRetryService()
+    retryService: any CollectionRetryServicing = UnavailableCollectionRetryService(),
+    utilityService: any MovieFolderFinderActionServicing = MovieFolderFinderActionService(),
+    utilityPlatform: any MovieFolderUtilityPlatform = SystemMovieFolderUtilityPlatform()
   ) {
     self.service = service
     self.installationService = installationService
     self.activity = activity
     self.appearance = appearance
     self.retryService = retryService
+    self.utilityService = utilityService
+    self.utilityPlatform = utilityPlatform
     viewModel = ConfigurationViewModel(service: service, activity: activity, recovery: recovery)
     summaryViewModel = CollectionSummaryViewModel(service: summaryService)
     super.init()
@@ -169,7 +181,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   }
 
   /// Shows the selected collection's read-only persisted details as a window sheet.
-  private func showProcessingDetails(rootID: UUID) {
+  private func showProcessingDetails(rootID: UUID, request: MovieFolderContextMenuRequest? = .none) {
     guard let window = mainWindow?.window, window.attachedSheet == .none,
       let directory = viewModel.directories.first(where: { $0.id == rootID })
     else { return }
@@ -179,9 +191,14 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       counts: CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none),
       displayState: .unavailable
     )
+    guard let request = request ?? (try? MovieFolderContextMenuRequest(rootID: rootID,
+      target: .collection, action: .inspect)) else { return }
+    let model = CollectionProcessingDetailsViewModel(request: request, summaries: summaryViewModel,
+      utilities: utilityService, platform: utilityPlatform)
+    detailsViewModel = model
     let controller = CollectionProcessingDetailsViewController(
       collectionName: directory.effectiveDisplayName,
-      summary: summary)
+      summary: summary, viewModel: model)
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
     sheet.title = "Processing Details — \(directory.effectiveDisplayName)"
@@ -192,11 +209,53 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     sheet.delegate = self
     detailsWindow = sheet
     window.beginSheet(sheet, completionHandler: .none)
+    model.reload()
+  }
+
+  /// Routes Finder inspection without automatically invoking Copy or provider work.
+  func showProcessingDetails(for request: MovieFolderContextMenuRequest) {
+    start()
+    contextMenuPresentationGeneration &+= 1
+    let generation = contextMenuPresentationGeneration
+    Task { [weak self] in
+      guard let self else { return }
+
+      await viewModel.load()
+
+      guard contextMenuPresentationGeneration == generation, mainWindow?.window?.isVisible == true else { return }
+
+      showLoadedProcessingDetails(for: request)
+    }
+  }
+
+  /// Presents a validated target after the configured roots have loaded.
+  private func showLoadedProcessingDetails(for request: MovieFolderContextMenuRequest) {
+    guard !viewModel.isBusy, let window = mainWindow?.window else { return }
+
+    if let current = detailsViewModel, current.request.target == request.target,
+      current.request.rootID == request.rootID, !current.isBusy {
+      detailsWindow?.makeKeyAndOrderFront(.none)
+      (detailsWindow?.contentViewController as? CollectionProcessingDetailsViewController)?.focus(request.action)
+      current.reload()
+      return
+    }
+    if let current = detailsViewModel, !current.isBusy { closeDetails() }
+
+    guard detailsWindow == .none, resultsWindow == .none, setupWindow == .none, editWindow == .none,
+      window.attachedSheet == .none else {
+      let alert = NSAlert()
+      alert.messageText = "Close the current sheet before inspecting another folder."
+      alert.runModal()
+      return
+    }
+    showProcessingDetails(rootID: request.rootID, request: request)
   }
 
   /// Ends the processing-details sheet when its Close action or parent window dismisses it.
   private func closeDetails() {
     guard let sheet = detailsWindow else { return }
+    detailsViewModel?.invalidate()
+    detailsViewModel = .none
     detailsWindow = .none
     if let parent = sheet.sheetParent { parent.endSheet(sheet) }
     sheet.delegate = .none
@@ -209,7 +268,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     guard let parent = mainWindow?.window, parent.attachedSheet == .none, !viewModel.isBusy,
       let directory = viewModel.directories.first(where: { $0.id == rootID })
     else { return }
-    let model = CollectionResultsViewModel(rootID: rootID, summaries: summaryViewModel, retryService: retryService)
+    let model = CollectionResultsViewModel(rootID: rootID, summaries: summaryViewModel, retryService: retryService,
+      utilityService: utilityService, utilityPlatform: utilityPlatform)
     let controller = CollectionResultsViewController(viewModel: model)
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
@@ -242,6 +302,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow else { return }
     if window === mainWindow?.window {
+      contextMenuPresentationGeneration &+= 1
       if settingsWindow?.window?.isVisible != true {
         DistributedNotificationCenter.default().removeObserver(self)
         isObservingProcessing = false
@@ -362,6 +423,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Invalidates captured selection after authorization or processing configuration changes.
   @objc private func resultsConfigurationChanged(_ notification: Notification) {
     Task { @MainActor [weak self] in
+      self?.contextMenuPresentationGeneration &+= 1
+      self?.detailsViewModel?.invalidate()
       self?.resultsViewModel?.configurationDidChange()
       self?.summaryViewModel.reload()
       self?.viewModel.invalidateCredentialState()

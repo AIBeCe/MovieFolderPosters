@@ -329,7 +329,7 @@ final class FinderSync: FIFinderSync {
   /// Serializes observation and configuration work for the extension lifetime.
   private let scheduler: DirectoryObservationScheduler
   /// Retains captured, validated menu requests until an action is selected.
-  private let menuController = FinderMenuController(platform: SystemFinderMenuPlatform())
+  private let contextMenuHandler = MovieFolderContextMenuHandler(environment: LiveMovieFolderContextMenuEnvironment())
 
   /// Creates Finder scheduling and observes configuration changes for this extension process.
   override init() {
@@ -361,13 +361,20 @@ final class FinderSync: FIFinderSync {
   }
 
   override func menu(for menuKind: FIMenuKind) -> NSMenu? {
-    menuController.menu(for: menuKind, actionTarget: self)
+    contextMenuHandler.contextMenu(for: menuKind, actionTarget: self)
   }
 
   /// Routes Finder's principal-object menu action to the validated request captured for that menu.
-  @objc func openPosterAction(_ sender: NSMenuItem) { menuController.openPosterAction(sender) }
+  /// Forwards read-only utility dispatch through the principal object.
+  @objc func openContextMenuRequest(_ sender: NSMenuItem) { contextMenuHandler.openContextMenuRequest(sender) }
+
+  @objc func openContextMenuPosterAction(_ sender: NSMenuItem) {
+    contextMenuHandler.openContextMenuPosterAction(sender)
+  }
   /// Routes a captured inclusion action to the host's explicit confirmation flow.
-  @objc func openInclusionAction(_ sender: NSMenuItem) { menuController.openInclusionAction(sender) }
+  @objc func openContextMenuInclusionAction(_ sender: NSMenuItem) {
+    contextMenuHandler.openContextMenuInclusionAction(sender)
+  }
 
   deinit {
     DistributedNotificationCenter.default().removeObserver(self)

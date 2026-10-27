@@ -197,6 +197,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidat
   ///   - urls: URLs requested by the system or another app.
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
+      if let request = try? MovieFolderContextMenuRequest(url: url) {
+        coordinator.showProcessingDetails(for: request)
+        continue
+      }
       if let request = try? MovieFolderInclusionRequest(url: url) {
         coordinator.openInclusionAction(request)
         continue

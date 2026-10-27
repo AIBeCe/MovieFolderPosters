@@ -30,6 +30,8 @@ final class CollectionResultsViewController: NSViewController {
   private let chooseButton = NSButton(title: "Choose Movie…", target: .none, action: .none)
   /// Starts one bounded selection of retries.
   private let retryButton = NSButton(title: "Retry Selected", target: .none, action: .none)
+  /// Reveals exactly the captured visible selection.
+  private let revealButton = NSButton(title: "Reveal Selected in Finder", target: .none, action: .none)
   /// Cancels the currently owned retry task.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
   /// Dismisses the results sheet independently of the action footer.
@@ -83,6 +85,8 @@ final class CollectionResultsViewController: NSViewController {
     statusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     chooseButton.target = self
     chooseButton.action = #selector(chooseMovie)
+    revealButton.target = self
+    revealButton.action = #selector(revealSelected)
     retryButton.target = self
     retryButton.action = #selector(retrySelected)
     cancelButton.target = self
@@ -91,7 +95,7 @@ final class CollectionResultsViewController: NSViewController {
     let reloadButton = NSButton(title: "Reload", target: self, action: #selector(reload))
     let doneButton = NSButton(title: "Done", target: self, action: #selector(done))
     doneButton.keyEquivalent = "\r"
-    let actions = NSStackView(views: [chooseButton, retryButton, cancelButton, reloadButton, doneButton])
+    let actions = NSStackView(views: [chooseButton, retryButton, revealButton, cancelButton, reloadButton, doneButton])
     actions.orientation = .horizontal
     actions.spacing = 8
     for child in [closeButton, filters, scrollView, statusLabel, actions] {
@@ -116,12 +120,14 @@ final class CollectionResultsViewController: NSViewController {
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
     ])
     let keyboardControls: [NSView] = [processingStateFilterPopUpButton, processingReasonFilterPopUpButton,
-      tableView, chooseButton, retryButton, cancelButton, reloadButton, doneButton, closeButton]
+      tableView, chooseButton, retryButton, revealButton, cancelButton, reloadButton, doneButton, closeButton]
     for (current, next) in zip(keyboardControls, keyboardControls.dropFirst() + [processingStateFilterPopUpButton]) {
       current.nextKeyView = next
     }
     render()
   }
+
+  @objc private func revealSelected() { viewModel.revealSelected() }
 
   /// Connects the independent sheet dismissal control and its Escape key equivalent.
   private func configureCloseButton() {
@@ -153,6 +159,7 @@ final class CollectionResultsViewController: NSViewController {
     isRendering = false
     chooseButton.isEnabled = viewModel.canChooseMovie
     retryButton.isEnabled = viewModel.canRetrySelected
+    revealButton.isEnabled = viewModel.canRevealSelected
     cancelButton.isEnabled = viewModel.isBusy && !viewModel.isCancelling
     cancelButton.title = viewModel.isCancelling ? "Cancelling…" : "Cancel"
     processingStateFilterPopUpButton.isEnabled = viewModel.canFilter
@@ -227,6 +234,9 @@ extension CollectionResultsViewController: NSTableViewDataSource, NSTableViewDel
 
     return label
   }
+
+  /// Freezes visible selection while a finite retry or Reveal validation owns its captured rows.
+  func selectionShouldChange(in tableView: NSTableView) -> Bool { !viewModel.isBusy || isRendering }
 
   /// Converts current table selection to stable saved row identity.
   func tableViewSelectionDidChange(_ notification: Notification) {

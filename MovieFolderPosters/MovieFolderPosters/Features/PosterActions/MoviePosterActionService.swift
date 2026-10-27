@@ -439,37 +439,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     _ request: MoviePosterRequest,
     operation: (AuthorizedRoot) async throws -> Value
   ) async throws -> Value {
-    let repository = try environment.makeConfigurationRepository()
-    let configuration = try await repository.readWhenAvailable()
-    guard let directory = configuration.directories.first(where: { $0.id == request.rootID }) else {
-      throw MoviePosterActionServiceError.directoryNotConfigured
-    }
-    guard !configuration.findOverlappingDirectoryIDs().contains(directory.id) else {
-      throw MoviePosterActionServiceError.directoryUnavailable
-    }
-
-    let authorizationStore = try environment.makePrivateAuthorizationStore()
-    let authorizationKey = "host-\(directory.id)-\(directory.authorizationVersion)"
-    guard let authorizationAccess = try authorizationStore.acquireAccess(for: authorizationKey) else {
-      throw ConfigurationError.busy
-    }
-    let rootAccess: DirectoryAccess
-    if let bookmark = try authorizationAccess.read(),
-      let persisted = try? fileSystem.acquireDirectoryAccess(
-        bookmark: bookmark, securityScoped: true,
-        expectedIdentity: directory.identity) {
-      rootAccess = persisted
-    } else {
-      rootAccess = try fileSystem.acquireDirectoryAccess(
-        bookmark: directory.transferBookmark,
-        securityScoped: false, expectedIdentity: directory.identity)
-      try Task.checkCancellation()
-      try authorizationAccess.write(environment.makeDirectoryBookmark(for: rootAccess.url))
-    }
-
-    guard rootAccess.url.standardizedFileURL.path == directory.path else {
-      throw MoviePosterActionServiceError.directoryUnavailable
-    }
+    let authorized = try await MovieFolderAuthorization(environment: environment).acquire(rootID: request.rootID)
+    let rootAccess = authorized.rootAccess
     let child: FolderCandidate
     do {
       child = try fileSystem.readCurrentState(ofChild: request.childName, in: rootAccess.url)
@@ -481,10 +452,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     }
 
     let context = AuthorizedRoot(
-      configuration: configuration, directory: directory, root: rootAccess.url,
-      child: child, authorizationAccess: authorizationAccess,
-      rootAccess: rootAccess,
-      rootIdentity: try fileSystem.persistentDirectoryIdentity(at: rootAccess.url))
+      configuration: authorized.configuration, directory: authorized.directory, root: authorized.root,
+      child: child, authorizationAccess: authorized.authorizationAccess,
+      rootAccess: rootAccess, rootIdentity: authorized.rootIdentity)
     defer {
       withExtendedLifetime(context.authorizationAccess) {}
       withExtendedLifetime(context.rootAccess) {}

@@ -261,7 +261,7 @@ struct CollectionResultsViewModelTests {
     #expect(await fixture.retry.requests.map(\.childName) == ["Eligible"])
   }
 
-  /// Stale, unavailable, and active-root projections show evidence but never admit actions.
+  /// Stale, unavailable, and active-root projections block Choose Movie and Retry without hiding evidence.
   /// - Parameter displayState: Lifecycle gate that prevents explicit retry or selection.
   @Test(arguments: [CollectionProcessingDisplayState.stale, .unavailable, .busy, .running])
   func unavailableEvidenceDisablesActions(_ displayState: CollectionProcessingDisplayState) async {
@@ -273,6 +273,8 @@ struct CollectionResultsViewModelTests {
     #expect(fixture.model.rows.count == 1)
     #expect(!fixture.model.canChooseMovie)
     #expect(!fixture.model.canRetrySelected)
+    #expect(fixture.model.statusMessage.contains("Choose Movie and Retry require current results"))
+    #expect(fixture.model.statusMessage.contains("Reveal Selected revalidates the selected folders"))
     fixture.model.retrySelected()
     #expect(await fixture.retry.requests.isEmpty)
   }
@@ -298,6 +300,30 @@ struct CollectionResultsViewModelTests {
     #expect(fixture.model.rows.count == 1)
     #expect(!fixture.model.canChooseMovie)
     #expect(!fixture.model.canRetrySelected)
+  }
+
+  /// Reveal captures exactly selected visible rows in natural order, including stale outcome evidence.
+  @Test func revealUsesExactNaturalSelectionAndRejectsIdentitylessRows() async {
+    let rootID = UUID()
+    let source = ResultsSummarySource(rootID: rootID, folders: [folder("Movie 10"), folder("Movie 2"), folder("Movie 1")])
+    await source.set(displayState: .stale)
+    let summaries = CollectionSummaryViewModel(service: source)
+    summaries.reload()
+    await settle()
+    let utilities = ResultsUtilityRecorder()
+    let model = CollectionResultsViewModel(rootID: rootID, summaries: summaries, retryService: ResultsRetryService(),
+      utilityService: utilities)
+    model.selectRows(IndexSet([1, 2]))
+    #expect(model.canRevealSelected)
+    model.revealSelected()
+    await settle()
+    #expect(await utilities.selections == [.child(name: "Movie 2", identity: "child"),
+      .child(name: "Movie 10", identity: "child")])
+    await source.set(folders: [FolderProcessingRecord(name: "No identity"), folder("Valid")])
+    summaries.reload()
+    await settle()
+    model.selectRows(IndexSet([0, 1]))
+    #expect(!model.canRevealSelected)
   }
 
   /// Creates an identified pending folder for action tests.
@@ -421,5 +447,20 @@ private final class ResultsObserver: CollectionResultsViewModelDelegate {
     _ viewModel: CollectionResultsViewModel, didRequestMovieSelection request: MoviePosterRequest
   ) {
     self.request = request
+  }
+}
+
+/// Records read-only admission requests and rejects effects without touching platform services.
+private actor ResultsUtilityRecorder: MovieFolderFinderActionServicing {
+  /// Entire selection captured by the presentation model.
+  private(set) var selections: [MovieFolderContextMenuRequest.Target] = []
+  func inspectionStatus(_ request: MovieFolderContextMenuRequest) throws -> String { "Fixture" }
+  func prepareCopy(_ request: MovieFolderContextMenuRequest) throws -> PreparedMovieFolderUtility {
+    throw MovieFolderUtilityError.unavailable
+  }
+  func prepareReveal(rootID: UUID, selections: [MovieFolderContextMenuRequest.Target]) throws
+    -> PreparedMovieFolderUtility {
+    self.selections = selections
+    throw MovieFolderUtilityError.unavailable
   }
 }

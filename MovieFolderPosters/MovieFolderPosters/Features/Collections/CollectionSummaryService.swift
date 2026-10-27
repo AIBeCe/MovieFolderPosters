@@ -286,7 +286,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
   }
 
   /// Checks every field that can make a saved result belong to another processing context.
-  private static func matches(
+  static func matches(
     _ context: CollectionProcessingContext,
     root: MonitoredDirectory,
     configuration: DirectoryConfiguration

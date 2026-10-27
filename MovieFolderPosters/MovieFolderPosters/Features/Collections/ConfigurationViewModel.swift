@@ -137,13 +137,25 @@ final class ConfigurationViewModel {
     self.recovery = recovery
   }
 
-  /// Loads the latest configuration summary and publishes its state.
+  /// Coalesces initial Main loading with Finder presentation that needs the same current roots.
+  private var configurationLoadTask: Task<Void, Never>?
+
+  /// Loads current configuration, awaiting an already-running load instead of dropping a Finder request.
   func load() async {
-    await perform(
-      action: .configurationLoaded, failureMessage: "Could not load configuration."
-    ) { try await self.service.configurationSummary() }
-    await reloadCredentialState()
-    await reloadRecoveryMode()
+    if let configurationLoadTask {
+      await configurationLoadTask.value
+      return
+    }
+    let task = Task {
+      await perform(action: .configurationLoaded, failureMessage: "Could not load configuration.") {
+        try await self.service.configurationSummary()
+      }
+      await reloadCredentialState()
+      await reloadRecoveryMode()
+    }
+    configurationLoadTask = task
+    await task.value
+    configurationLoadTask = .none
   }
 
   /// Reads the durable gate without triggering a configuration change or processing invocation.

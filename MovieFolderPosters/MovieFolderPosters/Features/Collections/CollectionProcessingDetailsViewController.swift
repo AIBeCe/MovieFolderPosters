@@ -11,11 +11,28 @@ protocol CollectionProcessingDetailsViewControllerDelegate: AnyObject {
 
 /// Displays committed collection outcome evidence without offering retry or correction actions.
 @MainActor
-final class CollectionProcessingDetailsViewController: NSViewController {
+final class CollectionProcessingDetailsViewController: NSViewController, CollectionProcessingDetailsViewModelDelegate {
   /// Flow owner responsible for dismissing the sheet.
   weak var delegate: (any CollectionProcessingDetailsViewControllerDelegate)?
   /// The read-only result projection for the collection.
-  private let summary: CollectionProcessingSummary
+  private let initialSummary: CollectionProcessingSummary
+  /// Live projection when opened by the current inspection flow.
+  private let viewModel: CollectionProcessingDetailsViewModel?
+  /// Saved evidence refreshed without processing.
+  private var summary: CollectionProcessingSummary {
+    guard let viewModel else { return initialSummary }
+
+    return viewModel.summary ?? CollectionProcessingSummary(processingState: .none,
+      presentation: CollectionProcessingPresentation(processingState: .none),
+      counts: CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none),
+      displayState: .unavailable)
+  }
+  /// Requested focus retained until fresh evidence enables the corresponding control.
+  private var requestedFocus: MovieFolderContextMenuAction = .inspect
+  /// Explicit host Copy controls; custom URLs only focus one.
+  private let copyTitleButton = NSButton(title: "Copy Verified Movie Title", target: .none, action: .none)
+  /// Copies the positive verified decimal TMDb identifier independently of title availability.
+  private let copyIdentifierButton = NSButton(title: "Copy TMDb Identifier", target: .none, action: .none)
   /// Root name shown in the sheet title and accessibility description.
   private let collectionName: String
   /// Displays selectable outcome details for assistive technology and copying.
@@ -27,10 +44,13 @@ final class CollectionProcessingDetailsViewController: NSViewController {
   /// - Parameters:
   ///   - collectionName: The configured root's display name.
   ///   - summary: The current persisted processing state and freshness projection.
-  init(collectionName: String, summary: CollectionProcessingSummary) {
+  init(collectionName: String, summary: CollectionProcessingSummary,
+       viewModel: CollectionProcessingDetailsViewModel? = .none) {
     self.collectionName = collectionName
-    self.summary = summary
+    initialSummary = summary
+    self.viewModel = viewModel
     super.init(nibName: .none, bundle: .none)
+    viewModel?.delegate = self
   }
 
   /// Storyboard and archive construction are unsupported; create this view programmatically.
@@ -57,7 +77,14 @@ final class CollectionProcessingDetailsViewController: NSViewController {
     detailsView.setAccessibilityLabel("Collection processing outcome details")
     detailsView.string = reportText
     scrollView.documentView = detailsView
-    for child in [closeButton, scrollView] {
+    copyTitleButton.target = self
+    copyTitleButton.action = #selector(copyTitle)
+    copyIdentifierButton.target = self
+    copyIdentifierButton.action = #selector(copyIdentifier)
+    let actions = NSStackView(views: [copyTitleButton, copyIdentifierButton])
+    actions.spacing = 8
+    if case .child = viewModel?.request.target { actions.isHidden = false } else { actions.isHidden = true }
+    for child in [closeButton, scrollView, actions] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
@@ -67,8 +94,48 @@ final class CollectionProcessingDetailsViewController: NSViewController {
       scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
       scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
       scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 12),
-      scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
+      scrollView.bottomAnchor.constraint(equalTo: actions.topAnchor, constant: -12),
+      actions.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+      actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
     ])
+    render()
+  }
+
+  /// Applies the requested Copy focus after the sheet has acquired its window.
+  override func viewDidAppear() {
+    super.viewDidAppear()
+    focus(viewModel?.request.action ?? .inspect)
+  }
+
+  /// Focuses a requested host control without invoking it.
+  func focus(_ action: MovieFolderContextMenuAction) {
+    requestedFocus = action
+    if action == .copyMovieTitle { view.window?.makeFirstResponder(copyTitleButton) }
+    if action == .copyMovieIdentifier { view.window?.makeFirstResponder(copyIdentifierButton) }
+  }
+
+  /// Requests explicit host title copying after fresh service admission.
+  @objc private func copyTitle() { viewModel?.copy(.copyMovieTitle) }
+  /// Requests explicit host identifier copying after fresh service admission.
+  @objc private func copyIdentifier() { viewModel?.copy(.copyMovieIdentifier) }
+  /// Renders new live saved evidence and finite utility state.
+  func collectionProcessingDetailsViewModelDidChange(_ viewModel: CollectionProcessingDetailsViewModel) { render() }
+
+  /// Updates the report and available Copy controls without performing an effect.
+  private func render() {
+    guard isViewLoaded else { return }
+
+    detailsView.string = (viewModel?.currentStatus ?? "") + "\n\n" + reportText + "\n" + (viewModel?.statusMessage ?? "")
+    copyTitleButton.isEnabled = viewModel?.canCopy(.copyMovieTitle) ?? false
+    copyIdentifierButton.isEnabled = viewModel?.canCopy(.copyMovieIdentifier) ?? false
+    if requestedFocus == .copyMovieTitle, copyTitleButton.isEnabled {
+      view.window?.makeFirstResponder(copyTitleButton)
+      requestedFocus = .inspect
+    }
+    if requestedFocus == .copyMovieIdentifier, copyIdentifierButton.isEnabled {
+      view.window?.makeFirstResponder(copyIdentifierButton)
+      requestedFocus = .inspect
+    }
   }
 
   /// Forwards dismissal to the coordinator that owns the sheet.
@@ -77,7 +144,7 @@ final class CollectionProcessingDetailsViewController: NSViewController {
   /// Formats the processing state's committed run and per-folder evidence for display.
   private var reportText: String {
     guard let processingState = summary.processingState else {
-      return "No committed processing outcome is available for this collection."
+      return summary.readFailureMessage ?? "No committed processing outcome is available for this target. Outcome is unknown."
     }
     var lines = [
       "Collection: \(collectionName)",
@@ -96,7 +163,12 @@ final class CollectionProcessingDetailsViewController: NSViewController {
     lines.append("")
     lines.append("Folders (\(processingState.folders.count))")
     lines.append(String(repeating: "—", count: 72))
-    for folder in processingState.folders.sorted(by: {
+    let folders: [FolderProcessingRecord]
+    if case .child(let name, let identity) = viewModel?.request.target {
+      folders = processingState.folders.filter { $0.name == name && $0.identity == identity }
+      if folders.isEmpty { lines.append("No saved assessment matches this child identity. Outcome is unknown.") }
+    } else { folders = processingState.folders }
+    for folder in folders.sorted(by: {
       $0.name.localizedStandardCompare($1.name) == .orderedAscending
     }) {
       lines.append(folder.name)

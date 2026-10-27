@@ -45,7 +45,7 @@ private struct FinderFixture: Sendable {
   func remove() { try? FileManager.default.removeItem(at: container) }
 }
 
-/// Stores registration evidence without touching Finder's controller.
+/// Stores registration evidence without touching Finder's contextMenuHandler.
 @MainActor private final class FinderRegistrations {
   /// Complete sequence of registered root snapshots.
   private(set) var roots: [Set<URL>] = []
@@ -213,11 +213,14 @@ private struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
 }
 
 /// Test-owned menu boundary records requests rather than launching the host application.
-private final class IsolatedMenuPlatform: FinderMenuPlatform {
+private final class IsolatedContextMenuEnvironment: MovieFolderContextMenuEnvironment {
+  /// Captured read-only routes never invoke a clipboard or Finder effect.
+  var contextMenuRequests: [MovieFolderContextMenuRequest] = []
+  func open(_ request: MovieFolderContextMenuRequest) { contextMenuRequests.append(request) }
   /// Captured inclusion requests dispatched for host confirmation.
-  var inclusionRequests: [MovieFolderInclusionRequest] = []
+  var contextMenuInclusionRequests: [MovieFolderInclusionRequest] = []
   /// Retains typed inclusion requests without mutating configuration.
-  func open(_ request: MovieFolderInclusionRequest) { inclusionRequests.append(request) }
+  func open(_ request: MovieFolderInclusionRequest) { contextMenuInclusionRequests.append(request) }
   /// Selection under test, including unsupported files and hidden folders.
   var selection: [URL]?
   /// Real isolated configuration repository.
@@ -238,21 +241,26 @@ private final class IsolatedMenuPlatform: FinderMenuPlatform {
 }
 
 /// Stands in for Finder's principal object while forwarding its menu selector to the request owner.
-private final class FinderMenuActionTarget: NSObject {
-  /// Routes inclusion selectors using the same retained menu controller.
-  @objc func openInclusionAction(_ sender: NSMenuItem) { controller.openInclusionAction(sender) }
-  /// Controller that retains validated requests for the current menu generation.
-  private let controller: FinderMenuController
+private final class ContextMenuActionTarget: NSObject {
+  @objc func openContextMenuRequest(_ sender: NSMenuItem) { contextMenuHandler.openContextMenuRequest(sender) }
+  /// Routes inclusion selectors using the same retained contextual-menu handler.
+  @objc func openContextMenuInclusionAction(_ sender: NSMenuItem) {
+    contextMenuHandler.openContextMenuInclusionAction(sender)
+  }
+  /// Handler that retains validated requests for the current menu generation.
+  private let contextMenuHandler: MovieFolderContextMenuHandler
 
-  /// Retains the controller used by the isolated Finder menu test.
-  /// - Parameter controller: Owner of the captured menu requests.
-  init(controller: FinderMenuController) {
-    self.controller = controller
+  /// Retains the handler used by the isolated Finder menu test.
+  /// - Parameter contextMenuHandler: Owner of the captured menu requests.
+  init(contextMenuHandler: MovieFolderContextMenuHandler) {
+    self.contextMenuHandler = contextMenuHandler
     super.init()
   }
 
   /// Routes the same selector implemented by the production Finder principal object.
-  @objc func openPosterAction(_ sender: NSMenuItem) { controller.openPosterAction(sender) }
+  @objc func openContextMenuPosterAction(_ sender: NSMenuItem) {
+    contextMenuHandler.openContextMenuPosterAction(sender)
+  }
 }
 
 /// Exercises Finder menu capture, runtime authorization, and persisted processing boundaries.
@@ -307,14 +315,15 @@ struct FinderIntegrationTests {
       $0.directories[0].processingConfiguration.excludeFolder(identity: identity, lastKnownName: child.lastPathComponent)
     }
     let before = try fixture.repository.read()
-    let platform = IsolatedMenuPlatform(repository: fixture.repository, selection: [child])
-    let controller = FinderMenuController(platform: platform)
-    let target = FinderMenuActionTarget(controller: controller)
-    let menu = try #require(controller.menu(for: .contextualMenuForItems, actionTarget: target))
+    let environment = IsolatedContextMenuEnvironment(repository: fixture.repository, selection: [child])
+    let contextMenuHandler = MovieFolderContextMenuHandler(environment: environment)
+    let target = ContextMenuActionTarget(contextMenuHandler: contextMenuHandler)
+    let outer = try #require(contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: target))
+    let menu = try #require(outer.items.first?.submenu)
     let include = try #require(menu.items.first(where: { $0.title == "Include Folder…" }))
-    controller.openInclusionAction(include)
-    #expect(platform.inclusionRequests.first?.action == .include)
-    #expect(platform.inclusionRequests.first?.expectedProcessingConfigurationRevision
+    contextMenuHandler.openContextMenuInclusionAction(include)
+    #expect(environment.contextMenuInclusionRequests.first?.action == .include)
+    #expect(environment.contextMenuInclusionRequests.first?.expectedProcessingConfigurationRevision
       == before.directories[0].processingConfiguration.revision)
     #expect(try fixture.repository.read() == before)
   }
@@ -324,36 +333,45 @@ struct FinderIntegrationTests {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
     let child = try fixture.movie()
-    let platform = IsolatedMenuPlatform(repository: fixture.repository, selection: [child])
-    let controller = FinderMenuController(platform: platform)
-    let actionTarget = FinderMenuActionTarget(controller: controller)
-    let first = try #require(controller.menu(for: .contextualMenuForItems, actionTarget: actionTarget))
-    #expect(first.items.count == MoviePosterAction.allCases.count + 1)
-    #expect(first.items.allSatisfy { $0.target === actionTarget })
-    #expect(controller.menu(for: .contextualMenuForContainer, actionTarget: actionTarget) == .none)
-    for item in first.items {
+    let environment = IsolatedContextMenuEnvironment(repository: fixture.repository, selection: [child])
+    let contextMenuHandler = MovieFolderContextMenuHandler(environment: environment)
+    let actionTarget = ContextMenuActionTarget(contextMenuHandler: contextMenuHandler)
+    let outer = try #require(contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: actionTarget))
+    #expect(outer.items.map(\.title) == ["Movie Folder Posters"])
+    let first = try #require(outer.items.first?.submenu)
+    #expect(first.items.filter { !$0.isSeparatorItem }.count == 8)
+    #expect(first.items.filter { !$0.isSeparatorItem }.allSatisfy { $0.target === actionTarget })
+    #expect(contextMenuHandler.contextMenu(for: .contextualMenuForContainer, actionTarget: actionTarget) == .none)
+    for item in first.items where !item.isSeparatorItem {
       let target = try #require(item.target as? NSObject)
       let action = try #require(item.action)
       #expect(target.responds(to: action))
       _ = target.perform(action, with: item)
     }
-    #expect(platform.opened.map(\.action) == MoviePosterAction.allCases)
-    #expect(platform.inclusionRequests.first?.action == .exclude)
-    #expect(platform.inclusionRequests.first?.folderURL.path == child.path)
-    #expect(platform.opened.allSatisfy { $0.rootID == fixture.directory.id && $0.childName == child.lastPathComponent })
+    #expect(environment.opened.map(\.action) == MoviePosterAction.allCases)
+    #expect(environment.contextMenuInclusionRequests.first?.action == .exclude)
+    #expect(environment.contextMenuInclusionRequests.first?.folderURL.path == child.path)
+    #expect(environment.opened.allSatisfy {
+      $0.rootID == fixture.directory.id && $0.childName == child.lastPathComponent
+    })
     let identity = try FileSystemService().readCurrentState(ofChild: child.lastPathComponent, in: fixture.root).identity
-    #expect(platform.opened.allSatisfy { $0.identity == identity })
+    #expect(environment.opened.allSatisfy { $0.identity == identity })
     let secondChild = try fixture.movie("Dune (2021)")
-    platform.selection = [secondChild]
-    let second = try #require(controller.menu(for: .contextualMenuForItems, actionTarget: actionTarget))
-    controller.openPosterAction(try #require(first.items.first(where: { $0.title.hasPrefix("Movie Poster:") })))
-    #expect(platform.opened.count == MoviePosterAction.allCases.count)
-    controller.openPosterAction(try #require(second.items.first(where: { $0.title.hasPrefix("Movie Poster:") })))
-    #expect(platform.opened.last?.childName == "Dune (2021)")
-    platform.selection = []
-    #expect(controller.menu(for: .contextualMenuForItems, actionTarget: actionTarget) == .none)
-    controller.openPosterAction(try #require(second.items.first(where: { $0.title.hasPrefix("Movie Poster:") })))
-    #expect(platform.opened.count == MoviePosterAction.allCases.count + 1)
+    environment.selection = [secondChild]
+    let secondOuter = try #require(
+      contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: actionTarget))
+    let second = try #require(secondOuter.items.first?.submenu)
+    contextMenuHandler.openContextMenuPosterAction(
+      try #require(first.items.first(where: { $0.title == "Refresh Poster…" })))
+    #expect(environment.opened.count == MoviePosterAction.allCases.count)
+    contextMenuHandler.openContextMenuPosterAction(
+      try #require(second.items.first(where: { $0.title == "Refresh Poster…" })))
+    #expect(environment.opened.last?.childName == "Dune (2021)")
+    environment.selection = []
+    #expect(contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: actionTarget) == .none)
+    contextMenuHandler.openContextMenuPosterAction(
+      try #require(second.items.first(where: { $0.title == "Refresh Poster…" })))
+    #expect(environment.opened.count == MoviePosterAction.allCases.count + 1)
   }
 
   /// Rejects mixed, hidden, nested, and unsupported Finder selections.
@@ -366,18 +384,22 @@ struct FinderIntegrationTests {
     try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
     let file = fixture.root.appendingPathComponent("Movie.mkv")
     try Data().write(to: file)
-    let platform = IsolatedMenuPlatform(repository: fixture.repository, selection: .none)
-    let controller = FinderMenuController(platform: platform)
-    for selection in [.none, [], [movie, hidden], [hidden], [fixture.root], [nested], [file]] as [[URL]?] {
-      platform.selection = selection
-      #expect(controller.menu(for: .contextualMenuForItems, actionTarget: controller) == .none)
+    let environment = IsolatedContextMenuEnvironment(repository: fixture.repository, selection: .none)
+    let contextMenuHandler = MovieFolderContextMenuHandler(environment: environment)
+    for selection in [.none, [], [movie, hidden], [hidden], [nested], [file]] as [[URL]?] {
+      environment.selection = selection
+      #expect(contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: contextMenuHandler) == .none)
     }
-    platform.selection = [movie]
-    #expect(controller.menu(for: .contextualMenuForContainer, actionTarget: controller) == .none)
-    #expect(FinderMenuController(platform: platform, firstMenuTag: Int.max)
-      .menu(for: .contextualMenuForItems, actionTarget: controller) == .none)
+    environment.selection = [fixture.root]
+    let rootMenu = try #require(
+      contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: contextMenuHandler))
+    #expect(rootMenu.items.first?.submenu?.items.map(\.title) == ["Inspect Results…"])
+    environment.selection = [movie]
+    #expect(contextMenuHandler.contextMenu(for: .contextualMenuForContainer, actionTarget: contextMenuHandler) == .none)
+    #expect(MovieFolderContextMenuHandler(environment: environment, firstContextMenuTag: Int.max)
+      .contextMenu(for: .contextualMenuForItems, actionTarget: contextMenuHandler) == .none)
     try fixture.repository.update { $0.directories = [] }
-    #expect(controller.menu(for: .contextualMenuForItems, actionTarget: controller) == .none)
+    #expect(contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: contextMenuHandler) == .none)
   }
 
 }

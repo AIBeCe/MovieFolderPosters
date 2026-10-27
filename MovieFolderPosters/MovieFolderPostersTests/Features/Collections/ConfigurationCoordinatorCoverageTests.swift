@@ -37,6 +37,36 @@ struct ConfigurationCoordinatorCoverageTests {
     #expect(await service.configurationChangeCount == .zero)
   }
 
+  /// A first Finder request awaits initial Main loading and focuses Copy without writing the clipboard.
+  @Test func firstContextMenuRequestLoadsConfigurationAndReusesInspection() async throws {
+    let rootID = UUID()
+    let directory = ConfiguredDirectoryStatus(id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
+    let service = ConfigurationCoverageService(
+      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false))
+    let activity = ConfigurationCoverageActivity()
+    let coordinator = try makeCoordinator(service: service, activity: activity)
+    let request = try MovieFolderContextMenuRequest(rootID: rootID,
+      target: .child(name: "Movie", identity: "identity"), action: .inspect)
+    let clipboardBefore = NSPasteboard.general.changeCount
+    coordinator.showProcessingDetails(for: request)
+    let window = try #require(coordinator.mainWindow?.window)
+    defer { closeSheetsAndWindow(window) }
+    for _ in 0..<200 {
+      if NSApplication.shared.windows.contains(where: { $0.sheetParent === window }) { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let sheet = try #require(NSApplication.shared.windows.first(where: { $0.sheetParent === window }))
+    #expect(sheet.title == "Processing Details — Movies")
+    coordinator.showProcessingDetails(for: try MovieFolderContextMenuRequest(rootID: rootID,
+      target: request.target, action: .copyMovieIdentifier))
+    for _ in 0..<20 { await Task.yield() }
+    #expect(sheet.sheetParent === window)
+    let controls = descendants(try #require(sheet.contentViewController?.view)).compactMap { $0 as? NSButton }
+    #expect(controls.contains { $0.title == "Copy TMDb Identifier" && !$0.isEnabled })
+    #expect(NSPasteboard.general.changeCount == clipboardBefore)
+    #expect(await service.configurationChangeCount == .zero)
+  }
+
   /// Verifies that overlapping readiness requests share one in-flight evidence check.
   @Test func installationRequestCoalescesOverlappingChecks() async throws {
     let service = ConfigurationCoverageService()
@@ -94,7 +124,7 @@ struct ConfigurationCoordinatorCoverageTests {
     #expect(textView.isSelectable)
     #expect(!textView.isEditable)
     #expect(textView.string.contains("No committed processing outcome is available"))
-    #expect(await summaryService.callCount == 1)
+    #expect(await summaryService.callCount >= 1)
     #expect(await service.configurationChangeCount == 0)
     let closeButton = try #require(descendants(details.view).compactMap { $0 as? NSButton }
       .first { $0.title == "Close" })

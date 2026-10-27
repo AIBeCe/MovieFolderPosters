@@ -20,6 +20,10 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   private let summaries: CollectionSummaryViewModel
   /// Shared authoritative poster action boundary.
   private let retryService: any CollectionRetryServicing
+  /// Independent read-only Finder utility boundary.
+  private let utilityService: any MovieFolderFinderActionServicing
+  /// Required platform adapter retained independently of weak UI delegates.
+  private let utilityPlatform: any MovieFolderUtilityPlatform
   /// Retains the running task until its service call has actually unwound.
   private var operation: Task<Void, Never>?
   /// Invalidates UI effects from responses predating cancellation or configuration changes.
@@ -98,10 +102,14 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   ///   - rootID: Stable configured root for this sheet.
   ///   - summaries: Shared read-only summary publisher.
   ///   - retryService: Shared service that rechecks every authoritative change gate.
-  init(rootID: UUID, summaries: CollectionSummaryViewModel, retryService: any CollectionRetryServicing) {
+  init(rootID: UUID, summaries: CollectionSummaryViewModel, retryService: any CollectionRetryServicing,
+       utilityService: any MovieFolderFinderActionServicing = MovieFolderFinderActionService(),
+       utilityPlatform: any MovieFolderUtilityPlatform = SystemMovieFolderUtilityPlatform()) {
     self.rootID = rootID
     self.summaries = summaries
     self.retryService = retryService
+    self.utilityService = utilityService
+    self.utilityPlatform = utilityPlatform
     summaries.addDelegate(self)
     updateRows()
   }
@@ -109,6 +117,8 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// Replaces selection using the current row evidence.
   /// - Parameter indexes: User-selected rows in the current table.
   func selectRows(_ indexes: IndexSet) {
+    guard !isBusy else { return }
+
     selection = Set(indexes.filter { rows.indices.contains($0) }.map { key(for: rows[$0]) })
     publish()
   }
@@ -159,6 +169,40 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
       operation = .none
       isCancelling = false
       publish()
+    }
+    publish()
+  }
+
+  /// Reveal accepts stale saved outcomes but requires every captured visible identity.
+  var canRevealSelected: Bool {
+    !isBusy && !configurationIsInvalidated && (1...32).contains(selectedFolders.count)
+      && selectedFolders.allSatisfy { request(for: $0, action: .view) != .none }
+  }
+
+  /// Captures the whole visible selection in natural display order before asynchronous validation.
+  func revealSelected() {
+    guard canRevealSelected else { return }
+    let selected = selectedFolders
+    let selections = selected.map {
+      MovieFolderContextMenuRequest.Target.child(name: $0.name, identity: $0.identity ?? "")
+    }
+    let expectedGeneration = generation
+    operation = Task { [weak self] in
+      guard let self else { return }
+      defer { operation = .none; isCancelling = false; publish() }
+      do {
+        let effect = try await utilityService.prepareReveal(rootID: rootID, selections: selections)
+
+        guard !Task.isCancelled, generation == expectedGeneration else { return }
+
+        try effect.perform(using: utilityPlatform)
+        statusMessage = "Selected folders revealed in Finder."
+      } catch {
+        if !Task.isCancelled, generation == expectedGeneration {
+          statusMessage = (error as? MovieFolderUtilityError)?.errorDescription
+            ?? "Selected folders could not all be verified. Reload and try again."
+        }
+      }
     }
     publish()
   }
@@ -291,7 +335,8 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
       return
     }
     if !evidenceAllowsActions {
-      statusMessage = "Saved evidence is stale, unavailable, or busy. Actions require current results."
+      statusMessage = "Saved evidence is stale, unavailable, or busy. Choose Movie and Retry require current results. "
+        + "Reveal Selected revalidates the selected folders before opening Finder."
     } else if summary.processingState?.isInventoryComplete != true {
       statusMessage = "Saved inventory is incomplete. Only recorded unresolved folders are shown; outcome is unknown."
     } else if recordedUnresolvedFolderCount > .zero && rows.isEmpty {
