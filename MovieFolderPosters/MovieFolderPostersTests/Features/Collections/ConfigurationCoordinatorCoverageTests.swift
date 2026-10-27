@@ -40,7 +40,8 @@ struct ConfigurationCoordinatorCoverageTests {
   /// A first Finder request awaits initial Main loading and focuses Copy without writing the clipboard.
   @Test func firstContextMenuRequestLoadsConfigurationAndReusesInspection() async throws {
     let rootID = UUID()
-    let directory = ConfiguredDirectoryStatus(id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
+    let directory = ConfiguredDirectoryStatus(
+      id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
     let service = ConfigurationCoverageService(
       summary: ConfigurationSummary(directories: [directory], credentialConfigured: false))
     let activity = ConfigurationCoverageActivity()

@@ -125,7 +125,8 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   private func render() {
     guard isViewLoaded else { return }
 
-    detailsView.string = (viewModel?.currentStatus ?? "") + "\n\n" + reportText + "\n" + (viewModel?.statusMessage ?? "")
+    detailsView.string = (viewModel?.currentStatus ?? "") + "\n\n" + reportText
+      + "\n" + (viewModel?.statusMessage ?? "")
     copyTitleButton.isEnabled = viewModel?.canCopy(.copyMovieTitle) ?? false
     copyIdentifierButton.isEnabled = viewModel?.canCopy(.copyMovieIdentifier) ?? false
     if requestedFocus == .copyMovieTitle, copyTitleButton.isEnabled {
@@ -144,7 +145,8 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   /// Formats the processing state's committed run and per-folder evidence for display.
   private var reportText: String {
     guard let processingState = summary.processingState else {
-      return summary.readFailureMessage ?? "No committed processing outcome is available for this target. Outcome is unknown."
+      return summary.readFailureMessage
+        ?? "No committed processing outcome is available for this target. Outcome is unknown."
     }
     var lines = [
       "Collection: \(collectionName)",

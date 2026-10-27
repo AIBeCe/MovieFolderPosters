@@ -81,21 +81,39 @@ final class MovieFolderContextMenuHandler: NSObject {
   ///   - actionTarget: The principal object that receives Finder's menu action.
   func contextMenu(for menuKind: FIMenuKind, actionTarget: AnyObject) -> NSMenu? {
     guard menuKind == .contextualMenuForItems else { return .none }
+
     contextMenuPosterRequests.removeAll()
     contextMenuInclusionRequests.removeAll()
     contextMenuRequests.removeAll()
 
     guard let selection = selectedContextMenuTarget(), nextContextMenuTag < Int.max - 10 else { return .none }
+
     let menu = NSMenu(title: "Movie Folder Posters")
     let submenu = NSMenu(title: "Movie Folder Posters")
     let group = NSMenuItem(title: "Movie Folder Posters", action: .none, keyEquivalent: "")
     group.submenu = submenu
     menu.addItem(group)
+    addContextMenuRequestItems(for: selection, actionTarget: actionTarget, to: submenu)
+    if case .child(let name, let identity) = selection.target {
+      addChildContextMenuItems(rootID: selection.rootID, name: name, identity: identity,
+        actionTarget: actionTarget, to: submenu)
+    }
+
+    return menu
+  }
+
+  /// Adds the inspection and Copy routes available for the selected collection target.
+  private func addContextMenuRequestItems(
+    for selection: MovieFolderContextMenuRequest,
+    actionTarget: AnyObject,
+    to submenu: NSMenu
+  ) {
     let actions: [MovieFolderContextMenuAction] = selection.target == .collection ? [.inspect]
       : MovieFolderContextMenuAction.allCases
     for action in actions {
       guard let request = try? MovieFolderContextMenuRequest(
         rootID: selection.rootID, target: selection.target, action: action) else { continue }
+
       let item = NSMenuItem(title: action.title,
         action: #selector(FinderSync.openContextMenuRequest(_:)), keyEquivalent: "")
       item.target = actionTarget
@@ -104,35 +122,42 @@ final class MovieFolderContextMenuHandler: NSObject {
       contextMenuRequests[item.tag] = request
       submenu.addItem(item)
     }
-    if case .child(let name, let identity) = selection.target {
-      submenu.addItem(.separator())
-      for action in MoviePosterAction.allCases {
-        let item = NSMenuItem(title: action.title,
-          action: #selector(FinderSync.openContextMenuPosterAction(_:)), keyEquivalent: "")
-        item.target = actionTarget
-        item.tag = nextContextMenuTag
-        nextContextMenuTag += 1
-        contextMenuPosterRequests[item.tag] = MoviePosterRequest(rootID: selection.rootID,
-          childName: name, identity: identity, action: action)
-        submenu.addItem(item)
-      }
-      if let directory = try? environment.configurationRepository().read().directories.first(where: {
-        $0.id == selection.rootID
-      }) {
-        submenu.addItem(.separator())
-        let excluded = directory.processingConfiguration.excludesFolder(identity: identity)
-        let item = NSMenuItem(title: excluded ? "Include Folder…" : "Ignore Folder…",
-          action: #selector(FinderSync.openContextMenuInclusionAction(_:)), keyEquivalent: "")
-        item.target = actionTarget
-        item.tag = nextContextMenuTag
-        nextContextMenuTag += 1
-        contextMenuInclusionRequests[item.tag] = MovieFolderInclusionRequest(action: excluded ? .include : .exclude,
-          collectionID: directory.id, folderURL: URL(fileURLWithPath: directory.path).appendingPathComponent(name),
-          folderIdentity: identity, expectedProcessingConfigurationRevision: directory.processingConfiguration.revision)
-        submenu.addItem(item)
-      }
+  }
+
+  /// Adds existing poster and inclusion commands for one captured immediate child.
+  private func addChildContextMenuItems(
+    rootID: UUID, name: String, identity: String, actionTarget: AnyObject, to submenu: NSMenu
+  ) {
+    submenu.addItem(.separator())
+    for action in MoviePosterAction.allCases {
+      let item = NSMenuItem(title: action.title,
+        action: #selector(FinderSync.openContextMenuPosterAction(_:)), keyEquivalent: "")
+      item.target = actionTarget
+      item.tag = nextContextMenuTag
+      nextContextMenuTag += 1
+      contextMenuPosterRequests[item.tag] = MoviePosterRequest(
+        rootID: rootID, childName: name, identity: identity, action: action)
+      submenu.addItem(item)
     }
-    return menu
+
+    guard let directory = try? environment.configurationRepository().read().directories.first(where: {
+      $0.id == rootID
+    }) else { return }
+
+    submenu.addItem(.separator())
+    let excluded = directory.processingConfiguration.excludesFolder(identity: identity)
+    let item = NSMenuItem(title: excluded ? "Include Folder…" : "Ignore Folder…",
+      action: #selector(FinderSync.openContextMenuInclusionAction(_:)), keyEquivalent: "")
+    item.target = actionTarget
+    item.tag = nextContextMenuTag
+    nextContextMenuTag += 1
+    contextMenuInclusionRequests[item.tag] = MovieFolderInclusionRequest(
+      action: excluded ? .include : .exclude,
+      collectionID: directory.id,
+      folderURL: URL(fileURLWithPath: directory.path).appendingPathComponent(name),
+      folderIdentity: identity,
+      expectedProcessingConfigurationRevision: directory.processingConfiguration.revision)
+    submenu.addItem(item)
   }
 
   /// Hands the validated Finder menu request to the installed host application.
@@ -140,10 +165,12 @@ final class MovieFolderContextMenuHandler: NSObject {
   /// - Parameter sender: The context-menu item carrying a previously validated request tag.
   @objc func openContextMenuPosterAction(_ sender: NSMenuItem) {
     logger.notice("Poster action requested; tag=\(sender.tag), payload=\(sender.representedObject != nil)")
+
     guard let request = contextMenuPosterRequests[sender.tag] else {
       logger.error("Poster menu request expired")
       return
     }
+
     // The host revalidates this captured folder identity before every action, including the final write.
     environment.open(request)
   }
@@ -169,6 +196,7 @@ final class MovieFolderContextMenuHandler: NSObject {
       let url = selected.first, !url.lastPathComponent.hasPrefix("."),
       let configuration = try? environment.configurationRepository().read()
     else { return .none }
+
     let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
     for directory in configuration.directories {
       guard !configuration.findOverlappingDirectoryIDs().contains(directory.id) else { continue }

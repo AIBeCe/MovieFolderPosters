@@ -34,6 +34,10 @@ nonisolated public struct MovieFolderContextMenuRequest: Sendable, Equatable {
   public let action: MovieFolderContextMenuAction
 
   /// Validates bounded evidence and collection-only inspection.
+  /// - Parameters:
+  ///   - rootID: Configured collection whose authorization the host must revalidate.
+  ///   - target: Collection or visible immediate child with captured filesystem identity.
+  ///   - action: Inspection or a Copy button to focus; collection targets permit inspection only.
   /// - Throws: `MovieFolderContextMenuRequestError.invalidRequest` for unsupported evidence or combinations.
   public init(rootID: UUID, target: Target, action: MovieFolderContextMenuAction) throws {
     switch target {
@@ -54,6 +58,7 @@ nonisolated public struct MovieFolderContextMenuRequest: Sendable, Equatable {
   }
 
   /// Decodes only the exact results route and target-specific fields.
+  /// - Parameter url: Results URL containing only root/action or root/action/child/identity fields.
   /// - Throws: `MovieFolderContextMenuRequestError.invalidRequest` for malformed or unexpected input.
   public init(url: URL) throws {
     guard url.absoluteString.utf8.count <= 4_096,
@@ -66,11 +71,13 @@ nonisolated public struct MovieFolderContextMenuRequest: Sendable, Equatable {
       Set(items.map(\.name)) == ["root", "action"]
         || Set(items.map(\.name)) == ["root", "action", "child", "identity"]
     else { throw MovieFolderContextMenuRequestError.invalidRequest }
+
     let fields = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
 
     guard let rootID = UUID(uuidString: fields["root"] ?? ""),
       let action = MovieFolderContextMenuAction(rawValue: fields["action"] ?? "")
     else { throw MovieFolderContextMenuRequestError.invalidRequest }
+
     let target: Target
     if let child = fields["child"], let identity = fields["identity"] {
       target = .child(name: child, identity: identity)
@@ -81,6 +88,7 @@ nonisolated public struct MovieFolderContextMenuRequest: Sendable, Equatable {
   }
 
   /// Encodes the validated request within the complete URL byte limit.
+  /// - Returns: A results presentation URL of at most 4,096 UTF-8 bytes; opening it never performs Copy.
   /// - Throws: `MovieFolderContextMenuRequestError.invalidRequest` when URL encoding exceeds the bound.
   public func makeURL() throws -> URL {
     var components = URLComponents()

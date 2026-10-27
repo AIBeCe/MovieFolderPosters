@@ -98,7 +98,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     let container = try environment.containerURL()
     let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
     let repository = try environment.configurationRepository()
-    let processingVerifier = FinderCollectionConfigurationVerifier(repository: repository, configuration: configuration, roots: roots)
+    let processingVerifier = FinderCollectionConfigurationVerifier(
+      repository: repository, configuration: configuration, roots: roots)
     for (url, root) in roots {
       let movieMetadataProvider = try environment.movieMetadataProvider(
         token: token, configuration: configuration, collectionID: root.directory.id)

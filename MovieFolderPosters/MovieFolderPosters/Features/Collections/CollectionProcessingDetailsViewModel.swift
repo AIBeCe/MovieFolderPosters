@@ -60,9 +60,12 @@ final class CollectionProcessingDetailsViewModel: CollectionSummaryViewModelDele
   func copy(_ action: MovieFolderContextMenuAction) {
     guard !isBusy, let copyRequest = try? MovieFolderContextMenuRequest(
       rootID: request.rootID, target: request.target, action: action) else { return }
+
     let expectedGeneration = generation
     operation = Task { [weak self] in
+
       guard let self else { return }
+
       defer { operation = .none; publish() }
       do {
         let effect = try await utilities.prepareCopy(copyRequest)
@@ -96,7 +99,9 @@ final class CollectionProcessingDetailsViewModel: CollectionSummaryViewModelDele
     summaries.reload()
     let expectedGeneration = generation
     Task { [weak self] in
+
       guard let self else { return }
+
       do {
         let status = try await utilities.inspectionStatus(request)
 

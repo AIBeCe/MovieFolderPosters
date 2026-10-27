@@ -92,11 +92,13 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
     defer { withExtendedLifetime((root, access)) {} }
 
     guard configuration == root.configuration else { throw MovieFolderUtilityError.changed }
+
     var status = "Current collection: " + (root.directory.processingConfiguration.isPaused ? "Paused" : "Active")
     if case .child(let name, let identity) = request.target {
       let child = try FileSystemService().readCurrentState(ofChild: name, in: root.root)
 
       guard child.identity == identity else { throw MovieFolderUtilityError.changed }
+
       status += root.directory.processingConfiguration.excludesFolder(identity: identity)
         ? "; folder excluded" : "; folder included"
     }
@@ -109,6 +111,7 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
     guard request.action != .inspect, case .child(let name, let identity) = request.target else {
       throw MovieFolderUtilityError.invalidSelection
     }
+
     let prepared = try await prepare(rootID: request.rootID)
     let child = try FileSystemService().readCurrentState(ofChild: name, in: prepared.authorization.root)
     let state = try environment.makeCollectionProcessingStore().read(rootID: request.rootID)
@@ -119,6 +122,7 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
       let record = state.folders.first(where: { $0.name == name && $0.identity == identity }),
       let verified = VerifiedMovieDetails(record: record)
     else { throw MovieFolderUtilityError.unverified }
+
     let text: String
     switch request.action {
     case .copyMovieTitle:
@@ -143,6 +147,7 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
     let state = try environment.makeCollectionProcessingStore().read(rootID: rootID)
 
     guard let state else { throw MovieFolderUtilityError.unavailable }
+
     let summary = CollectionProcessingSummary(processingState: state,
       presentation: CollectionProcessingPresentation(processingState: state), counts: state.calculateCounts(),
       displayState: .stale)
@@ -153,6 +158,7 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
         (try? MovieFolderContextMenuRequest(rootID: rootID, target: selection, action: .inspect)) != .none,
         unresolved.contains(where: { $0.name == name && $0.identity == identity })
       else { throw MovieFolderUtilityError.changed }
+
       let child = try FileSystemService().readCurrentState(ofChild: name, in: prepared.authorization.root)
 
       guard child.identity == identity else { throw MovieFolderUtilityError.changed }
@@ -169,12 +175,14 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
   /// Acquires final access without using mutation policy or holding record access across suspension.
   private func prepare(rootID: UUID) async throws -> PreparedMovieFolderUtility {
     let authorization = try await MovieFolderAuthorization(environment: environment).acquire(rootID: rootID)
-    let locks = try PersistenceStore(directory: environment.appGroupContainerURL().appendingPathComponent("ProcessingLocks"))
+    let locks = try PersistenceStore(
+      directory: environment.appGroupContainerURL().appendingPathComponent("ProcessingLocks"))
 
     guard let coordination = try locks.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: authorization.root)) else {
       throw MovieFolderUtilityError.unavailable
     }
+
     let (configuration, access) = try environment.makeConfigurationRepository().readHoldingAccess()
 
     guard configuration == authorization.configuration,

@@ -305,7 +305,8 @@ struct CollectionResultsViewModelTests {
   /// Reveal captures exactly selected visible rows in natural order, including stale outcome evidence.
   @Test func revealUsesExactNaturalSelectionAndRejectsIdentitylessRows() async {
     let rootID = UUID()
-    let source = ResultsSummarySource(rootID: rootID, folders: [folder("Movie 10"), folder("Movie 2"), folder("Movie 1")])
+    let source = ResultsSummarySource(
+      rootID: rootID, folders: [folder("Movie 10"), folder("Movie 2"), folder("Movie 1")])
     await source.set(displayState: .stale)
     let summaries = CollectionSummaryViewModel(service: source)
     summaries.reload()

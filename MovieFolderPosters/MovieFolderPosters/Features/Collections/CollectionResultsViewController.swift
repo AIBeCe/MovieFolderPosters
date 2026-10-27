@@ -32,6 +32,10 @@ final class CollectionResultsViewController: NSViewController {
   private let retryButton = NSButton(title: "Retry Selected", target: .none, action: .none)
   /// Reveals exactly the captured visible selection.
   private let revealButton = NSButton(title: "Reveal Selected in Finder", target: .none, action: .none)
+  /// Reloads saved outcome evidence.
+  private let reloadButton = NSButton(title: "Reload", target: .none, action: .none)
+  /// Closes the results sheet.
+  private let doneButton = NSButton(title: "Done", target: .none, action: .none)
   /// Cancels the currently owned retry task.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
   /// Dismisses the results sheet independently of the action footer.
@@ -51,10 +55,23 @@ final class CollectionResultsViewController: NSViewController {
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-  /// Builds a selectable four-column evidence table and explicit action buttons.
+  /// Builds a selectable evidence table with filters and explicit action buttons.
   override func loadView() {
     view = NSView()
     preferredContentSize = NSSize(width: 850, height: 460)
+    configureTable()
+    let filters = makeFilterStack()
+    let scrollView = makeScrollView()
+    configureStatusLabel()
+    let actions = makeActionStack()
+    addContent(filters: filters, scrollView: scrollView, actions: actions)
+    configureLayout(filters: filters, scrollView: scrollView, actions: actions)
+    configureKeyboardNavigation()
+    render()
+  }
+
+  /// Connects the table to this controller and installs its fixed evidence columns.
+  private func configureTable() {
     tableView.allowsMultipleSelection = true
     tableView.allowsEmptySelection = true
     tableView.usesAlternatingRowBackgroundColors = true
@@ -63,6 +80,10 @@ final class CollectionResultsViewController: NSViewController {
     tableView.dataSource = self
     tableView.setAccessibilityLabel("Unresolved collection folders")
     configureColumns()
+  }
+
+  /// Creates the saved-state and saved-reason filters above the table.
+  private func makeFilterStack() -> NSStackView {
     processingStateFilterPopUpButton.addItems(withTitles:
       ["All states"] + FolderProcessingState.allCases.map(\.displayDescription))
     processingReasonFilterPopUpButton.addItems(withTitles:
@@ -76,13 +97,29 @@ final class CollectionResultsViewController: NSViewController {
     let filters = NSStackView(views: [NSTextField(labelWithString: "State:"), processingStateFilterPopUpButton,
       NSTextField(labelWithString: "Reason:"), processingReasonFilterPopUpButton])
     filters.spacing = 8
+
+    return filters
+  }
+
+  /// Creates a scroll viewport whose document is the results table.
+  private func makeScrollView() -> NSScrollView {
     let scrollView = NSScrollView()
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = true
     scrollView.borderType = .bezelBorder
     scrollView.documentView = tableView
+
+    return scrollView
+  }
+
+  /// Applies an accessible label and lets the status message use its full height.
+  private func configureStatusLabel() {
     statusLabel.setAccessibilityLabel("Collection results status")
     statusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+  }
+
+  /// Configures the explicit actions available beneath the results table.
+  private func makeActionStack() -> NSStackView {
     chooseButton.target = self
     chooseButton.action = #selector(chooseMovie)
     revealButton.target = self
@@ -92,16 +129,28 @@ final class CollectionResultsViewController: NSViewController {
     cancelButton.target = self
     cancelButton.action = #selector(cancel)
     configureCloseButton()
-    let reloadButton = NSButton(title: "Reload", target: self, action: #selector(reload))
-    let doneButton = NSButton(title: "Done", target: self, action: #selector(done))
+    reloadButton.target = self
+    reloadButton.action = #selector(reload)
+    doneButton.target = self
+    doneButton.action = #selector(done)
     doneButton.keyEquivalent = "\r"
     let actions = NSStackView(views: [chooseButton, retryButton, revealButton, cancelButton, reloadButton, doneButton])
     actions.orientation = .horizontal
     actions.spacing = 8
+
+    return actions
+  }
+
+  /// Adds each configured surface to the results window.
+  private func addContent(filters: NSStackView, scrollView: NSScrollView, actions: NSStackView) {
     for child in [closeButton, filters, scrollView, statusLabel, actions] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
     }
+  }
+
+  /// Positions the close control, filters, status, table, and action row.
+  private func configureLayout(filters: NSStackView, scrollView: NSScrollView, actions: NSStackView) {
     NSLayoutConstraint.activate([
       closeButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
       closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
@@ -119,14 +168,18 @@ final class CollectionResultsViewController: NSViewController {
       actions.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       actions.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
     ])
+  }
+
+  /// Follows the native keyboard focus order through filters, rows, actions, and Close.
+  private func configureKeyboardNavigation() {
     let keyboardControls: [NSView] = [processingStateFilterPopUpButton, processingReasonFilterPopUpButton,
       tableView, chooseButton, retryButton, revealButton, cancelButton, reloadButton, doneButton, closeButton]
     for (current, next) in zip(keyboardControls, keyboardControls.dropFirst() + [processingStateFilterPopUpButton]) {
       current.nextKeyView = next
     }
-    render()
   }
 
+  /// Requests validation and reveal of the currently selected unresolved folders.
   @objc private func revealSelected() { viewModel.revealSelected() }
 
   /// Connects the independent sheet dismissal control and its Escape key equivalent.

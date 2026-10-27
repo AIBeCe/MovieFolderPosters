@@ -182,13 +182,16 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   /// Captures the whole visible selection in natural display order before asynchronous validation.
   func revealSelected() {
     guard canRevealSelected else { return }
+
     let selected = selectedFolders
     let selections = selected.map {
       MovieFolderContextMenuRequest.Target.child(name: $0.name, identity: $0.identity ?? "")
     }
     let expectedGeneration = generation
     operation = Task { [weak self] in
+
       guard let self else { return }
+
       defer { operation = .none; isCancelling = false; publish() }
       do {
         let effect = try await utilityService.prepareReveal(rootID: rootID, selections: selections)

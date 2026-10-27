@@ -1,7 +1,7 @@
 # Finder result utilities — R110-04
 
-Status: Initial implementation reviewed on 2026-10-27; approved naming corrections have been applied.
-Awaiting user approval of the Implementation Phase; no commit or formal Validation Phase is authorized yet.
+Status: Implementation approved and committed as `e2cf2eb` on 2026-10-27.
+The user explicitly authorized issue-scoped Validation Phase; validation corrections remain uncommitted for review.
 Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/13
 Branch: `feature/finder-result-utilities`, based on `develop` at `b59be2b`.
 
@@ -10,7 +10,7 @@ Branch: `feature/finder-result-utilities`, based on `develop` at `b59be2b`.
 The user approved the initial implementation and subsequently reviewed naming point by point. The approved
 shared names are `MovieFolderContextMenuAction` and `MovieFolderContextMenuRequest`. Approval authorizes implementation and focused coherence
 checks only. Do not commit, merge, push, close the issue, register an extension, or start formal Validation Phase.
-Formal Validation Phase requires separate authorization and includes verification, issue-scoped tests, SwiftLint,
+Formal Validation Phase was separately authorized and includes verification, issue-scoped tests, SwiftLint,
 and Swift style review. Implementation review is required; preserve the same Worker and Reviewer through fixes.
 
 ## Approved design
@@ -162,7 +162,8 @@ the exact approved behavior, scope, lifetime/fencing, and naming are preserved.
 - [x] Run directly affected Common request, Finder integration, host utilities/collections/coordinator and poster
   regression suites; capture logs and concise counts. Use existing harnesses with test filters. No full project suite.
 - [x] Complete independent review and resolve all Critical/Important findings with the same Worker/Reviewer pair.
-- [x] Record implementation evidence, limitations, and remaining formal/native checks here; stop before commit.
+- [x] Record implementation evidence, limitations, and remaining formal/native checks here.
+- [x] Commit implementation after explicit Implementation Phase approval (`e2cf2eb`).
 
 ## Review focus
 
@@ -209,12 +210,12 @@ every new behavior.
 - Swift style was applied during implementation/review. The final wording received an apple-design writing
   component review. Neither substitutes for formal style validation or actual rendered UI inspection.
 
-The implementation is uncommitted on `feature/finder-result-utilities`. Unrelated `.DS_Store`, Xcode user data,
-and MovieFolderParsing `.swiftpm` files remain preserved. No build-system/project-file changes were required:
-the synchronized host group and existing harness discover the new feature/test folders automatically.
+The approved implementation is committed on `feature/finder-result-utilities`. Unrelated `.DS_Store`, Xcode user data,
+and MovieFolderParsing `.swiftpm` files remain preserved. The Xcode project references the renamed contextual-menu
+handler; the synchronized host group and existing harness discover the new feature/test folders automatically.
 
-Formal validation, SwiftLint, native Finder registration, and live provider runs have not been performed for
-R110-04. Native Finder-to-host activation, clipboard behavior, keyboard/VoiceOver, and Finder selection require
+Formal validation and SwiftLint evidence are recorded below. Native Finder registration and live provider runs
+have not been performed for R110-04. Native Finder-to-host activation, clipboard behavior, keyboard/VoiceOver, and Finder selection require
 separate recorded observations and are not implied by automated results.
 
 ## Approved naming corrections — 2026-10-27
@@ -240,8 +241,9 @@ Reveal remains an Unresolved Results action; Copy still requires an explicit Pro
 The existing native Copy/Reveal adapter remains a distinct boundary; the contextual-menu handler does not
 perform clipboard writes or reveal selected results.
 
-Compilation and reference checks are focused implementation checks. Formal Validation Phase, unit test execution,
-SwiftLint, native UI qualification, and commits still require the corresponding lifecycle authorization.
+Compilation and reference checks were focused implementation checks. The later Implementation Phase approval
+authorized its commit, and Validation Phase was explicitly authorized. Validation corrections require user review
+before their commit; final integration still requires the feature-completion instruction.
 
 Implementation check results for the naming correction: Debug host app and Finder extension compilation succeeded
 with `CODE_SIGNING_ALLOWED=NO`; log: `/private/tmp/R110-04-naming-build.log`. The first sandboxed attempt could not
@@ -249,4 +251,85 @@ write the existing SwiftPM/Xcode caches; compilation succeeded when cache access
 searches found no remaining superseded request, menu controller/platform, or Finder inspection routing names.
 Independent naming/selector/target-membership review found no semantic issues; naming-expanded long lines were
 wrapped. `git diff --check` passed. These checks do not establish clipboard, Finder, accessibility, or runtime
-qualification. No tests or SwiftLint were run for this correction, and no commit was created.
+qualification. No tests or SwiftLint were run during the naming correction itself. The later approved implementation
+commit is `e2cf2eb`; formal validation follows below.
+
+## Validation Phase — 2026-10-27
+
+The user approved the implementation and explicitly requested validation. The implementation commit is
+`e2cf2eb614347d3cb146529291ed4f8280eb697a` on `feature/finder-result-utilities`. Validation corrections below remain
+uncommitted pending user approval; no merge or push is authorized.
+
+| Required activity | Result | Evidence |
+| --- | --- | --- |
+| Verification | PASS for reviewed behavior and automated integration; no blocking findings | Independent review of request/menu naming, inspection, Copy/Reveal admission, retained access, cancellation and sheet routing |
+| Unit testing | PASS: 80 tests in 6 host/Finder suites plus 2 Common request tests; no failures or skips | `/private/tmp/R110-04-validation-host-final.log`, `/private/tmp/R110-04-validation-common-final.log` |
+| SwiftLint | Initial run: 0 errors, 9 warnings; follow-up after fixes: 0 warnings and 0 errors | SwiftLint 0.65.1, repository `.swiftlint.yml`; final report `/private/tmp/R110-04-all-warnings-final.json` |
+| Swift style guide | PASS after required corrections; independent re-review found no unresolved issue-added deviations | Installed `swift-style-guide` skill and its reference; current corrections preserve behavior |
+
+The six application suites were `FinderIntegrationTests`, `MovieFolderFinderActionServiceTests`,
+`CollectionResultsViewModelTests`, `CollectionUnresolvedResultsTests`, `ConfigurationCoordinatorCoverageTests`,
+and `MoviePosterActionServiceTests`. The Common suite was `MovieFolderContextMenuRequestTests`. Only these
+issue-related suites ran; the application harness compiles other test sources as part of preparing the filtered
+run. Compiler warnings concern pre-existing weak-variable mutability and unused results/values in test code,
+including unchanged lines in Finder integration tests. The final Common run emitted no compiler warnings.
+
+Validation corrected issue-added long lines, sorted imports, required guard/final-return blank-line spacing, and
+missing public request/test/helper documentation. No behavior, safety fence, concurrency contract, lint rule or
+threshold changed. `git diff --check` passed.
+
+### Initial lint findings and cleanup
+
+The first scoped run had nine warnings. The user asked for all to be fixed. The warning list below records the
+initial findings and their resolution; no warning remains in the final scoped run.
+
+Lint used `--use-script-input-files --no-cache --reporter json` with the 21 changed Swift paths and the repository
+configuration. A separate parent-commit run established pre-existing findings:
+`/private/tmp/R110-04-validation-swiftlint-baseline.json`. Eight remaining warnings are pre-existing:
+
+- `CollectionResultsViewController.loadView`: function length, 70 → 72 relevant lines.
+- `ConfigurationCoordinator`: file length, 505 → 555 relevant lines; existing statement positioning.
+- `FinderIntegrationTests`: file length, 619 → 640 relevant lines; existing 121-character line.
+- `MoviePosterActionService`: actor length improved from 329 → 301 relevant lines; existing 131-character line.
+- `FinderSync`: existing 134-character line.
+
+The ninth warning is new: `MovieFolderContextMenuHandler.contextMenu` contains 52 relevant lines against the
+50-line warning threshold. It performs one cohesive menu-construction operation. The repository configuration
+explicitly treats complexity metrics as indicators and rejects splitting solely to meet thresholds; review
+accepted this warning without adding a layer or weakening the rule.
+
+### Unperformed native qualification
+
+No extension was registered and no live provider request was made. Native Finder-to-host activation, actual
+clipboard/Finder selection, rendered layout, Light/Dark appearance, keyboard and VoiceOver interaction remain
+unobserved. Authorization/access lifetime is supported by code review and injected-effect tests, not by native
+sandbox qualification. Automated results do not establish these native checks.
+
+## SwiftLint warning cleanup — 2026-10-27
+
+The user requested correction of all nine warnings from the issue-scoped SwiftLint run, including findings present
+in files modified for R110-04. The fixes were made without disabling or changing lint rules:
+
+- Split the unresolved-results view setup into table, filter, action, layout, and keyboard-navigation methods.
+- Split contextual-menu request and child-command construction into focused handler methods.
+- Moved processor composition into a same-file private extension to keep the poster-action actor cohesive and below
+  its configured type-body warning threshold.
+- Moved collection setup/edit delegate flows into `ConfigurationCoordinator+CollectionFlows.swift`, preserving
+  file-scoped implementation access with `fileprivate` where the adjacent file needs it. The application source
+  tree is Xcode synchronized, so the new file participates in the host target.
+- Moved shared Finder integration test fixtures into `FinderIntegrationFixtures.swift`; the application test
+  harness copies every Swift source in the Finder test directory.
+- Wrapped remaining overlong statements and corrected statement/whitespace layout.
+
+The follow-up SwiftLint run used the repository `.swiftlint.yml`, version 0.65.1, and file-scoped inputs for all
+18 changed/new Swift files: **0 warnings and 0 errors**. The final focused host tests passed 80 tests in 6 suites;
+the Common request suite passed 2 tests in 1 suite. The app and Finder extension Debug build succeeded. The final
+independent behavior and Swift style review passed. Report: `/private/tmp/R110-04-all-warnings-final.json`.
+`git diff --check` passed. No lint configuration or thresholds were changed.
+
+All nine initial warnings are fixed. Final checks on this tree: 80 host tests across 6 suites and 2 Common request
+tests passed, no failures or skips; app and Finder extension Debug build succeeded; SwiftLint completed with 0
+findings across 18 changed/new Swift files; reviewer PASS; `git diff --check` passed. Compiler warnings were
+limited to pre-existing weak-variable and unused-result diagnostics in test sources; the Common final run emitted
+none. The validation corrections and this record are uncommitted pending user approval. Native Finder activation,
+clipboard/Finder effects, and rendered accessibility checks remain unobserved.

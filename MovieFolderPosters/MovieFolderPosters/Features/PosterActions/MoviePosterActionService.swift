@@ -536,7 +536,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
       processingConfigurationRevision: context.directory.processingConfiguration.revision)
   }
+}
 
+private extension MoviePosterActionService {
   /// Creates a processor bound to the request's persistence and change context.
   ///
   /// - Parameters:
@@ -544,7 +546,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - movieMetadataProvider: The metadata provider used for this operation.
   /// - Returns: A processor configured for the current poster appearance.
   /// - Throws: A storage or configuration error when processor dependencies are unavailable.
-  private func makeProcessor(
+  func makeProcessor(
     for context: AuthorizedRoot,
     movieMetadataProvider: any MovieMetadataProvider
   ) throws -> MovieFolderProcessor {
@@ -598,7 +600,9 @@ nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFol
   /// - Parameter processor: Processor requesting permission to mutate the captured root.
   /// - Returns: The configuration access retained through change.
   /// - Throws: Configuration access failures or an action error if the root identity changed.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     let persistenceAccess = try repository.configurationAccessForIconChange(
       for: directory, childIdentity: candidate.identity, requiresActiveCollection: change != .posterRemoval,
       expectedConfiguration: configuration)

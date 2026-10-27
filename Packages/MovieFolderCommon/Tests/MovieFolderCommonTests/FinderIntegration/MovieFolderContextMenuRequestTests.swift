@@ -1,9 +1,10 @@
 import Foundation
-import Testing
 @testable import MovieFolderCommon
+import Testing
 
 /// Validates bounded read-only Finder presentation routes.
 struct MovieFolderContextMenuRequestTests {
+  /// Preserves root and child evidence while rejecting collection Copy requests.
   @Test func roundTripsCollectionAndChild() throws {
     let root = UUID()
     for action in MovieFolderContextMenuAction.allCases {
@@ -18,6 +19,7 @@ struct MovieFolderContextMenuRequestTests {
     }
   }
 
+  /// Rejects invalid names and unexpected, duplicate, or incomplete URL fields.
   @Test func rejectsMalformedEvidenceAndRoutes() throws {
     let root = UUID()
     for child in ["", ".hidden", "..", "A/B", "A\\B", "A\nB", String(repeating: "a", count: 256)] {

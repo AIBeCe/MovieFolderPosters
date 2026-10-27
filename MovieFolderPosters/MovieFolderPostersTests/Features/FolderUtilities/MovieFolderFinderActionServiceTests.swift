@@ -2,9 +2,9 @@ import AppKit
 import FileSystem
 import Foundation
 import MovieFolderCommon
+@testable import MovieFolderPosters
 import Persistence
 import Testing
-@testable import MovieFolderPosters
 
 /// Verifies local utility admission using real disposable authorization and processing stores.
 struct MovieFolderFinderActionServiceTests {
@@ -222,6 +222,7 @@ extension MovieFolderFinderActionServiceTests {
   var revealed: [[URL]] = []
   /// Settings access must remain unavailable throughout the platform call.
   var configurationWasFenced = false
+  /// Retains the repository checked during each native effect.
   init(repository: ConfigurationRepository) { self.repository = repository }
   func copy(_ text: String) -> Bool {
     configurationWasFenced = (try? repository.read()) == .none
@@ -243,16 +244,19 @@ private actor UtilityPreparationGate {
   private var waiter: CheckedContinuation<Void, Never>?
   /// Prevents lost readiness notifications.
   private var prepared = false
+  /// Holds preparation until the test allows the suspended response to finish.
   func pause() async {
     prepared = true
     waiter?.resume()
     waiter = .none
     await withCheckedContinuation { response = $0 }
   }
+  /// Waits until preparation reaches the suspension point.
   func waitForPreparation() async {
     if prepared { return }
     await withCheckedContinuation { waiter = $0 }
   }
+  /// Releases the suspended response after the caller changes its UI generation.
   func finish() { response?.resume(); response = .none }
 }
 
