@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 protocol ConfigurationViewControllerDelegate: AnyObject {
   /// Requests presentation of Settings.
   func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController)
+  /// Requests presentation of the app-owned Local Data window.
+  func configurationViewControllerDidRequestLocalData(_ controller: ConfigurationViewController)
   /// Requests presentation of the activity log.
   func configurationViewControllerDidRequestLog(_ controller: ConfigurationViewController)
   /// Requests an installation readiness report.
@@ -36,6 +38,8 @@ protocol ConfigurationViewControllerDelegate: AnyObject {
 /// Provides no-op defaults for delegate actions a host may choose not to present.
 @MainActor
 extension ConfigurationViewControllerDelegate {
+  /// Keeps hosts without a Local Data route usable.
+  func configurationViewControllerDidRequestLocalData(_ controller: ConfigurationViewController) {}
   /// Allows hosts without a resolution flow to retain read-only configuration.
   func configurationViewControllerDidRequestUnresolvedResults(
     _ controller: ConfigurationViewController, rootID: UUID) {}
@@ -104,6 +108,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     view = NSView()
     configureTable()
     let log = iconButton("doc.text", label: "Log", action: #selector(showLog))
+    let localData = iconButton("internaldrive", label: "Local Data", action: #selector(showLocalData))
     let settings = iconButton("gearshape", label: "Settings", action: #selector(showSettings))
     let installation = NSButton(
       title: "Check Installation…", target: self,
@@ -120,7 +125,7 @@ final class ConfigurationViewController: NSViewController, NSTableViewDataSource
     let recovery = NSStackView(views: [recoveryLabel, NSView(), recoveryButton])
     recovery.orientation = .horizontal
     recovery.spacing = 10
-    let footer = NSStackView(views: [log, installation, errorLabel, NSView(), settings])
+    let footer = NSStackView(views: [log, localData, installation, errorLabel, NSView(), settings])
     footer.orientation = .horizontal
     footer.alignment = .centerY
     footer.spacing = 10
@@ -397,6 +402,9 @@ extension ConfigurationViewController {
 
   /// Forwards the Settings action to the window coordinator.
   @objc private func showSettings() { delegate?.configurationViewControllerDidRequestSettings(self) }
+
+  /// Forwards the Local Data action to the window coordinator.
+  @objc private func showLocalData() { delegate?.configurationViewControllerDidRequestLocalData(self) }
   /// Forwards the Log action to the window coordinator.
   @objc private func showLog() { delegate?.configurationViewControllerDidRequestLog(self) }
   /// Changes admission only; the next authorized invocation owns any later processing.

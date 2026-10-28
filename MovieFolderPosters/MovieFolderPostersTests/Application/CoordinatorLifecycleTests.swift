@@ -207,6 +207,43 @@ struct CoordinatorLifecycleTests {
     #expect(application.appearance == .none)
   }
 
+  /// Local Data has its own reusable window, separate from Settings, and clears ownership on close.
+  @Test func localDataWindowIsDedicatedReusableAndClosable() throws {
+    let root = AppCoordinator(
+      activity: ActivityServiceFake(), configurationBuilder: LocalDataConfigurationBuilder(),
+      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+    try root.showConfiguration()
+    let configuration = try #require(root.configurationCoordinator)
+    let mainWindow = try #require(configuration.mainWindow?.window)
+    defer { mainWindow.close(); configuration.settingsWindow?.close(); configuration.localDataWindow?.close() }
+
+    let main = try #require(configuration.mainWindow?.contentViewController as? ConfigurationViewController)
+    configuration.configurationViewControllerDidRequestLocalData(main)
+    let localDataWindow = try #require(configuration.localDataWindow?.window)
+    #expect(localDataWindow.title == "Local Data")
+    #expect(localDataWindow.isVisible)
+    #expect(localDataWindow.contentViewController is LocalDataPane)
+
+    configuration.showSettings()
+    let settingsWindow = try #require(configuration.settingsWindow?.window)
+    let settings = try #require(settingsWindow.contentViewController as? SettingsViewController)
+    #expect(settings.tabViewItems.map(\.label) == ["Poster Layout", "Matching Defaults", "TMDb", "Appearance"])
+    configuration.showLocalData()
+    #expect(configuration.localDataWindow?.window === localDataWindow)
+
+    configuration.presentLocalDataExport(report: .none, attachedTo: localDataWindow)
+    #expect(configuration.localDataExportParent === localDataWindow)
+    settingsWindow.close()
+    #expect(configuration.localDataExportParent === localDataWindow)
+    mainWindow.close()
+    #expect(configuration.localDataExportParent === localDataWindow)
+
+    localDataWindow.close()
+    #expect(configuration.localDataWindow == nil)
+    #expect(configuration.localDataExportParent == nil)
+    #expect(localDataWindow.attachedSheet == nil)
+  }
+
   /// Failed local writes must reach an already visible Log without a success-only storage notification.
   @Test func failedActivityWriteUpdatesTheAlreadyOpenLog() async throws {
     let application = NSApplication.shared
@@ -336,6 +373,25 @@ private struct AvailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
     ConfigurationCoordinator(
       service: CoordinatorConfigurationService(), activity: activity,
       appearance: appearance, retryService: retryService)
+  }
+}
+
+/// Supplies immediate readiness evidence for Local Data window lifetime coverage.
+@MainActor
+private struct LocalDataConfigurationBuilder: ConfigurationCoordinatorBuilding {
+  func makeCoordinator(activity: any MovieFolderActivityServicing,
+                       appearance: AppAppearanceSettings,
+                       retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
+    ConfigurationCoordinator(
+      service: CoordinatorConfigurationService(), activity: activity,
+      appearance: appearance, installationService: LocalDataInstallationServiceFake(), retryService: retryService)
+  }
+}
+
+/// Returns deterministic readiness evidence without platform service probes.
+private struct LocalDataInstallationServiceFake: InstallationReadinessServicing {
+  func check() async -> InstallationReadinessReport {
+    InstallationReadinessReport(text: "Controlled local data readiness")
   }
 }
 

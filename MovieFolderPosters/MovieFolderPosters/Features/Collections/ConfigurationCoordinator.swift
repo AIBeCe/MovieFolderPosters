@@ -30,7 +30,8 @@ extension ConfigurationCoordinatorDelegate {
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
   ConfigurationViewModelActivityDelegate, CollectionProcessingDetailsViewControllerDelegate,
-  CollectionResultsViewControllerDelegate, NSWindowDelegate {
+  CollectionResultsViewControllerDelegate, NSWindowDelegate, LocalDataPaneDelegate,
+  LocalDataExportCoordinatorDelegate {
   /// Root router; the root retains this child for its flow lifetime.
   weak var delegate: (any ConfigurationCoordinatorDelegate)?
   /// Supplies configuration state and operations to the host's views.
@@ -45,6 +46,18 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private(set) var mainWindow: NSWindowController?
   /// The settings window, when it has been created.
   private(set) var settingsWindow: NSWindowController?
+  /// Dedicated Local Data window, reused until the user closes it.
+  private(set) var localDataWindow: NSWindowController?
+  /// Retains the finite local data export flow until dismissal or parent closure.
+  private var localDataExportCoordinator: LocalDataExportCoordinator?
+  /// Fences readiness preparation after either owning window closes.
+  private var localDataExportPreparationRequestID = UInt64.zero
+  /// Window whose asynchronous readiness evidence is being prepared.
+  private weak var localDataExportPreparationParent: NSWindow?
+  /// Window that owns the current finite export sheet, if any.
+  private(set) weak var localDataExportParent: NSWindow?
+  /// Read-only source shared between local storage presentation and local data export.
+  private var localDataExportService: any LocalDataExportServicing { LocalDataExportService(activity: activity) }
   /// Retained history provider used only after an explicit diagnostic export request.
   private let activity: any MovieFolderActivityServicing
   /// Checks installation evidence when the user requests a readiness report.
@@ -136,7 +149,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     show(window)
   }
 
-  /// Observes shared invalidations while either Main or Settings uses this retained flow.
+  /// Observes shared invalidations while Main, Settings, or Local Data uses this retained flow.
   private func observeConfigurationChanges() {
     if !isObservingProcessing {
       isObservingProcessing = true
@@ -178,6 +191,23 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       show(window)
     }
     Task { await viewModel.load() }
+  }
+
+  /// Creates or fronts the dedicated Local Data window and its reusable pane.
+  func showLocalData() {
+    observeConfigurationChanges()
+    if let localDataWindow {
+      show(localDataWindow)
+      return
+    }
+    let controller = LocalDataPane(service: localDataExportService)
+    controller.delegate = self
+    let window = makeWindow(
+      title: "Local Data", controller: controller,
+      size: NSSize(width: 700, height: 650), minimum: NSSize(width: 700, height: 650))
+    window.window?.delegate = self
+    localDataWindow = window
+    show(window)
   }
 
   /// Shows the selected collection's read-only persisted details as a window sheet.
@@ -302,8 +332,9 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow else { return }
     if window === mainWindow?.window {
+      cancelLocalDataExport(attachedTo: window)
       contextMenuPresentationGeneration &+= 1
-      if settingsWindow?.window?.isVisible != true {
+      if settingsWindow?.window?.isVisible != true && localDataWindow?.window?.isVisible != true {
         DistributedNotificationCenter.default().removeObserver(self)
         isObservingProcessing = false
       }
@@ -313,8 +344,16 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       closeSetup()
       closeEdit()
     } else if window === settingsWindow?.window {
+      cancelLocalDataExport(attachedTo: window)
       viewModel.cancelCredentialAction()
-      if mainWindow?.window?.isVisible != true {
+      if mainWindow?.window?.isVisible != true && localDataWindow?.window?.isVisible != true {
+        DistributedNotificationCenter.default().removeObserver(self)
+        isObservingProcessing = false
+      }
+    } else if window === localDataWindow?.window {
+      cancelLocalDataExport(attachedTo: window)
+      localDataWindow = nil
+      if mainWindow?.window?.isVisible != true && settingsWindow?.window?.isVisible != true {
         DistributedNotificationCenter.default().removeObserver(self)
         isObservingProcessing = false
       }
@@ -390,6 +429,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   ///
   /// - Parameter controller: The view controller that sent the request.
   func configurationViewControllerDidRequestSettings(_ controller: ConfigurationViewController) { showSettings() }
+  /// Responds to the configuration view's request to open Local Data.
+  func configurationViewControllerDidRequestLocalData(_ controller: ConfigurationViewController) { showLocalData() }
   /// Responds to the configuration view's request to open the activity log.
   ///
   /// - Parameter controller: The view controller that sent the request.
@@ -472,37 +513,71 @@ private extension ConfigurationCoordinator {
     }
   }
 
-  /// Lets the user choose a destination before reading retained activity or writing a diagnostic file.
-  /// - Parameters:
-  ///   - report: Readiness results projected through the export's fixed status vocabulary.
-  ///   - window: The configuration window that owns the save panel and any sanitized failure alert.
+  /// Replaces the old immediate save route with explicit evidence selection and exact preview.
   func exportDiagnostics(report: InstallationReadinessReport, attachedTo window: NSWindow) {
-    let panel = NSSavePanel()
-    panel.allowedContentTypes = [.plainText]
-    panel.nameFieldStringValue = "MovieFolderPosters-Diagnostics.txt"
-    panel.title = "Export Diagnostics"
-    panel.message = "Exports readiness statuses and up to 50 recent activity timestamps and actions. "
-      + "Folder paths, credentials, identifiers, and error details are excluded."
-    panel.beginSheetModal(for: window) { response in
-      guard response == .OK, let destination = panel.url else { return }
+    presentLocalDataExport(report: report, attachedTo: window)
+  }
 
-      Task {
-        let entries = try? await self.activity.entries()
-        let text = InstallationDiagnosticsExport.format(report: report, entries: entries)
-        do {
-          try await Task.detached(priority: .utility) {
-            try text.write(to: destination, atomically: true, encoding: .utf8)
-          }.value
-        } catch {
-          guard window.isVisible, window.attachedSheet == .none else { return }
-
-          let alert = NSAlert()
-          alert.messageText = "Diagnostics could not be saved"
-          alert.informativeText = "Choose another destination and try again. Error details are excluded."
-          _ = await alert.beginSheetModal(for: window)
-        }
-      }
+  /// Cancels only preparation and export presentation owned by the closing window.
+  func cancelLocalDataExport(attachedTo window: NSWindow) {
+    if localDataExportPreparationParent === window {
+      localDataExportPreparationRequestID &+= 1
+      localDataExportPreparationParent = nil
+      checkingInstallation = false
     }
+    if localDataExportParent === window { localDataExportCoordinator?.close() }
+  }
+
+}
+
+extension ConfigurationCoordinator {
+  /// Opens local data export preparation from Local Data using fresh readiness evidence.
+  func localDataPaneDidRequestExport(_ pane: LocalDataPane) {
+    guard !checkingInstallation, let window = localDataWindow?.window, window.attachedSheet == nil else { return }
+
+    checkingInstallation = true
+    localDataExportPreparationRequestID &+= 1
+    let current = localDataExportPreparationRequestID
+    localDataExportPreparationParent = window
+    Task { [weak self] in
+      guard let self else { return }
+
+      let report = await installationReport()
+
+      guard current == localDataExportPreparationRequestID, localDataExportPreparationParent === window else { return }
+
+      checkingInstallation = false
+      localDataExportPreparationParent = nil
+
+      guard window.isVisible, window.attachedSheet == nil else {
+        return
+      }
+
+      presentLocalDataExport(report: report, attachedTo: window)
+    }
+  }
+
+  /// Releases only the completed flow; late closure cannot clear a replacement.
+  func localDataExportCoordinatorDidClose(_ coordinator: LocalDataExportCoordinator) {
+    if localDataExportCoordinator === coordinator {
+      localDataExportCoordinator = nil
+      localDataExportParent = nil
+    }
+  }
+
+}
+
+extension ConfigurationCoordinator {
+  /// Presents a finite export flow attached to the window that requested it.
+  func presentLocalDataExport(report: InstallationReadinessReport?, attachedTo window: NSWindow) {
+    guard localDataExportCoordinator == nil, window.attachedSheet == nil else { return }
+
+    let model = LocalDataExportViewModel(service: localDataExportService, readiness: report)
+    let coordinator = LocalDataExportCoordinator(model: model)
+    coordinator.delegate = self
+    localDataExportCoordinator = coordinator
+    localDataExportParent = window
+    coordinator.start(attachedTo: window)
   }
 }
 

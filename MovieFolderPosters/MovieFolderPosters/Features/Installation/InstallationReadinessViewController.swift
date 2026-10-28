@@ -43,6 +43,38 @@ final class InstallationReadinessViewController: NSViewController {
 
 /// Produces a bounded export using only fixed readiness statuses and typed activity fields.
 nonisolated enum InstallationDiagnosticsExport {
+  /// Projects only the established fixed readiness vocabulary, excluding arbitrary report strings.
+  static func installationCheckSummary(report: InstallationReadinessReport) -> String {
+    let lines = report.text.components(separatedBy: .newlines)
+    var output = [String]()
+    let statuses: [(label: String, choices: [String])] = [
+      ("Embedded Finder extension", [
+        "Present; versions match.", "Version mismatch.", "Invalid extension point.",
+        "Unknown (bundle metadata unavailable).", "Unknown (bundle metadata incomplete)."
+      ]),
+      ("Host app code signature", ["Valid.", "Invalid.", "Unknown."]),
+      ("Embedded extension code signature", ["Valid.", "Invalid.", "Unknown.", "Unknown (not embedded)."]),
+      ("Finder extension setting", ["Enabled.", "Disabled.", "Unknown (FinderSync status unavailable)."]),
+      ("Finder activation", [
+        "Not yet observed.", "Future-dated observation; not current.", "Stale observation.",
+        "Observed for the embedded extension build.", "Recent observation; embedded build is unknown.",
+        "Observed on a different extension build.", "Unknown (shared receipt is busy).",
+        "Unknown (shared receipt could not be read)."
+      ]),
+      ("Shared App Group storage", [
+        "Read/write check passed.", "Unknown (check is busy).", "Check failed; error details hidden."
+      ]),
+      ("TMDb token at last load", ["Configured; provider validation was not performed.", "Not configured."])
+    ]
+    for status in statuses {
+      let choice = status.choices.first { choice in
+        lines.contains { $0.hasPrefix("\(status.label): \(choice)") }
+      } ?? "Unknown."
+      output.append("\(status.label): \(choice)")
+    }
+    return output.joined(separator: "\n")
+  }
+
   /// Maximum retained activity entries included in one explicit export.
   private static let maximumActivityCount = 50
 

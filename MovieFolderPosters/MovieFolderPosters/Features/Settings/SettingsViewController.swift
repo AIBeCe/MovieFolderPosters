@@ -16,7 +16,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
     didSet { credentialPane.delegate = credentialDelegate }
   }
 
-  /// Creates the three settings tabs using the supplied state collaborators.
+  /// Creates the settings tabs using the supplied state collaborators.
   /// - Parameters:
   ///   - viewModel: Model for poster layout and credential settings.
   ///   - appearanceSettings: Store for the app color appearance.
