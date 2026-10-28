@@ -20,6 +20,7 @@ actor LocalDataExportTemporaryFileWriterFake: LocalDataExportTemporaryFileWritin
   var isHeld: Bool { continuation != nil }
 
   /// Configures deterministic staging suspension.
+  /// - Parameter holdsStage: Whether stage completion waits for the test.
   init(holdsStage: Bool) { self.holdsStage = holdsStage }
   /// Releases a staged result after the owner has closed or changed evidence.
   func release() {
@@ -40,9 +41,12 @@ actor LocalDataExportTemporaryFileWriterFake: LocalDataExportTemporaryFileWritin
   }
 }
 
+/// Verifies exact-byte publication, cancellation, privacy revalidation, and stage cleanup.
 @MainActor
 struct LocalDataExportPublicationTests {
   /// Creates one prepared empty-selection session independent of production storage.
+  /// - Returns: The ready preview model and its replaceable evidence source.
+  /// - Throws: Persistence or preview preparation errors.
   private func preparedModel() async throws -> (LocalDataExportViewModel, LocalDataExportSourcesFake) {
     let source = LocalDataExportSourcesFake(.init(activity: [], network: [], privacy: Data([1])))
     let model = LocalDataExportViewModel(service: source, readiness: nil)
@@ -53,6 +57,11 @@ struct LocalDataExportPublicationTests {
     return (model, source)
   }
 
+  /// Cancels before publication without changing an absent or existing destination.
+  /// - Parameters:
+  ///   - replacesExisting: Whether a sentinel destination exists before the operation.
+  ///   - cancelsTask: Whether task cancellation or owner closure cancels the stage.
+  /// - Throws: Filesystem setup and assertion failures.
   @Test(arguments: [false, true], [false, true])
   func cancellationBeforePublicationPreservesDestinationAndRemovesStage(
     replacesExisting: Bool, cancelsTask: Bool
@@ -82,6 +91,8 @@ struct LocalDataExportPublicationTests {
     #expect(!FileManager.default.fileExists(atPath: stagedDirectory.path))
   }
 
+  /// Writes the frozen preview bytes and removes its private stage after success.
+  /// - Throws: Filesystem setup, export, or assertion failures.
   @Test func successfulPublicationWritesExactlyReviewedBytesAndRemovesStage() async throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -98,6 +109,8 @@ struct LocalDataExportPublicationTests {
     #expect(!FileManager.default.fileExists(atPath: stagedDirectory.path))
   }
 
+  /// Rejects publication when the selected history privacy changes during staging.
+  /// - Throws: Filesystem setup or assertion failures.
   @Test func changedPrivacyDuringStageRejectsPublication() async throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -116,6 +129,8 @@ struct LocalDataExportPublicationTests {
     let stagedDirectory = try #require(await stager.stagedDirectory)
     #expect(!FileManager.default.fileExists(atPath: stagedDirectory.path))
   }
+  /// Preserves an existing destination when publication fails and removes its stage.
+  /// - Throws: Filesystem setup or assertion failures.
   @Test func failedPublicationPreservesDestinationAndRemovesStage() async throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let destination = root.appendingPathComponent("changed-to-directory")

@@ -44,6 +44,8 @@ final class InstallationReadinessViewController: NSViewController {
 /// Produces a bounded export using only fixed readiness statuses and typed activity fields.
 nonisolated enum InstallationDiagnosticsExport {
   /// Projects only the established fixed readiness vocabulary, excluding arbitrary report strings.
+  /// - Parameter report: Source readiness report; arbitrary text is never copied.
+  /// - Returns: One allowlisted status line per supported field, using Unknown for missing or unrecognized statuses.
   static func installationCheckSummary(report: InstallationReadinessReport) -> String {
     let lines = report.text.components(separatedBy: .newlines)
     var output = [String]()
@@ -72,6 +74,7 @@ nonisolated enum InstallationDiagnosticsExport {
       } ?? "Unknown."
       output.append("\(status.label): \(choice)")
     }
+
     return output.joined(separator: "\n")
   }
 

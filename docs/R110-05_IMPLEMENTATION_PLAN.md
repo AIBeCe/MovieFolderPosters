@@ -258,3 +258,60 @@ implementation commit, merge or push. Awaiting user implementation approval.
 
 User approved the completed implementation on 2026-10-28, authorizing its implementation commit.
 Formal Validation Phase remains pending explicit authorization; no merge or push authorized.
+
+
+## Formal validation — 2026-10-28
+
+User explicitly authorized validation of implementation commit b91da2a. Issue-scoped requirements verification,
+unit tests, native target compilation, SwiftLint and Swift style review are in progress. Unrelated untracked
+files remain preserved. No validation commit, merge or push authorized yet.
+
+
+Validation results: requirements verification found no new functional blocker. Scoped unit checks passed:
+FileSystem 8, Common 2, host 29 tests across seven suites, no failures/skips. Unsigned native Debug host/Finder
+build passed (standard host build-product LaunchServices step, no explicit app launch/PlugInKit registration).
+SwiftLint 0.65.1: 21 changed Swift files, 16 newly introduced warnings, zero serious; baseline comparison checked.
+Warnings concern complexity/type/function size, parameter count, opening brace, async_without_await and optional
+Data-to-String conversion. Swift style review found Required DocC/contract and guard/final-return spacing gaps.
+Validation is incomplete pending corrections and rechecks; no rules weakened. Native rendered/accessibility and
+save-panel qualification remain unperformed. Logs: /private/tmp/R110-05-validation-{filesystem,common,host,
+native-build,swiftlint,baseline-lint}.log. Review report: /private/tmp/R110-05-validation-review.md.
+No validation commit, merge or push performed.
+
+
+## Validation corrections — 2026-10-28
+
+User authorized fixing SwiftLint warnings. Split storage traversal into bounded helpers with explicit traversal
+state, split export view setup and coordinator close handlers, use synchronous actor protocol witnesses where
+no local suspension is needed, and failable UTF-8 conversions. No rule suppressions or configuration weakening.
+Corrected DocC contracts and guard/final-return spacing. Review finding I5 corrected closing-window exclusion
+from observer visibility checks; Main delegate is restored when its retained window reopens. Added last-window
+close regression. Final scoped checks: SwiftLint zero violations in 21 files, host31 tests in six suites,
+FileSystem8 and Common2 passed. Logs: /private/tmp/R110-05-validation-swiftlint-final.log,
+/private/tmp/R110-05-validation-focused-tests-green.log,
+/private/tmp/R110-05-validation-filesystem-tests-final.log,
+/private/tmp/R110-05-validation-common-tests-final.log. Independent review returned explicit final PASS; I5 and S1/S2 resolved.
+A mistaken broad test invocation ran302 tests and reported8 out-of-scope issues; baseline status is unestablished.
+Preserved /private/tmp/R110-05-validation-focused-tests-final.log; no broad rerun or unrelated fixes.
+Native rendered/accessibility/save-panel checks remain unperformed; native build evidence predates corrections.
+No validation commit, merge or push; user approval of validation corrections remains pending.
+
+
+## Approved DocC accuracy corrections — 2026-10-28
+
+User approved corrections from /private/tmp/R110-05-docc-audit.md. Updated nine host files to describe typed
+comparison/source availability, actual error contracts, Network collaborators/checkbox, UI-only preview clearing,
+best-effort cleanup, lifecycle effects and readiness projection accurately. Independent review PASS; executable
+lines match pre-DocC snapshot in all nine files. Scoped lint zero violations in nine files and whitespace check
+passed. No test rerun for comment-only changes. Log: /private/tmp/R110-05-docc-fixes-swiftlint.log.
+Audit scope remains 13 issue-touched host files of 47, not an app-wide audit or generated DocC compilation.
+Changes remain uncommitted pending validation approval.
+
+
+## Feature completion authorized — 2026-10-28
+
+User requested finishing the feature after validation corrections and DocC review PASS. Final unsigned native
+Debug host/Finder build passed on the corrected worktree: /private/tmp/R110-05-final-native-build.log. Only
+expected AppIntents metadata warnings. All four issue-scoped validation activities are complete with previously
+recorded platform qualification limits. Validation corrections approved for commit and feature authorized for
+fast-forward integration into develop, documentation and push.

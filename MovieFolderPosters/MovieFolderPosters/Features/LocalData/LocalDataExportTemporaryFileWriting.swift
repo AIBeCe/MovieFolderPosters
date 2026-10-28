@@ -101,7 +101,8 @@ nonisolated final class PreparedLocalDataExportFile: Sendable {
     guard rename(payload.path, destination.path) == .zero else { throw LocalDataExportError.unavailable }
   }
 
-  /// Removes the owned temporary directory away from UI callbacks, preserving the native grant until cleanup ends.
+  /// Attempts temporary-directory cleanup on a utility task, retaining destination access through the attempt.
+  /// Cleanup failures are ignored; deinitialization attempts cleanup again.
   func discard() async {
     let directory = directory
     await Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: directory) }.value

@@ -6,6 +6,7 @@ import MovieFolderCommon
 @MainActor
 protocol LocalDataPaneDelegate: AnyObject {
   /// Opens the finite local data export selection sheet.
+  /// - Parameter pane: The Local Data pane requesting export.
   func localDataPaneDidRequestExport(_ pane: LocalDataPane)
 }
 
@@ -28,6 +29,7 @@ final class LocalDataPane: NSViewController, NSTableViewDataSource, NSTableViewD
   private let status = NSTextField(wrappingLabelWithString: "Choose Refresh to measure local app storage.")
 
   /// Retains the read-only source; measurement does not open application persistence stores.
+  /// - Parameter service: Read-only local storage and export source.
   init(service: any LocalDataExportServicing) {
     self.service = service
     super.init(nibName: nil, bundle: nil)
@@ -104,6 +106,7 @@ final class LocalDataPane: NSViewController, NSTableViewDataSource, NSTableViewD
     }
   }
 
+  /// Invalidates the current refresh generation and cancels its task when the pane disappears.
   override func viewDidDisappear() {
     super.viewDidDisappear()
     generation &+= 1

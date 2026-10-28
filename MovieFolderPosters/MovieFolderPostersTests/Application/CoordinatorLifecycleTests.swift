@@ -235,13 +235,22 @@ struct CoordinatorLifecycleTests {
     #expect(configuration.localDataExportParent === localDataWindow)
     settingsWindow.close()
     #expect(configuration.localDataExportParent === localDataWindow)
+    #expect(configuration.isObservingProcessing)
     mainWindow.close()
     #expect(configuration.localDataExportParent === localDataWindow)
+    #expect(configuration.isObservingProcessing)
 
     localDataWindow.close()
     #expect(configuration.localDataWindow == nil)
     #expect(configuration.localDataExportParent == nil)
+    #expect(!configuration.isObservingProcessing)
     #expect(localDataWindow.attachedSheet == nil)
+
+    try root.showConfiguration()
+    let reopenedMainWindow = try #require(configuration.mainWindow?.window)
+    #expect(reopenedMainWindow.isVisible)
+    reopenedMainWindow.close()
+    #expect(!configuration.isObservingProcessing)
   }
 
   /// Failed local writes must reach an already visible Log without a success-only storage notification.
@@ -390,7 +399,8 @@ private struct LocalDataConfigurationBuilder: ConfigurationCoordinatorBuilding {
 
 /// Returns deterministic readiness evidence without platform service probes.
 private struct LocalDataInstallationServiceFake: InstallationReadinessServicing {
-  func check() async -> InstallationReadinessReport {
+  /// Returns fixed evidence without probing the host.
+  func check() -> InstallationReadinessReport {
     InstallationReadinessReport(text: "Controlled local data readiness")
   }
 }

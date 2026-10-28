@@ -22,6 +22,7 @@ nonisolated struct LocalDataExportActivityEntry: Encodable {
   let processingCounters: [String: Int]?
 
   /// Projects only fixed typed fields and explicit numeric counters.
+  /// - Parameter entry: Retained event projected to allowlisted values.
   init(_ entry: MovieFolderActivityLogEntry) {
     occurredAt = entry.occurredAt
     let event = entry.event
@@ -57,7 +58,7 @@ nonisolated struct LocalDataExportNetworkEntry: Encodable {
 nonisolated struct LocalDataExportDocument: Encodable {
   /// Current format version.
   let version = 1
-  /// Capture and chosen occurrence interval.
+  /// Time this document was constructed for preview.
   let capturedAt = Date()
   /// Beginning of the selected occurrence interval.
   let start: Date
@@ -77,6 +78,15 @@ nonisolated struct LocalDataExportDocument: Encodable {
   let network: [LocalDataExportNetworkEntry]
 
   /// Projects source entries immediately, retaining no original records in the document.
+  /// - Parameters:
+  ///   - activity: Selected Activity entries in source order.
+  ///   - network: Selected HTTP entries in source order.
+  ///   - readiness: Optional fixed readiness statuses.
+  ///   - storage: Optional metadata-only storage estimate.
+  ///   - start: Beginning of the selected occurrence interval.
+  ///   - end: End of the selected occurrence interval.
+  ///   - activityAvailable: Whether Activity history was readable.
+  ///   - networkAvailable: Whether HTTP history was readable.
   init(
     activity: [MovieFolderActivityLogEntry], network: [MovieFolderNetworkHistoryEntry],
     readiness: InstallationReadinessReport?, storage: LocalStorageReport?, start: Date, end: Date,
@@ -97,6 +107,8 @@ nonisolated struct LocalDataExportDocument: Encodable {
   }
 
   /// Encodes the exact preview bytes, failing visibly instead of truncating evidence.
+  /// - Returns: Versioned UTF-8 JSON bytes within the document size limit.
+  /// - Throws: When encoding fails or the encoded document exceeds 2 MiB.
   func encode() throws -> Data {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

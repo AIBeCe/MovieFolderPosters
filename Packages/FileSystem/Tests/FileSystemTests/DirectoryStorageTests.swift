@@ -4,7 +4,10 @@ import Testing
 
 @testable import FileSystem
 
+/// Verifies no-follow bounded metadata measurement and conservative omissions.
 struct DirectoryStorageTests {
+  /// Leaves absent storage absent and reports that it was not created.
+  /// - Throws: Filesystem setup failures.
   @Test func missingDoesNotCreateStorage() throws {
     let url = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let usage = DirectoryStorage().measure(at: url)
@@ -12,6 +15,8 @@ struct DirectoryStorageTests {
     #expect(!FileManager.default.fileExists(atPath: url.path))
   }
 
+  /// Counts regular-file bytes while excluding symbolic links.
+  /// - Throws: Filesystem setup failures.
   @Test func countsRegularFilesAndRejectsLinks() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -26,6 +31,8 @@ struct DirectoryStorageTests {
     #expect(usage.status == .partial)
   }
 
+  /// Marks a directory partial when its entry budget is exhausted.
+  /// - Throws: Filesystem setup failures.
   @Test func finiteBoundMarksPartial() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -33,18 +40,23 @@ struct DirectoryStorageTests {
     try Data([1]).write(to: root.appendingPathComponent("file"))
     #expect(DirectoryStorage(maximumEntries: 0).measure(at: root).status == .partial)
   }
+  /// Marks cancellation before directory enumeration as partial.
+  /// - Throws: Filesystem setup failures.
   @Test func cancelledEmptyTraversalIsPartial() async throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let task = Task {
       while !Task.isCancelled { await Task.yield() }
+
       return DirectoryStorage().measure(at: root)
     }
     task.cancel()
     #expect(await task.value.status == .partial)
   }
 
+  /// Omits hard links and special files from the estimate.
+  /// - Throws: Filesystem setup failures.
   @Test func hardLinksAndSpecialEntriesAreOmitted() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -59,6 +71,8 @@ struct DirectoryStorageTests {
     #expect(usage.logicalBytes == 0)
   }
 
+  /// Rejects a root symbolic link rather than measuring its target.
+  /// - Throws: Filesystem setup failures.
   @Test func rootLinksCannotRedirectMeasurement() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     try FileManager.default.createSymbolicLink(atPath: root.path, withDestinationPath: "/etc")
@@ -68,6 +82,8 @@ struct DirectoryStorageTests {
     #expect(usage.fileCount == 0)
   }
 
+  /// Applies depth bounds and measures a regular-file namespace marker.
+  /// - Throws: Filesystem setup failures.
   @Test func nestedBoundsAndRegularNamespaceMarkerAreMeasuredConservatively() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let nested = root.appendingPathComponent("nested")
@@ -83,6 +99,8 @@ struct DirectoryStorageTests {
     #expect(usage.finishedAt >= usage.startedAt)
   }
 
+  /// Measures a readable target through an ancestor that grants search access only.
+  /// - Throws: Filesystem setup failures.
   @Test func readableTargetRemainsMeasurableThroughSearchOnlyAncestor() throws {
     let parent = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let target = parent.appendingPathComponent("readable")

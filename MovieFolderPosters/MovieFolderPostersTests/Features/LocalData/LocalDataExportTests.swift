@@ -5,7 +5,9 @@ import Testing
 
 @testable import MovieFolderPosters
 
+/// Verifies selection, encoding, privacy, exact previews, and native export controls.
 struct LocalDataExportTests {
+  /// Verifies deliberate selection defaults for a new export.
   @Test func defaultsRequireDeliberateSelection() {
     let model = LocalDataExportSelection(now: Date(timeIntervalSince1970: 100000))
     #expect(model.activityEnabled)
@@ -14,6 +16,8 @@ struct LocalDataExportTests {
     #expect(model.end.timeIntervalSince(model.start) == 86400)
   }
 
+  /// Confirms the encoded allowlist omits opaque identities and rich event text.
+  /// - Throws: Encoding or UTF-8 decoding failures.
   @Test func projectionNeverEncodesIdentifiersOrRichText() throws {
     let id = UUID()
     let entry = MovieFolderActivityLogEntry(
@@ -23,12 +27,14 @@ struct LocalDataExportTests {
       activity: [entry], network: [], readiness: .none, storage: .none,
       start: Date(), end: Date(), activityAvailable: true, networkAvailable: false)
     let bytes = try document.encode()
-    let text = String(decoding: bytes, as: UTF8.self)
+    let text = try #require(String(bytes: bytes, encoding: .utf8))
     #expect(!text.contains(id.uuidString))
     #expect(!text.contains("collectionID"))
     #expect(text.contains("collectionAdded"))
   }
 
+  /// Confirms arbitrary history and readiness text cannot enter an export.
+  /// - Throws: Fixture decoding, encoding, or UTF-8 decoding failures.
   @Test func richHistoryAndReadinessTextCannotEscapeAllowlist() throws {
     let rawEvent = Data(#"""
       {"action":"collectionAdded","outcome":"succeeded",
@@ -42,13 +48,15 @@ struct LocalDataExportTests {
     let report = InstallationReadinessReport(text: "Host app code signature: Valid. PRIVATE ERROR /private/secret")
     let document = LocalDataExportDocument(activity: [entry], network: [], readiness: report,
       storage: nil, start: Date(), end: Date(), activityAvailable: true, networkAvailable: true)
-    let text = String(decoding: try document.encode(), as: UTF8.self)
+    let bytes = try document.encode()
+    let text = try #require(String(bytes: bytes, encoding: .utf8))
     for forbidden in ["PRIVATE", "/private/secret", "987654321", "11111111", "22222222", "movieYear"] {
       #expect(!text.contains(forbidden))
     }
     #expect(text.contains("Host app code signature: Valid."))
   }
 
+  /// Preserves source commit order and removes selections hidden by source settings.
   @Test func hiddenSelectionsAreRemovedAndCommitOrderSurvives() {
     let now = Date()
     let entries = [2, 1].map { index in
@@ -63,6 +71,7 @@ struct LocalDataExportTests {
     selection.reconcile(activity: entries, network: [])
     #expect(selection.selectedActivity.isEmpty)
   }
+  /// Excludes invalid dates and ranges from the selectable evidence.
   @Test func nonfiniteDatesAndInvalidRangesCannotSelectEvidence() {
     let now = Date()
     let entries = [Date(timeIntervalSince1970: .infinity), Date(timeIntervalSince1970: .nan), now].map {
@@ -77,6 +86,8 @@ struct LocalDataExportTests {
     #expect(selection.shownActivity(entries).isEmpty)
   }
 
+  /// Rejects oversized JSON rather than truncating the reviewed document.
+  /// - Throws: Encoding failures other than the expected size error.
   @Test func oversizedDocumentsFailWithoutTruncation() throws {
     let entry = MovieFolderActivityLogEntry(
       id: UUID(), sequence: 1, occurredAt: Date(),
@@ -107,10 +118,15 @@ actor LocalDataExportSourcesFake: LocalDataExportServicing {
     storageContinuation = nil
   }
   /// Creates a controlled source without production storage.
+  /// - Parameter evidence: Initial retained history and privacy evidence.
   init(_ evidence: LocalDataExportSources) { self.evidence = evidence }
   /// Replaces committed evidence between preview and save.
+  /// - Parameter evidence: New retained history and privacy evidence.
   func replace(_ evidence: LocalDataExportSources) { self.evidence = evidence }
+  /// Returns the currently committed source evidence.
   func load() -> LocalDataExportSources { evidence }
+  /// Captures fixed local-storage evidence, suspending when the test requested a hold.
+  /// - Returns: A bounded report with unavailable app-owned locations.
   func storage() async -> LocalStorageReport {
     if holdsStorage {
       holdsStorage = false
@@ -121,15 +137,19 @@ actor LocalDataExportSourcesFake: LocalDataExportServicing {
   }
 }
 
+/// Verifies preview lifetime and evidence revalidation in the main-actor presentation model.
 @MainActor
 struct LocalDataExportViewModelTests {
   /// Creates one harmless event whose identity remains memory-only.
+  /// - Returns: A unique in-memory Activity entry.
   private func entry() -> MovieFolderActivityLogEntry {
     MovieFolderActivityLogEntry(
       id: UUID(), sequence: 1, occurredAt: Date(),
       event: .init(action: .applicationOpened, status: .succeeded))
   }
 
+  /// Keeps frozen bytes stable when unselected entries are added.
+  /// - Throws: Preview preparation or stale-evidence errors.
   @Test func exactPreviewSurvivesNewUnselectedEntries() async throws {
     let original = entry()
     let privacy = Data([1])
@@ -144,9 +164,12 @@ struct LocalDataExportViewModelTests {
     await source.replace(.init(activity: [original, entry()], network: [], privacy: privacy))
     let saved = try await model.bytesForSaving()
     #expect(saved == frozen)
-    #expect(String(decoding: saved, as: UTF8.self).components(separatedBy: "applicationOpened").count == 2)
+    let text = try #require(String(bytes: saved, encoding: .utf8))
+    #expect(text.components(separatedBy: "applicationOpened").count == 2)
   }
 
+  /// Rejects saving after selection is cleared or history privacy changes.
+  /// - Throws: Preview preparation failures.
   @Test func clearedSelectionAndPrivacyChangesRejectSave() async throws {
     for changesPrivacy in [false, true] {
       let original = entry()
@@ -166,13 +189,16 @@ struct LocalDataExportViewModelTests {
     }
   }
 
+  /// Distinguishes unavailable sources from empty sources and invalidates edited previews.
+  /// - Throws: Preview preparation failures.
   @Test func unavailableIsDistinctFromEmptyAndEditsInvalidatePreview() async throws {
     let source = LocalDataExportSourcesFake(.init(activity: [], network: nil, privacy: Data([1])))
     let model = LocalDataExportViewModel(service: source, readiness: nil)
     await model.reload()
     model.selection.includesStorage = false
     try await model.preparePreview()
-    let text = String(decoding: try #require(model.preview), as: UTF8.self)
+    let preview = try #require(model.preview)
+    let text = try #require(String(bytes: preview, encoding: .utf8))
     #expect(text.contains("\"activityAvailable\" : true"))
     #expect(text.contains("\"networkAvailable\" : false"))
     model.selection.includesReadiness = false
@@ -180,6 +206,8 @@ struct LocalDataExportViewModelTests {
     model.close()
     await #expect(throws: LocalDataExportError.self) { try await model.preparePreview() }
   }
+  /// Prevents late metadata capture from restoring a preview after edits or closure.
+  /// - Throws: Preview preparation or late-completion errors.
   @Test func editsAndClosureFenceLatePreviewCapture() async throws {
     for closes in [false, true] {
       let source = LocalDataExportSourcesFake(.init(activity: [], network: [], privacy: Data([1])))
@@ -197,8 +225,11 @@ struct LocalDataExportViewModelTests {
 
 }
 
+/// Verifies native controls and storage presentation for the Local Data window.
 @MainActor
 struct LocalDataPresentationTests {
+  /// Keeps metadata estimates in a native table inside the Local Data window.
+  /// - Throws: A missing native table in the constructed hierarchy.
   @Test func localDataUsesNativeTableAndScrollWithinItsWindow() throws {
     let source = LocalDataExportSourcesFake(.init(activity: [], network: [], privacy: Data([1])))
     let pane = LocalDataPane(service: source)
@@ -209,6 +240,8 @@ struct LocalDataPresentationTests {
     #expect(table.numberOfRows == 0)
   }
 
+  /// Uses native multiselection, date, and exact-preview controls.
+  /// - Throws: A missing native control in the constructed hierarchy.
   @Test func supportSelectionAndPreviewUseNativeControls() throws {
     let source = LocalDataExportSourcesFake(.init(activity: [], network: [], privacy: Data([1])))
     let model = LocalDataExportViewModel(service: source, readiness: nil)
@@ -222,5 +255,7 @@ struct LocalDataPresentationTests {
   }
 
   /// Inspects the actual native control hierarchy without presenting a production-data window.
+  /// - Parameter view: Root view whose descendants are collected.
+  /// - Returns: The view and all of its descendants in tree order.
   private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 }

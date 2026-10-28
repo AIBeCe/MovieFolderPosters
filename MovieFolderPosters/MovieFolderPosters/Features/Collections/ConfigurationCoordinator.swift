@@ -26,7 +26,7 @@ extension ConfigurationCoordinatorDelegate {
   func configurationCoordinator(_ coordinator: ConfigurationCoordinator, willCloseResults window: NSWindow) {}
 }
 
-/// Owns collection configuration, Settings, and their related picker and report presentations.
+/// Owns Main, Settings, and Local Data windows plus their related presentations.
 @MainActor
 final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDelegate,
   ConfigurationViewModelActivityDelegate, CollectionProcessingDetailsViewControllerDelegate,
@@ -50,20 +50,20 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private(set) var localDataWindow: NSWindowController?
   /// Retains the finite local data export flow until dismissal or parent closure.
   private var localDataExportCoordinator: LocalDataExportCoordinator?
-  /// Fences readiness preparation after either owning window closes.
+  /// Fences stale export-preparation results when a request is replaced or its owning window closes.
   private var localDataExportPreparationRequestID = UInt64.zero
   /// Window whose asynchronous readiness evidence is being prepared.
   private weak var localDataExportPreparationParent: NSWindow?
   /// Window that owns the current finite export sheet, if any.
   private(set) weak var localDataExportParent: NSWindow?
-  /// Read-only source shared between local storage presentation and local data export.
+  /// Creates a read-only source for Local Data display and export.
   private var localDataExportService: any LocalDataExportServicing { LocalDataExportService(activity: activity) }
   /// Retained history provider used only after an explicit diagnostic export request.
   private let activity: any MovieFolderActivityServicing
   /// Checks installation evidence when the user requests a readiness report.
   private let installationService: any InstallationReadinessServicing
   /// Whether processing invalidations are registered for this presented flow.
-  private var isObservingProcessing = false
+  private(set) var isObservingProcessing = false
   /// Prevents overlapping installation checks and sheets.
   private var checkingInstallation = false
   /// Shared host admission service used by selected retries.
@@ -101,6 +101,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   ///   - installationService: The provider used to inspect installation evidence.
   ///   - recovery: Shared recovery admission used by explicit retry and configuration actions.
   ///   - retryService: Shared bounded retry service used by unresolved results.
+  ///   - utilityService: Admission and verification for explicit Finder utilities.
+  ///   - utilityPlatform: Platform adapter that performs admitted Finder effects.
   init(
     service: any ConfigurationServicing,
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
@@ -328,46 +330,6 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     summaryViewModel.reload()
   }
 
-  /// Prevents results work from outliving either its own sheet or Main.
-  func windowWillClose(_ notification: Notification) {
-    guard let window = notification.object as? NSWindow else { return }
-    if window === mainWindow?.window {
-      cancelLocalDataExport(attachedTo: window)
-      contextMenuPresentationGeneration &+= 1
-      if settingsWindow?.window?.isVisible != true && localDataWindow?.window?.isVisible != true {
-        DistributedNotificationCenter.default().removeObserver(self)
-        isObservingProcessing = false
-      }
-      window.delegate = .none
-      closeDetails()
-      closeResults()
-      closeSetup()
-      closeEdit()
-    } else if window === settingsWindow?.window {
-      cancelLocalDataExport(attachedTo: window)
-      viewModel.cancelCredentialAction()
-      if mainWindow?.window?.isVisible != true && localDataWindow?.window?.isVisible != true {
-        DistributedNotificationCenter.default().removeObserver(self)
-        isObservingProcessing = false
-      }
-    } else if window === localDataWindow?.window {
-      cancelLocalDataExport(attachedTo: window)
-      localDataWindow = nil
-      if mainWindow?.window?.isVisible != true && settingsWindow?.window?.isVisible != true {
-        DistributedNotificationCenter.default().removeObserver(self)
-        isObservingProcessing = false
-      }
-    } else if window === detailsWindow {
-      closeDetails()
-    } else if window === resultsWindow {
-      closeResults()
-    } else if window === setupWindow {
-      closeSetup()
-    } else if window === editWindow {
-      closeEdit()
-    }
-  }
-
   /// Dismisses the details sheet through its owning coordinator.
   func collectionProcessingDetailsViewControllerDidRequestClose(
     _ controller: CollectionProcessingDetailsViewController
@@ -480,6 +442,93 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 
 }
 
+/// Identifies one retained configuration window when AppKit reports its closure.
+private enum ConfigurationWindowRole {
+  case main
+  case settings
+  case localData
+  case details
+  case results
+  case setup
+  case edit
+}
+
+extension ConfigurationCoordinator {
+  /// Prevents retained flows from outliving their owning window.
+  /// - Parameter notification: AppKit's notification for the window that is closing.
+  func windowWillClose(_ notification: Notification) {
+    guard let window = notification.object as? NSWindow, let role = windowRole(for: window) else { return }
+
+    switch role {
+    case .main: mainWindowWillClose(window)
+    case .settings: settingsWindowWillClose(window)
+    case .localData: localDataWindowWillClose(window)
+    case .details: closeDetails()
+    case .results: closeResults()
+    case .setup: closeSetup()
+    case .edit: closeEdit()
+    }
+  }
+
+  /// Resolves a closing window to its retained configuration role.
+  /// - Parameter window: Window reported by AppKit.
+  /// - Returns: The owning window role, or `.none` for unrelated windows.
+  private func windowRole(for window: NSWindow) -> ConfigurationWindowRole? {
+    if window === mainWindow?.window { return .main }
+    if window === settingsWindow?.window { return .settings }
+    if window === localDataWindow?.window { return .localData }
+    if window === detailsWindow { return .details }
+    if window === resultsWindow { return .results }
+    if window === setupWindow { return .setup }
+    if window === editWindow { return .edit }
+
+    return .none
+  }
+
+  /// Cancels Main-owned export preparation and dismisses Main-owned child flows.
+  /// - Parameter window: Main window that is closing.
+  private func mainWindowWillClose(_ window: NSWindow) {
+    cancelLocalDataExport(attachedTo: window)
+    contextMenuPresentationGeneration &+= 1
+    window.delegate = .none
+    closeDetails()
+    closeResults()
+    closeSetup()
+    closeEdit()
+    updateProcessingObservation(excluding: window)
+  }
+
+  /// Cancels Settings-owned export preparation and credential work.
+  /// - Parameter window: Settings window that is closing.
+  private func settingsWindowWillClose(_ window: NSWindow) {
+    cancelLocalDataExport(attachedTo: window)
+    viewModel.cancelCredentialAction()
+    updateProcessingObservation(excluding: window)
+  }
+
+  /// Cancels Local Data-owned export work and releases its reusable window.
+  /// - Parameter window: Local Data window that is closing.
+  private func localDataWindowWillClose(_ window: NSWindow) {
+    cancelLocalDataExport(attachedTo: window)
+    localDataWindow = nil
+    updateProcessingObservation(excluding: window)
+  }
+
+  /// Retains distributed observers while any configuration window remains visible.
+  /// - Parameter closingWindow: Window whose `willClose` notification triggered this update.
+  private func updateProcessingObservation(excluding closingWindow: NSWindow) {
+    let mainIsVisible = mainWindow?.window.map { $0 !== closingWindow && $0.isVisible } ?? false
+    let settingsIsVisible = settingsWindow?.window.map { $0 !== closingWindow && $0.isVisible } ?? false
+    let localDataIsVisible = localDataWindow?.window.map { $0 !== closingWindow && $0.isVisible } ?? false
+
+    guard mainIsVisible || settingsIsVisible || localDataIsVisible else {
+      DistributedNotificationCenter.default().removeObserver(self)
+      isObservingProcessing = false
+      return
+    }
+  }
+}
+
 private extension ConfigurationCoordinator {
   /// Checks installation evidence and presents the report in a sheet.
   func showInstallationReadiness() {
@@ -519,6 +568,7 @@ private extension ConfigurationCoordinator {
   }
 
   /// Cancels only preparation and export presentation owned by the closing window.
+  /// - Parameter window: Parent window whose export work may be cancelled.
   func cancelLocalDataExport(attachedTo window: NSWindow) {
     if localDataExportPreparationParent === window {
       localDataExportPreparationRequestID &+= 1
@@ -532,6 +582,7 @@ private extension ConfigurationCoordinator {
 
 extension ConfigurationCoordinator {
   /// Opens local data export preparation from Local Data using fresh readiness evidence.
+  /// - Parameter pane: Local Data pane that requested the export.
   func localDataPaneDidRequestExport(_ pane: LocalDataPane) {
     guard !checkingInstallation, let window = localDataWindow?.window, window.attachedSheet == nil else { return }
 
@@ -569,6 +620,9 @@ extension ConfigurationCoordinator {
 
 extension ConfigurationCoordinator {
   /// Presents a finite export flow attached to the window that requested it.
+  /// - Parameters:
+  ///   - report: Optional readiness evidence captured by the opening route.
+  ///   - window: Parent window that owns this export session.
   func presentLocalDataExport(report: InstallationReadinessReport?, attachedTo window: NSWindow) {
     guard localDataExportCoordinator == nil, window.attachedSheet == nil else { return }
 

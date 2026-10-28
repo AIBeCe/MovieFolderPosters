@@ -25,6 +25,9 @@ final class LocalDataExportViewModel {
   private var isClosed = false
 
   /// Creates one nonpersistent local data export session.
+  /// - Parameters:
+  ///   - service: Read-only sources retained for this session.
+  ///   - readiness: Fixed readiness evidence supplied by the opening route.
   init(service: any LocalDataExportServicing, readiness: InstallationReadinessReport?) {
     self.service = service
     self.readiness = readiness
@@ -44,10 +47,13 @@ final class LocalDataExportViewModel {
   }
 
   /// Captures an exact allowlisted preview after checking selection and privacy availability.
+  /// - Throws: `LocalDataExportError.invalidRange` when the flow, range, or loaded privacy evidence is unavailable;
+  ///   `.stale` after cancellation or intervening changes; encoding or size-limit errors from the document.
   func preparePreview() async throws {
     guard !isClosed, selection.hasValidRange, let evidence, evidence.privacy != .none else {
       throw LocalDataExportError.invalidRange
     }
+
     generation &+= 1
     let current = generation
     let choices = selection
@@ -64,6 +70,9 @@ final class LocalDataExportViewModel {
   }
 
   /// Rechecks after destination selection; new entries are never silently included.
+  /// - Returns: The exact previously displayed preview bytes.
+  /// - Throws: `LocalDataExportError.stale` if no current preview exists, the flow closes or changes, or selected
+  ///   evidence, source availability, or privacy no longer agrees.
   func bytesForSaving() async throws -> Data {
     guard !isClosed, let frozen = preview, let original = evidence else { throw LocalDataExportError.stale }
 
@@ -90,6 +99,11 @@ final class LocalDataExportViewModel {
   }
 
   /// Checks selected identities and payloads without allowing cleared evidence to reappear.
+  /// - Parameters:
+  ///   - original: Source evidence used to prepare the preview, or `.none` if unavailable.
+  ///   - latest: Current source evidence captured before saving.
+  /// - Returns: Whether source availability agrees and each selected entry retains its sequence, occurrence time,
+  ///   and typed event.
   private func retainedActivityUnchanged(
     _ original: [MovieFolderActivityLogEntry]?,
     _ latest: [MovieFolderActivityLogEntry]?
@@ -108,6 +122,11 @@ final class LocalDataExportViewModel {
   }
 
   /// Compares selected HTTP entries independently; no operation correlation is inferred.
+  /// - Parameters:
+  ///   - original: HTTP evidence used to prepare the preview, or `.none` if unavailable.
+  ///   - latest: Current HTTP evidence captured before saving.
+  /// - Returns: Whether source availability agrees and each selected entry retains its sequence, occurrence time,
+  ///   and typed event.
   private func retainedNetworkUnchanged(
     _ original: [MovieFolderNetworkHistoryEntry]?,
     _ latest: [MovieFolderNetworkHistoryEntry]?

@@ -6,7 +6,7 @@ import Persistence
 nonisolated struct LocalDataExportSources: Sendable {
   /// Retained source entries; absence means unavailable rather than empty.
   let activity: [MovieFolderActivityLogEntry]?
-  /// Selected terminal HTTP entries in their retained commit order.
+  /// Retained terminal HTTP entries in source commit order; absence means unavailable.
   let network: [MovieFolderNetworkHistoryEntry]?
   /// In-memory configuration fingerprint, never exported.
   let privacy: Data?
@@ -24,10 +24,13 @@ nonisolated protocol LocalDataExportServicing: Sendable {
 actor LocalDataExportService: LocalDataExportServicing {
   /// Required sources retained for the service lifetime.
   private let activity: any MovieFolderActivityServicing
-  /// Selected terminal HTTP entries in their retained commit order.
+  /// Retained HTTP history service used to load committed entries.
   private let network: any MovieFolderNetworkHistoryServicing
 
   /// Composes existing bounded histories without changing their recording choices.
+  /// - Parameters:
+  ///   - activity: Retained Activity history service.
+  ///   - network: Retained HTTP history service used to load committed entries.
   init(
     activity: any MovieFolderActivityServicing,
     network: any MovieFolderNetworkHistoryServicing = MovieFolderEnvironment.makeNetworkHistoryService()
@@ -36,6 +39,8 @@ actor LocalDataExportService: LocalDataExportServicing {
     self.network = network
   }
 
+  /// Loads current retained histories and memory-only privacy evidence.
+  /// - Returns: Available histories and the current privacy fingerprint.
   func load() async -> LocalDataExportSources {
     let activityEntries = try? await activity.entries()
     let networkEntries = try? await network.entries()
@@ -63,7 +68,9 @@ actor LocalDataExportService: LocalDataExportServicing {
     return try withExtendedLifetime(access) { try encoder.encode(privacyConfiguration) }
   }
 
-  func storage() async -> LocalStorageReport {
+  /// Captures app-owned storage estimates without creating a namespace.
+  /// - Returns: Bounded metadata estimates and completeness for each category.
+  func storage() -> LocalStorageReport {
     LocalStorageReport.capture(
       sharedContainer: try? MovieFolderEnvironment.appGroupContainerURL(),
       hostApplicationSupport: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)

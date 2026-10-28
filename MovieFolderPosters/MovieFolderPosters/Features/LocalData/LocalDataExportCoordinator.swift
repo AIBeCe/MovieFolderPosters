@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 @MainActor
 protocol LocalDataExportCoordinatorDelegate: AnyObject {
   /// Releases the completed local data export flow.
+  /// - Parameter coordinator: The child export coordinator that closed.
   func localDataExportCoordinatorDidClose(_ coordinator: LocalDataExportCoordinator)
 }
 
@@ -25,6 +26,7 @@ final class LocalDataExportCoordinator: NSObject, LocalDataExportViewControllerD
   private var generation = UInt64.zero
 
   /// Creates one finite read-only preparation flow.
+  /// - Parameter model: Selection and preview state retained for this sheet.
   init(model: LocalDataExportViewModel) {
     self.model = model
     exportWriter = LocalDataExportWriter(model: model)
@@ -32,6 +34,7 @@ final class LocalDataExportCoordinator: NSObject, LocalDataExportViewControllerD
   }
 
   /// Presents explicit selection before any destination or file write.
+  /// - Parameter parent: Window that owns this export sheet.
   func start(attachedTo parent: NSWindow) {
     guard parent.attachedSheet == nil else { return }
 

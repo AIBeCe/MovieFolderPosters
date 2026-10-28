@@ -23,7 +23,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
   private let end = NSDatePicker()
   /// Source and independent evidence inclusion controls.
   private let activity = NSButton(checkboxWithTitle: "Activity", target: nil, action: nil)
-  /// Selected terminal HTTP entries in their retained commit order.
+  /// Enables Network entries in the selectable evidence list.
   private let network = NSButton(checkboxWithTitle: "Network", target: nil, action: nil)
   /// Includes the independently captured fixed readiness statuses.
   private let readiness = NSButton(checkboxWithTitle: "Include readiness", target: nil, action: nil)
@@ -45,6 +45,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
   private var updatingTable = false
 
   /// Retains the one finite session model.
+  /// - Parameter model: Selection and preview state owned by this sheet.
   init(model: LocalDataExportViewModel) {
     self.model = model
     super.init(nibName: nil, bundle: nil)
@@ -54,74 +55,20 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
   override func loadView() {
-    for (picker, label) in [(start, "From"), (end, "Through")] {
-      picker.datePickerElements = [.yearMonthDay, .hourMinuteSecond]
-      picker.datePickerStyle = .textFieldAndStepper
-      picker.target = self
-      picker.action = #selector(controlsChanged)
-      picker.setAccessibilityLabel(label)
-    }
-    start.dateValue = model.selection.start
-    end.dateValue = model.selection.end
-    activity.state = .on
-    readiness.state = .on
-    storage.state = .on
-    for button in [activity, network, readiness, storage] {
-      button.target = self
-      button.action = #selector(controlsChanged)
-    }
-    let dates = NSStackView(views: [
-      NSTextField(labelWithString: "From"), start,
-      NSTextField(labelWithString: "Through"), end
-    ])
-    dates.spacing = 8
-    let sources = NSStackView(views: [activity, network, readiness, storage])
-    sources.spacing = 12
-    let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("entry"))
-    column.title = "Select retained entries explicitly (commit order within each source)"
-    column.width = 700
-    table.addTableColumn(column)
-    table.allowsMultipleSelection = true
-    table.dataSource = self
-    table.delegate = self
-    table.setAccessibilityLabel("Local Data Export entry selection")
-    let entries = NSScrollView()
-    entries.documentView = table
-    entries.hasVerticalScroller = true
-    entries.heightAnchor.constraint(equalToConstant: 150).isActive = true
-    previewText.isEditable = false
-    previewText.isSelectable = true
-    previewText.isVerticallyResizable = true
-    previewText.isHorizontallyResizable = false
-    previewText.autoresizingMask = [.width]
-    previewText.textContainer?.widthTracksTextView = true
-    previewText.textContainerInset = NSSize(width: 8, height: 8)
-    previewText.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-    previewText.setAccessibilityLabel("Local Data Export JSON preview")
-    let preview = NSScrollView()
-    preview.documentView = previewText
-    preview.hasVerticalScroller = true
-    preview.hasHorizontalScroller = true
-    preview.heightAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
-    let all = NSButton(title: "Select All Shown", target: self, action: #selector(selectAllShown))
-    let reload = NSButton(title: "Refresh Entries", target: self, action: #selector(reloadEntries))
-    let prepare = NSButton(title: "Preview Exact Export", target: self, action: #selector(preparePreview))
-    save.target = self
-    save.action = #selector(savePreview)
-    save.isEnabled = false
-    let close = NSButton(title: "Cancel", target: self, action: #selector(closeSheet))
-    close.keyEquivalent = "\u{1b}"
-    let buttons = NSStackView(views: [all, reload, prepare, save, close])
-    buttons.spacing = 10
-    let note = NSTextField(
-      wrappingLabelWithString:
-        "Only selected retained evidence is exported (up to 500 entries per source). Private history omissions "
+    configureControls()
+    configureTable()
+    configurePreview()
+
+    let note = NSTextField(wrappingLabelWithString:
+      "Only selected retained evidence is exported (up to 500 entries per source). Private history omissions "
         + "cannot be reconstructed. HTTP results do not establish product success or complete processing runs; "
         + "network entries have no operation linkage. Paths, names, identifiers, credentials "
-        + "and raw errors are excluded."
-    )
+        + "and raw errors are excluded.")
     note.textColor = .secondaryLabelColor
-    let stack = NSStackView(views: [dates, sources, entries, status, note, preview, buttons])
+    let entries = makeEntriesView()
+    let preview = makePreviewView()
+    let stack = NSStackView(views: [makeDateControls(), makeSourceControls(), entries, status,
+      note, preview, makeActionButtons()])
     stack.orientation = .vertical
     stack.alignment = .leading
     stack.spacing = 12
@@ -138,6 +85,113 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
     ])
   }
 
+  /// Configures date, source, and save controls for the finite export session.
+  private func configureControls() {
+    for (picker, label) in [(start, "From"), (end, "Through")] {
+      picker.datePickerElements = [.yearMonthDay, .hourMinuteSecond]
+      picker.datePickerStyle = .textFieldAndStepper
+      picker.target = self
+      picker.action = #selector(controlsChanged)
+      picker.setAccessibilityLabel(label)
+    }
+    start.dateValue = model.selection.start
+    end.dateValue = model.selection.end
+    activity.state = .on
+    readiness.state = .on
+    storage.state = .on
+    [activity, network, readiness, storage].forEach {
+      $0.target = self
+      $0.action = #selector(controlsChanged)
+    }
+    save.target = self
+    save.action = #selector(savePreview)
+    save.isEnabled = false
+  }
+
+  /// Creates the date range controls in display order.
+  /// - Returns: The compact horizontal picker row.
+  private func makeDateControls() -> NSStackView {
+    let dates = NSStackView(views: [
+      NSTextField(labelWithString: "From"), start,
+      NSTextField(labelWithString: "Through"), end
+    ])
+    dates.spacing = 8
+
+    return dates
+  }
+
+  /// Creates the source and independent evidence switches.
+  /// - Returns: The horizontal source selection row.
+  private func makeSourceControls() -> NSStackView {
+    let sources = NSStackView(views: [activity, network, readiness, storage])
+    sources.spacing = 12
+
+    return sources
+  }
+
+  /// Configures the explicit retained-entry table.
+  private func configureTable() {
+    let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("entry"))
+    column.title = "Select retained entries explicitly (commit order within each source)"
+    column.width = 700
+    table.addTableColumn(column)
+    table.allowsMultipleSelection = true
+    table.dataSource = self
+    table.delegate = self
+    table.setAccessibilityLabel("Local Data Export entry selection")
+  }
+
+  /// Wraps the retained-entry table in its bounded vertical scroller.
+  /// - Returns: A scroll view sized for the export sheet.
+  private func makeEntriesView() -> NSScrollView {
+    let entries = NSScrollView()
+    entries.documentView = table
+    entries.hasVerticalScroller = true
+    entries.heightAnchor.constraint(equalToConstant: 150).isActive = true
+
+    return entries
+  }
+
+  /// Configures the noneditable exact-preview text view.
+  private func configurePreview() {
+    previewText.isEditable = false
+    previewText.isSelectable = true
+    previewText.isVerticallyResizable = true
+    previewText.isHorizontallyResizable = false
+    previewText.autoresizingMask = [.width]
+    previewText.textContainer?.widthTracksTextView = true
+    previewText.textContainerInset = NSSize(width: 8, height: 8)
+    previewText.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    previewText.setAccessibilityLabel("Local Data Export JSON preview")
+  }
+
+  /// Wraps the exact preview text in a scroll view.
+  /// - Returns: A scroll view for the user-reviewed JSON bytes.
+  private func makePreviewView() -> NSScrollView {
+    let preview = NSScrollView()
+    preview.documentView = previewText
+    preview.hasVerticalScroller = true
+    preview.hasHorizontalScroller = true
+    preview.heightAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+
+    return preview
+  }
+
+  /// Creates the explicit selection, refresh, preview, save, and cancel buttons.
+  /// - Returns: The horizontal action row.
+  private func makeActionButtons() -> NSStackView {
+    let all = NSButton(title: "Select All Shown", target: self, action: #selector(selectAllShown))
+    let reload = NSButton(title: "Refresh Entries", target: self, action: #selector(reloadEntries))
+    let prepare = NSButton(title: "Preview Exact Export", target: self, action: #selector(preparePreview))
+    let close = NSButton(title: "Cancel", target: self, action: #selector(closeSheet))
+    close.keyEquivalent = "\u{1b}"
+    let buttons = NSStackView(views: [all, reload, prepare, save, close])
+    buttons.spacing = 10
+
+    return buttons
+  }
+
+  /// Reloads retained entries and invalidates the visible preview whenever the sheet appears.
   override func viewDidAppear() {
     super.viewDidAppear()
     reloadEntries()
@@ -189,6 +243,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
       IndexSet(
         rows.indices.filter { index in
           let row = rows[index]
+
           return row.isActivity
             ? selection.selectedActivity.contains(row.id) : selection.selectedNetwork.contains(row.id)
         }), byExtendingSelection: false)
@@ -212,7 +267,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
 
       do {
         try await model.preparePreview()
-        previewText.string = model.preview.map { String(decoding: $0, as: UTF8.self) } ?? ""
+        previewText.string = model.preview.flatMap { String(bytes: $0, encoding: .utf8) } ?? ""
         save.isEnabled = model.preview != nil
         status.stringValue = "Exact JSON preview. Review before saving."
       } catch {
@@ -223,7 +278,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
     }
   }
 
-  /// Clears the display whenever its bytes are invalidated.
+  /// Clears the displayed preview and disables Save without changing the model's frozen bytes.
   private func invalidatePreview() {
     previewText.string = ""
     save.isEnabled = false
@@ -235,7 +290,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
   /// Cancels ongoing source work before the owning coordinator closes the sheet.
   func cancelPendingWork() { operationTask?.cancel(); operationTask = nil }
 
-  /// Displays a sanitized save/revalidation failure and removes stale preview bytes.
+  /// Clears the visible preview and disables Save while displaying a sanitized failure.
   func showSaveFailure() {
     invalidatePreview()
     status.stringValue = "Export could not be saved. Refresh entries and preview again; error details are excluded."

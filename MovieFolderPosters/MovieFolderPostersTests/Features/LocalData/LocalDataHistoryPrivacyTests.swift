@@ -6,7 +6,10 @@ import Testing
 
 @testable import MovieFolderPosters
 
+/// Verifies export privacy evidence without creating or exposing saved configuration.
 struct LocalDataHistoryPrivacyTests {
+  /// Uses stable default privacy evidence while leaving absent settings absent.
+  /// - Throws: Temporary repository or persistence errors.
   @Test func absentSavedSettingsHaveStablePrivacyAndRemainAbsent() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
@@ -18,6 +21,8 @@ struct LocalDataHistoryPrivacyTests {
     withExtendedLifetime(access) { #expect(configuration == nil) }
   }
 
+  /// Ignores unrelated poster choices but detects history retention changes.
+  /// - Throws: Temporary repository or persistence errors.
   @Test func irrelevantPosterSettingsPreservePrivacyButRetentionChangesInvalidateIt() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let repository = ConfigurationRepository(store: try PersistenceStore(directory: root))
@@ -30,6 +35,8 @@ struct LocalDataHistoryPrivacyTests {
     #expect(try LocalDataExportService.historyPrivacyFingerprint(in: repository) != first)
   }
 
+  /// Treats busy and malformed saved settings as unavailable evidence.
+  /// - Throws: Temporary repository or persistence errors.
   @Test func busyAndCorruptSettingsRemainUnavailableInsteadOfAbsent() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
     let store = try PersistenceStore(directory: root)
