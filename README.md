@@ -16,6 +16,7 @@ Use the signed and notarized release package supplied by the project. Follow the
 - Uses Finder folder navigation as its processing trigger; it does not continuously watch folders.
 - Supports automatic identification and explicit movie selection in the app's collection results.
 - Stores the TMDb API Read Access Token in secure storage.
+- Shows [local storage estimates and privacy-filtered local exports](docs/LOCAL_DATA.md) in the Local Data window.
 - Preserves existing folder icons when it cannot safely apply a poster.
 
 The app does not rename, move, delete, or modify movie files.

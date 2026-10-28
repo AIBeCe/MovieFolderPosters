@@ -362,10 +362,11 @@ GitHub issue: [#13](https://github.com/AIBeCe/MovieFolderPosters/issues/13); mil
 
 GitHub issue: [#14](https://github.com/AIBeCe/MovieFolderPosters/issues/14); milestone: [1.1.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/3).
 
-- [ ] Scope: Show cache/record storage usage and a safe inspector of app-held categories. Extend basic diagnostic export to a user-selected support session; later mutation receipts appear only when R140-01 exists.
+- [x] Scope: Show cache/record storage usage and a safe inspector of app-held categories. Extend basic diagnostic export to a user-selected support session; later mutation receipts appear only when R140-01 exists.
 - Dependencies: Previous deliverable in this release; previous release baseline.
 - Acceptance: Storage estimates identify scope and measurement time. Export preview/redaction excludes secrets, access grants, and identifying paths by default. Export does not send anything to a third party.
 - Source ideas: E68, N54, N90.
+- Delivery: Implemented and validated on develop; see [Local Data](LOCAL_DATA.md) for behavior and qualification limits.
 
 ## 1.2.0 — More accurate identification and correction
 
