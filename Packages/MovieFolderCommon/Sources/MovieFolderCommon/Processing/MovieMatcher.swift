@@ -5,6 +5,7 @@ import Network
 nonisolated enum MovieMatchIssue: Equatable, Sendable {
   case invalidQuery
   case incompleteSearch
+  case incompleteTitleEvidence
   case noSuitableMatch
   case ambiguous
   case missingPoster
@@ -43,14 +44,25 @@ nonisolated struct MovieMatcher: Sendable {
   ///   - configuration: Effective automatic choices controlling original-title comparison.
   /// - Returns: A uniquely supported identity or its unresolved classification.
   func matchMovie(title: String, year: Int?, search: MovieSearchResult,
-                configuration: MovieMatchingConfiguration = MovieMatchingConfiguration()) -> MovieMatchResult {
+                configuration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+                alternativeTitles: MovieAlternativeTitles? = .none) -> MovieMatchResult {
     let query = normalized(title)
     guard !query.isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else {
       return .unresolved(.invalidQuery)
     }
     guard !search.hasMorePages else { return .unresolved(.incompleteSearch) }
+    if let issue = candidateIssue(title: title, year: year, search: search, configuration: configuration) {
+      return .unresolved(issue)
+    }
+    let candidates = candidateIDs(year: year, search: search)
+    if let alternativeTitles {
+      guard Set(alternativeTitles.keys) == Set(candidates), alternativeTitles.values.joined().allSatisfy({
+        !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }) else { return .unresolved(.incompleteTitleEvidence) }
+    }
     let plausible = search.movies.filter {
-      (normalized($0.title) == query || (configuration.comparesOriginalTitles && normalized($0.originalTitle) == query))
+      (normalized($0.title) == query || (configuration.comparesOriginalTitles && normalized($0.originalTitle) == query)
+        || alternativeTitles?[$0.id]?.contains(where: { normalized($0.title) == query }) == true)
         && (year == .none || $0.releaseYear == year)
     }
     guard let selected = plausible.first else { return .unresolved(.noSuitableMatch) }
@@ -61,6 +73,42 @@ nonisolated struct MovieMatcher: Sendable {
     }
 
     return .matched(selected)
+  }
+
+  /// Identifies all year-compatible movie IDs before spending any alternative-title requests.
+  func candidateIDs(year: Int?, search: MovieSearchResult) -> [Int] {
+    Array(Set(search.movies.filter { year == .none || $0.releaseYear == year }.map(\.id))).sorted()
+  }
+
+  /// Rejects invalid, incomplete, inconsistent, or oversized assessments before any alias request.
+  func candidateIssue(title: String, year: Int?, search: MovieSearchResult,
+                      configuration: MovieMatchingConfiguration = MovieMatchingConfiguration()) -> MovieMatchIssue? {
+    guard !normalized(title).isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else { return .invalidQuery }
+
+    guard !search.hasMorePages else { return .incompleteSearch }
+
+    guard search.movies.allSatisfy({ $0.id > 0 && !normalized($0.title).isEmpty
+      && !normalized($0.originalTitle).isEmpty }) else { return .incompleteTitleEvidence }
+
+    let identifiers = candidateIDs(year: year, search: search)
+
+    guard identifiers.count <= 5 else { return .incompleteTitleEvidence }
+
+    for id in identifiers {
+      let records = search.movies.filter { $0.id == id }
+
+      guard id > 0, let first = records.first, records.allSatisfy({ $0 == first }) else { return .ambiguous }
+    }
+
+    let query = normalized(title)
+    let direct = search.movies.filter {
+      (year == .none || $0.releaseYear == year) && (normalized($0.title) == query
+        || (configuration.comparesOriginalTitles && normalized($0.originalTitle) == query))
+    }
+
+    guard Set(direct.map(\.id)).count <= 1 else { return .ambiguous }
+
+    return .none
   }
 
   /// Folds case and accents, then normalizes punctuation and whitespace for exact title comparison.

@@ -59,6 +59,8 @@ final class MoviePosterActionViewModel {
   private(set) var query: String
   /// Release year text currently shown to the user.
   private(set) var yearText: String
+  /// Effective language captured through the authorized action service.
+  private(set) var searchLanguage: TMDbLanguage?
   /// Latest search response, if a search has completed.
   private(set) var searchResult: MovieSearchResult?
   /// Identifier of the selected movie result.
@@ -71,6 +73,8 @@ final class MoviePosterActionViewModel {
   private(set) var isConfigurationInvalidated = false
   /// Whether this presentation can admit another explicit operation.
   var canStartAction: Bool { !isBusy && !isConfigurationInvalidated }
+  /// A provider search requires successfully captured and disclosed authorized language context.
+  var canSearch: Bool { canStartAction && searchLanguage != .none }
   /// Status text for the current or most recent operation.
   private(set) var statusMessage: String?
   /// A safe, user-facing error message, if the latest action failed.
@@ -93,7 +97,13 @@ final class MoviePosterActionViewModel {
   var childName: String { request.childName }
   /// Exact normalized search fields, computed locally without contacting the provider.
   var matchingPreview: String {
-    do { return try MovieMatchingRequest(title: query, yearText: yearText).disclosure } catch {
+    do {
+      let disclosure = try MovieMatchingRequest(title: query, yearText: yearText).disclosure
+      let unavailable = isBusy ? "Loading search language…" : "Unavailable; reopen Choose Movie to retry."
+      let language = searchLanguage.map(MovieSearchLanguagePicker.label(for:)) ?? unavailable
+
+      return disclosure + " Search language: " + language
+    } catch {
       return (error as? MovieMatchingRequest.InputError)?.message ?? "Review the search fields."
     }
   }
@@ -122,6 +132,19 @@ final class MoviePosterActionViewModel {
     }
   }
 
+  /// Captures only authorized disclosure context; opening Choose Movie does not initiate a provider search.
+  func prepareSearchLanguage() {
+    guard request.action == .change else { return }
+
+    let service = service
+    let request = request
+    perform("Loading search language…", operation: { try await service.searchLanguage(for: request) },
+      completion: { [weak self] language in
+        self?.searchLanguage = language
+        self?.statusMessage = .none
+      })
+  }
+
   /// Replaces the search title and notifies the view.
   ///
   /// - Parameter value: The title entered by the user.
@@ -141,6 +164,12 @@ final class MoviePosterActionViewModel {
   /// Searches TMDb using the current title and optional valid release year.
   func search() {
     guard request.action == .change, canStartAction else { return }
+
+    guard let language = searchLanguage else {
+      setError("Search language is unavailable. Reopen Choose Movie to retry loading it.")
+      return
+    }
+
     let matching: MovieMatchingRequest
     do {
       matching = try MovieMatchingRequest(title: query, yearText: yearText)
@@ -157,7 +186,7 @@ final class MoviePosterActionViewModel {
     perform(
       "Searching TMDb…",
       operation: {
-        try await service.searchMovies(for: request, query: matching.title, year: matching.year)
+        try await service.searchMovies(for: request, query: matching.title, year: matching.year, language: language)
       },
       completion: { [weak self] result in
         self?.searchResult = result

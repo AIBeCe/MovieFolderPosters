@@ -1,5 +1,6 @@
 import FileSystem
 import Foundation
+import Network
 
 /// Conservative automatic matching choices shared by the host and Finder extension.
 nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatable {
@@ -8,10 +9,14 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
   /// Whether exact automatic comparison also considers the provider's original title.
   public var comparesOriginalTitles: Bool
 
+  /// Provider language captured for each search and matching assessment.
+  public var searchLanguage: TMDbLanguage
+
   /// Current field names; the old inner spelling is recognized only to reject unconverted data.
   private enum CodingKeys: String, CodingKey {
     case requiresReleaseYearForAutomaticMatching = "requiresReleaseYearForAutomaticMatching"
     case comparesOriginalTitles = "comparesOriginalTitles"
+    case searchLanguage
     case legacyRequiredYear = "requiresReleaseYearForAutomaticIdentification"
   }
 
@@ -29,6 +34,7 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
     requiresReleaseYearForAutomaticMatching = try values.decode(
       Bool.self, forKey: .requiresReleaseYearForAutomaticMatching)
     comparesOriginalTitles = try values.decode(Bool.self, forKey: .comparesOriginalTitles)
+    searchLanguage = try values.decode(TMDbLanguage.self, forKey: .searchLanguage)
   }
 
   /// Encodes only the current matching choice names.
@@ -38,15 +44,18 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
     var values = encoder.container(keyedBy: CodingKeys.self)
     try values.encode(requiresReleaseYearForAutomaticMatching, forKey: .requiresReleaseYearForAutomaticMatching)
     try values.encode(comparesOriginalTitles, forKey: .comparesOriginalTitles)
+    try values.encode(searchLanguage, forKey: .searchLanguage)
   }
 
   /// Creates automatic matching choices; defaults preserve established behavior.
   /// - Parameters:
   ///   - requiresReleaseYearForAutomaticMatching: Reject yearless automatic matching when enabled.
   ///   - comparesOriginalTitles: Include original titles in exact matching when enabled.
-  public init(requiresReleaseYearForAutomaticMatching: Bool = false, comparesOriginalTitles: Bool = true) {
+  public init(requiresReleaseYearForAutomaticMatching: Bool = false, comparesOriginalTitles: Bool = true,
+              searchLanguage: TMDbLanguage = .english) {
     self.requiresReleaseYearForAutomaticMatching = requiresReleaseYearForAutomaticMatching
     self.comparesOriginalTitles = comparesOriginalTitles
+    self.searchLanguage = searchLanguage
   }
 }
 
@@ -692,7 +701,7 @@ nonisolated public struct ExtensionReadinessReceipt: Codable, Sendable, Equatabl
 /// Versioned shared settings read by the host and Finder extension.
 nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// The version of the serialized settings or activated extension, as appropriate to the payload.
-  public var version = 5
+  public var version = 6
   /// The configured roots in their saved presentation order.
   public var directories: [MonitoredDirectory] = []
   /// Authentication generation used to reject stale credential operations and change authorizations.
@@ -768,7 +777,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// - Parameter encoder: Destination for current shared settings.
   /// - Throws: A migration error for a noncurrent schema, or an encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
-    guard version == 5 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
+    guard version == 6 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
 
     var values = encoder.container(keyedBy: CodingKeys.self)
     try values.encode(version, forKey: .version)
@@ -789,8 +798,8 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)
-    guard version == 5 else {
-      if (1...4).contains(version) {
+    guard version == 6 else {
+      if (1...5).contains(version) {
         throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: version)
       }
       throw MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: version)

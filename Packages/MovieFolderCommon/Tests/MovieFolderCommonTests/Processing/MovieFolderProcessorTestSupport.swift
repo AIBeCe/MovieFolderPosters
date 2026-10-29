@@ -89,6 +89,9 @@ struct Fixture {
 
 /// Controllable metadata provider that records requests and can suspend or fail searches.
 actor CountingProvider {
+  /// Independent alias calls used to enforce per-assessment request budgets.
+  private(set) var alternativeTitleCount = Int.zero
+
   /// The number of search requests observed by the test provider.
   private(set) var searchCount = Int.zero
   /// The number of source-image downloads observed by the test provider.
@@ -156,7 +159,14 @@ actor CountingProvider {
   ///   - year: The release year when available; no value preserves year uncertainty.
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles {
+    alternativeTitleCount += 1
+
+    return [movieID: []]
+  }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
     if let nextSearchError {
       self.nextSearchError = .none

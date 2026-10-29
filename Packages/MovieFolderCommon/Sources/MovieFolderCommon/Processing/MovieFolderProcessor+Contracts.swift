@@ -10,9 +10,12 @@ nonisolated public protocol MovieMetadataProvider: Sendable {
   /// - Parameters:
   ///   - title: The movie title used for search or exact normalized comparison.
   ///   - year: The release year when available; no value preserves year uncertainty.
+  ///   - language: Effective captured language; conformers must forward it to the provider.
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage) async throws -> MovieSearchResult
+  /// Retrieves complete provider alternative-title evidence for exactly the requested identity.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles
   /// Downloads the source image bytes for a provider-relative poster path.
   ///
   /// - Parameter path: The provider-relative source poster path.

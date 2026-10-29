@@ -1,11 +1,13 @@
 import Foundation
 
 /// The kind of TMDb HTTP request being sent.
-public enum TMDbRequestPurpose: String, Codable, Sendable, CaseIterable {
+public enum TMDbRequestCategory: String, Codable, Sendable, CaseIterable {
   /// Validates the configured read access token.
   case credentialValidation
   /// Searches movies by title and optional release year.
   case movieSearch
+  /// Retrieves provider-verified alternative titles for one movie.
+  case alternativeTitles
   /// Retrieves TMDb poster image configuration.
   case posterConfiguration
   /// Downloads a poster image.
@@ -30,7 +32,7 @@ public protocol TMDbClientRequestDelegate: Sendable {
   ///
   /// - Parameter purpose: The request category, without request-specific data.
   /// - Returns: An opaque ticket that authorizes one completion callback, or `.none` to skip recording.
-  func tmdbClientWillSendRequest(purpose: TMDbRequestPurpose) async -> UUID?
+  func tmdbClientWillSendRequest(purpose: TMDbRequestCategory) async -> UUID?
 
   /// Reports the terminal result for a dispatched request with a valid ticket.
   ///
@@ -40,7 +42,7 @@ public protocol TMDbClientRequestDelegate: Sendable {
   ///   - completedAt: The time the attempt reached its terminal state.
   ///   - recordingTicket: The opaque ticket returned before dispatch.
   func tmdbClientDidCompleteRequest(
-    purpose: TMDbRequestPurpose,
+    purpose: TMDbRequestCategory,
     result: TMDbRequestResult,
     completedAt: Date,
     recordingTicket: UUID

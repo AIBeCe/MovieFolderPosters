@@ -54,9 +54,21 @@ extension MovieFolderProcessor {
 
     var processingState = try recordProcessingStart(context: processingContext, action: .refresh, child: child)
     defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
-    let selection = try await refreshSelection(
-      root: root, child: child, expectedIdentity: expectedIdentity,
-      candidate: &candidate, state: &state, activity: activity)
+    let selection: RefreshMovieSelection
+    do {
+      selection = try await refreshSelection(
+        root: root, child: child, expectedIdentity: expectedIdentity,
+        candidate: &candidate, state: &state, activity: activity)
+    } catch {
+      if let saved = state.folders[child], saved.fingerprint == candidate.fingerprint,
+        saved.processingReason == .manualMatchingRequired {
+        try saveState(state, to: access, activity: activity)
+        try recordFolderProcessing(cachedFolderAssessment(candidate, saved: saved),
+          in: &processingState, activity: activity)
+        try finishProcessingRun(&processingState, state: .failed, activity: activity)
+      }
+      throw error
+    }
     let movieID = selection.movieID
     let posterPath = selection.posterPath
     activity.movie = MovieMetadata(id: movieID, title: selection.movieTitle ?? "",
@@ -439,15 +451,24 @@ extension MovieFolderProcessor {
         throw PosterActionError.unresolved
       }
 
+      if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, parsed.year == .none {
+        recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
+        activity.append(.unresolved, reason: .manualMatchingRequired)
+        throw PosterActionError.unresolved
+      }
+
       activity.stage = .search
-      let key = Self.queryKey(title: parsed.title, year: parsed.year)
-      let search = try await provider.searchMovies(title: parsed.title, year: parsed.year)
+      let key = try Self.queryKey(title: parsed.title, year: parsed.year,
+        language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
+        usesFixtures: usesFixtureMetadata)
+      let search = try await provider.searchMovies(title: parsed.title, year: parsed.year,
+        language: movieMatchingConfiguration.searchLanguage)
       try Task.checkCancellation()
       candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
       try ensureReplaceableIcon(for: candidate, in: root)
       freshSearch = CachedSearch(result: search, createdAt: now())
-      let match = matcher.match(title: parsed.title, year: parsed.year, search: search)
-      guard case .matched(let movie) = match, let matchedPosterPath = movie.posterPath else {
+      let match = try await assessMovie(title: parsed.title, year: parsed.year, search: search, state: &state)
+      guard case .matched(let movie) = match else {
         let (reason, identifiedMovie) = unresolvedIdentity(match)
         activity.movie = identifiedMovie
         let result: MovieFolderActivityLogEvent.FolderResult = switch reason {
@@ -455,10 +476,25 @@ extension MovieFolderProcessor {
         case .ambiguousMovie: .severalMatches
         default: .unresolved
         }
+        if reason == .manualMatchingRequired { recordUnresolved(candidate, in: &state, reason: reason) }
         activity.append(result, reason: reason)
-        if match == .unresolved(.missingPoster) { throw PosterActionError.noPoster }
         throw PosterActionError.unresolved
       }
+      if let saved = state.folders[child], saved.fingerprint == candidate.fingerprint,
+        let confirmedID = saved.matchedMovieID, confirmedID != movie.id {
+        recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
+        activity.movie = savedActivityMovie(state.folders[child], candidate: candidate)
+        activity.append(.unresolved, reason: .manualMatchingRequired)
+        throw PosterActionError.unresolved
+      }
+
+      guard let matchedPosterPath = movie.posterPath,
+        !matchedPosterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        activity.movie = movie
+        activity.append(.unresolved, reason: .missingArtwork)
+        throw PosterActionError.noPoster
+      }
+
       movieID = movie.id
       movieTitle = movie.title
       movieYear = movie.releaseYear

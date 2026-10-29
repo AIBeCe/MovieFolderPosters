@@ -292,7 +292,7 @@ extension FolderProcessingReason {
     case .incompleteSearch: "Search did not finish"
     case .missingArtwork: "Poster artwork was unavailable"
     case .parsingProblem: "Folder name could not be parsed"
-    case .manualMatchingRequired: "Release year required; choose a movie manually"
+    case .manualMatchingRequired: "Choose the intended movie manually"
     case .existingPosterPreserved: "An existing poster was preserved"
     case .policySuppressed: "Processing was suppressed by configuration"
     case .processingFailure: "Processing failed"

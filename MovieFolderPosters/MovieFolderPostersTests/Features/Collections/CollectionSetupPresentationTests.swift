@@ -97,7 +97,7 @@ import Testing
   #expect(!labels.contains("Collection"))
   #expect(!labels.contains("Excluded Folders"))
   #expect(!labels.contains("Poster appearance"))
-  #expect(views.compactMap { $0 as? NSPopUpButton }.isEmpty)
+  #expect(views.compactMap { $0 as? MovieSearchLanguagePicker }.count == 1)
   let buttons = views.compactMap { $0 as? NSButton }
   #expect(buttons.first(where: { $0.title == "Add Collection" })?.isEnabled == false)
   #expect(buttons.first(where: { $0.title == "Use application matching settings" })?.state == .on)
@@ -120,8 +120,9 @@ import Testing
   let originalButton = try #require(buttons.first { $0.title == "Compare TMDb original titles" })
   let cancelButton = try #require(buttons.first { $0.title == "Cancel" })
   let addButton = try #require(buttons.first { $0.title == "Add Collection" })
+  let languagePicker = try #require(views.compactMap { $0 as? MovieSearchLanguagePicker }.first)
   let controls: [NSView] = [chooseButton, nameField, privateHistoryCheckbox, inheritButton, yearButton, originalButton,
-    cancelButton, addButton]
+    languagePicker, cancelButton, addButton]
 
   for (current, next) in zip(controls, controls.dropFirst() + [controls[0]]) {
     #expect(current.nextKeyView === next)

@@ -50,6 +50,7 @@ extension MovieFolderStorageMigrationError: LocalizedError {
     switch record {
     case .settings: return "saved application settings"
     case .collectionOutcomes: return "saved collection results"
+    case .operationalProcessing: return "saved processing decisions"
     }
   }
 }

@@ -50,7 +50,7 @@ nonisolated public struct CollectionProcessingContext: Codable, Sendable, Equata
     self.processingConfigurationRevision = processingConfigurationRevision
   }
 
-  /// Decodes historic contexts with the behavior-equivalent automatic configuration.
+  /// Decodes current contexts with their required captured matching configuration.
   /// - Parameter decoder: Saved collection processing context fields.
   /// - Throws: Malformed or missing required context evidence.
   public init(from decoder: any Decoder) throws {
@@ -62,11 +62,10 @@ nonisolated public struct CollectionProcessingContext: Codable, Sendable, Equata
     usesStubTMDbResponses = try fields.decode(Bool.self, forKey: .usesStubTMDbResponses)
     appearance = try fields.decode(PosterAppearance.self, forKey: .appearance)
     processingConfigurationRevision = try fields.decodeIfPresent(UUID.self, forKey: .processingConfigurationRevision)
-    movieMatchingConfiguration = try fields.decodeIfPresent(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
-      ?? MovieMatchingConfiguration()
+    movieMatchingConfiguration = try fields.decode(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
   }
 
-  /// Encodes default matching choices only when present in the saved context.
+  /// Encodes the full matching configuration, including required language, for current and historical contexts.
   /// - Parameter encoder: Encoder receiving the captured processing context.
   public func encode(to encoder: any Encoder) throws {
     var fields = encoder.container(keyedBy: CodingKeys.self)
@@ -76,9 +75,7 @@ nonisolated public struct CollectionProcessingContext: Codable, Sendable, Equata
     try fields.encode(credentialRevision, forKey: .credentialRevision)
     try fields.encode(usesStubTMDbResponses, forKey: .usesStubTMDbResponses)
     try fields.encode(appearance, forKey: .appearance)
-    if movieMatchingConfiguration != MovieMatchingConfiguration() {
-      try fields.encode(movieMatchingConfiguration, forKey: .movieMatchingConfiguration)
-    }
+    try fields.encode(movieMatchingConfiguration, forKey: .movieMatchingConfiguration)
     try fields.encodeIfPresent(processingConfigurationRevision, forKey: .processingConfigurationRevision)
   }
 

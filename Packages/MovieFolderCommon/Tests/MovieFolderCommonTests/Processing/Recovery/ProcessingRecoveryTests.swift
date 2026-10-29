@@ -367,7 +367,10 @@ private struct RecoveryTestProvider: MovieMetadataProvider {
   var failure: TMDbError?
   /// A read inside the provider call fails if the wrapper accidentally retains its admission access.
   var recovery: ProcessingRecoveryService?
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     _ = try recovery?.read()
     if let failure { throw failure }
 

@@ -144,7 +144,11 @@ struct MoviePosterActionCoordinatorCoverageTests {
 
 /// Supplies external responses while the coordinator, controls and model remain real.
 private actor WindowPosterService: MoviePosterActionServicing {
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) throws -> MovieSearchResult {
+  /// Provides the authorized default language in this isolated service fixture.
+  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage { .english }
+
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
+                    language: TMDbLanguage = .english) throws -> MovieSearchResult {
     MovieSearchResult(movies: [
       MovieMetadata(id: 42, title: "Arrival", originalTitle: "Premier Contact", releaseYear: 2016,
         posterPath: "/arrival.png"),

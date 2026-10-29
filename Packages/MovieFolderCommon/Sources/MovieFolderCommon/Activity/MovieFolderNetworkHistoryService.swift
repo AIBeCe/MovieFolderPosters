@@ -31,7 +31,7 @@ nonisolated public protocol MovieFolderNetworkHistoryServicing: Sendable {
   ///   - expectedNetworkHistoryConfigurationRevision: Opaque ticket captured before this attempt was dispatched.
   ///   - collectionID: The same collection context used when preparing the ticket.
   func recordCompletedNetworkRequest(
-    purpose: TMDbRequestPurpose, result: TMDbRequestResult, completedAt: Date,
+    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) async
 }
@@ -125,7 +125,7 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
   }
 
   public func recordCompletedNetworkRequest(
-    purpose: TMDbRequestPurpose, result: TMDbRequestResult, completedAt: Date,
+    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) async {
     // Cancellation is itself terminal evidence. Do not inherit the producer's cancelled task for the append.
@@ -139,7 +139,7 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
 
   /// Opens storage, then holds settings only for a single nonwaiting history commit.
   private func appendNetworkHistoryEvent(
-    purpose: TMDbRequestPurpose, result: TMDbRequestResult, completedAt: Date,
+    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) async -> NetworkHistoryAppendResult {
     let networkHistoryStore: ActivityLog<MovieFolderNetworkHistoryEvent>
@@ -210,12 +210,12 @@ nonisolated public struct MovieFolderNetworkRequestRecorder: TMDbClientRequestDe
     self.collectionID = collectionID
   }
 
-  public func tmdbClientWillSendRequest(purpose: TMDbRequestPurpose) async -> UUID? {
+  public func tmdbClientWillSendRequest(purpose: TMDbRequestCategory) async -> UUID? {
     await networkHistoryService.prepareNetworkHistoryRecording(collectionID: collectionID)
   }
 
   public func tmdbClientDidCompleteRequest(
-    purpose: TMDbRequestPurpose, result: TMDbRequestResult, completedAt: Date, recordingTicket: UUID
+    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date, recordingTicket: UUID
   ) async {
     await networkHistoryService.recordCompletedNetworkRequest(
       purpose: purpose, result: result, completedAt: completedAt,

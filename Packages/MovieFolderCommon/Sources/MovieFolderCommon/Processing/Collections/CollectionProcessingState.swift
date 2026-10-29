@@ -50,7 +50,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   ///   - inventoryIssue: Safe explanation of an incomplete inventory.
   ///   - lastCompletedRun: Latest completed collection-wide run, when available.
   ///   - lastCompletedRunContext: Generation captured for the historical completed run.
-  public init(schemaVersion: Int = 2, revision: UInt64 = .zero, context: CollectionProcessingContext,
+  public init(schemaVersion: Int = 3, revision: UInt64 = .zero, context: CollectionProcessingContext,
               currentRun: CollectionProcessingRun? = .none, folders: [FolderProcessingRecord] = [],
               isInventoryComplete: Bool = false, inspectedAt: Date? = .none,
               inventoryIssue: FolderProcessingReason? = .none, lastCompletedRun: CollectionProcessingRun? = .none,
@@ -68,7 +68,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   }
 
   /// Decodes current outcomes without mutating or silently converting saved legacy data.
-  /// - Parameter decoder: Current schema-two collection outcome fields.
+  /// - Parameter decoder: Current schema-three collection outcome fields.
   /// - Throws: Decoding errors for malformed fields, or a migration error for an unsupported schema.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -76,9 +76,9 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
     let contextFields = try values.nestedContainer(keyedBy: ContextIdentityKeys.self, forKey: .context)
     let rootID = try contextFields.decode(UUID.self, forKey: .rootID)
 
-    guard schemaVersion == 2 else {
-      if schemaVersion == 1 {
-        throw MovieFolderStorageMigrationError.migrationRequired(record: .collectionOutcomes(rootID), version: 1)
+    guard schemaVersion == 3 else {
+      if (1...2).contains(schemaVersion) {
+        throw MovieFolderStorageMigrationError.migrationRequired(record: .collectionOutcomes(rootID), version: schemaVersion)
       }
       throw MovieFolderStorageMigrationError.unsupportedVersion(
         record: .collectionOutcomes(rootID), version: schemaVersion)
@@ -100,7 +100,7 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
   /// - Parameter encoder: Destination for current collection outcome fields.
   /// - Throws: A migration error for a noncurrent schema, or an encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
-    guard schemaVersion == 2 else {
+    guard schemaVersion == 3 else {
       throw MovieFolderStorageMigrationError.invalidRecord(record: .collectionOutcomes(context.rootID))
     }
 
@@ -125,10 +125,10 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
 
   /// Validates schema, unique membership, capacity, and Done evidence invariants.
   public func validate() throws {
-    guard schemaVersion == 2 else {
-      if schemaVersion == 1 {
+    guard schemaVersion == 3 else {
+      if (1...2).contains(schemaVersion) {
         throw MovieFolderStorageMigrationError.migrationRequired(
-          record: .collectionOutcomes(context.rootID), version: 1)
+          record: .collectionOutcomes(context.rootID), version: schemaVersion)
       }
       throw MovieFolderStorageMigrationError.unsupportedVersion(
         record: .collectionOutcomes(context.rootID), version: schemaVersion)

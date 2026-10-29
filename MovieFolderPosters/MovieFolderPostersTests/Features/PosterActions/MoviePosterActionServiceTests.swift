@@ -455,7 +455,10 @@ private actor ActionProvider: MovieMetadataProvider {
     self.changesDuringDownload = changesDuringDownload
   }
 
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searches.append("\(title):\(year.map(String.init) ?? "none")")
     if cancels { throw CancellationError() }
     if !changesDuringDownload { try repository?.update { $0.credentialRevision = UUID() } }
@@ -495,7 +498,10 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
     responseWaiter = .none
   }
 
-  func searchMovies(title: String, year: Int?) async -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async -> MovieSearchResult {
     hasStarted = true
     startedWaiter?.resume()
     startedWaiter = .none

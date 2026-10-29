@@ -26,17 +26,19 @@ extension MovieFolderProcessor {
     _ candidate: FolderCandidate, in state: inout ProcessingState,
     reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = .none
   ) {
+    let saved = state.folders[candidate.name]
+    let confirmed = saved?.fingerprint == candidate.fingerprint && saved?.matchedMovieID != .none
     var record = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .unresolved,
       retryDate: reason == .incompleteSearch
         ? now().addingTimeInterval(configuration.incompleteSearchRetryInterval) : .none,
-      matchedMovieID: movie?.id,
-      posterPath: movie?.posterPath,
-      processingReason: reason,
-      movieTitle: movie?.title,
-      movieYear: movie?.releaseYear,
-      movieIdentitySource: movie == .none ? .none : .conservativeMatch
+      matchedMovieID: confirmed ? saved?.matchedMovieID : movie?.id,
+      posterPath: confirmed ? saved?.posterPath : movie?.posterPath,
+      processingReason: confirmed ? .manualMatchingRequired : reason,
+      movieTitle: confirmed ? saved?.movieTitle : movie?.title,
+      movieYear: confirmed ? saved?.movieYear : movie?.releaseYear,
+      movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
     record.nameParserRevision = ReleaseNameParser.revision
     state.folders[candidate.name] = record
@@ -52,20 +54,22 @@ extension MovieFolderProcessor {
     stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none,
     reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
   ) {
-    let requiresReassessment = state.folders[candidate.name]?.requiresAutomaticReassessment
+    let saved = state.folders[candidate.name]
+    let confirmed = saved?.fingerprint == candidate.fingerprint && saved?.matchedMovieID != .none
+    let requiresReassessment = saved?.requiresAutomaticReassessment
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .transientFailure,
       retryDate: reason == .authentication
         ? .none : now().addingTimeInterval(configuration.transientFailureRetryInterval),
-      matchedMovieID: movie?.id,
-      posterPath: movie?.posterPath,
+      matchedMovieID: confirmed ? saved?.matchedMovieID : movie?.id,
+      posterPath: confirmed ? saved?.posterPath : movie?.posterPath,
       processingReason: reason ??
         (stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .processingFailure)),
-      movieTitle: movie?.title,
-      movieYear: movie?.releaseYear,
+      movieTitle: confirmed ? saved?.movieTitle : movie?.title,
+      movieYear: confirmed ? saved?.movieYear : movie?.releaseYear,
       lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
-      movieIdentitySource: movie == .none ? .none : .conservativeMatch
+      movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
     state.folders[candidate.name]?.requiresAutomaticReassessment = requiresReassessment
   }
@@ -80,7 +84,7 @@ extension MovieFolderProcessor {
 
     var state = try JSONDecoder().decode(ProcessingState.self, from: data)
     state.reconcileCredentialRevision(credentialRevision)
-    state.reconcileMovieMatchingConfiguration(movieMatchingConfiguration)
+    state.updateMatchingConfiguration(movieMatchingConfiguration)
 
     return state
   }
@@ -200,16 +204,6 @@ extension MovieFolderProcessor {
     return min(
       max(finite, configuration.minimumProviderRetryInterval),
       configuration.maximumProviderRetryInterval)
-  }
-
-  /// Hashes the normalized title/year pair into a filesystem-independent cache key.
-  ///
-  /// - Parameters:
-  ///   - title: The movie title used for search or exact normalized comparison.
-  ///   - year: The release year when available; no value preserves year uncertainty.
-  /// - Returns: The SHA-256 cache key for this title and optional release year.
-  static func queryKey(title: String, year: Int?) -> String {
-    digest("\(title.lowercased())|\(year.map(String.init) ?? "")")
   }
 
   /// Hashes the provider poster path into a bounded cache filename.

@@ -49,7 +49,7 @@ nonisolated struct LocalDataExportNetworkEntry: Encodable {
   /// Finite terminal timestamp.
   let occurredAt: Date
   /// Closed request-purpose vocabulary.
-  let purpose: TMDbRequestPurpose
+  let purpose: TMDbRequestCategory
   /// Typed terminal HTTP evidence, distinct from product success.
   let result: TMDbRequestResult
 }

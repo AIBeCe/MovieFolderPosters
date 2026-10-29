@@ -25,8 +25,15 @@ struct MoviePosterActionViewModelTests {
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("  Alien  ")
     viewModel.setYear(" 1979 ")
-    #expect(viewModel.matchingPreview == "Sent to TMDb: title ‘Alien’; year: 1979.")
+    viewModel.prepareSearchLanguage()
+    await waitForIdle(viewModel)
+    #expect(viewModel.matchingPreview.hasPrefix("Sent to TMDb: title ‘Alien’; year: 1979."))
+    #expect(viewModel.matchingPreview.contains("en-US"))
     #expect(await service.callCounts.search == 0)
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
     await waitForIdle(viewModel)
     #expect(await service.lastSearchTitle == "Alien")
@@ -43,6 +50,10 @@ struct MoviePosterActionViewModelTests {
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
 
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
     await waitForIdle(viewModel)
 
@@ -63,6 +74,10 @@ struct MoviePosterActionViewModelTests {
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
 
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
     await waitForIdle(viewModel)
 
@@ -96,6 +111,10 @@ struct MoviePosterActionViewModelTests {
     let service = ActionServiceStub(searchDelay: .seconds(30))
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
 
     #expect(viewModel.isBusy)
@@ -114,6 +133,10 @@ struct MoviePosterActionViewModelTests {
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
 
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
     await waitForIdle(viewModel)
 
@@ -136,13 +159,15 @@ struct MoviePosterActionViewModelTests {
 
   /// Waits until the view model publishes completion of its current operation.
   private func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
+    let existingDelegate = viewModel.delegate
+    defer { viewModel.delegate = existingDelegate }
     let probe = ActionStateProbe()
     viewModel.delegate = probe
     await probe.waitForIdle(viewModel)
   }
 
   /// Verifies that the state delegate reads updated values from the sending model.
-  @Test func stateDelegateReadsUpdatedStateFromSender() {
+  @Test func stateDelegateReadsUpdatedStateFromSender() async {
     let viewModel = MoviePosterActionViewModel(
       service: ActionServiceStub(), request: request(.change))
     let state = ActionStateProbe()
@@ -152,6 +177,10 @@ struct MoviePosterActionViewModelTests {
 
     viewModel.setQuery("Updated title")
     viewModel.setYear("invalid")
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
 
     #expect(state.sender === viewModel)
@@ -182,7 +211,7 @@ struct MoviePosterActionViewModelTests {
   }
 
   /// Verifies that delegates are weak and operations remain safe after their release.
-  @Test func delegatesAreWeakAndTasksRemainSafeAfterTheirRelease() {
+  @Test func delegatesAreWeakAndTasksRemainSafeAfterTheirRelease() async {
     let viewModel = MoviePosterActionViewModel(
       service: ActionServiceStub(), request: request(.change))
     var state: ActionStateProbe? = ActionStateProbe()
@@ -200,8 +229,34 @@ struct MoviePosterActionViewModelTests {
     #expect(viewModel.delegate == nil)
     #expect(viewModel.navigationDelegate == nil)
     viewModel.setQuery("")
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
     viewModel.search()
     #expect(viewModel.errorMessage == "Enter a movie title to search.")
+  }
+
+  /// Failed or cancelled authorization must not enable an undisclosed language search.
+  @Test(arguments: [false, true])
+  func missingLanguageCaptureBlocksSearchUntilSuccessfulRetry(cancelled: Bool) async {
+    let service = ActionServiceStub()
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    await service.configureLanguageCapture(fails: !cancelled, delay: cancelled ? .seconds(60) : .zero)
+    model.prepareSearchLanguage()
+    if cancelled { model.cancelRetryTask() }
+    await waitForIdle(model)
+    #expect(model.searchLanguage == .none)
+    model.search()
+    await waitForIdle(model)
+    #expect(await service.callCounts.search == 0)
+    await service.configureLanguageCapture(fails: false, delay: .zero)
+    model.prepareSearchLanguage()
+    await waitForIdle(model)
+    #expect(model.searchLanguage == .english)
+    model.search()
+    await waitForIdle(model)
+    #expect(await service.callCounts.search == 1)
   }
 
 }
@@ -237,6 +292,17 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   /// Whether searches should throw an authentication failure.
   private var searchShouldFail = false
 
+  /// Whether authorized language capture should fail before any provider work.
+  private var languageShouldFail = false
+  /// Controlled language-capture suspension for cancellation tests.
+  private var languageDelay = Duration.zero
+
+  /// Configures the next explicit capture attempts without initiating work.
+  func configureLanguageCapture(fails: Bool, delay: Duration) {
+    languageShouldFail = fails
+    languageDelay = delay
+  }
+
   /// Creates the fake with an optional delay for search calls.
   init(searchDelay: Duration = .zero) {
     self.searchDelay = searchDelay
@@ -248,7 +314,16 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   /// Makes subsequent search calls fail with an authentication error.
   func failSearch() { searchShouldFail = true }
 
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws -> MovieSearchResult {
+  /// Provides the authorized default language in this isolated service fixture.
+  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage {
+    if languageShouldFail { throw TMDbError.authentication }
+    try await Task.sleep(for: languageDelay)
+
+    return .english
+  }
+
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
+                    language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     callCounts.search += 1
     lastSearchTitle = query
     lastSearchYear = year

@@ -95,6 +95,8 @@ private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
   /// Includes TMDb original titles in exact automatic comparisons.
   private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles",
     target: .none, action: .none)
+  /// Native provider language choice saved with the complete matching configuration.
+  private let languagePicker = MovieSearchLanguagePicker()
   /// Displays a fixed safe save failure without exposing underlying storage errors.
   private let errorLabel = NSTextField(wrappingLabelWithString: "")
   /// Retains only the currently presented contextual help; AppKit keeps the delegate weak.
@@ -119,7 +121,7 @@ private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
     var content = heading("Matching Defaults", detail: "Defaults apply to collections using application settings.")
     for (index, button) in [yearButton, originalButton].enumerated() {
       button.target = self
-      button.action = #selector(policyChanged)
+      button.action = #selector(matchingConfigurationChanged)
       button.toolTip = explanations[index]
       button.setAccessibilityHelp(explanations[index])
       let help = NSButton(title: "", target: self, action: #selector(showHelp(_:)))
@@ -134,6 +136,17 @@ private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
       detail.textColor = .secondaryLabelColor
       content += [row, detail]
     }
+    languagePicker.target = self
+    languagePicker.action = #selector(matchingConfigurationChanged)
+    let languageRow = NSStackView(views: [NSTextField(labelWithString: "Search language"), languagePicker])
+    languageRow.spacing = 8
+    let languageHelp = NSTextField(wrappingLabelWithString: MovieSearchLanguagePicker.supportingText)
+    languageHelp.textColor = .secondaryLabelColor
+    let evidenceHelp = NSTextField(wrappingLabelWithString:
+      "Automatic matching requires complete title evidence and one unique movie identity. "
+        + "Alternative-title requests are limited to five candidates; larger searches require a manual choice.")
+    evidenceHelp.textColor = .secondaryLabelColor
+    content += [languageRow, languageHelp, evidenceHelp]
     errorLabel.textColor = .systemRed
     _ = makeContent(content + [errorLabel])
     updatePresentation()
@@ -144,14 +157,18 @@ private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
     originalButton.state = viewModel.movieMatchingConfiguration.comparesOriginalTitles ? .on : .off
     yearButton.isEnabled = !viewModel.isBusy
     originalButton.isEnabled = !viewModel.isBusy
+    languagePicker.display(viewModel.movieMatchingConfiguration.searchLanguage)
+    languagePicker.isEnabled = !viewModel.isBusy
     errorLabel.stringValue = viewModel.errorMessage == "Could not save matching settings."
       ? viewModel.errorMessage ?? "" : ""
   }
 
   /// Saves one immutable checkbox snapshot through the shared configuration model.
-  @objc private func policyChanged() {
-    let configuration = MovieMatchingConfiguration(requiresReleaseYearForAutomaticMatching: yearButton.state == .on,
-      comparesOriginalTitles: originalButton.state == .on)
+  @objc private func matchingConfigurationChanged() {
+    var configuration = viewModel.movieMatchingConfiguration
+    configuration.requiresReleaseYearForAutomaticMatching = yearButton.state == .on
+    configuration.comparesOriginalTitles = originalButton.state == .on
+    configuration.searchLanguage = languagePicker.selectedLanguage
     Task { await viewModel.setMovieMatchingConfiguration(configuration); updatePresentation() }
   }
 

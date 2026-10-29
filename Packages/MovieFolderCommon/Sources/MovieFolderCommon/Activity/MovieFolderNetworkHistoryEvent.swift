@@ -4,7 +4,7 @@ import Network
 /// Terminal HTTP evidence containing no request details, arbitrary errors, or filesystem names.
 nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equatable {
   /// The closed kind of attempted provider request.
-  public let purpose: TMDbRequestPurpose
+  public let purpose: TMDbRequestCategory
   /// The observed HTTP or transport result, independent of product decoding and matching.
   public let result: TMDbRequestResult
   /// An optional current nonprivate configured collection identity.
@@ -15,7 +15,7 @@ nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equ
   ///   - purpose: Request kind from the closed provider vocabulary.
   ///   - result: Terminal HTTP evidence without request or error details.
   ///   - collectionID: Existing nonprivate collection, or absence for global requests.
-  public init(purpose: TMDbRequestPurpose, result: TMDbRequestResult, collectionID: UUID? = .none) {
+  public init(purpose: TMDbRequestCategory, result: TMDbRequestResult, collectionID: UUID? = .none) {
     self.purpose = purpose
     self.result = result
     self.collectionID = collectionID
@@ -28,6 +28,7 @@ nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equ
     case .movieSearch: "Movie Search"
     case .posterConfiguration: "Poster Configuration"
     case .posterDownload: "Poster Download"
+    case .alternativeTitles: "Alternative Titles"
     }
   }
 

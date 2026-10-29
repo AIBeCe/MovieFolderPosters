@@ -100,6 +100,11 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     let repository = try environment.configurationRepository()
     let processingVerifier = FinderCollectionConfigurationVerifier(
       repository: repository, configuration: configuration, roots: roots)
+    #if DEBUG
+      let usesFixtureMetadata = configuration.usesStubTMDbResponses
+    #else
+      let usesFixtureMetadata = false
+    #endif
     for (url, root) in roots {
       let movieMetadataProvider = try environment.movieMetadataProvider(
         token: token, configuration: configuration, collectionID: root.directory.id)
@@ -111,6 +116,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         processingVerifier: processingVerifier, appearance: configuration.posterAppearance,
         processingStore: try environment.processingStore(), recovery: recovery,
         credentialRevision: configuration.credentialRevision,
+        usesFixtureMetadata: usesFixtureMetadata,
         movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
         processingConfiguration: root.directory.processingConfiguration,
         activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: root.directory))

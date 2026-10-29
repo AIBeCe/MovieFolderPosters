@@ -37,6 +37,10 @@ extension MovieFolderStorageMigrationReport {
         + (missingCollectionOutcomeRecordCount == 1 ? "collection had" : "collections had")
         + " no saved results to upgrade."
 
-    return result + unchanged + absent + " Movie folders and poster icons were not modified by this migration."
+    let operational = missingOperationalRecordCount == 0 ? ""
+      : " \(missingOperationalRecordCount) collections had no saved processing decisions to upgrade."
+
+    return result + unchanged + absent + operational
+      + " Movie folders and poster icons were not modified by this migration."
   }
 }

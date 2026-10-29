@@ -267,8 +267,8 @@ final class ConfigurationViewModel {
     )
   }
 
-  /// Persists the two automatic matching defaults and refreshes presentation.
-  /// - Parameter configuration: Current checkbox choices from Settings.
+  /// Persists the complete automatic matching defaults and refreshes presentation.
+  /// - Parameter configuration: Current matching choices, including the selected search language.
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) async {
     await perform(action: .movieMatchingConfigurationSaved, failureMessage: "Could not save matching settings.") {
       try await self.service.setMovieMatchingConfiguration(configuration)

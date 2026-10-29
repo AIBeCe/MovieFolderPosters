@@ -549,7 +549,10 @@ private actor ActionProvider: MovieMetadataProvider {
   ///   - year: The release year when available; no value preserves year uncertainty.
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
     if let searchError { throw searchError }
     if let searchResult { return searchResult }

@@ -15,52 +15,72 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
   /// Dedicated namespace outside normal outcome pruning.
   private let backupStore: PersistenceStore
 
+  /// Trusted app-owned container for current operational namespaces; absent only for isolated callers.
+  private let operationalContainer: URL?
+  /// Stable root coordination namespace shared by all production processing generations.
+  private let coordinationStore: PersistenceStore?
+
   /// Retains already opened stores; it does not inspect or rewrite their records.
   /// - Parameters:
   ///   - configurationStore: Existing settings namespace with its canonical per-record access.
   ///   - collectionOutcomeStore: Existing collection-results namespace.
   ///   - backupStore: Protected recovery-copy namespace excluded from normal result cleanup.
   public init(configurationStore: PersistenceStore, collectionOutcomeStore: PersistenceStore,
-              backupStore: PersistenceStore) {
+              backupStore: PersistenceStore, operationalContainer: URL? = .none,
+              coordinationStore: PersistenceStore? = .none) {
     self.configurationStore = configurationStore
     self.collectionOutcomeStore = collectionOutcomeStore
     self.backupStore = backupStore
+    self.operationalContainer = operationalContainer
+    self.coordinationStore = coordinationStore
   }
 
   /// Inspects configured settings and outcomes without writing either source or backup records.
   /// - Returns: Existing legacy/current counts and configured roots without saved outcomes.
   /// - Throws: Typed unsupported, malformed, conflicting, busy, or unavailable-record failures.
   public func preflight() throws -> MovieFolderStorageMigrationPreflight {
+    let (summary, configuration) = try inspectSettingsAndOutcomes()
+
+    guard let configuration else { return summary }
+
+    let operational = try inspectOperational(configuration: configuration)
+
+    return MovieFolderStorageMigrationPreflight(settingsRequiresMigration: summary.settingsRequiresMigration,
+      legacyCollectionOutcomeRecordCount: summary.legacyCollectionOutcomeRecordCount,
+      currentRecordCount: summary.currentRecordCount + operational.current,
+      missingCollectionOutcomeRecordCount: summary.missingCollectionOutcomeRecordCount,
+      legacyOperationalRecordCount: operational.legacy, missingOperationalRecordCount: operational.missing)
+  }
+
+  /// Finishes settings/outcome inspection and releases its leases before operational inspection begins.
+  private func inspectSettingsAndOutcomes() throws
+    -> (MovieFolderStorageMigrationPreflight, DirectoryConfiguration?) {
     let configurationAccess = try acquire(configurationStore, key: ConfigurationRepository.recordKey, record: .settings)
 
     guard let payload = try read(configurationAccess, record: .settings) else {
-      return MovieFolderStorageMigrationPreflight(settingsRequiresMigration: false,
-        legacyCollectionOutcomeRecordCount: 0, currentRecordCount: 0, missingCollectionOutcomeRecordCount: 0)
+      return (MovieFolderStorageMigrationPreflight(settingsRequiresMigration: false,
+        legacyCollectionOutcomeRecordCount: 0, currentRecordCount: 0, missingCollectionOutcomeRecordCount: 0), .none)
     }
 
     let converted = try convertSettings(payload)
-    var legacyOutcomes = Int.zero
-    var currentRecords = converted.wasLegacy ? 0 : 1
-    var missingOutcomes = Int.zero
+    var legacy = Int.zero
+    var current = converted.wasLegacy ? 0 : 1
+    var missing = Int.zero
     for directory in converted.configuration.directories {
       try Task.checkCancellation()
       let record = MovieFolderStorageRecordKind.collectionOutcomes(directory.id)
-      let outcomeAccess = try acquire(collectionOutcomeStore,
+      let access = try acquire(collectionOutcomeStore,
         key: CollectionProcessingStore.processingStateKey(for: directory.id), record: record)
-      if let payload = try read(outcomeAccess, record: record) {
-        if try convertOutcomes(payload, rootID: directory.id).wasLegacy { legacyOutcomes += 1 } else {
-          currentRecords += 1
-        }
-      } else {
-        missingOutcomes += 1
-      }
-      withExtendedLifetime(outcomeAccess) {}
+      if let payload = try read(access, record: record) {
+        if try convertOutcomes(payload, rootID: directory.id).wasLegacy { legacy += 1 } else { current += 1 }
+      } else { missing += 1 }
+      withExtendedLifetime(access) {}
     }
     withExtendedLifetime(configurationAccess) {}
 
-    return MovieFolderStorageMigrationPreflight(settingsRequiresMigration: converted.wasLegacy,
-      legacyCollectionOutcomeRecordCount: legacyOutcomes, currentRecordCount: currentRecords,
-      missingCollectionOutcomeRecordCount: missingOutcomes)
+    return (MovieFolderStorageMigrationPreflight(settingsRequiresMigration: converted.wasLegacy,
+      legacyCollectionOutcomeRecordCount: legacy, currentRecordCount: current,
+      missingCollectionOutcomeRecordCount: missing), converted.configuration)
   }
 
   /// Converts legacy records one at a time after backing up and verifying each original payload.
@@ -100,8 +120,88 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
       withExtendedLifetime(configurationAccess) {}
     }
 
-    return MovieFolderStorageMigrationReport(migratedRecordCount: migrated,
-      skippedCurrentRecordCount: skipped, missingCollectionOutcomeRecordCount: missing)
+    let operational = try migrateOperational(rootIDs: settingsResult.rootIDs)
+
+    return MovieFolderStorageMigrationReport(migratedRecordCount: migrated + operational.migrated,
+      skippedCurrentRecordCount: skipped + operational.current, missingCollectionOutcomeRecordCount: missing,
+      missingOperationalRecordCount: operational.missing)
+  }
+
+  /// Inspects app-owned operational payloads without resolving or opening movie directories.
+  private func inspectOperational(configuration: DirectoryConfiguration) throws
+    -> (legacy: Int, current: Int, missing: Int) {
+    guard let operationalContainer else { return (0, 0, 0) }
+
+    let store = try PersistenceStore(directory: operationalContainer.appendingPathComponent(
+      "Processing/\(configuration.processingCacheRevision)"))
+    var counts = (legacy: 0, current: 0, missing: 0)
+    for directory in configuration.directories {
+      try Task.checkCancellation()
+      let record = MovieFolderStorageRecordKind.operationalProcessing(directory.id)
+      let path = try persistedOperationalPath(directory.path, record: record)
+      let coordination = try coordinationStore.map {
+        try acquire($0, key: "movie-folder-coordination:\(path)", record: record)
+      }
+      let key = "movie-folder-processing:\(path)"
+      let access = try acquire(store, key: key, record: record)
+      if let payload = try read(access, record: record) {
+        if try convertOperational(payload, rootID: directory.id).wasLegacy { counts.legacy += 1 } else {
+          counts.current += 1
+        }
+      } else { counts.missing += 1 }
+      withExtendedLifetime((coordination, access)) {}
+    }
+
+    return counts
+  }
+
+  /// Reacquires root coordination before the operational lease and settings fence for each replacement.
+  private func migrateOperational(rootIDs: [UUID]) throws -> (migrated: Int, current: Int, missing: Int) {
+    guard let operationalContainer else { return (0, 0, 0) }
+
+    var counts = (migrated: 0, current: 0, missing: 0)
+    for rootID in rootIDs {
+      try Task.checkCancellation()
+      let captured = try readCurrentSettingsHoldingAccess().0
+
+      guard let directory = captured.directories.first(where: { $0.id == rootID }) else { continue }
+
+      let record = MovieFolderStorageRecordKind.operationalProcessing(rootID)
+      let path = try persistedOperationalPath(directory.path, record: record)
+      let coordination = try coordinationStore.map {
+        try acquire($0, key: "movie-folder-coordination:\(path)", record: record)
+      }
+      let store = try PersistenceStore(directory: operationalContainer.appendingPathComponent(
+        "Processing/\(captured.processingCacheRevision)"))
+      let access = try acquire(store, key: "movie-folder-processing:\(path)", record: record)
+      let (current, settingsAccess) = try readCurrentSettingsHoldingAccess()
+
+      guard current.processingCacheRevision == captured.processingCacheRevision,
+        current.directories.contains(where: { $0.id == rootID && $0.path == directory.path }) else {
+        throw MovieFolderStorageMigrationError.busy(record: record)
+      }
+
+      if let payload = try read(access, record: record) {
+        let converted = try convertOperational(payload, rootID: rootID)
+        if converted.wasLegacy {
+          try replace(original: payload, with: converted.payload, using: access, record: record)
+          counts.migrated += 1
+        } else { counts.current += 1 }
+      } else { counts.missing += 1 }
+      withExtendedLifetime((coordination, access, settingsAccess)) {}
+    }
+
+    return counts
+  }
+
+  /// Requires the canonical absolute path stored by collection authorization without probing movie storage.
+  private func persistedOperationalPath(_ path: String, record: MovieFolderStorageRecordKind) throws -> String {
+    guard path.hasPrefix("/"), !path.contains("\0"),
+      URL(fileURLWithPath: path).standardizedFileURL.path == path else {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: record)
+    }
+
+    return path
   }
 
   /// Preserves the public migration error contract when reacquiring current settings between outcome records.
@@ -187,8 +287,9 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
   static func backupRecordKey(for record: MovieFolderStorageRecordKind, originalPayload: Data) -> String {
     let digest = SHA256.hash(data: originalPayload).map { String(format: "%02x", $0) }.joined()
     let recordName = switch record {
-    case .settings: "settings-to-v5"
-    case .collectionOutcomes(let rootID): "outcomes-\(rootID.uuidString)-to-v2"
+    case .settings: "settings-to-v6"
+    case .collectionOutcomes(let rootID): "outcomes-\(rootID.uuidString)-to-v3"
+    case .operationalProcessing(let rootID): "operational-\(rootID.uuidString)-to-v1"
     }
 
     return "MovieFolderStorageMigration.\(recordName).\(digest)"

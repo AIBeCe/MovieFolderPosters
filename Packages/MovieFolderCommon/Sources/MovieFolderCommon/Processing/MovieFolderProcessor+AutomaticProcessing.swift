@@ -346,7 +346,9 @@ extension MovieFolderProcessor {
       if record.needsLegacyReassessment || record.processingReason == .incompleteSearch || needsParserReassessment,
         case .parsed(let parsed) = parser.parse(candidate.name) {
         // A retry must not establish a new classification from the same inconclusive search.
-        visit.cache.queries.removeValue(forKey: Self.queryKey(title: parsed.title, year: parsed.year))
+        visit.cache.queries.removeValue(forKey: try Self.queryKey(title: parsed.title, year: parsed.year,
+          language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
+          usesFixtures: usesFixtureMetadata))
         visit.cache.folders[candidate.name] = FolderRecord(
           fingerprint: candidate.fingerprint, status: .transientFailure, retryDate: .none,
           matchedMovieID: record.matchedMovieID, posterPath: record.posterPath, processingReason: .interrupted,
@@ -378,6 +380,7 @@ extension MovieFolderProcessor {
     visit.activity?.begin(candidate.name, stage: .parse)
     visit.summary.examined += 1
     var attempt = PosterAttempt()
+    attempt.movie = savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate)
     do {
       try await matchAndAssignPoster(candidate, root: root, access: access, visit: &visit, attempt: &attempt)
     } catch let error as CollectionProcessingError {
@@ -399,7 +402,8 @@ extension MovieFolderProcessor {
       guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
 
       recordTransientFailure(candidate, in: &visit.cache, stage: attempt.stage, movie: attempt.movie)
-      let record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie)
+      var record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie)
+      record.movieIdentitySource = visit.cache.folders[candidate.name]?.movieIdentitySource ?? record.movieIdentitySource
       visit.activity?.append(record,
         failure: MovieFolderActivityLogEvent.failureEvidence(for: error, stage: attempt.stage, occurredAt: now()))
       try saveState(visit.cache, to: access, activity: visit.activity)
@@ -445,7 +449,8 @@ extension MovieFolderProcessor {
     var record = failedFolderAssessment(candidate, stage: attempt.stage, movie: attempt.movie,
       reason: reason, failureReason: failure)
     record.retryAt = retryAt
-    if let identitySource { record.movieIdentitySource = identitySource }
+    record.movieIdentitySource = identitySource
+      ?? visit.cache.folders[candidate.name]?.movieIdentitySource ?? record.movieIdentitySource
     visit.activity?.append(record)
     try saveState(visit.cache, to: access, activity: visit.activity)
     try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
@@ -480,7 +485,8 @@ extension MovieFolderProcessor {
         candidate, stage: attempt.stage, movie: attempt.movie,
         reason: evidence.reason, failureReason: evidence.failureReason)
       record.retryAt = retryDate
-      if let identitySource { record.movieIdentitySource = identitySource }
+      record.movieIdentitySource = identitySource
+      ?? visit.cache.folders[candidate.name]?.movieIdentitySource ?? record.movieIdentitySource
       visit.activity?.append(record)
       try saveState(visit.cache, to: access, activity: visit.activity)
       visit.summary.providerRetryAt = retryDate
@@ -494,7 +500,8 @@ extension MovieFolderProcessor {
     var record = failedFolderAssessment(
       candidate, stage: attempt.stage, movie: attempt.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
-    if let identitySource { record.movieIdentitySource = identitySource }
+    record.movieIdentitySource = identitySource
+      ?? visit.cache.folders[candidate.name]?.movieIdentitySource ?? record.movieIdentitySource
     visit.activity?.append(record)
     try saveState(visit.cache, to: access, activity: visit.activity)
     visit.summary.transientFailures += 1
@@ -527,14 +534,25 @@ extension MovieFolderProcessor {
       visit: &visit)
     else { return }
 
-    let identityResult = matcher.matchMovie(title: parsed.title, year: parsed.year, search: search,
-      configuration: movieMatchingConfiguration)
+    let identityResult = try await assessMovie(title: parsed.title, year: parsed.year, search: search,
+      state: &visit.cache)
+    try Task.checkCancellation()
+
+    guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
+
+    try saveState(visit.cache, to: access, activity: visit.activity)
 
     guard case .matched(let movie) = identityResult, let posterPath = movie.posterPath,
       !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else {
       let (reason, identifiedMovie) = unresolvedIdentity(identityResult)
       try recordUnresolvedAttempt(candidate, reason: reason, movie: identifiedMovie, access: access, visit: &visit)
+      return
+    }
+
+    if let saved = visit.cache.folders[candidate.name], saved.fingerprint == candidate.fingerprint,
+      let savedID = saved.matchedMovieID, savedID != movie.id {
+      try recordUnresolvedAttempt(candidate, reason: .manualMatchingRequired, access: access, visit: &visit)
       return
     }
 
@@ -584,6 +602,9 @@ extension MovieFolderProcessor {
   ) throws {
     recordUnresolved(candidate, in: &visit.cache, reason: reason, movie: movie)
     var record = unresolvedFolderAssessment(candidate, reason: reason, movie: movie)
+    if let retained = visit.cache.folders[candidate.name], retained.matchedMovieID != .none {
+      record = cachedFolderAssessment(candidate, saved: retained)
+    }
     record.retryAt = visit.cache.folders[candidate.name]?.retryDate
     visit.activity?.append(record)
     try saveState(visit.cache, to: access, activity: visit.activity)
@@ -607,6 +628,7 @@ extension MovieFolderProcessor {
       case .incompleteSearch: reason = .incompleteSearch
       case .missingPoster: reason = .missingArtwork
       case .invalidQuery: reason = .parsingProblem
+      case .incompleteTitleEvidence: reason = .manualMatchingRequired
       }
     }
 
@@ -622,12 +644,15 @@ extension MovieFolderProcessor {
     let candidate = request.candidate
     let root = request.root
     let access = request.access
-    let queryKey = Self.queryKey(title: title, year: year)
+    let queryKey = try Self.queryKey(title: title, year: year,
+      language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
+      usesFixtures: usesFixtureMetadata)
     if let cached = visit.cache.queries[queryKey],
       now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {
       return cached.searchResult()
     } else {
-      let search = try await provider.searchMovies(title: title, year: year)
+      let search = try await provider.searchMovies(title: title, year: year,
+        language: movieMatchingConfiguration.searchLanguage)
       try Task.checkCancellation()
 
       guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return .none }

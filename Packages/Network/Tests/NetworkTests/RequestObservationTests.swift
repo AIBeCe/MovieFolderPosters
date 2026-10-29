@@ -16,9 +16,9 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
   /// Whether the suspended preparation point has been reached.
   private var hasStartedPreparation = false
   /// Purposes whose preparation was requested.
-  private(set) var preparedPurposes: [TMDbRequestPurpose] = []
+  private(set) var preparedPurposes: [TMDbRequestCategory] = []
   /// Completed observations in callback order.
-  private(set) var completions: [(TMDbRequestPurpose, TMDbRequestResult, UUID)] = []
+  private(set) var completions: [(TMDbRequestCategory, TMDbRequestResult, UUID)] = []
 
   /// Creates a recorder with the requested optional ticket and preparation behavior.
   init(recordingTicket: UUID? = UUID(), shouldSuspendPreparation: Bool = false) {
@@ -27,7 +27,7 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
   }
 
   /// Records preparation and optionally waits for cancellation to be requested by the test.
-  func tmdbClientWillSendRequest(purpose: TMDbRequestPurpose) async -> UUID? {
+  func tmdbClientWillSendRequest(purpose: TMDbRequestCategory) async -> UUID? {
     preparedPurposes.append(purpose)
 
     if shouldSuspendPreparation {
@@ -44,7 +44,7 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
 
   /// Records safe, bounded completion metadata.
   func tmdbClientDidCompleteRequest(
-    purpose: TMDbRequestPurpose,
+    purpose: TMDbRequestCategory,
     result: TMDbRequestResult,
     completedAt: Date,
     recordingTicket: UUID
@@ -68,7 +68,7 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
   }
 
   /// Returns the observations collected so far.
-  func captured() -> (prepared: [TMDbRequestPurpose], completed: [(TMDbRequestPurpose, TMDbRequestResult, UUID)]) {
+  func captured() -> (prepared: [TMDbRequestCategory], completed: [(TMDbRequestCategory, TMDbRequestResult, UUID)]) {
     (preparedPurposes, completions)
   }
 }

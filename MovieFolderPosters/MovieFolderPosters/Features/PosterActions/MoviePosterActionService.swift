@@ -6,6 +6,9 @@ import Persistence
 
 /// Performs authorized searches, poster icon changes, and assignment lookups for Finder actions.
 nonisolated protocol MoviePosterActionServicing: Sendable {
+  /// Captures the effective search language using the same authorization checks as provider work.
+  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage
+
   /// Searches for movie metadata using a title and optional release year.
   ///
   /// - Parameters:
@@ -14,7 +17,7 @@ nonisolated protocol MoviePosterActionServicing: Sendable {
   ///   - year: An optional release year in the supported range.
   /// - Returns: The matching TMDb results and pagination state.
   /// - Throws: An action or provider error when the request cannot be completed.
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?, language: TMDbLanguage) async throws
     -> MovieSearchResult
   /// Downloads a fresh poster for the movie currently assigned to the folder.
   ///
@@ -318,7 +321,16 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - year: The optional release year.
   /// - Returns: Matching movie metadata and pagination state.
   /// - Throws: An action, configuration, or TMDb error if validation or search fails.
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws -> MovieSearchResult {
+  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage {
+    try await withExclusiveAction {
+      try await withAuthorizedRoot(request) { context in
+        context.configuration.effectiveMovieMatchingConfiguration(for: context.directory).searchLanguage
+      }
+    }
+  }
+
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
+                    language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanQuery.isEmpty, !cleanQuery.contains("\r"), !cleanQuery.contains("\n"),
       year.map({ (1888...2099).contains($0) }) ?? true
@@ -331,7 +343,15 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         try Task.checkCancellation()
         let movieMetadataProvider = try makeMovieMetadataProvider(
           for: context.configuration, collectionID: context.directory.id)
-        let result = try await movieMetadataProvider.searchMovies(title: cleanQuery, year: year)
+        let matching = context.configuration.effectiveMovieMatchingConfiguration(for: context.directory)
+        let effectiveLanguage = matching.searchLanguage
+
+        guard language == effectiveLanguage else {
+          throw MoviePosterActionServiceError.configurationChanged
+        }
+
+        let result = try await movieMetadataProvider.searchMovies(title: cleanQuery, year: year,
+          language: effectiveLanguage)
         try Task.checkCancellation()
         try checkConfigurationHasNotChanged(context)
         guard let current = try? fileSystem.readCurrentState(ofChild: request.childName, in: context.root),
@@ -560,6 +580,12 @@ private extension MoviePosterActionService {
       configuration: context.configuration,
       root: context.root, rootIdentity: context.rootIdentity)
 
+    #if DEBUG
+      let usesFixtureMetadata = context.configuration.usesStubTMDbResponses
+    #else
+      let usesFixtureMetadata = false
+    #endif
+
     return MovieFolderProcessor(
       persistence: try PersistenceStore(directory: recordDirectory),
       provider: movieMetadataProvider,
@@ -570,6 +596,7 @@ private extension MoviePosterActionService {
       processingStore: try environment.makeCollectionProcessingStore(),
       recovery: try environment.makeProcessingRecoveryService(),
       credentialRevision: context.configuration.credentialRevision,
+      usesFixtureMetadata: usesFixtureMetadata,
       movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
       processingConfiguration: context.directory.processingConfiguration,
       activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: context.directory))
@@ -641,7 +668,11 @@ private struct MissingTokenProvider: MovieMetadataProvider {
   ///   - title: The requested movie title.
   ///   - year: The optional release year.
   /// - Throws: `TMDbError.missingToken` for every search request.
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult { throw TMDbError.missingToken }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { throw TMDbError.missingToken }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+    throw TMDbError.missingToken
+  }
 
   /// Rejects poster downloads because this provider intentionally has no token.
   ///

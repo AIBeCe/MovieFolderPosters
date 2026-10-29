@@ -42,7 +42,7 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
   try fixture.addFolder("Dune (2021) [tt1160419]")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
   let staleSearch = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
   try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
@@ -119,7 +119,7 @@ func incompleteSearchRecoveryEvictsOnlyItsQueryBeforeRetry() async throws {
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
   let incomplete = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
   try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
@@ -145,7 +145,7 @@ func legacyUnresolvedRecoveryReassessesFreshAndPersistsClassification() async th
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
   let incomplete = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
   try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,

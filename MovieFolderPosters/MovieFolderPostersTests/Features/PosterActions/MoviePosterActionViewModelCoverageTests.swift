@@ -145,7 +145,11 @@ private actor CoverageActionService: MoviePosterActionServicing {
     self.cancels = cancels
   }
 
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) throws -> MovieSearchResult {
+  /// Provides the authorized default language in this isolated service fixture.
+  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage { .english }
+
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
+                    language: TMDbLanguage = .english) throws -> MovieSearchResult {
     MovieSearchResult(movies: [], hasMorePages: false)
   }
   func refreshPoster(for request: MoviePosterRequest) throws -> Int {

@@ -43,6 +43,9 @@ import OSLog
           data: try JSONSerialization.data(withJSONObject: [
             "page": 1, "total_pages": 1, "results": movies
           ]), statusCode: 200, contentType: "application/json")
+      case ("api.themoviedb.org", "/3/movie/1/alternative_titles"):
+        return HTTPResponse(data: Data("{\"id\":1,\"titles\":[]}".utf8), statusCode: 200,
+          contentType: "application/json")
       case ("api.themoviedb.org", "/3/configuration"):
         logger.notice("Development fixture: image configuration")
 

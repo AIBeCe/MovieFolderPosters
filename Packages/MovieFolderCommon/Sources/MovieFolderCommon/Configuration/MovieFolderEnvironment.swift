@@ -99,7 +99,9 @@ nonisolated public enum MovieFolderEnvironment {
       configurationStore: try PersistenceStore(directory: container.appendingPathComponent("Settings")),
       collectionOutcomeStore: try CollectionProcessingStorageNamespace.open(in: container),
       backupStore: try PersistenceStore(
-        directory: container.appendingPathComponent("MigrationBackups"), maximumRecordBytes: 8 * 1024 * 1024))
+        directory: container.appendingPathComponent("MigrationBackups"), maximumRecordBytes: 8 * 1024 * 1024),
+      operationalContainer: container,
+      coordinationStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")))
   }
 
   /// Opens settings at the supplied process container location.
@@ -254,7 +256,7 @@ nonisolated private struct UnavailableNetworkHistoryService: MovieFolderNetworkH
   func setNetworkHistoryRecordingEnabled(_ enabled: Bool) throws { throw Failure.unavailable }
   func prepareNetworkHistoryRecording(collectionID: UUID?) -> UUID? { .none }
   func recordCompletedNetworkRequest(
-    purpose: Network.TMDbRequestPurpose, result: Network.TMDbRequestResult,
+    purpose: Network.TMDbRequestCategory, result: Network.TMDbRequestResult,
     completedAt: Date, expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) {}
 }

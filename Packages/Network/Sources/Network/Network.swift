@@ -284,9 +284,11 @@ public struct TMDbClient: Sendable {
   /// - Parameters:
   ///   - title: The nonempty title query.
   ///   - year: An optional Gregorian year from 1 through 9999.
+  ///   - language: Validated language sent unchanged as the single provider language parameter.
   /// - Returns: Validated movies and whether additional pages exist.
   /// - Throws: ``TMDbError`` for invalid input, rejected responses, or transport failures.
-  public func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  public func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english)
+    async throws -> MovieSearchResult {
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTitle.isEmpty, !cleanTitle.contains("\r"), !cleanTitle.contains("\n"),
       year.map({ (1...9999).contains($0) }) ?? true
@@ -298,7 +300,7 @@ public struct TMDbClient: Sendable {
     components.queryItems = [
       URLQueryItem(name: "query", value: cleanTitle),
       URLQueryItem(name: "include_adult", value: "false"),
-      URLQueryItem(name: "language", value: "en-US"),
+      URLQueryItem(name: "language", value: language.rawValue),
       URLQueryItem(name: "page", value: "1")
     ]
     if let year { components.queryItems?.append(URLQueryItem(name: "year", value: String(year))) }
@@ -327,6 +329,41 @@ public struct TMDbClient: Sendable {
           releaseYear: date?.year, posterPath: item.posterPath)
       }
       return MovieSearchResult(movies: movies, hasMorePages: page.totalPages > page.page)
+    } catch let error as TMDbError {
+      throw error
+    } catch {
+      throw TMDbError.malformedResponse
+    }
+  }
+
+  /// Retrieves complete alternative-title evidence for one positive movie identity.
+  /// - Parameter movieID: The TMDb movie identity whose alternative titles are requested.
+  /// - Returns: Exactly one dictionary entry, including a valid empty title list.
+  /// - Throws: `TMDbError` for invalid input, mismatched identity, malformed evidence, or provider failure.
+  public func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles {
+    guard movieID > 0 else { throw TMDbError.invalidQuery }
+
+    guard let base = Self.apiBase else { throw TMDbError.invalidConfiguration }
+
+    let request = authenticatedRequest(url: base.appending(path: "movie/\(movieID)/alternative_titles"))
+    let response = try await send(request, purpose: .alternativeTitles)
+    try validateStatus(response)
+
+    guard response.contentType?.split(separator: ";").first?
+      .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "application/json" else {
+      throw TMDbError.malformedResponse
+    }
+
+    do {
+      let evidence = try JSONDecoder().decode(AlternativeTitleResponse.self, from: response.data)
+
+      guard evidence.id == movieID, evidence.titles.allSatisfy({
+        !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }) else { throw TMDbError.malformedResponse }
+
+      return [movieID: evidence.titles.map {
+        MovieAlternativeTitle(countryCode: $0.countryCode, title: $0.title, type: $0.type)
+      }]
     } catch let error as TMDbError {
       throw error
     } catch {
@@ -398,7 +435,7 @@ public struct TMDbClient: Sendable {
   }
 
   /// Sends one bounded request while preserving cancellation and normalizing transport errors.
-  private func send(_ request: URLRequest, purpose: TMDbRequestPurpose) async throws -> HTTPResponse {
+  private func send(_ request: URLRequest, purpose: TMDbRequestCategory) async throws -> HTTPResponse {
     try Task.checkCancellation()
 
     let recordingTicket = await requestDelegate?.tmdbClientWillSendRequest(purpose: purpose)
@@ -436,7 +473,7 @@ public struct TMDbClient: Sendable {
 
   /// Completes one ticketed request without exposing transport errors or request data.
   private func completeRequest(
-    purpose: TMDbRequestPurpose,
+    purpose: TMDbRequestCategory,
     result: TMDbRequestResult,
     recordingTicket: UUID?
   ) async {
@@ -624,5 +661,25 @@ private struct ImageConfiguration: Decodable {
       case secureBaseURL = "secure_base_url"
       case posterSizes = "poster_sizes"
     }
+  }
+}
+
+/// Private TMDb transport envelope; public evidence remains keyed by provider identity.
+private struct AlternativeTitleResponse: Decodable {
+  /// Returned movie identity, checked against the requested identity before use.
+  let id: Int
+  /// All provider title records, including an empty completed result.
+  let titles: [Title]
+
+  /// One transport title with TMDb's country-key spelling.
+  struct Title: Decodable {
+    /// Country provenance returned by TMDb.
+    let countryCode: String
+    /// Full alternative title.
+    let title: String
+    /// Provider classification.
+    let type: String
+    /// Maps only the transport-specific country name.
+    enum CodingKeys: String, CodingKey { case countryCode = "iso_3166_1", title, type }
   }
 }

@@ -280,10 +280,10 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     do {
       let version = try JSONDecoder().decode(CollectionOutcomeSchemaVersion.self, from: data).schemaVersion
 
-      guard version == 2 else {
-        if version == 1 {
+      guard version == 3 else {
+        if (1...2).contains(version) {
           throw MovieFolderStorageMigrationError.migrationRequired(
-            record: .collectionOutcomes(expectedRootID), version: 1)
+            record: .collectionOutcomes(expectedRootID), version: version)
         }
         throw MovieFolderStorageMigrationError.unsupportedVersion(
           record: .collectionOutcomes(expectedRootID), version: version)

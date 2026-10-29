@@ -70,6 +70,10 @@ nonisolated struct FolderRecord: Codable {
 
 /// Per-root folder decisions, cached searches, and provider backoff persisted together.
 nonisolated struct ProcessingState: Codable {
+  /// Current operational format; absent versions require explicit migration.
+  var schemaVersion = 1
+  /// Provider-verified title responses, independent of folder decisions.
+  var alternativeTitles: [String: CachedAlternativeTitles] = [:]
   /// Processing decisions keyed by immediate child folder name.
   var folders: [String: FolderRecord] = [:]
   /// Cached provider responses keyed by normalized query digest.
@@ -79,19 +83,52 @@ nonisolated struct ProcessingState: Codable {
   /// Credential generation captured by the processor that last saved this operational state.
   var credentialRevision: UUID? = .none
   /// Effective choices used to produce automatic decisions; absent legacy records use established defaults.
-  var movieMatchingConfiguration: MovieMatchingConfiguration? = .none
+  var movieMatchingConfiguration: MovieMatchingConfiguration? = MovieMatchingConfiguration()
+
+  /// Creates a current empty state for a previously unseen root.
+  init(folders: [String: FolderRecord] = [:], queries: [String: CachedSearch] = [:],
+       providerRetryAt: Date? = .none, credentialRevision: UUID? = .none,
+       movieMatchingConfiguration: MovieMatchingConfiguration? = MovieMatchingConfiguration()) {
+    self.folders = folders
+    self.queries = queries
+    self.providerRetryAt = providerRetryAt
+    self.credentialRevision = credentialRevision
+    self.movieMatchingConfiguration = movieMatchingConfiguration
+  }
+
+  /// Requires an explicitly migrated current record before exposing any operational decisions.
+  init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
+
+    guard schemaVersion == 1 else {
+      throw DecodingError.dataCorruptedError(forKey: .schemaVersion, in: values,
+        debugDescription: "Operational state requires explicit storage migration")
+    }
+
+    folders = try values.decode([String: FolderRecord].self, forKey: .folders)
+    queries = try values.decode([String: CachedSearch].self, forKey: .queries)
+    alternativeTitles = try values.decode([String: CachedAlternativeTitles].self, forKey: .alternativeTitles)
+    providerRetryAt = try values.decodeIfPresent(Date.self, forKey: .providerRetryAt)
+    credentialRevision = try values.decodeIfPresent(UUID.self, forKey: .credentialRevision)
+    movieMatchingConfiguration = try values.decode(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
+  }
 
   /// Invalidates automatic assignments while retaining installed-poster evidence and raw search responses.
   /// - Parameter configuration: Current automatic matching choices.
-  mutating func reconcileMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) {
-    if (movieMatchingConfiguration ?? MovieMatchingConfiguration()) != configuration {
+  mutating func updateMatchingConfiguration(_ configuration: MovieMatchingConfiguration) {
+    let previous = movieMatchingConfiguration ?? MovieMatchingConfiguration()
+    let languageOnly = previous.requiresReleaseYearForAutomaticMatching
+      == configuration.requiresReleaseYearForAutomaticMatching
+      && previous.comparesOriginalTitles == configuration.comparesOriginalTitles
+    if previous != configuration {
       folders = folders.compactMapValues { saved in
         if saved.movieIdentitySource == .explicitSelection { return saved }
 
-        guard saved.matchedMovieID != .none, saved.posterPath != .none else { return .none }
+        guard saved.matchedMovieID != .none else { return .none }
 
         var retained = saved
-        retained.requiresAutomaticReassessment = true
+        if !languageOnly { retained.requiresAutomaticReassessment = true }
 
         return retained
       }
@@ -105,6 +142,7 @@ nonisolated struct ProcessingState: Codable {
     guard let revision, credentialRevision != revision else { return }
 
     queries.removeAll()
+    alternativeTitles.removeAll()
 
     for name in Array(folders.keys) {
       guard var record = folders[name] else { continue }
@@ -124,66 +162,7 @@ nonisolated struct ProcessingState: Codable {
 
   /// Preserves the existing cache field name when reading or writing saved processing state.
   private enum CodingKeys: String, CodingKey {
-    case folders, queries, credentialRevision, movieMatchingConfiguration
+    case schemaVersion, folders, queries, credentialRevision, movieMatchingConfiguration, alternativeTitles
     case providerRetryAt = "rootBackoffUntil"
-  }
-}
-
-/// Codable search results with their completeness evidence and creation time.
-nonisolated struct CachedSearch: Codable {
-  /// Movie records retained from the cached response.
-  private let movies: [CachedMovie]
-  /// Whether unexamined search pages prevent a unique automatic match.
-  let hasMorePages: Bool
-  /// When the search response entered the cache.
-  let createdAt: Date
-
-  /// Stores a provider response and creation time in a Codable representation.
-  ///
-  /// - Parameters:
-  ///   - result: The provider response whose movie records and pagination evidence are cached.
-  ///   - createdAt: The instant used to evaluate future cache expiry.
-  init(result: MovieSearchResult, createdAt: Date) {
-    movies = result.movies.map(CachedMovie.init)
-    hasMorePages = result.hasMorePages
-    self.createdAt = createdAt
-  }
-
-  /// Reconstructs the provider response from cached movie records and pagination evidence.
-  /// - Returns: A new search response with each cached movie restored to provider metadata.
-  func searchResult() -> MovieSearchResult {
-    MovieSearchResult(movies: movies.map(\.metadata), hasMorePages: hasMorePages)
-  }
-}
-
-/// Codable movie identity and source poster path stored with a cached search.
-nonisolated private struct CachedMovie: Codable {
-  /// Stable identity of the represented collection or movie record.
-  let id: Int
-  /// The display or parsed movie title used by the matching workflow.
-  let title: String
-  /// The original-language title considered alongside the localized title.
-  let originalTitle: String
-  /// The provider release year, or no value when unavailable.
-  let releaseYear: Int?
-  /// The provider-relative source poster path, when available.
-  let posterPath: String?
-
-  /// Copies the provider movie fields required to restore cached matching evidence.
-  ///
-  /// - Parameter movie: The explicit provider movie record to retain or apply.
-  init(_ movie: MovieMetadata) {
-    id = movie.id
-    title = movie.title
-    originalTitle = movie.originalTitle
-    releaseYear = movie.releaseYear
-    posterPath = movie.posterPath
-  }
-
-  /// The provider movie representation reconstructed from its cached fields.
-  var metadata: MovieMetadata {
-    MovieMetadata(
-      id: id, title: title, originalTitle: originalTitle,
-      releaseYear: releaseYear, posterPath: posterPath)
   }
 }

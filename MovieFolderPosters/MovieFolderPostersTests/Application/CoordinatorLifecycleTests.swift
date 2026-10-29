@@ -292,6 +292,7 @@ struct CoordinatorLifecycleTests {
     let firstModel = try #require(coordinator.viewModel)
     coordinator.start(first)
     #expect(coordinator.windowController?.window === firstWindow)
+    while firstModel.isBusy { await Task.yield() }
     firstModel.setQuery("Dune")
     firstModel.search()
     #expect(firstModel.isBusy)
@@ -304,6 +305,7 @@ struct CoordinatorLifecycleTests {
     let secondWindow = try #require(coordinator.windowController?.window)
     let secondModel = try #require(coordinator.viewModel)
     #expect(secondWindow !== firstWindow)
+    while secondModel.isBusy { await Task.yield() }
     secondModel.setQuery("Arrival")
     secondModel.search()
     await service.waitForSearchCount(2)
@@ -476,7 +478,11 @@ private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRe
     await withCheckedContinuation { cancellationWaiter = (count, $0) }
   }
 
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?) async throws -> MovieSearchResult {
+  /// Provides the authorized default language in this isolated service fixture.
+  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage { .english }
+
+  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
+                    language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
     if let waiter = searchWaiter, searchCount >= waiter.count {
       searchWaiter = .none

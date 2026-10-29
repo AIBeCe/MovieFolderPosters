@@ -60,7 +60,10 @@ struct QuietActivityNotifier: MovieFolderActivityChangeNotifying {
 
 /// Supplies deterministic provider results; no network request or icon write is needed for missing posters.
 struct NoMatchesProvider: MovieMetadataProvider {
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try Task.checkCancellation()
 
     return MovieSearchResult(movies: [], hasMorePages: false)
@@ -73,7 +76,10 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
   /// Number of searches that reached the underlying movieMetadataProvider.
   private(set) var searchCount = Int.zero
 
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searchCount += 1
 
     return MovieSearchResult(movies: [], hasMorePages: false)
@@ -91,7 +97,10 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
   /// Tracks provider entry even when it precedes registration of the waiter.
   private var hasStarted = false
 
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     hasStarted = true
     started?.resume()
     started = .none
@@ -133,7 +142,10 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
   /// Controls whether the production composition can read current collection settings.
   let configurationReadControl: FinderConfigurationReadControl
 
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try repository.update { $0.directories[0].usesPrivateHistory = false }
     configurationReadControl.failsCurrentRead.withLock { $0 = false }
 

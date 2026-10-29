@@ -304,6 +304,97 @@ struct CollectionProcessingIntegrationTests {
     #expect(state.folders.contains { $0.state == .pending })
     #expect(state.folders.contains { $0.reason == .authentication })
   }
+  /// An explicit refresh cannot replace unchanged confirmed identity or hide its manual-resolution result.
+  @Test func refreshIdentityConflictRetainsDecisionAndManualResult() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
+    let previous = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
+      matchedMovieID: 42, posterPath: "/previous.jpg", movieTitle: "Prior identity", movieYear: 2021,
+      movieIdentitySource: .conservativeMatch, requiresAutomaticReassessment: true)
+    do {
+      let access = try #require(try fixture.processing.acquireAccess(for:
+        MovieFolderProcessor.processingStateKey(for: fixture.root)))
+      try access.write(JSONEncoder().encode(ProcessingState(folders: [candidate.name: previous])))
+    }
+    let provider = CountingProvider(search: MovieSearchResult(movies: [MovieMetadata(id: 43, title: "Movie",
+      originalTitle: "Movie", releaseYear: 2021, posterPath: "/replacement.jpg")], hasMorePages: false))
+    let processor = fixture.processor(provider: provider)
+    await #expect(throws: PosterActionError.unresolved) {
+      try await processor.refreshPoster(root: fixture.root, child: candidate.name, expectedIdentity: candidate.identity,
+        processingContext: fixture.context)
+    }
+    #expect(await provider.posterCount == 0)
+    #expect(try !FileSystemService().readCurrentState(ofChild: candidate.name, in: fixture.root).hasCustomIcon)
+    let access = try #require(try fixture.processing.acquireAccess(for:
+      MovieFolderProcessor.processingStateKey(for: fixture.root)))
+    let saved = try await processor.loadState(from: access).folders[candidate.name]
+    #expect(saved?.matchedMovieID == 42)
+    #expect(saved?.posterPath == "/previous.jpg")
+    #expect(saved?.movieIdentitySource == .conservativeMatch)
+    #expect(saved?.processingReason == .manualMatchingRequired)
+    let result = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID)).folders.first
+    #expect(result?.state == .unresolved)
+    #expect(result?.reason == .manualMatchingRequired)
+    #expect(result?.movieID == 42)
+    #expect(result?.movieIdentitySource == .conservativeMatch)
+  }
+
+  /// A prior manual-resolution result cannot donate identity to a changed folder after a fresh refresh fails.
+  @Test func refreshFailureDoesNotProjectIdentityAcrossChangedFingerprint() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
+    let previous = FolderRecord(fingerprint: "obsolete", status: .unresolved,
+      matchedMovieID: 42, posterPath: "/previous.jpg", processingReason: .manualMatchingRequired,
+      movieTitle: "Prior identity", movieYear: 2021, movieIdentitySource: .conservativeMatch)
+    do {
+      let access = try #require(try fixture.processing.acquireAccess(for:
+        MovieFolderProcessor.processingStateKey(for: fixture.root)))
+      try access.write(JSONEncoder().encode(ProcessingState(folders: [candidate.name: previous])))
+    }
+    let provider = CountingProvider(searchError: .authentication)
+    let processor = fixture.processor(provider: provider)
+    await #expect(throws: TMDbError.authentication) {
+      try await processor.refreshPoster(root: fixture.root, child: candidate.name, expectedIdentity: candidate.identity,
+        processingContext: fixture.context)
+    }
+    let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
+    let result = try #require(state.folders.first)
+    #expect(result.movieID == .none)
+    #expect(result.movieIdentitySource == .none)
+    #expect(result.reason != .manualMatchingRequired)
+    #expect(await provider.posterCount == 0)
+  }
+
+  /// Over-budget re-identification persists a manual choice without spending any alias or artwork request.
+  @Test func refreshOverBudgetPersistsManualMatchingRequired() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
+    let movies = (1...6).map {
+      MovieMetadata(id: $0, title: "Other \($0)", originalTitle: "Other \($0)", releaseYear: 2021,
+        posterPath: "/poster.jpg")
+    }
+    let provider = CountingProvider(search: MovieSearchResult(movies: movies, hasMorePages: false))
+    let processor = fixture.processor(provider: provider)
+    await #expect(throws: PosterActionError.unresolved) {
+      try await processor.refreshPoster(root: fixture.root, child: candidate.name, expectedIdentity: candidate.identity,
+        processingContext: fixture.context)
+    }
+    #expect(await provider.alternativeTitleCount == 0)
+    #expect(await provider.posterCount == 0)
+    let access = try #require(try fixture.processing.acquireAccess(for:
+      MovieFolderProcessor.processingStateKey(for: fixture.root)))
+    let saved = try await processor.loadState(from: access).folders[candidate.name]
+    #expect(saved?.processingReason == .manualMatchingRequired)
+    let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
+    let result = try #require(state.folders.first)
+    #expect(result.state == .unresolved)
+    #expect(result.reason == .manualMatchingRequired)
+    #expect(result.movieID == .none)
+  }
+
 }
 
 /// Local collection and current configuration required by the result change fence.
@@ -371,7 +462,10 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   var missingArtwork = false
 
   /// Returns the configured offline search scenario, including incomplete or ambiguous results.
-  func searchMovies(title: String, year: Int?) throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     if authenticationFailure { throw TMDbError.authentication }
     if missingArtwork {
       return MovieSearchResult(
@@ -449,7 +543,10 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
   }
 
   /// Signals search entry and suspends long enough for the test to cancel processing.
-  func searchMovies(title: String, year: Int?) async throws -> MovieSearchResult {
+  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+
+  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     started = true
     waiter?.resume()
     waiter = .none

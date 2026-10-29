@@ -25,6 +25,8 @@ import MovieFolderCommon
   /// Explicit inheritance choice.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
+  /// Native language selected only in the local matching override draft.
+  private let languagePicker = MovieSearchLanguagePicker()
   /// Conservative year requirement.
   private let yearButton = NSButton(checkboxWithTitle: "Require a release year for automatic matching",
     target: .none, action: .none)
@@ -77,6 +79,8 @@ import MovieFolderCommon
     nameField.setAccessibilityLabel("Collection display name")
     pathLabel.maximumNumberOfLines = 2
     pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    languagePicker.target = self
+    languagePicker.action = #selector(choicesChanged)
     yearButton.toolTip = "Without a release year, choose a movie manually; automatic lookup makes no request."
     originalButton.toolTip = "Include original-language TMDb titles in exact automatic title comparisons."
     yearButton.setAccessibilityHelp(yearButton.toolTip)
@@ -116,6 +120,8 @@ import MovieFolderCommon
       note("Pausing keeps this collection and its existing posters."),
       separator(), heading("Excluded Folders"), exclusions,
       separator(), heading("Matching"), inheritButton, yearButton, originalButton,
+      NSTextField(labelWithString: "Search language"), languagePicker,
+      note(MovieSearchLanguagePicker.supportingText),
       note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
       separator(), heading("History"), privateHistoryCheckbox,
       note("New activity omits collection identifiers and network history is omitted. "
@@ -211,6 +217,8 @@ import MovieFolderCommon
     for control in [nameField, pauseButton, inheritButton] as [NSControl] { control.isEnabled = !viewModel.isBusy }
     yearButton.isEnabled = !viewModel.isBusy && !viewModel.inheritsApplicationConfiguration
     originalButton.isEnabled = yearButton.isEnabled
+    languagePicker.display(viewModel.effectiveConfiguration.searchLanguage)
+    languagePicker.isEnabled = yearButton.isEnabled
     saveButton.isEnabled = viewModel.canSave
     cancelButton.isEnabled = !viewModel.isBusy
     errorLabel.stringValue = viewModel.errorMessage ?? ""
@@ -232,9 +240,11 @@ import MovieFolderCommon
     viewModel.usesPrivateHistory = privateHistoryCheckbox.state == .on
     viewModel.inheritsApplicationConfiguration = inheritButton.state == .on
     if !viewModel.inheritsApplicationConfiguration {
-      viewModel.overrideConfiguration = MovieMatchingConfiguration(
-        requiresReleaseYearForAutomaticMatching: yearButton.state == .on,
-        comparesOriginalTitles: originalButton.state == .on)
+      var configuration = viewModel.overrideConfiguration
+      configuration.requiresReleaseYearForAutomaticMatching = yearButton.state == .on
+      configuration.comparesOriginalTitles = originalButton.state == .on
+      configuration.searchLanguage = languagePicker.selectedLanguage
+      viewModel.overrideConfiguration = configuration
     }
     updatePresentation()
   }

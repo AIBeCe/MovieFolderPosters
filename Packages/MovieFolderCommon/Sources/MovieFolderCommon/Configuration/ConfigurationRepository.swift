@@ -49,7 +49,7 @@ nonisolated public struct ConfigurationRepository: Sendable {
     try Task.checkCancellation()
     guard saved?.credentialRevision == expectedRevision else { throw ConfigurationError.configurationChanged }
     var configuration = saved ?? DirectoryConfiguration()
-    configuration.version = 5
+    configuration.version = 6
     configuration.credentialRevision = UUID()
     try Self.validate(configuration)
     try persistenceAccess.write(JSONEncoder().encode(configuration))
@@ -147,7 +147,7 @@ nonisolated public struct ConfigurationRepository: Sendable {
     if previous.isNetworkHistoryRecordingEnabled != configuration.isNetworkHistoryRecordingEnabled || rootsChanged {
       configuration.networkHistoryConfigurationRevision = UUID()
     }
-    configuration.version = 5
+    configuration.version = 6
     try persistenceAccess.write(JSONEncoder().encode(configuration))
     try withExtendedLifetime(persistenceAccess) { try afterCommit() }
   }
@@ -211,7 +211,7 @@ nonisolated public struct ConfigurationRepository: Sendable {
   /// - Parameter configuration: The complete settings payload to validate or retain.
   /// - Throws: Configuration contention or validation errors, persistence failures, or errors propagated by a change.
   static func validate(_ configuration: DirectoryConfiguration) throws {
-    guard configuration.version == 5,
+    guard configuration.version == 6,
       Set(configuration.directories.map(\.id)).count == configuration.directories.count,
       Set(configuration.directories.map(\.path)).count == configuration.directories.count,
       configuration.directories.allSatisfy({

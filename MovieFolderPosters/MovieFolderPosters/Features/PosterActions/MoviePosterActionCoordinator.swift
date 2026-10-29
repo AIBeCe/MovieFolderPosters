@@ -54,6 +54,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   func start(_ request: MoviePosterRequest, attachedTo parent: NSWindow? = .none) {
     if activeRequest == request, let windowController,
       windowController.window?.sheetParent === parent, viewModel?.isConfigurationInvalidated != true {
+      if viewModel?.searchLanguage == .none { viewModel?.prepareSearchLanguage() }
       windowController.showWindow(.none)
       windowController.window?.makeKeyAndOrderFront(.none)
       return
@@ -78,6 +79,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     windowController = controller
     if let parent { parent.beginSheet(window) } else { controller.showWindow(.none) }
     window.makeKeyAndOrderFront(.none)
+    viewModel.prepareSearchLanguage()
   }
 
   /// Opens the movie page requested by the action view model.
@@ -300,7 +302,7 @@ private final class MoviePosterActionViewController: NSViewController,
     guard isViewLoaded else { return }
     let busy = viewModel.isBusy
     matchingLabel.stringValue = viewModel.matchingPreview
-    searchButton.isEnabled = viewModel.canStartAction
+    searchButton.isEnabled = viewModel.canSearch
     resultPicker.isEnabled = !busy && !viewModel.movies.isEmpty
     primaryButton.isEnabled = viewModel.canStartAction
     queryField.isEnabled = viewModel.canStartAction

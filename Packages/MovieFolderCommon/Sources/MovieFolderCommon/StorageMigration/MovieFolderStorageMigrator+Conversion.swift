@@ -11,11 +11,19 @@ extension MovieFolderStorageMigrator {
     var object = try recordObject(payload, record: record)
     let version = try recordVersion(object, field: "version", record: record)
 
-    guard (1...5).contains(version) else {
+    guard (1...6).contains(version) else {
       throw MovieFolderStorageMigrationError.unsupportedVersion(record: record, version: version)
     }
 
-    if version < 5 {
+    if version < 6 {
+      if version == 5 {
+        guard object["movieMatchingConfiguration"] is [String: Any], object["identificationPolicy"] == nil else {
+          throw MovieFolderStorageMigrationError.invalidRecord(record: record)
+        }
+        for field in ["processingCacheRevision", "retainsNetworkHistory", "historyRevision", "posterAppearance"] {
+          _ = try requiredValue(object, field: field, record: record)
+        }
+      }
       let credentialRevision = try requiredValue(object, field: "credentialRevision", record: record)
       if object["processingCacheRevision"] == nil {
         guard version == 1 else { throw MovieFolderStorageMigrationError.invalidRecord(record: record) }
@@ -32,6 +40,10 @@ extension MovieFolderStorageMigrator {
       }
 
       for index in directories.indices {
+        if version == 5 {
+          _ = try requiredValue(directories[index], field: "isPrivate", record: record)
+          _ = try requiredValue(directories[index], field: "participationPolicy", record: record)
+        }
         if directories[index]["isPrivate"] == nil { directories[index]["isPrivate"] = false }
         if directories[index]["participationPolicy"] == nil {
           directories[index]["participationPolicy"] = [
@@ -41,9 +53,9 @@ extension MovieFolderStorageMigrator {
         try normalizeNestedMatching(in: &directories[index], record: record)
       }
       object["directories"] = directories
-      object["version"] = 5
+      object["version"] = 6
     }
-    let converted = version < 5 ? try encodeObject(object, record: record) : payload
+    let converted = version < 6 ? try encodeObject(object, record: record) : payload
     let configuration: DirectoryConfiguration
     do {
       configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: converted)
@@ -52,7 +64,7 @@ extension MovieFolderStorageMigrator {
       throw MovieFolderStorageMigrationError.invalidRecord(record: record)
     }
 
-    return (converted, version < 5, configuration)
+    return (converted, version < 6, configuration)
   }
 
   /// Converts matching keys in both live and historical outcome contexts, without revising outcome facts.
@@ -66,28 +78,28 @@ extension MovieFolderStorageMigrator {
     var object = try recordObject(payload, record: record)
     let version = try recordVersion(object, field: "schemaVersion", record: record)
 
-    guard (1...2).contains(version) else {
+    guard (1...3).contains(version) else {
       throw MovieFolderStorageMigrationError.unsupportedVersion(record: record, version: version)
     }
 
-    if version == 1 {
+    if version < 3 {
       guard var context = object["context"] as? [String: Any] else {
         throw MovieFolderStorageMigrationError.invalidRecord(record: record)
       }
 
-      try normalizeNestedMatching(in: &context, record: record)
+      try normalizeOutcomeMatching(in: &context, record: record)
       object["context"] = context
       if let historical = object["lastCompletedRunContext"], !(historical is NSNull) {
         guard var historicalContext = historical as? [String: Any] else {
           throw MovieFolderStorageMigrationError.invalidRecord(record: record)
         }
 
-        try normalizeNestedMatching(in: &historicalContext, record: record)
+        try normalizeOutcomeMatching(in: &historicalContext, record: record)
         object["lastCompletedRunContext"] = historicalContext
       }
-      object["schemaVersion"] = 2
+      object["schemaVersion"] = 3
     }
-    let converted = version == 1 ? try encodeObject(object, record: record) : payload
+    let converted = version < 3 ? try encodeObject(object, record: record) : payload
     do {
       let state = try JSONDecoder().decode(CollectionProcessingState.self, from: converted)
 
@@ -98,11 +110,42 @@ extension MovieFolderStorageMigrator {
       throw MovieFolderStorageMigrationError.invalidRecord(record: record)
     }
 
-    return (converted, version == 1)
+    return (converted, version < 3)
   }
+  /// Converts only unversioned operational state, preserving every folder decision and retry field.
+  func convertOperational(_ payload: Data, rootID: UUID) throws -> (payload: Data, wasLegacy: Bool) {
+    let record = MovieFolderStorageRecordKind.operationalProcessing(rootID)
+    var object = try recordObject(payload, record: record)
+    let legacy = object["schemaVersion"] == nil
+    if legacy {
+      if let matching = try matchingObject(object["movieMatchingConfiguration"], record: record) {
+        object["movieMatchingConfiguration"] = matching
+      } else {
+        object["movieMatchingConfiguration"] = ["requiresReleaseYearForAutomaticMatching": false,
+          "comparesOriginalTitles": true, "searchLanguage": "en-US"]
+      }
+      object["schemaVersion"] = 1
+      // Legacy query keys do not carry language, credential, category, or fixture provenance.
+      object["queries"] = [String: Any]()
+      object["alternativeTitles"] = [String: Any]()
+    } else {
+      let version = try recordVersion(object, field: "schemaVersion", record: record)
+
+      guard version == 1 else {
+        throw MovieFolderStorageMigrationError.unsupportedVersion(record: record, version: version)
+      }
+    }
+    let converted = legacy ? try encodeObject(object, record: record) : payload
+    do { _ = try JSONDecoder().decode(ProcessingState.self, from: converted) } catch {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: record)
+    }
+
+    return (converted, legacy)
+  }
+
 }
 
-private extension MovieFolderStorageMigrator {
+extension MovieFolderStorageMigrator {
   /// Parses a complete object without accepting fragments or manufacturing missing fields.
   /// - Parameters:
   ///   - payload: Encoded record bytes.
@@ -170,67 +213,4 @@ private extension MovieFolderStorageMigrator {
     }
   }
 
-  /// The global outer name changed; both present aliases must describe identical transformed choices.
-  /// - Parameters:
-  ///   - object: Settings fields to update in place.
-  ///   - record: Record identity used in migration errors.
-  /// - Throws: A typed migration error for malformed or conflicting matching choices.
-  func normalizeGlobalMatching(in object: inout [String: Any], record: MovieFolderStorageRecordKind) throws {
-    let legacy = try matchingObject(object["identificationPolicy"], record: record)
-    let current = try matchingObject(object["movieMatchingConfiguration"], record: record)
-    if let legacy, let current, try encodeObject(legacy, record: record) != encodeObject(current, record: record) {
-      throw MovieFolderStorageMigrationError.conflictingValues(record: record, field: "movieMatchingConfiguration")
-    }
-    object["movieMatchingConfiguration"] = current ?? legacy ?? [
-      "requiresReleaseYearForAutomaticMatching": false, "comparesOriginalTitles": true
-    ]
-    object.removeValue(forKey: "identificationPolicy")
-  }
-
-  /// Root/context outer CodingKeys stay stable; only the renamed inner matching choice is converted.
-  /// - Parameters:
-  ///   - object: Nested context fields to update in place.
-  ///   - record: Record identity used in migration errors.
-  /// - Throws: A typed migration error when the supplied matching choice is malformed.
-  func normalizeNestedMatching(in object: inout [String: Any], record: MovieFolderStorageRecordKind) throws {
-    if let matching = try matchingObject(object["identificationPolicy"], record: record) {
-      object["identificationPolicy"] = matching
-    }
-  }
-
-  /// Refuses conflicts and malformed policies rather than selecting one value or resetting a supplied choice.
-  /// - Parameters:
-  ///   - value: Optional matching-policy JSON value.
-  ///   - record: Record identity used in migration errors.
-  /// - Returns: A validated policy object, or `nil` when the field is absent.
-  /// - Throws: A typed migration error for malformed or conflicting supplied values.
-  func matchingObject(_ value: Any?, record: MovieFolderStorageRecordKind) throws -> [String: Any]? {
-    guard let value else { return .none }
-
-    guard var matching = value as? [String: Any] else {
-      throw MovieFolderStorageMigrationError.invalidRecord(record: record)
-    }
-
-    let oldKey = "requiresReleaseYearForAutomaticIdentification"
-    let newKey = "requiresReleaseYearForAutomaticMatching"
-    if let oldValue = matching[oldKey] {
-      if let newValue = matching[newKey] {
-        let oldData = try JSONSerialization.data(withJSONObject: oldValue, options: [.fragmentsAllowed, .sortedKeys])
-        let newData = try JSONSerialization.data(withJSONObject: newValue, options: [.fragmentsAllowed, .sortedKeys])
-
-        guard oldData == newData else {
-          throw MovieFolderStorageMigrationError.conflictingValues(record: record, field: newKey)
-        }
-      }
-      matching[newKey] = oldValue
-      matching.removeValue(forKey: oldKey)
-    }
-    do {
-      _ = try JSONDecoder().decode(MovieMatchingConfiguration.self, from: encodeObject(matching, record: record))
-    } catch {
-      throw MovieFolderStorageMigrationError.invalidRecord(record: record)
-    }
-
-    return matching
-  }
 }
