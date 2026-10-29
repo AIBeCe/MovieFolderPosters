@@ -55,31 +55,11 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     context: CollectionProcessingContext, action: CollectionProcessingAction,
     child: String? = .none, now: Date = Date()
   ) throws -> CollectionProcessingState {
-    let processingState = try withLocks(context: context, requiresActiveCollection: action != .removal) { access, configuration in
+    let processingState = try withLocks(
+      context: context, requiresActiveCollection: action != .removal) { access, configuration in
       let stored = try readProcessingState(using: access, expectedRootID: context.rootID)
-      var processingState: CollectionProcessingState
-      if let stored,
-        stored.context.rootIdentity != context.rootIdentity ||
-          stored.context.authorizationVersion != context.authorizationVersion {
-        processingState = CollectionProcessingState(
-          revision: stored.revision,
-          context: context,
-          lastCompletedRun: stored.lastCompletedRun,
-          lastCompletedRunContext: stored.lastCompletedRunContext
-        )
-      } else if let stored, !stored.context.hasSameProcessingInputs(as: context) {
-        processingState = stored
-        processingState.context = context
-        processingState.folders = stored.folders.map { FolderProcessingRecord(name: $0.name) }
-        processingState.isInventoryComplete = false
-        processingState.inspectedAt = .none
-        processingState.inventoryIssue = .inventoryPending
-      } else {
-        processingState = stored ?? CollectionProcessingState(context: context)
-        if let stored, stored.context.processingConfigurationRevision != context.processingConfigurationRevision {
-          Self.reconcileInclusion(in: &processingState, configuration: configuration, now: now)
-        }
-      }
+      var processingState = try Self.processingStateForStart(
+        stored: stored, context: context, processingConfiguration: configuration, now: now)
       try Self.validateRootGeneration(processingState, matches: context)
 
       if action == .automatic {
@@ -109,6 +89,41 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       return processingState
     }
     notifier?.collectionProcessingStateDidChange()
+
+    return processingState
+  }
+
+  /// Reuses saved outcomes only when their captured root and matching inputs remain current.
+  private static func processingStateForStart(
+    stored: CollectionProcessingState?, context: CollectionProcessingContext,
+    processingConfiguration: CollectionProcessingConfiguration, now: Date
+  ) throws -> CollectionProcessingState {
+    if let stored,
+      stored.context.rootIdentity != context.rootIdentity ||
+        stored.context.authorizationVersion != context.authorizationVersion {
+      return CollectionProcessingState(
+        revision: stored.revision,
+        context: context,
+        lastCompletedRun: stored.lastCompletedRun,
+        lastCompletedRunContext: stored.lastCompletedRunContext
+      )
+    }
+
+    if let stored, !stored.context.hasSameProcessingInputs(as: context) {
+      var updated = stored
+      updated.context = context
+      updated.folders = stored.folders.map { FolderProcessingRecord(name: $0.name) }
+      updated.isInventoryComplete = false
+      updated.inspectedAt = .none
+      updated.inventoryIssue = .inventoryPending
+
+      return updated
+    }
+
+    var processingState = stored ?? CollectionProcessingState(context: context)
+    if let stored, stored.context.processingConfigurationRevision != context.processingConfigurationRevision {
+      reconcileInclusion(in: &processingState, configuration: processingConfiguration, now: now)
+    }
 
     return processingState
   }

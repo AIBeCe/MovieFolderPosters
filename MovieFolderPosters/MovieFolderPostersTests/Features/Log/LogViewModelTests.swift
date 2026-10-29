@@ -290,6 +290,7 @@ private actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing
   }
   func prepareNetworkHistoryRecording(collectionID: UUID?) -> UUID? { .none }
   func recordCompletedNetworkRequest(
-    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date, expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
+    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
+    expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) {}
 }

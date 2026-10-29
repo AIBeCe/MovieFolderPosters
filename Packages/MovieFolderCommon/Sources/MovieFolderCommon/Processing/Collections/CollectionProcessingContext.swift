@@ -37,9 +37,12 @@ nonisolated public struct CollectionProcessingContext: Codable, Sendable, Equata
   ///   - usesStubTMDbResponses: Whether explicit development fixtures are enabled.
   ///   - appearance: Rendering finish captured for this operation.
   ///   - movieMatchingConfiguration: Effective per-collection choices used for automatic matching and freshness.
-  public init(rootID: UUID, rootIdentity: String, authorizationVersion: UUID,
-              credentialRevision: UUID, usesStubTMDbResponses: Bool, appearance: PosterAppearance,
-              movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(), processingConfigurationRevision: UUID? = .none) {
+  public init(
+    rootID: UUID, rootIdentity: String, authorizationVersion: UUID,
+    credentialRevision: UUID, usesStubTMDbResponses: Bool, appearance: PosterAppearance,
+    movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+    processingConfigurationRevision: UUID? = .none
+  ) {
     self.rootID = rootID
     self.rootIdentity = rootIdentity
     self.authorizationVersion = authorizationVersion

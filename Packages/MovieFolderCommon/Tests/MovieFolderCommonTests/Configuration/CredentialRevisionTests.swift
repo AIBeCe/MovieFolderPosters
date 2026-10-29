@@ -61,7 +61,7 @@ struct CredentialRevisionTests {
     }
     try repository.updateCredential(expectedRevision: .none)
     let first = try repository.read()
-    #expect(first.version == 5)
+    #expect(first.version == 6)
     #expect(throws: ConfigurationError.self) { try repository.updateCredential(expectedRevision: .none) }
     try repository.updateCredential(expectedRevision: first.credentialRevision)
     let second = try repository.read()

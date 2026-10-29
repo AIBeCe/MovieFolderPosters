@@ -27,7 +27,7 @@ public enum TMDbRequestResult: Codable, Sendable, Equatable {
 }
 
 /// Supplies an opaque recording ticket before dispatch and receives safe completion metadata.
-public protocol TMDbClientRequestDelegate: Sendable {
+public protocol TMDbClientRequestObserver: Sendable {
   /// Prepares optional history recording for a request.
   ///
   /// - Parameter purpose: The request category, without request-specific data.
@@ -48,3 +48,6 @@ public protocol TMDbClientRequestDelegate: Sendable {
     recordingTicket: UUID
   ) async
 }
+
+/// Retains the established name for clients that already conform to the request observer contract.
+public typealias TMDbClientRequestDelegate = TMDbClientRequestObserver

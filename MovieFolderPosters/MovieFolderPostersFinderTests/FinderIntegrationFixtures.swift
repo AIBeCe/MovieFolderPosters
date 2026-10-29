@@ -61,7 +61,7 @@ struct QuietActivityNotifier: MovieFolderActivityChangeNotifying {
 /// Supplies deterministic provider results; no network request or icon write is needed for missing posters.
 struct NoMatchesProvider: MovieMetadataProvider {
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try Task.checkCancellation()
@@ -77,7 +77,7 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
   private(set) var searchCount = Int.zero
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searchCount += 1
@@ -98,7 +98,7 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
   private var hasStarted = false
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     hasStarted = true
@@ -143,7 +143,7 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
   let configurationReadControl: FinderConfigurationReadControl
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try repository.update { $0.directories[0].usesPrivateHistory = false }

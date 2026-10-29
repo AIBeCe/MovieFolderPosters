@@ -368,7 +368,7 @@ private struct RecoveryTestProvider: MovieMetadataProvider {
   /// A read inside the provider call fails if the wrapper accidentally retains its admission access.
   var recovery: ProcessingRecoveryService?
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     _ = try recovery?.read()

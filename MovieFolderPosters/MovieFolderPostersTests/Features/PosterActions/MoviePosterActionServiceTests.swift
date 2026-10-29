@@ -320,40 +320,6 @@ struct MoviePosterActionServiceTests {
     #expect(await movieMetadataProvider.searches == ["Dune:2021"])
   }
 
-  /// A configuration revision changed during provider suspension invalidates its result.
-  @Test func configurationChangeDuringSearchRejectsResults() async throws {
-    let fixture = try PosterActionFixture()
-    defer { fixture.cleanup() }
-    let movieMetadataProvider = ActionProvider(repository: fixture.repository)
-    await #expect {
-      try await fixture.service(movieMetadataProvider: movieMetadataProvider).searchMovies(
-        for: fixture.request, query: "Dune", year: .none)
-    } throws: { error in
-      if case ConfigurationError.configurationChanged = error { return true }
-
-      return false
-    }
-  }
-
-  /// A configuration change during poster download must stop the final change guard.
-  @Test func configurationChangeDuringArtworkPreventsChange() async throws {
-    let fixture = try PosterActionFixture()
-    defer { fixture.cleanup() }
-    let movieMetadataProvider = ActionProvider(repository: fixture.repository, changesDuringDownload: true)
-    let activity = ActivityServiceFake()
-    let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
-      posterPath: "/chosen.png")
-    do {
-      _ = try await fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
-        .applyPoster(movie, for: fixture.request)
-      Issue.record("Artwork from an obsolete configuration must not mutate the folder")
-    } catch ConfigurationError.configurationChanged {}
-    #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
-      .hasCustomIcon == false)
-    #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
-      == [.started, .failed])
-  }
-
   /// Provider cancellation keeps a distinct cancelled event and leaves the folder untouched.
   @Test func cancelledRefreshRecordsCancellation() async throws {
     let fixture = try PosterActionFixture()
@@ -456,7 +422,7 @@ private actor ActionProvider: MovieMetadataProvider {
   }
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searches.append("\(title):\(year.map(String.init) ?? "none")")
@@ -499,7 +465,7 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
   }
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async -> MovieSearchResult {
     hasStarted = true
@@ -510,4 +476,42 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
   }
 
   func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+}
+
+/// Covers stale provider results across search and artwork suspension points.
+struct MoviePosterActionServiceConfigurationTests {
+  /// A configuration revision changed during provider suspension invalidates its result.
+  @Test func configurationChangeDuringSearchRejectsResults() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let movieMetadataProvider = ActionProvider(repository: fixture.repository)
+    await #expect {
+      try await fixture.service(movieMetadataProvider: movieMetadataProvider).searchMovies(
+        for: fixture.request, query: "Dune", year: .none)
+    } throws: { error in
+      if case ConfigurationError.configurationChanged = error { return true }
+
+      return false
+    }
+  }
+
+  /// A configuration change during poster download must stop the final change guard.
+  @Test func configurationChangeDuringArtworkPreventsChange() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let movieMetadataProvider = ActionProvider(repository: fixture.repository, changesDuringDownload: true)
+    let activity = ActivityServiceFake()
+    let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: "/chosen.png")
+    do {
+      _ = try await fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
+        .applyPoster(movie, for: fixture.request)
+      Issue.record("Artwork from an obsolete configuration must not mutate the folder")
+    } catch ConfigurationError.configurationChanged {}
+    #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
+      .hasCustomIcon == false)
+    #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
+      == [.started, .failed])
+  }
+
 }

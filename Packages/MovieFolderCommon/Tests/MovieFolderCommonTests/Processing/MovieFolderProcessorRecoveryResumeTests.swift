@@ -105,7 +105,7 @@ private struct RecoveryCheckpointProvider: MovieMetadataProvider {
   let completed = CountingProvider()
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     try await (title == "Beta" ? pending : completed).searchMovies(title: title, year: year)

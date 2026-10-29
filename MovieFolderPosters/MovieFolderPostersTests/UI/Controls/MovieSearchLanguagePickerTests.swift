@@ -1,8 +1,8 @@
 import AppKit
 import MovieFolderCommon
+@testable import MovieFolderPosters
 import Network
 import Testing
-@testable import MovieFolderPosters
 
 /// A native menu preserves any valid saved regional choice beyond its initial local catalog.
 @Test @MainActor func languagePickerPreservesSavedRegionalChoice() throws {

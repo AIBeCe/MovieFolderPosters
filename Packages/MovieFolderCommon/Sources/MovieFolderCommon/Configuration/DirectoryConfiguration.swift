@@ -250,7 +250,8 @@ nonisolated public struct ConfiguredDirectoryStatus: Identifiable, Sendable, Equ
   ///   - usesPrivateHistory: Whether new optional history must omit collection context.
   public init(
     id: UUID, path: String, availability: DirectoryAvailability, counts: CollectionCounts? = .none,
-    displayName: String? = .none, processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
+    displayName: String? = .none,
+    processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
     authorizationRevision: UUID = UUID(), movieMatchingConfiguration: MovieMatchingConfiguration? = .none,
     usesPrivateHistory: Bool = false
   ) {
@@ -440,23 +441,33 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   /// - Parameter identifier: Stable collection identifier.
   /// - Returns: Current collection choices and inherited application defaults.
   func savedCollectionState(_ identifier: UUID) async throws -> SavedCollectionState
-  /// Saves collection choices only if authorization and inclusion generations still match.
-  func updateCollection(
-    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
-  ) async throws
-  /// Atomically saves collection setup, inclusion, and privacy against the captured state.
+  /// Atomically saves collection setup and optional privacy against the captured state.
   /// - Parameters:
   ///   - identifier: Stable configured collection identity.
   ///   - displayName: Friendly name, with blank text clearing the override.
   ///   - movieMatchingConfiguration: Explicit matching choices, or absence to inherit defaults.
   ///   - processingConfiguration: Requested inclusion choices.
-  ///   - usesPrivateHistory: Whether new collection history must omit linked identifiers.
+  ///   - usesPrivateHistory: Whether new collection history omits linked identifiers; absence preserves the saved choice.
   ///   - expected: Captured state used to reject stale edits.
   /// - Throws: Stale configuration, missing collection, authorization, or persistence failures.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
+    processingConfiguration: CollectionProcessingConfiguration,
+    expected: SavedCollectionState
+  ) async throws
+  /// Atomically saves collection setup and an explicit privacy choice against the captured state.
+  /// - Parameters:
+  ///   - identifier: Stable configured collection identity.
+  ///   - displayName: Friendly name, with blank text clearing the override.
+  ///   - movieMatchingConfiguration: Explicit matching choices, or absence to inherit defaults.
+  ///   - processingConfiguration: Requested inclusion choices.
+  ///   - usesPrivateHistory: Whether new collection history omits linked identifiers.
+  ///   - expected: Captured state used to reject stale edits.
+  /// - Throws: Stale configuration, missing collection, authorization, or persistence failures.
+  func updateCollection(
+    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool,
+    expected: SavedCollectionState
   ) async throws
 }
 
@@ -544,17 +555,19 @@ nonisolated public extension ConfigurationServicing {
   func savedCollectionState(_ identifier: UUID) throws -> SavedCollectionState {
     throw ConfigurationError.configurationChanged
   }
-  /// Rejects services that cannot persist a privacy choice atomically.
+  /// Rejects services that cannot persist collection choices atomically.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
+    processingConfiguration: CollectionProcessingConfiguration,
+    expected: SavedCollectionState
   ) throws {
     throw ConfigurationError.configurationChanged
   }
-  /// Rejects collection editing when an older service lacks revision-checked updates.
+  /// Rejects services that cannot persist collection choices and privacy atomically.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool,
+    expected: SavedCollectionState
   ) throws {
     throw ConfigurationError.configurationChanged
   }
@@ -653,7 +666,8 @@ nonisolated public struct MonitoredDirectory: Codable, Sendable, Equatable, Iden
     identity = try values.decodeIfPresent(String.self, forKey: .identity)
     volumePath = try values.decodeIfPresent(String.self, forKey: .volumePath)
     displayName = Self.normalizedDisplayName(try values.decodeIfPresent(String.self, forKey: .displayName))
-    movieMatchingConfiguration = try values.decodeIfPresent(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
+    movieMatchingConfiguration = try values.decodeIfPresent(
+      MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)
     processingConfiguration = try values.decode(
       CollectionProcessingConfiguration.self, forKey: .processingConfiguration)
   }

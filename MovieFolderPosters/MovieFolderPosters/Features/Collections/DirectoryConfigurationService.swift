@@ -343,20 +343,22 @@ extension DirectoryConfigurationService {
     return SavedCollectionState(directory: directory, matchingDefaults: configuration.movieMatchingConfiguration)
   }
 
-  /// Saves a finite draft atomically, rejecting authorization, configuration, or presentation edits made since loading.
+  /// Saves a finite draft atomically, retaining saved privacy when the caller supplies no privacy choice.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, expected: SavedCollectionState
+    processingConfiguration: CollectionProcessingConfiguration,
+    expected: SavedCollectionState
   ) async throws {
     try await updateCollection(identifier, displayName: displayName,
       movieMatchingConfiguration: movieMatchingConfiguration, processingConfiguration: processingConfiguration,
       usesPrivateHistory: expected.directory.usesPrivateHistory, expected: expected)
   }
 
-  /// Saves privacy and the complete collection draft in the same configuration transaction.
+  /// Saves a finite draft atomically with its explicit privacy choice.
   func updateCollection(
     _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool, expected: SavedCollectionState
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool,
+    expected: SavedCollectionState
   ) async throws {
     let committedUpdate = try commitCollectionUpdate(identifier, displayName: displayName,
       movieMatchingConfiguration: movieMatchingConfiguration, processingConfiguration: processingConfiguration,

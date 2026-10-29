@@ -1,9 +1,9 @@
 import FileSystem
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
 import Testing
-@testable import MovieFolderCommon
 
 /// Language changes retain confirmed identities without forcing their replacement.
 @Test func languageOnlyChangeRetainsConfirmedIdentity() throws {
@@ -101,7 +101,8 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   _ = try await later.assessMovie(title: "Alien", year: 1979, search: search, state: &state)
   #expect(await provider.requestedIDs == [42, 42])
   let failing = AliasEvidenceProvider(failure: .authentication)
-  let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: failing, cacheDirectory: fixture.cache)
+  let processor = MovieFolderProcessor(
+    persistence: fixture.persistence, provider: failing, cacheDirectory: fixture.cache)
   var empty = ProcessingState()
   await #expect(throws: TMDbError.authentication) {
     try await processor.assessMovie(title: "Alien", year: 1979, search: search, state: &empty)

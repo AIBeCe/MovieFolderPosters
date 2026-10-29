@@ -57,28 +57,16 @@ extension MovieFolderProcessor {
     let selection: RefreshMovieSelection
     do {
       selection = try await refreshSelection(
-        root: root, child: child, expectedIdentity: expectedIdentity,
-        candidate: &candidate, state: &state, activity: activity)
+        root: root, candidate: &candidate, state: &state, activity: activity)
     } catch {
-      if let saved = state.folders[child], saved.fingerprint == candidate.fingerprint,
-        saved.processingReason == .manualMatchingRequired {
-        try saveState(state, to: access, activity: activity)
-        try recordFolderProcessing(cachedFolderAssessment(candidate, saved: saved),
-          in: &processingState, activity: activity)
-        try finishProcessingRun(&processingState, state: .failed, activity: activity)
-      }
+      try persistManualResolutionIfNeeded(
+        candidate: candidate, access: access, state: &state, processingState: &processingState, activity: activity)
       throw error
     }
     let movieID = selection.movieID
     let posterPath = selection.posterPath
-    activity.movie = MovieMetadata(id: movieID, title: selection.movieTitle ?? "",
-      originalTitle: selection.movieTitle ?? "", releaseYear: selection.movieYear, posterPath: posterPath)
-    activity.stage = .artwork
-    let imageData = try await provider.downloadPoster(path: posterPath)
-    try Task.checkCancellation()
-    guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
-    candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
-    try ensureReplaceableIcon(for: candidate, in: root)
+    let imageData = try await downloadRefreshArtwork(
+      for: selection, root: root, candidate: &candidate, activity: activity)
     activity.stage = .assignPoster
     do {
       let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
@@ -233,15 +221,7 @@ extension MovieFolderProcessor {
     defer { recoverManualProcessing(&processingState, root: root, child: child, saved: state.folders[child]) }
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     activity.movie = savedActivityMovie(state.folders[child], candidate: candidate)
-    let isOwned: Bool
-    do {
-      isOwned = try fileSystem.hasAssignedPoster(
-        toChild: child, in: root, expectedIdentity: expectedIdentity
-      )
-    } catch let error as FolderPosterError {
-      if case .invalidChild = error { throw PosterActionError.changedIdentity }
-      throw error
-    }
+    let isOwned = try hasAssignedPoster(toChild: child, in: root, expectedIdentity: expectedIdentity)
     guard isOwned else {
       if candidate.hasCustomIcon { throw PosterActionError.foreignIcon }
 
@@ -431,12 +411,11 @@ extension MovieFolderProcessor {
 
   /// Resolves the saved refresh identity or searches and rechecks the manual target after suspension.
   private func refreshSelection(
-    root: URL, child: String, expectedIdentity: String, candidate: inout FolderCandidate, state: inout ProcessingState,
-    activity: ProcessorActivityLog
+    root: URL, candidate: inout FolderCandidate, state: inout ProcessingState, activity: ProcessorActivityLog
   ) async throws -> RefreshMovieSelection {
+    let child = candidate.name
     let movieID: Int
     let posterPath: String
-    var freshSearch: CachedSearch?
     var movieTitle = state.folders[child]?.movieTitle
     var movieYear = state.folders[child]?.movieYear
     if let record = state.folders[child], record.fingerprint == candidate.fingerprint,
@@ -446,64 +425,117 @@ extension MovieFolderProcessor {
       movieID = savedMovieID
       posterPath = savedPosterPath
     } else {
-      guard case .parsed(let parsed) = parser.parse(child) else {
-        activity.append(.unresolved, reason: .parsingProblem)
-        throw PosterActionError.unresolved
-      }
-
-      if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, parsed.year == .none {
-        recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
-        activity.append(.unresolved, reason: .manualMatchingRequired)
-        throw PosterActionError.unresolved
-      }
-
-      activity.stage = .search
-      let key = try Self.queryKey(title: parsed.title, year: parsed.year,
-        language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-        usesFixtures: usesFixtureMetadata)
-      let search = try await provider.searchMovies(title: parsed.title, year: parsed.year,
-        language: movieMatchingConfiguration.searchLanguage)
-      try Task.checkCancellation()
-      candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
-      try ensureReplaceableIcon(for: candidate, in: root)
-      freshSearch = CachedSearch(result: search, createdAt: now())
-      let match = try await assessMovie(title: parsed.title, year: parsed.year, search: search, state: &state)
-      guard case .matched(let movie) = match else {
-        let (reason, identifiedMovie) = unresolvedIdentity(match)
-        activity.movie = identifiedMovie
-        let result: MovieFolderActivityLogEvent.FolderResult = switch reason {
-        case .noSuitableMovie: .notFound
-        case .ambiguousMovie: .severalMatches
-        default: .unresolved
-        }
-        if reason == .manualMatchingRequired { recordUnresolved(candidate, in: &state, reason: reason) }
-        activity.append(result, reason: reason)
-        throw PosterActionError.unresolved
-      }
-      if let saved = state.folders[child], saved.fingerprint == candidate.fingerprint,
-        let confirmedID = saved.matchedMovieID, confirmedID != movie.id {
-        recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
-        activity.movie = savedActivityMovie(state.folders[child], candidate: candidate)
-        activity.append(.unresolved, reason: .manualMatchingRequired)
-        throw PosterActionError.unresolved
-      }
-
-      guard let matchedPosterPath = movie.posterPath,
-        !matchedPosterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-        activity.movie = movie
-        activity.append(.unresolved, reason: .missingArtwork)
-        throw PosterActionError.noPoster
-      }
-
-      movieID = movie.id
-      movieTitle = movie.title
-      movieYear = movie.releaseYear
-      posterPath = matchedPosterPath
-      if let freshSearch { state.queries[key] = freshSearch }
+      let result = try await searchForRefresh(root: root, candidate: &candidate, state: &state, activity: activity)
+      movieID = result.movie.id
+      movieTitle = result.movie.title
+      movieYear = result.movie.releaseYear
+      posterPath = result.posterPath
+      state.queries[result.queryKey] = CachedSearch(result: result.search, createdAt: now())
     }
 
     return RefreshMovieSelection(
       movieID: movieID, posterPath: posterPath, movieTitle: movieTitle, movieYear: movieYear)
+  }
+
+  /// Searches and conservatively validates a fresh refresh choice before caching its result.
+  private func searchForRefresh(
+    root: URL, candidate: inout FolderCandidate, state: inout ProcessingState,
+    activity: ProcessorActivityLog
+  ) async throws -> RefreshSearchResult {
+    guard case .parsed(let parsed) = parser.parse(candidate.name) else {
+      activity.append(.unresolved, reason: .parsingProblem)
+      throw PosterActionError.unresolved
+    }
+
+    if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, parsed.year == .none {
+      recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
+      activity.append(.unresolved, reason: .manualMatchingRequired)
+      throw PosterActionError.unresolved
+    }
+
+    activity.stage = .search
+    let queryKey = try Self.queryKey(title: parsed.title, year: parsed.year,
+      language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
+      usesFixtures: usesFixtureMetadata)
+    let search = try await provider.searchMovies(title: parsed.title, year: parsed.year,
+      language: movieMatchingConfiguration.searchLanguage)
+    try Task.checkCancellation()
+    candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
+    try ensureReplaceableIcon(for: candidate, in: root)
+    let match = try await assessMovie(title: parsed.title, year: parsed.year, search: search, state: &state)
+    guard case .matched(let movie) = match else {
+      let (reason, identifiedMovie) = unresolvedIdentity(match)
+      activity.movie = identifiedMovie
+      let result: MovieFolderActivityLogEvent.FolderResult = switch reason {
+      case .noSuitableMovie: .notFound
+      case .ambiguousMovie: .severalMatches
+      default: .unresolved
+      }
+      if reason == .manualMatchingRequired { recordUnresolved(candidate, in: &state, reason: reason) }
+      activity.append(result, reason: reason)
+      throw PosterActionError.unresolved
+    }
+    if let saved = state.folders[candidate.name], saved.fingerprint == candidate.fingerprint,
+      let confirmedID = saved.matchedMovieID, confirmedID != movie.id {
+      recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
+      activity.movie = savedActivityMovie(state.folders[candidate.name], candidate: candidate)
+      activity.append(.unresolved, reason: .manualMatchingRequired)
+      throw PosterActionError.unresolved
+    }
+
+    guard let posterPath = movie.posterPath,
+      !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      activity.movie = movie
+      activity.append(.unresolved, reason: .missingArtwork)
+      throw PosterActionError.noPoster
+    }
+
+    return RefreshSearchResult(queryKey: queryKey, search: search, movie: movie, posterPath: posterPath)
+  }
+
+  /// Saves an explicit manual-resolution requirement when a fresh search cannot replace confirmed evidence.
+  private func persistManualResolutionIfNeeded(
+    candidate: FolderCandidate, access: PersistenceAccess, state: inout ProcessingState,
+    processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog
+  ) throws {
+    guard let saved = state.folders[candidate.name], saved.fingerprint == candidate.fingerprint,
+      saved.processingReason == .manualMatchingRequired else { return }
+
+    try saveState(state, to: access, activity: activity)
+    try recordFolderProcessing(cachedFolderAssessment(candidate, saved: saved),
+      in: &processingState, activity: activity)
+    try finishProcessingRun(&processingState, state: .failed, activity: activity)
+  }
+
+  /// Downloads usable artwork and rechecks the authorized target before any icon write.
+  private func downloadRefreshArtwork(
+    for selection: RefreshMovieSelection, root: URL,
+    candidate: inout FolderCandidate, activity: ProcessorActivityLog
+  ) async throws -> Data {
+    let child = candidate.name
+    let expectedIdentity = candidate.identity
+    activity.movie = MovieMetadata(id: selection.movieID, title: selection.movieTitle ?? "",
+      originalTitle: selection.movieTitle ?? "", releaseYear: selection.movieYear, posterPath: selection.posterPath)
+    activity.stage = .artwork
+    let imageData = try await provider.downloadPoster(path: selection.posterPath)
+    try Task.checkCancellation()
+
+    guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
+
+    candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
+    try ensureReplaceableIcon(for: candidate, in: root)
+
+    return imageData
+  }
+
+  /// Maps changed-child errors to the manual action's stable domain error.
+  private func hasAssignedPoster(toChild child: String, in root: URL, expectedIdentity: String) throws -> Bool {
+    do {
+      return try fileSystem.hasAssignedPoster(toChild: child, in: root, expectedIdentity: expectedIdentity)
+    } catch let error as FolderPosterError {
+      if case .invalidChild = error { throw PosterActionError.changedIdentity }
+      throw error
+    }
   }
 
   /// Keeps historical automatic identities usable only while their owned poster is still installed.
@@ -530,4 +562,16 @@ private struct RefreshMovieSelection {
   let movieTitle: String?
   /// Saved or freshly matched release year evidence.
   let movieYear: Int?
+}
+
+/// Search evidence retained until a refresh selection has passed identity and artwork checks.
+private struct RefreshSearchResult {
+  /// Cache identity containing the captured request context.
+  let queryKey: String
+  /// Complete provider search result used for future bounded reassessment.
+  let search: MovieSearchResult
+  /// Conservatively selected provider identity.
+  let movie: MovieMetadata
+  /// Nonempty artwork path checked before returning.
+  let posterPath: String
 }

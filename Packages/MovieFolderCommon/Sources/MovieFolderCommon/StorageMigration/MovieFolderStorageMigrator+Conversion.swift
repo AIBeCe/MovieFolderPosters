@@ -16,44 +16,7 @@ extension MovieFolderStorageMigrator {
     }
 
     if version < 6 {
-      if version == 5 {
-        guard object["movieMatchingConfiguration"] is [String: Any], object["identificationPolicy"] == nil else {
-          throw MovieFolderStorageMigrationError.invalidRecord(record: record)
-        }
-        for field in ["processingCacheRevision", "retainsNetworkHistory", "historyRevision", "posterAppearance"] {
-          _ = try requiredValue(object, field: field, record: record)
-        }
-      }
-      let credentialRevision = try requiredValue(object, field: "credentialRevision", record: record)
-      if object["processingCacheRevision"] == nil {
-        guard version == 1 else { throw MovieFolderStorageMigrationError.invalidRecord(record: record) }
-
-        object["processingCacheRevision"] = credentialRevision
-      }
-      if object["retainsNetworkHistory"] == nil { object["retainsNetworkHistory"] = false }
-      if object["historyRevision"] == nil { object["historyRevision"] = credentialRevision }
-      if object["posterAppearance"] == nil { object["posterAppearance"] = "softFinish" }
-      try normalizeGlobalMatching(in: &object, record: record)
-
-      guard var directories = object["directories"] as? [[String: Any]] else {
-        throw MovieFolderStorageMigrationError.invalidRecord(record: record)
-      }
-
-      for index in directories.indices {
-        if version == 5 {
-          _ = try requiredValue(directories[index], field: "isPrivate", record: record)
-          _ = try requiredValue(directories[index], field: "participationPolicy", record: record)
-        }
-        if directories[index]["isPrivate"] == nil { directories[index]["isPrivate"] = false }
-        if directories[index]["participationPolicy"] == nil {
-          directories[index]["participationPolicy"] = [
-            "revision": "00000000-0000-0000-0000-000000000000", "isPaused": false, "excludedFolders": []
-          ] as [String: Any]
-        }
-        try normalizeNestedMatching(in: &directories[index], record: record)
-      }
-      object["directories"] = directories
-      object["version"] = 6
+      try migrateLegacySettings(&object, version: version, record: record)
     }
     let converted = version < 6 ? try encodeObject(object, record: record) : payload
     let configuration: DirectoryConfiguration
@@ -65,6 +28,62 @@ extension MovieFolderStorageMigrator {
     }
 
     return (converted, version < 6, configuration)
+  }
+
+  /// Adds only the fields introduced after the stored schema while preserving captured generations.
+  private func migrateLegacySettings(
+    _ object: inout [String: Any], version: Int, record: MovieFolderStorageRecordKind
+  ) throws {
+    try validateLatestLegacySettings(object, version: version, record: record)
+    let credentialRevision = try requiredValue(object, field: "credentialRevision", record: record)
+    if object["processingCacheRevision"] == nil {
+      guard version == 1 else { throw MovieFolderStorageMigrationError.invalidRecord(record: record) }
+
+      object["processingCacheRevision"] = credentialRevision
+    }
+    if object["retainsNetworkHistory"] == nil { object["retainsNetworkHistory"] = false }
+    if object["historyRevision"] == nil { object["historyRevision"] = credentialRevision }
+    if object["posterAppearance"] == nil { object["posterAppearance"] = "softFinish" }
+    try normalizeGlobalMatching(in: &object, record: record)
+    try normalizeLegacyDirectories(in: &object, version: version, record: record)
+    object["version"] = 6
+  }
+
+  /// Requires fields introduced by the immediately preceding schema rather than manufacturing defaults.
+  private func validateLatestLegacySettings(
+    _ object: [String: Any], version: Int, record: MovieFolderStorageRecordKind
+  ) throws {
+    guard version == 5 else { return }
+    guard object["movieMatchingConfiguration"] is [String: Any], object["identificationPolicy"] == nil else {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: record)
+    }
+    for field in ["processingCacheRevision", "retainsNetworkHistory", "historyRevision", "posterAppearance"] {
+      _ = try requiredValue(object, field: field, record: record)
+    }
+  }
+
+  /// Converts each saved collection while preserving its explicit settings and inheritance state.
+  private func normalizeLegacyDirectories(
+    in object: inout [String: Any], version: Int, record: MovieFolderStorageRecordKind
+  ) throws {
+    guard var directories = object["directories"] as? [[String: Any]] else {
+      throw MovieFolderStorageMigrationError.invalidRecord(record: record)
+    }
+
+    for index in directories.indices {
+      if version == 5 {
+        _ = try requiredValue(directories[index], field: "isPrivate", record: record)
+        _ = try requiredValue(directories[index], field: "participationPolicy", record: record)
+      }
+      if directories[index]["isPrivate"] == nil { directories[index]["isPrivate"] = false }
+      if directories[index]["participationPolicy"] == nil {
+        directories[index]["participationPolicy"] = [
+          "revision": "00000000-0000-0000-0000-000000000000", "isPaused": false, "excludedFolders": []
+        ] as [String: Any]
+      }
+      try normalizeNestedMatching(in: &directories[index], record: record)
+    }
+    object["directories"] = directories
   }
 
   /// Converts matching keys in both live and historical outcome contexts, without revising outcome facts.

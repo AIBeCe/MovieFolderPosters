@@ -1,6 +1,6 @@
 import Foundation
-import OSLog
 import Network
+import OSLog
 import Persistence
 
 /// Resolves storage and notifications in the calling host or Finder extension process.

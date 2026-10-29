@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Network
+import Testing
 
 /// Provider evidence preserves provenance and uses the authenticated movie endpoint.
 @Test func alternativeTitlesPreserveProviderEvidence() async throws {

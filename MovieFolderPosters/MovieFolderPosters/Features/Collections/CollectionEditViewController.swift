@@ -21,7 +21,8 @@ import MovieFolderCommon
   /// Whole-collection automatic processing pause.
   private let pauseButton = NSButton(checkboxWithTitle: "Pause this collection", target: .none, action: .none)
   /// Local optional history privacy choice, persisted only with the complete draft.
-  private let privateHistoryCheckbox = NSButton(checkboxWithTitle: "Private collection history", target: .none, action: .none)
+  private let privateHistoryCheckbox = NSButton(
+    checkboxWithTitle: "Private collection history", target: .none, action: .none)
   /// Explicit inheritance choice.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)

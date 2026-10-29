@@ -31,7 +31,8 @@ import MovieFolderCommon
   /// Friendly collection name, bounded to 120 characters.
   private let nameField = NSTextField(string: "")
   /// Local optional history privacy choice, persisted only with the complete draft.
-  private let privateHistoryCheckbox = NSButton(checkboxWithTitle: "Private collection history", target: .none, action: .none)
+  private let privateHistoryCheckbox = NSButton(
+    checkboxWithTitle: "Private collection history", target: .none, action: .none)
   /// Default-on inheritance choice; overrides remain local until Add.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
@@ -170,6 +171,11 @@ import MovieFolderCommon
     for child in [folderRow, drop, nameField] {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }
+    finishFormInstallation(content: content)
+  }
+
+  /// Adds the form rows that need a full-width constraint and records the first measured document size.
+  private func finishFormInstallation(content: NSStackView) {
     for child in content.arrangedSubviews where child is NSTextField || child is NSBox {
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }

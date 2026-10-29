@@ -1,9 +1,9 @@
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
-import Testing
 import Synchronization
-@testable import MovieFolderCommon
+import Testing
 /// Network history stores only terminal typed evidence under currentConfiguration shared privacy choices.
 struct MovieFolderNetworkHistoryTests {
   /// Disabled recording does not start a recording revision; toggling or privacy changes invalidate in-flight work.

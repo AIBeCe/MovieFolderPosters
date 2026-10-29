@@ -78,7 +78,8 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
 
     guard schemaVersion == 3 else {
       if (1...2).contains(schemaVersion) {
-        throw MovieFolderStorageMigrationError.migrationRequired(record: .collectionOutcomes(rootID), version: schemaVersion)
+        throw MovieFolderStorageMigrationError.migrationRequired(
+          record: .collectionOutcomes(rootID), version: schemaVersion)
       }
       throw MovieFolderStorageMigrationError.unsupportedVersion(
         record: .collectionOutcomes(rootID), version: schemaVersion)

@@ -160,7 +160,7 @@ actor CountingProvider {
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles {
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles {
     alternativeTitleCount += 1
 
     return [movieID: []]
@@ -378,7 +378,9 @@ struct RootIdentityIconChangeVerifier: MovieFolderProcessingVerifier {
   /// Revalidates authorization immediately before a manual change.
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     try checkAutomaticProcessing(in: root)
   }
 }
@@ -403,7 +405,9 @@ struct SuppressingIconChangeVerifier: MovieFolderProcessingVerifier {
   /// Revalidates authorization immediately before a manual change.
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     _ = try FileSystemService().removeAssignedPoster(
       toChild: "Dune (2021)", in: root,
       expectedIdentity: identity)
@@ -448,7 +452,9 @@ final class AccessIconChangeVerifier: MovieFolderProcessingVerifier, @unchecked 
   /// Revalidates authorization immediately before a manual change.
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     try checkAutomaticProcessing(in: root)
   }
 }

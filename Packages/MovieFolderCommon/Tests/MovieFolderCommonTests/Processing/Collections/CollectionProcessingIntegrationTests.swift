@@ -8,85 +8,6 @@ import Testing
 
 /// Checks durable results through the production processor and real local stores.
 struct CollectionProcessingIntegrationTests {
-  /// Identity remains available when the conservatively identified movie has no artwork.
-  @Test func missingArtworkIsNotMissingMovieIdentity() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider(missingArtwork: true)).process(
-      root: fixture.root, processingContext: fixture.context)
-    let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(processingState.folders.first?.state == .unresolved)
-    #expect(processingState.folders.first?.reason == .missingArtwork)
-    #expect(processingState.folders.first?.movieID == 7)
-    #expect(processingState.folders.first?.movieIdentitySource == .conservativeMatch)
-    #expect(processingState.calculateCounts().notFound == 0)
-  }
-
-  /// A poster transport failure retains established movie identity and is not a metadata failure.
-  @Test func artworkFailureKeepsIdentifiedMovie() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let provider = CollectionProcessingMetadataProvider(posterData: Data([1]), shouldFailPoster: true)
-    let summary = try await fixture.processor(provider: provider).process(
-      root: fixture.root, processingContext: fixture.context)
-    let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    let record = try #require(processingState.folders.first)
-    #expect(record.state == .failed)
-    #expect(record.reason == .connectivity)
-    #expect(record.lastFailure?.reason == .connectivity)
-    #expect(record.lastFailure?.stage == .artwork)
-    #expect(record.movieID == 7)
-    #expect(record.movieTitle == "Movie")
-    #expect(summary.nextAutomaticRetryAt == record.retryAt)
-    #expect(processingState.calculateCounts().notFound == 0)
-  }
-
-  /// A failed restyle leaves the existing verified poster Done and records the failed attempt separately.
-  @Test func automaticRestyleFailureRetainsVerifiedInstalledPoster() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    #if SWIFT_PACKAGE
-      let image = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
-    #else
-      let image = try #require(
-        Bundle(for: MoviePosterActionTests.self).url(forResource: "TestPoster", withExtension: "png"))
-    #endif
-    let movie = MovieMetadata(
-      id: 7, title: "Chosen", originalTitle: "Chosen", releaseYear: 2021, posterPath: "/chosen.jpg")
-    let identity = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root).identity
-    let provider = CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image))
-    _ = try await fixture.processor(provider: provider)
-      .applyMoviePoster(
-        movie, root: fixture.root, child: "Movie (2021)", expectedIdentity: identity,
-        processingContext: fixture.context)
-    let configuration = ConfigurationRepository(
-      store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Settings")))
-    try configuration.update { $0.posterAppearance = .raw }
-    let context = CollectionProcessingContext(
-      rootID: fixture.context.rootID, rootIdentity: fixture.context.rootIdentity,
-      authorizationVersion: fixture.context.authorizationVersion,
-      credentialRevision: fixture.context.credentialRevision,
-      usesStubTMDbResponses: false, appearance: .raw,
-      processingConfigurationRevision: fixture.context.processingConfigurationRevision)
-    let activity = ProcessingActivityProbe()
-    let directory = try #require(try configuration.read().directories.first)
-    let processor = MovieFolderProcessor(
-      persistence: fixture.processing, provider: CollectionProcessingMetadataProvider(),
-      cacheDirectory: fixture.base.appendingPathComponent("Posters"), coordinationStore: fixture.coordination,
-      processingVerifier: RefusingRestyleVerifier(), appearance: .raw, processingStore: fixture.processingStore,
-      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: directory))
-    _ = try await processor.process(root: fixture.root, processingContext: context)
-    let processingState = try #require(try fixture.processingStore.read(rootID: context.rootID))
-    #expect(processingState.folders.first?.state == .done)
-    #expect(processingState.folders.first?.lastFailure?.stage == .assignPoster)
-    let failure = try #require(await activity.events.first { $0.folderResult == .failed })
-    #expect(failure.target?.movieID == 7)
-    #expect(failure.target?.movieTitle == "Chosen")
-    #expect(failure.failure?.stage == .assignPoster)
-    #expect(failure.failure?.reason == .filesystem)
-    #expect(try FileSystemService().assignedPosterAppearance(toChild: "Movie (2021)", in: fixture.root) == .softFinish)
-  }
-
   /// A cache-save failure records the actual verified poster and stops before the next folder change.
   @Test func automaticCacheFailurePreservesActualInstalledEvidence() async throws {
     let fixture = try CollectionProcessingFixture(names: ["Alpha (2021)", "Beta (2021)"])
@@ -463,7 +384,7 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
 
   /// Returns the configured offline search scenario, including incomplete or ambiguous results.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     if authenticationFailure { throw TMDbError.authentication }
@@ -524,7 +445,9 @@ private struct RefusingRestyleVerifier: MovieFolderProcessingVerifier {
   func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess? { .none }
 
   /// Rejects restyling with the configured icon-assignment failure.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     throw FolderPosterError.iconAssignmentFailed
   }
 }
@@ -544,7 +467,7 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
 
   /// Signals search entry and suspends long enough for the test to cancel processing.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     started = true
@@ -559,4 +482,87 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
   /// - Parameter path: Unused provider artwork path.
   /// - Throws: `TMDbError.invalidPosterPath` for every request.
   func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+}
+
+/// Covers artwork outcomes without increasing the collection-state integration suite size.
+struct CollectionProcessingArtworkIntegrationTests {
+  /// Identity remains available when the conservatively identified movie has no artwork.
+  @Test func missingArtworkIsNotMissingMovieIdentity() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider(missingArtwork: true)).process(
+      root: fixture.root, processingContext: fixture.context)
+    let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
+    #expect(processingState.folders.first?.state == .unresolved)
+    #expect(processingState.folders.first?.reason == .missingArtwork)
+    #expect(processingState.folders.first?.movieID == 7)
+    #expect(processingState.folders.first?.movieIdentitySource == .conservativeMatch)
+    #expect(processingState.calculateCounts().notFound == 0)
+  }
+
+  /// A poster transport failure retains established movie identity and is not a metadata failure.
+  @Test func artworkFailureKeepsIdentifiedMovie() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let provider = CollectionProcessingMetadataProvider(posterData: Data([1]), shouldFailPoster: true)
+    let summary = try await fixture.processor(provider: provider).process(
+      root: fixture.root, processingContext: fixture.context)
+    let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
+    let record = try #require(processingState.folders.first)
+    #expect(record.state == .failed)
+    #expect(record.reason == .connectivity)
+    #expect(record.lastFailure?.reason == .connectivity)
+    #expect(record.lastFailure?.stage == .artwork)
+    #expect(record.movieID == 7)
+    #expect(record.movieTitle == "Movie")
+    #expect(summary.nextAutomaticRetryAt == record.retryAt)
+    #expect(processingState.calculateCounts().notFound == 0)
+  }
+
+  /// A failed restyle leaves the existing verified poster Done and records the failed attempt separately.
+  @Test func automaticRestyleFailureRetainsVerifiedInstalledPoster() async throws {
+    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    #if SWIFT_PACKAGE
+      let image = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
+    #else
+      let image = try #require(
+        Bundle(for: MoviePosterActionTests.self).url(forResource: "TestPoster", withExtension: "png"))
+    #endif
+    let movie = MovieMetadata(
+      id: 7, title: "Chosen", originalTitle: "Chosen", releaseYear: 2021, posterPath: "/chosen.jpg")
+    let identity = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root).identity
+    let provider = CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image))
+    _ = try await fixture.processor(provider: provider)
+      .applyMoviePoster(
+        movie, root: fixture.root, child: "Movie (2021)", expectedIdentity: identity,
+        processingContext: fixture.context)
+    let configuration = ConfigurationRepository(
+      store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Settings")))
+    try configuration.update { $0.posterAppearance = .raw }
+    let context = CollectionProcessingContext(
+      rootID: fixture.context.rootID, rootIdentity: fixture.context.rootIdentity,
+      authorizationVersion: fixture.context.authorizationVersion,
+      credentialRevision: fixture.context.credentialRevision,
+      usesStubTMDbResponses: false, appearance: .raw,
+      processingConfigurationRevision: fixture.context.processingConfigurationRevision)
+    let activity = ProcessingActivityProbe()
+    let directory = try #require(try configuration.read().directories.first)
+    let processor = MovieFolderProcessor(
+      persistence: fixture.processing, provider: CollectionProcessingMetadataProvider(),
+      cacheDirectory: fixture.base.appendingPathComponent("Posters"), coordinationStore: fixture.coordination,
+      processingVerifier: RefusingRestyleVerifier(), appearance: .raw, processingStore: fixture.processingStore,
+      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: directory))
+    _ = try await processor.process(root: fixture.root, processingContext: context)
+    let processingState = try #require(try fixture.processingStore.read(rootID: context.rootID))
+    #expect(processingState.folders.first?.state == .done)
+    #expect(processingState.folders.first?.lastFailure?.stage == .assignPoster)
+    let failure = try #require(await activity.events.first { $0.folderResult == .failed })
+    #expect(failure.target?.movieID == 7)
+    #expect(failure.target?.movieTitle == "Chosen")
+    #expect(failure.failure?.stage == .assignPoster)
+    #expect(failure.failure?.reason == .filesystem)
+    #expect(try FileSystemService().assignedPosterAppearance(toChild: "Movie (2021)", in: fixture.root) == .softFinish)
+  }
+
 }

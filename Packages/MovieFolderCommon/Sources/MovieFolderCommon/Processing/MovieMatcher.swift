@@ -44,8 +44,8 @@ nonisolated struct MovieMatcher: Sendable {
   ///   - configuration: Effective automatic choices controlling original-title comparison.
   /// - Returns: A uniquely supported identity or its unresolved classification.
   func matchMovie(title: String, year: Int?, search: MovieSearchResult,
-                configuration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
-                alternativeTitles: MovieAlternativeTitles? = .none) -> MovieMatchResult {
+                  configuration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+                  alternativeTitles: MovieAlternativeTitles? = .none) -> MovieMatchResult {
     let query = normalized(title)
     guard !query.isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else {
       return .unresolved(.invalidQuery)

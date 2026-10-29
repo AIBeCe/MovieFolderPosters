@@ -279,14 +279,14 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 @Test func futureSettingsSchemaIsRejectedWithoutChangingBytes() throws {
   let fixture = try MigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
-  let (original, _) = try fixture.seed(settingsVersion: 6)
-  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 6)) {
+  let (original, _) = try fixture.seed(settingsVersion: 7)
+  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
     try fixture.migrator.preflight()
   }
-  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 6)) {
+  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
     try fixture.migrator.migrate()
   }
-  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 6)) {
+  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
     try ConfigurationRepository(store: fixture.settings).read()
   }
   #expect(try fixture.read(fixture.settings, key: ConfigurationRepository.recordKey) == original)
@@ -329,12 +329,12 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 @Test func malformedCurrentRecordErrorsRemainSpecificAndReadOnly() throws {
   let fixture = try MigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
-  let invalidSettings = Data("{\"version\":5}".utf8)
+  let invalidSettings = Data("{\"version\":6}".utf8)
   try fixture.write(invalidSettings, to: fixture.settings, key: ConfigurationRepository.recordKey)
   #expect(throws: MovieFolderStorageMigrationError.invalidRecord(record: .settings)) {
     try ConfigurationRepository(store: fixture.settings).read()
   }
-  let invalidOutcomes = Data("{\"schemaVersion\":2}".utf8)
+  let invalidOutcomes = Data("{\"schemaVersion\":3}".utf8)
   try fixture.write(invalidOutcomes, to: fixture.outcomes,
     key: CollectionProcessingStore.processingStateKey(for: fixture.root.id))
   let store = CollectionProcessingStore(store: fixture.outcomes,

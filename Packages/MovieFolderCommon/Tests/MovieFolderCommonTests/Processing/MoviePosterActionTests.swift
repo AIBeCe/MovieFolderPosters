@@ -550,7 +550,7 @@ private actor ActionProvider: MovieMetadataProvider {
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
@@ -635,7 +635,9 @@ private struct ConfigurationIconChangeVerifier: MovieFolderProcessingVerifier {
   /// Revalidates authorization immediately before a manual change.
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 }
@@ -659,7 +661,9 @@ private final class RefusingIconChangeVerifier: MovieFolderProcessingVerifier, @
   /// Revalidates authorization immediately before a manual change.
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     let count = lock.withLock { calls += 1; return calls }
     if count > 1 { throw PosterActionError.busy }
 

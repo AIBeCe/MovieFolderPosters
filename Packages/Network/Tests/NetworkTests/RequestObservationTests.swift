@@ -48,7 +48,7 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
     result: TMDbRequestResult,
     completedAt: Date,
     recordingTicket: UUID
-  ) async {
+  ) {
     completions.append((purpose, result, recordingTicket))
   }
 

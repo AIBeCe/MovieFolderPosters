@@ -1,8 +1,8 @@
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
 import Testing
-@testable import MovieFolderCommon
 
 /// Real app-owned namespaces provide exact-backup and operational lock evidence without opening movie roots.
 private struct OperationalMigrationFixture {
