@@ -5,10 +5,11 @@
 All five proposal points and their naming corrections were approved in chat on 2026-10-29.
 The user explicitly authorized implementation. Implementation was performed on
 `feature/verified-aliases-and-language`, based on develop at `5dbfcfd`.
-Implementation is complete and independently reviewed; user implementation review is pending.
-No implementation commit, formal Validation Phase, merge, or push is authorized yet.
-This document records approved scope and implementation evidence; product documentation is updated on
-develop only during authorized feature completion.
+Implementation and independent review were completed. The implementation commit is `5c6ab52`, the validation
+commit is `7ecc50e`, and the acceptance coverage and fixture commits are `e6f0265` and `3eb3127`.
+The completed feature branch was fast-forwarded into `develop` on 2026-10-30 at `3eb3127`. The user approved
+the Validation and Acceptance Testing phases and later authorized feature completion. Full-app A1–A3 execution
+remains blocked and is explicitly recorded in the acceptance report; it is not represented as passing.
 
 Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/15
 Release direction: 1.2.0, identification evidence and correction. Finder remains the browser.
@@ -192,12 +193,29 @@ artwork before download; I4 persists retained-ID manual resolution and excludes 
 fingerprint changed; I5 persists manual resolution for incomplete title evidence on refresh with zero alias
 and artwork calls at the six-candidate ceiling. The same worker/reviewer pair owned all corrections.
 
-Formal Validation Phase, SwiftLint, rendered Light/Dark/keyboard/VoiceOver inspection, live TMDb,
-real saved-data migration and Finder runtime/icon persistence qualification remain unperformed.
+Live TMDb, rendered Light/Dark/keyboard/VoiceOver inspection, real saved-data migration and Finder runtime/icon
+persistence qualification remain unperformed.
 The broad host test harness could not compile unrelated actor/init test declarations; no baseline claim
 or full-project test pass is made. Focused host evidence uses a narrowed temporary harness and real production
 sources; unrelated test syntax was not repaired. Unrelated untracked files remain preserved.
 
-Next gate: user approval of completed implementation authorizes its focused commit. Starting formal
-validation still requires explicit authorization. Product docs on develop and publication remain gated on
-finish-the-feature authorization.
+## Validation and acceptance completion — 2026-10-30
+
+The user approved the completed Validation phase and its commit, `7ecc50e`. The validation work addressed the
+reported SwiftLint findings in scope and reviewed the introduced import-order and line-length findings against
+the Swift Style Guide. Validation was approved before the Acceptance Testing phase began. Its evidence and
+qualification boundaries remain the recorded focused results above; this does not establish live TMDb,
+rendered accessibility, Finder runtime, or release qualification.
+
+The user approved the Acceptance Testing phase after reviewing the execution report. Persistent BDD scenarios and
+automated tests are in `docs/acceptance/R120-01.md`, committed in `e6f0265` and `3eb3127`. Executed processor,
+action-service, and log regression scenarios passed. Full-app UI scenarios A1–A3 did not execute because macOS
+blocked the XCUITest runner and the host has no valid development signing identity; their statuses remain BLOCKED.
+Acceptance phase approval authorized the documented test deliverables and integration, not a claim that all
+full-app E2E scenarios passed. Re-run A1–A3 in a suitably signed/trusted macOS test environment when available.
+
+## Integration — 2026-10-30
+
+`feature/verified-aliases-and-language` was fast-forwarded into `develop`; integrated HEAD is `3eb3127`.
+The roadmap and this implementation record were updated on `develop` as part of the authorized feature-completion
+sequence. Local Xcode user data and SwiftPM scheme state were preserved and excluded from the feature commits.

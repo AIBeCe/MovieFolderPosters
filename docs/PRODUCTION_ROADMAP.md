@@ -380,9 +380,14 @@ Increase supported naming/evidence cases without lowering conservative automatic
 
 GitHub issue: [#15](https://github.com/AIBeCe/MovieFolderPosters/issues/15); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
 
-- [ ] Scope: Use provider-verified alternative/original titles and explicit search-language settings. Preserve exact identity and ambiguity safeguards; changing language cannot silently reassign confirmed movies.
+Status: **Implemented and integrated into `develop` on 2026-10-30** by fast-forward from
+`feature/verified-aliases-and-language` to `3eb3127`. The implementation, validation, and acceptance-test changes
+are committed. The acceptance phase was approved with its execution limitations recorded in
+[R120-01 acceptance](acceptance/R120-01.md).
+
+- [x] Scope: Use provider-verified alternative/original titles and explicit search-language settings. Preserve exact identity and ambiguity safeguards; changing language cannot silently reassign confirmed movies.
 - Dependencies: Previous deliverable in this release; previous release baseline.
-- Acceptance: International/alias fixtures prove accepted evidence provenance and preserve ambiguous IDs. Network budgets and cache keys include the relevant language and credential context.
+- Acceptance: Persistent automated scenarios cover international/alias provenance, ambiguity, the candidate request boundary, and cache isolation; those processor scenarios passed. The saved-language full-app UI journeys A1–A3 remain blocked because macOS rejected the XCUITest runner and this host has no valid development signing identity. See the per-scenario evidence and follow-up condition in [R120-01 acceptance](acceptance/R120-01.md); this is not a full-app E2E PASS.
 - Source ideas: E11, E12, N77.
 
 <a id="r120-02"></a>
