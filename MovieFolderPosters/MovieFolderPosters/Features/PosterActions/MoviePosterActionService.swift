@@ -153,8 +153,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - movieMetadataProvider: Optional metadata provider used after credential validation.
   ///   - networkHistory: Optional history service supplied by application composition or an isolated consumer.
   init(
-    credentials: any CredentialStoring = KeychainCredentialStore(
-      accessGroup: MovieFolderEnvironment.env(.groupIdentifier)),
+    credentials: any CredentialStoring = MovieFolderEnvironment.makeCredentialStore(),
     activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
     environment: any MoviePosterActionEnvironment = LiveMoviePosterActionEnvironment(),
     movieMetadataProvider: (any MovieMetadataProvider)? = .none,

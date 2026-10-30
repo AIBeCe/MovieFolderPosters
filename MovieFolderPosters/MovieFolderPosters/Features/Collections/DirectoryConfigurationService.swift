@@ -104,8 +104,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///   - requestDelegate: Optional observer of actual credential HTTP attempts; fixture requests are omitted.
   init(
     repository: ConfigurationRepository, authorizations: PersistenceStore,
-    credentials: any CredentialStoring = KeychainCredentialStore(
-      accessGroup: MovieFolderEnvironment.env(.groupIdentifier)),
+    credentials: any CredentialStoring = MovieFolderEnvironment.makeCredentialStore(),
     notifier: any ConfigurationChangeNotifying = SharedConfigurationChangeNotifier(),
     authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization(),
     processingCleanup: (any CollectionProcessingCleaning)? = .none,

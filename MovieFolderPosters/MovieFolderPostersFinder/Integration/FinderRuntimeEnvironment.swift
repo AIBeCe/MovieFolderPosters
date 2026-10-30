@@ -75,7 +75,7 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
   func authorizationStore() throws -> PersistenceStore { try MovieFolderEnvironment.makePrivateAuthorizationStore() }
   func containerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
   func credential() throws -> String? {
-    try KeychainCredentialStore(accessGroup: MovieFolderEnvironment.env(.groupIdentifier)).read()
+    try MovieFolderEnvironment.makeCredentialStore().read()
   }
 
   func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {

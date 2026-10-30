@@ -73,6 +73,16 @@ nonisolated public enum MovieFolderEnvironment {
   /// - Returns: The App Group URL resolved using the calling process's entitlements.
   /// - Throws: ConfigurationError.unavailableContainer when that process cannot resolve the App Group.
   public static func appGroupContainerURL() throws -> URL {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        guard let root = try acceptanceTestRoot() else { throw ConfigurationError.unavailableContainer }
+        let shared = root.appendingPathComponent("Shared", isDirectory: true)
+        try FileManager.default.createDirectory(at: shared, withIntermediateDirectories: true)
+
+        return shared
+      }
+    #endif
+
     guard
       let url = FileManager.default.containerURL(
         forSecurityApplicationGroupIdentifier: MovieFolderEnvironment.env(.groupIdentifier)
@@ -80,6 +90,18 @@ nonisolated public enum MovieFolderEnvironment {
     else { throw ConfigurationError.unavailableContainer }
 
     return url
+  }
+
+  /// Creates the production Keychain store or a credential-free acceptance-test store.
+  /// - Returns: A Keychain store for normal launches and an isolated fixture store for acceptance launches.
+  public static func makeCredentialStore() -> any CredentialStoring {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        return AcceptanceTestCredentialStore()
+      }
+    #endif
+
+    return KeychainCredentialStore(accessGroup: MovieFolderEnvironment.env(.groupIdentifier))
   }
 
   /// Opens the settings repository in the shared container.
@@ -230,10 +252,63 @@ nonisolated protocol MovieFolderStorageLocations: Sendable {
 nonisolated private struct SystemMovieFolderStorageLocations: MovieFolderStorageLocations {
   func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
   func applicationSupportURL() throws -> URL {
-    try FileManager.default.url(
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        guard let root = try MovieFolderEnvironment.acceptanceTestRoot() else {
+          throw ConfigurationError.unavailableContainer
+        }
+        let privateStorage = root.appendingPathComponent("Private", isDirectory: true)
+        try FileManager.default.createDirectory(at: privateStorage, withIntermediateDirectories: true)
+
+        return privateStorage
+      }
+    #endif
+
+    return try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: .none, create: true)
   }
 }
+
+extension MovieFolderEnvironment {
+  /// Resolves the pre-created temporary directory supplied by the XCUITest runner.
+  /// - Returns: The isolated acceptance root when the launch argument and environment are valid.
+  /// - Throws: `ConfigurationError.unavailableContainer` for absent, non-temporary, or invalid paths.
+  #if DEBUG
+    fileprivate static func acceptanceTestRoot() throws -> URL? {
+      guard ProcessInfo.processInfo.arguments.contains("--acceptance-test") else { return .none }
+      guard let path = ProcessInfo.processInfo.environment["MOVIEFOLDER_ACCEPTANCE_TEST_ROOT"] else {
+        throw ConfigurationError.unavailableContainer
+      }
+      let root = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+      let temporaryParent = URL(
+        fileURLWithPath: "/private/tmp/MovieFolderPostersAcceptance", isDirectory: true).standardizedFileURL
+      let resolvedRoot = root.resolvingSymlinksInPath()
+      let resolvedParent = temporaryParent.resolvingSymlinksInPath()
+      let isDirectChild = root.deletingLastPathComponent() == temporaryParent
+      let isResolvedDirectChild = resolvedRoot.deletingLastPathComponent() == resolvedParent
+
+      guard root.isFileURL, isDirectChild, isResolvedDirectChild,
+        UUID(uuidString: root.lastPathComponent) != .none
+      else { throw ConfigurationError.unavailableContainer }
+
+      var isDirectory = ObjCBool(false)
+      guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        throw ConfigurationError.unavailableContainer
+      }
+
+      return root
+    }
+  #endif
+}
+
+#if DEBUG
+  /// Provides only a non-secret fixture token and never reaches the user's Keychain.
+  nonisolated private struct AcceptanceTestCredentialStore: CredentialStoring {
+    func read() throws -> String? { "acceptance-test-token" }
+    func save(_ value: String) throws { throw ConfigurationError.invalidCredential }
+    func remove() throws { throw ConfigurationError.invalidCredential }
+  }
+#endif
 
 /// Publishes payload-free optional history changes after the committing service has released its accesses.
 nonisolated private struct SharedNetworkHistoryChangeNotifier: MovieFolderNetworkHistoryChangeNotifying {
