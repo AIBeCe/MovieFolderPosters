@@ -16,6 +16,8 @@ nonisolated public protocol MovieMetadataProvider: Sendable {
   func searchMovies(title: String, year: Int?, language: TMDbLanguage) async throws -> MovieSearchResult
   /// Retrieves complete provider alternative-title evidence for exactly the requested identity.
   func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles
+  /// Retrieves complete dated release evidence for exactly the requested identity.
+  func releaseDates(movieID: Int) async throws -> MovieReleaseDates
   /// Downloads the source image bytes for a provider-relative poster path.
   ///
   /// - Parameter path: The provider-relative source poster path.

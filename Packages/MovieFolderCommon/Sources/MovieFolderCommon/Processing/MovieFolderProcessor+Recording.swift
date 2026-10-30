@@ -55,7 +55,7 @@ extension MovieFolderProcessor {
   ) {
     guard processingState?.currentRun?.state == .running else { return }
     if let candidate = try? fileSystem.readCurrentState(ofChild: child, in: root),
-      var record = try? assessFolderProcessing(candidate, root: root, saved: saved) {
+      var record = try? folderProcessingResult(candidate, root: root, saved: saved) {
       record.lastFailure = FolderProcessingFailure(
         reason: Task.isCancelled ? .cancelled : .unknown, stage: .unknown, occurredAt: now())
       if record.state != .done && record.state != .preserved && record.state != .suppressed {
@@ -84,7 +84,7 @@ extension MovieFolderProcessor {
     try commitProcessingState(&processingState, activity: activity)
   }
 
-  /// Updates one member and bounds whole-document checkpoint writes to batches of 32 assessments.
+  /// Updates one member and bounds whole-document checkpoint writes to batches of 32 folder results.
   func recordFolderProcessing(
     _ record: FolderProcessingRecord,
     in processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog? = .none
@@ -99,7 +99,7 @@ extension MovieFolderProcessor {
   }
 
   /// Explains a root backoff for members that have not yet been assessed.
-  func deferPendingFolderAssessments(
+  func deferPendingFolderResults(
     _ processingState: inout CollectionProcessingState?, until date: Date, child: String? = .none,
     activity: ProcessorActivityLog? = .none
   ) {
@@ -118,7 +118,7 @@ extension MovieFolderProcessor {
   }
 
   /// Converts conservative matching evidence to its exclusive persisted state.
-  func unresolvedFolderAssessment(
+  func unresolvedFolderResult(
     _ candidate: FolderCandidate, reason: FolderProcessingReason, movie: MovieMetadata? = .none
   ) -> FolderProcessingRecord {
     let state: FolderProcessingState
@@ -139,8 +139,8 @@ extension MovieFolderProcessor {
   }
 
   /// Preserves the original unresolved reason while existing retry configuration defers another provider request.
-  func cachedFolderAssessment(_ candidate: FolderCandidate, saved: FolderRecord) -> FolderProcessingRecord {
-    var record = unresolvedFolderAssessment(candidate, reason: saved.processingReason ?? .retryDeferred)
+  func cachedFolderResult(_ candidate: FolderCandidate, saved: FolderRecord) -> FolderProcessingRecord {
+    var record = unresolvedFolderResult(candidate, reason: saved.processingReason ?? .retryDeferred)
     if saved.status == .transientFailure {
       record.state = .failed
       record.reason = saved.processingReason ?? .processingFailure
@@ -159,7 +159,7 @@ extension MovieFolderProcessor {
   }
 
   /// Records a failure without embedding provider messages or private paths.
-  func failedFolderAssessment(
+  func failedFolderResult(
     _ candidate: FolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = .none,
     reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
   ) -> FolderProcessingRecord {
@@ -197,7 +197,7 @@ extension MovieFolderProcessor {
   }
 
   /// Verifies current ownership instead of treating an assignment attempt or cached decision as success.
-  func assessFolderProcessing(
+  func folderProcessingResult(
     _ candidate: FolderCandidate, root: URL, saved: FolderRecord?
   ) throws -> FolderProcessingRecord {
     let inspection = try fileSystem.inspectPoster(

@@ -45,6 +45,17 @@ nonisolated public struct RecoveryMovieMetadataProvider: MovieMetadataProvider {
     }
   }
 
+  public func releaseDates(movieID: Int) async throws -> MovieReleaseDates {
+    try Task.checkCancellation()
+    try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
+    do {
+      return try await provider.releaseDates(movieID: movieID)
+    } catch {
+      try recovery.recordProviderFailure(error, credentialDigest: credentialDigest)
+      throw error
+    }
+  }
+
   public func downloadPoster(path: String) async throws -> Data {
     try Task.checkCancellation()
     try recovery.validateProviderAllowed(credentialDigest: credentialDigest)

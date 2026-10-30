@@ -1,10 +1,10 @@
 import Foundation
 
-/// Exclusive current assessment for an immediate child directory.
+/// Exclusive current result for an immediate child directory.
 nonisolated public enum FolderProcessingState: String, Codable, Sendable, CaseIterable {
   case pending, done, notFound, severalMatches, unresolved, preserved, suppressed, excluded, failed, deferred, uncertain
 }
-/// Safe, stable explanations for a folder's current assessment.
+/// Safe, stable explanations for a folder's current result.
 nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseIterable {
   case noSuitableMovie, ambiguousMovie, incompleteSearch, missingArtwork, parsingProblem
   case existingPosterPreserved, policySuppressed, processingFailure, retryDeferred
@@ -22,7 +22,7 @@ nonisolated public enum PosterOwnership: String, Codable, Sendable {
 nonisolated public enum MovieIdentitySource: String, Codable, Sendable {
   case conservativeMatch, explicitSelection, savedDecision
 }
-/// The authoritative current assessment and supporting evidence for one visible child directory.
+/// The authoritative current result and supporting evidence for one visible child directory.
 nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, Identifiable {
   /// Stable record identifier derived from the child directory name.
   public var id: String { name }
@@ -30,9 +30,9 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   public let name: String
   /// Filesystem identity used to detect replacement.
   public var identity: String?
-  /// Current mutually exclusive processing assessment.
+  /// Current mutually exclusive processing result.
   public var state: FolderProcessingState
-  /// Optional stable explanation for the processing assessment.
+  /// Optional stable explanation for the processing result.
   public var reason: FolderProcessingReason?
   /// Verified provider movie identifier, when available.
   public var movieID: Int?
@@ -44,7 +44,7 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   public var movieIdentitySource: MovieIdentitySource?
   /// Ownership evidence for the current installed icon.
   public var ownership: PosterOwnership
-  /// Time the folder assessment was recorded.
+  /// Time the folder result was recorded.
   public var assessedAt: Date?
   /// Earliest time an automatic retry is eligible.
   public var retryAt: Date?
@@ -61,7 +61,7 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
     case fingerprint
   }
 
-  /// Creates a current folder assessment and its supporting evidence.
+  /// Creates a current folder result and its supporting evidence.
   ///
   /// - Parameters:
   ///   - name: Immediate child directory name.
@@ -73,7 +73,7 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   ///   - movieYear: Release year for that movie identifier.
   ///   - movieIdentitySource: Evidence source establishing the saved movie identity.
   ///   - ownership: Evidence for the currently installed icon.
-  ///   - assessedAt: Time the current assessment was recorded.
+  ///   - assessedAt: Time the current result was recorded.
   ///   - retryAt: Earliest time an automatic retry is eligible.
   ///   - lastFailure: Safe category and stage from the most recent failure.
   ///   - fingerprint: Stable child-change fingerprint, when available.

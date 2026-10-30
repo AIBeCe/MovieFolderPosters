@@ -61,6 +61,8 @@ struct QuietActivityNotifier: MovieFolderActivityChangeNotifying {
 /// Supplies deterministic provider results; no network request or icon write is needed for missing posters.
 struct NoMatchesProvider: MovieMetadataProvider {
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
@@ -77,6 +79,8 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
   private(set) var searchCount = Int.zero
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
@@ -98,6 +102,8 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
   private var hasStarted = false
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
@@ -143,6 +149,8 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
   let configurationReadControl: FinderConfigurationReadControl
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {

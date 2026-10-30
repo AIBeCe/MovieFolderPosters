@@ -550,6 +550,8 @@ private actor ActionProvider: MovieMetadataProvider {
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
@@ -559,7 +561,7 @@ private actor ActionProvider: MovieMetadataProvider {
     let result = MovieSearchResult(
       movies: [
         MovieMetadata(
-          id: 42, title: title, originalTitle: title, releaseYear: year,
+          id: 42, title: title, originalTitle: title, releaseYear: year ?? 2021,
           posterPath: "/dune.jpg")
       ], hasMorePages: false)
     if delaysSearch, searchCount == 1 {

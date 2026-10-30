@@ -1,6 +1,6 @@
 import Foundation
 
-/// Validated ISO language with an optional ISO country used for one TMDb assessment.
+/// Validated ISO language with an optional ISO country used for one TMDb request.
 public struct TMDbLanguage: Codable, Equatable, Hashable, Sendable {
   /// Canonical language or language-country identifier.
   public let rawValue: String

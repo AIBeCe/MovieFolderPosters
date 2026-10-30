@@ -52,7 +52,7 @@ struct MovieMatchingConfigurationProcessingTests {
       let access = try #require(try fixture.persistence.acquireAccess(
         for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
       let state = try await changed.loadState(from: access)
-      let assessment = try await changed.assessFolderProcessing(candidate, root: fixture.movies,
+      let assessment = try await changed.folderProcessingResult(candidate, root: fixture.movies,
         saved: state.folders[candidate.name])
       #expect(assessment.isVerifiedDone)
       #expect(assessment.movieIdentitySource == .conservativeMatch)

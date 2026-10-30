@@ -82,8 +82,27 @@ extension MovieFolderProcessor {
       }
     }
 
+    var dates = MovieReleaseDates()
+    if let year {
+      for id in identifiers {
+        guard let movie = search.movies.first(where: { $0.id == id }), movie.releaseYear != year,
+          matcher.titleMatches(title, movie: movie, configuration: movieMatchingConfiguration,
+            alternativeTitles: evidence) else { continue }
+
+        guard movie.releaseYear != .none else { return .unresolved(.incompleteYearEvidence) }
+
+        try Task.checkCancellation()
+        let result = try await provider.releaseDates(movieID: id)
+        try Task.checkCancellation()
+
+        guard result.count == 1, let events = result[id] else { return .unresolved(.incompleteYearEvidence) }
+
+        dates[id] = events
+      }
+    }
+
     return matcher.matchMovie(title: title, year: year, search: search,
-      configuration: movieMatchingConfiguration, alternativeTitles: evidence)
+      configuration: movieMatchingConfiguration, alternativeTitles: evidence, releaseDates: dates)
   }
 }
 

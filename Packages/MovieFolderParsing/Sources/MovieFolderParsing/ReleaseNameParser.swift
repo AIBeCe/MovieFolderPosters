@@ -27,7 +27,12 @@ nonisolated public enum ReleaseNameParseResult: Equatable, Sendable {
 /// Conservatively separates movie identity from release-format annotations.
 nonisolated public struct ReleaseNameParser: Sendable {
   /// Revision of this grammar used to reconsider decisions saved by an older parser.
-  public static let revision = 2
+  public static let revision = 3
+  /// Edition phrases accepted only after an explicit release year.
+  private static let editionPhrases: [[String]] = [
+    ["director's", "cut"], ["directors", "cut"], ["collector's", "edition"],
+    ["collectors", "edition"], ["special", "edition"], ["final", "cut"], ["theatrical", "cut"]
+  ]
   /// Technical video-size tags recognized at a supported release metadata boundary.
   private static let resolutions: Set<String> = [
     "480p", "576p", "720p", "1080p", "1080i", "1440p", "2160p", "4320p",
@@ -88,6 +93,18 @@ nonisolated public struct ReleaseNameParser: Sendable {
     let words = normalized.split(whereSeparator: { $0.isWhitespace }).map(String.init)
 
     return removingDatabaseIdentifierSuffixes(from: words).count != words.count
+  }
+
+  /// Whether a folder name ends with a supported edition phrase and optional technical tags.
+  ///
+  /// - Parameter folderName: The full folder name to inspect without accessing movie contents.
+  /// - Returns: Whether a complete edition phrase follows an explicit year and precedes only known technical tags.
+  public func hasRecognizedEditionSuffix(_ folderName: String) -> Bool {
+    let normalized = folderName.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "_", with: " ")
+    let words = removingDatabaseIdentifierSuffixes(
+      from: normalized.split(whereSeparator: { $0.isWhitespace }).map(String.init))
+
+    return editionSuffixBoundary(in: words) != .none
   }
 
   /// Discards only standalone bracketed database codes at a supported suffix position.
@@ -183,6 +200,7 @@ nonisolated public struct ReleaseNameParser: Sendable {
   /// - Returns: Whether the surrounding tokens establish a supported technical release suffix.
   private func isMetadataBoundary(at index: Int, in words: [String]) -> Bool {
     let token = words[index].lowercased()
+    if isEditionSuffix(at: index, in: words) { return true }
     let followsYear = index > 0 && year(in: words[index - 1]) != .none
     let followedByTechnical = index + 1 < words.count && isTechnical(words[index + 1])
     if Self.resolutions.contains(token) {
@@ -192,6 +210,25 @@ nonisolated public struct ReleaseNameParser: Sendable {
     if matches(token, in: Self.codecs) { return followsYear || followedByTechnical || token.contains("-") }
 
     return followsYear && isTechnical(token)
+  }
+
+  /// Finds a complete, year-qualified edition phrase followed only by known technical suffix tokens.
+  private func editionSuffixBoundary(in words: [String]) -> Int? {
+    words.indices.first(where: { isEditionSuffix(at: $0, in: words) })
+  }
+
+  /// Checks whether an edition phrase begins here and the remaining suffix is technically recognized.
+  private func isEditionSuffix(at index: Int, in words: [String]) -> Bool {
+    guard index > 1, year(in: words[index - 1]) != .none else { return false }
+
+    return Self.editionPhrases.contains { phrase in
+      let end = index + phrase.count
+      guard end <= words.count else { return false }
+      let lowerPhrase = words[index..<end].map { $0.lowercased().replacingOccurrences(of: "’", with: "'") }
+      guard lowerPhrase == phrase else { return false }
+
+      return words[end...].allSatisfy(isTechnical)
+    }
   }
 
   /// Recognizes suffix tokens whose release-format meaning is sufficiently explicit.

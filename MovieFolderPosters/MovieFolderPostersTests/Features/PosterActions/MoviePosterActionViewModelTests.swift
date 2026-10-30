@@ -106,6 +106,126 @@ struct MoviePosterActionViewModelTests {
     #expect(appliedMovieID == 7)
   }
 
+  /// Editing either submitted field invalidates results, their selection, and spelling context.
+  @Test(arguments: [false, true])
+  func editingSubmittedQueryOrYearClearsSearchState(editYear: Bool) async {
+    let service = ActionServiceStub()
+    await service.setSearchResult(
+      MovieSearchResult(
+        movies: [Self.movie(id: 7, posterPath: "/chosen.jpg")],
+        hasMorePages: false))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
+    viewModel.prepareSearchLanguage()
+    await waitForIdle(viewModel)
+    viewModel.search()
+    await waitForIdle(viewModel)
+    #expect(viewModel.movies.count == 1)
+    #expect(viewModel.selectMovie(id: 7))
+
+    if editYear {
+      viewModel.setYear("2022")
+    } else {
+      viewModel.setQuery("Dune Part Two")
+    }
+
+    #expect(viewModel.searchResult == .none)
+    #expect(viewModel.selectedMovieID == .none)
+    #expect(viewModel.movies.isEmpty)
+  }
+
+  /// Search suggestions stay review-only until the user selects and explicitly applies a result.
+  @Test func spellingSuggestionDoesNotSelectOrApplyFirstResult() async {
+    let service = ActionServiceStub()
+    let suggested = MovieMetadata(
+      id: 9, title: "The Matrix", originalTitle: "The Matrix", releaseYear: 1999,
+      posterPath: "/matrix.jpg")
+    let secondCandidate = MovieMetadata(
+      id: 10, title: "The Matrix Reloaded", originalTitle: "The Matrix Reloaded", releaseYear: 2003,
+      posterPath: "/reloaded.jpg")
+    await service.setSearchResult(MovieSearchResult(movies: [suggested, secondCandidate], hasMorePages: false))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("The Matirx")
+    viewModel.prepareSearchLanguage()
+    await waitForIdle(viewModel)
+    viewModel.search()
+    await waitForIdle(viewModel)
+
+    #expect(viewModel.selectedMovieID == .none)
+    #expect(viewModel.possibleSpellingDifference(for: suggested) == "The Matrix")
+    #expect(viewModel.possibleSpellingDifference(for: secondCandidate) == .none)
+    #expect(!viewModel.canApplySelectedMovie)
+    #expect(await service.callCounts.apply == 0)
+
+    #expect(viewModel.selectMovie(id: 9))
+    #expect(viewModel.statusMessage ==
+      "Possible spelling difference: “The Matirx” → “The Matrix”. Review this movie before applying.")
+    #expect(await service.callCounts.apply == 0)
+    viewModel.applySelectedMovie()
+    await waitForIdle(viewModel)
+    #expect(await service.lastAppliedMovieID == 9)
+  }
+
+  /// A controlled late provider response cannot restore results after title or year edits.
+  @Test(arguments: [false, true])
+  func changedInputsRejectResultsFromAnUncancellableSearch(editYear: Bool) async {
+    let service = ActionServiceStub()
+    await service.suspendNextSearch()
+    await service.setSearchResult(
+      MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")], hasMorePages: false))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
+    viewModel.prepareSearchLanguage()
+    await waitForIdle(viewModel)
+    viewModel.search()
+    await service.waitUntilSearchStarts()
+    #expect(viewModel.isBusy)
+
+    if editYear {
+      viewModel.setYear("2022")
+    } else {
+      viewModel.setQuery("Dune Part Two")
+    }
+    #expect(viewModel.searchResult == .none)
+    #expect(viewModel.selectedMovieID == .none)
+    #expect(viewModel.isBusy)
+    #expect(viewModel.isCancelling)
+    await service.releaseSuspendedSearch()
+    await waitForIdle(viewModel)
+
+    #expect(!viewModel.isBusy)
+    #expect(!viewModel.isCancelling)
+    #expect(viewModel.movies.isEmpty)
+    #expect(viewModel.possibleSpellingDifference(for: Self.movie(id: 7, posterPath: "/dune.jpg")) == .none)
+  }
+
+  /// A controlled late provider response cannot restore state after configuration invalidation.
+  @Test func configurationInvalidationRejectsSuspendedSearchResults() async {
+    let service = ActionServiceStub()
+    await service.suspendNextSearch()
+    await service.setSearchResult(
+      MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")], hasMorePages: false))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.prepareSearchLanguage()
+    await waitForIdle(viewModel)
+    viewModel.search()
+    await service.waitUntilSearchStarts()
+
+    viewModel.configurationDidChange()
+    #expect(viewModel.isConfigurationInvalidated)
+    #expect(viewModel.isBusy)
+    #expect(viewModel.isCancelling)
+    #expect(viewModel.searchResult == .none)
+    #expect(viewModel.selectedMovieID == .none)
+    await service.releaseSuspendedSearch()
+    await waitForIdle(viewModel)
+
+    #expect(!viewModel.isBusy)
+    #expect(!viewModel.isCancelling)
+    #expect(viewModel.movies.isEmpty)
+    #expect(viewModel.possibleSpellingDifference(for: Self.movie(id: 7, posterPath: "/dune.jpg")) == .none)
+  }
+
   /// Verifies that cancelling a search prevents late results from changing state.
   @Test func cancelledSearchDoesNotPublishLateResults() async {
     let service = ActionServiceStub(searchDelay: .seconds(30))
@@ -291,6 +411,14 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   private let searchDelay: Duration
   /// Whether searches should throw an authentication failure.
   private var searchShouldFail = false
+  /// Suspends one search until its fixture explicitly releases the provider response.
+  private var suspendsNextSearch = false
+  /// Records whether the suspended search reached the provider.
+  private var suspendedSearchStarted = false
+  /// Provider continuation resumed by the controlled test fixture.
+  private var suspendedSearchContinuation: CheckedContinuation<MovieSearchResult, Never>?
+  /// Tests waiting until the search has entered the provider.
+  private var searchStartWaiters: [CheckedContinuation<Void, Never>] = []
 
   /// Whether authorized language capture should fail before any provider work.
   private var languageShouldFail = false
@@ -311,6 +439,25 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   /// Sets the result returned by subsequent searches.
   func setSearchResult(_ result: MovieSearchResult) { searchResult = result }
 
+  /// Suspends the next provider search until `releaseSuspendedSearch()` is called.
+  func suspendNextSearch() {
+    suspendsNextSearch = true
+    suspendedSearchStarted = false
+  }
+
+  /// Waits for the next search to enter the provider implementation.
+  func waitUntilSearchStarts() async {
+    if suspendedSearchStarted { return }
+    await withCheckedContinuation { searchStartWaiters.append($0) }
+  }
+
+  /// Returns the configured provider result while deliberately ignoring task cancellation.
+  func releaseSuspendedSearch() {
+    guard let continuation = suspendedSearchContinuation else { return }
+    suspendedSearchContinuation = .none
+    continuation.resume(returning: searchResult)
+  }
+
   /// Makes subsequent search calls fail with an authentication error.
   func failSearch() { searchShouldFail = true }
 
@@ -328,6 +475,15 @@ private actor ActionServiceStub: MoviePosterActionServicing {
     lastSearchTitle = query
     lastSearchYear = year
     if searchShouldFail { throw TMDbError.authentication }
+    if suspendsNextSearch {
+      suspendsNextSearch = false
+      suspendedSearchStarted = true
+      let waiters = searchStartWaiters
+      searchStartWaiters.removeAll()
+      waiters.forEach { $0.resume() }
+
+      return await withCheckedContinuation { suspendedSearchContinuation = $0 }
+    }
     try await Task.sleep(for: searchDelay)
 
     return searchResult

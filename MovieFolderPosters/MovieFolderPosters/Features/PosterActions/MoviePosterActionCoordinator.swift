@@ -156,7 +156,7 @@ private final class MoviePosterActionViewController: NSViewController,
   /// Displays poster-bearing movie results.
   private let resultPicker = NSPopUpButton()
   /// Displays progress or success feedback.
-  private let statusLabel = NSTextField(labelWithString: "")
+  private let statusLabel = NSTextField(wrappingLabelWithString: "")
   /// Displays user-facing failures.
   private let errorLabel = NSTextField(labelWithString: "")
   /// Starts a TMDb search.
@@ -292,6 +292,7 @@ private final class MoviePosterActionViewController: NSViewController,
   private func makeResultPicker() -> NSView {
     resultPicker.target = self
     resultPicker.action = #selector(selectionChanged)
+    resultPicker.setAccessibilityLabel("Movie search results; possible spelling differences are marked")
     resultPicker.widthAnchor.constraint(greaterThanOrEqualToConstant: 460).isActive = true
 
     return resultPicker
@@ -352,8 +353,11 @@ private final class MoviePosterActionViewController: NSViewController,
     for movie in viewModel.movies {
       let year = movie.releaseYear.map(String.init) ?? "Year unknown"
       let originalTitle = movie.originalTitle == movie.title ? "" : " — \(movie.originalTitle)"
+      let spellingMark = viewModel.possibleSpellingDifference(for: movie) == .none
+        ? ""
+        : " · Possible spelling difference"
       resultPicker.addItem(
-        withTitle: "\(movie.title)\(originalTitle) (\(year)) · TMDb ID \(movie.id)")
+        withTitle: "\(movie.title)\(originalTitle) (\(year)) · TMDb ID \(movie.id)\(spellingMark)")
       resultPicker.lastItem?.tag = movie.id
     }
     resultPicker.selectItem(at: 0)

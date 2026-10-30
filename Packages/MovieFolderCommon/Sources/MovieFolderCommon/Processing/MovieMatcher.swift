@@ -5,6 +5,7 @@ import Network
 nonisolated enum MovieMatchIssue: Equatable, Sendable {
   case invalidQuery
   case incompleteSearch
+  case incompleteYearEvidence
   case incompleteTitleEvidence
   case noSuitableMatch
   case ambiguous
@@ -13,8 +14,15 @@ nonisolated enum MovieMatchIssue: Equatable, Sendable {
 
 /// Either a uniquely supported movie or an unresolved matching reason.
 nonisolated enum MovieMatchResult: Equatable, Sendable {
-  case matched(MovieMetadata)
+  case matched(MovieMetadata, releaseDates: [MovieReleaseDate] = [])
   case unresolved(MovieMatchIssue)
+
+  /// Accepted dated provenance carried alongside a successful identity.
+  var acceptedReleaseDates: [MovieReleaseDate] {
+    guard case .matched(_, let dates) = self else { return [] }
+
+    return dates
+  }
 }
 
 /// Requires exact normalized title and available year agreement across complete search results.
@@ -28,7 +36,7 @@ nonisolated struct MovieMatcher: Sendable {
   /// - Returns: The unique match or explicit unresolved reason.
   func match(title: String, year: Int?, search: MovieSearchResult) -> MovieMatchResult {
     let result = matchMovie(title: title, year: year, search: search)
-    guard case .matched(let selected) = result else { return result }
+    guard case .matched(let selected, _) = result else { return result }
     guard let poster = selected.posterPath, !poster.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return .unresolved(.missingPoster)
     }
@@ -45,7 +53,8 @@ nonisolated struct MovieMatcher: Sendable {
   /// - Returns: A uniquely supported identity or its unresolved classification.
   func matchMovie(title: String, year: Int?, search: MovieSearchResult,
                   configuration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
-                  alternativeTitles: MovieAlternativeTitles? = .none) -> MovieMatchResult {
+                  alternativeTitles: MovieAlternativeTitles? = .none,
+                  releaseDates: MovieReleaseDates = [:]) -> MovieMatchResult {
     let query = normalized(title)
     guard !query.isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else {
       return .unresolved(.invalidQuery)
@@ -60,27 +69,54 @@ nonisolated struct MovieMatcher: Sendable {
         !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       }) else { return .unresolved(.incompleteTitleEvidence) }
     }
-    let plausible = search.movies.filter {
-      (normalized($0.title) == query || (configuration.comparesOriginalTitles && normalized($0.originalTitle) == query)
-        || alternativeTitles?[$0.id]?.contains(where: { normalized($0.title) == query }) == true)
-        && (year == .none || $0.releaseYear == year)
+    let compatible = search.movies.filter {
+      candidates.contains($0.id) && titleMatches(title, movie: $0, configuration: configuration,
+        alternativeTitles: alternativeTitles)
     }
-    guard let selected = plausible.first else { return .unresolved(.noSuitableMatch) }
-    guard plausible.allSatisfy({ $0.id == selected.id }),
-      search.movies.filter({ $0.id == selected.id }).allSatisfy({ $0 == selected })
-    else {
-      return .unresolved(.ambiguous)
+    var qualified = [MovieMetadata]()
+    for movie in compatible {
+      guard let year else { qualified.append(movie); continue }
+
+      guard let primaryYear = movie.releaseYear else { return .unresolved(.incompleteYearEvidence) }
+
+      if primaryYear == year {
+        qualified.append(movie)
+        continue
+      }
+
+      guard let events = releaseDates[movie.id] else { return .unresolved(.incompleteYearEvidence) }
+
+      let years = Set(events.filter { (1...3).contains($0.type) }.compactMap { $0.movieYear?.year })
+      if years.contains(year), years.contains(primaryYear) { qualified.append(movie) }
     }
 
-    return .matched(selected)
+    guard let selected = qualified.first else { return .unresolved(.noSuitableMatch) }
+
+    guard qualified.allSatisfy({ $0.id == selected.id }) else { return .unresolved(.ambiguous) }
+
+    return .matched(selected, releaseDates: releaseDates[selected.id] ?? [])
+  }
+
+  /// Determines exact title compatibility independently of release-year qualification.
+  func titleMatches(_ title: String, movie: MovieMetadata, configuration: MovieMatchingConfiguration,
+                    alternativeTitles: MovieAlternativeTitles?) -> Bool {
+    let query = normalized(title)
+
+    return normalized(movie.title) == query
+      || (configuration.comparesOriginalTitles && normalized(movie.originalTitle) == query)
+      || alternativeTitles?[movie.id]?.contains(where: { normalized($0.title) == query }) == true
   }
 
   /// Identifies all year-compatible movie IDs before spending any alternative-title requests.
   func candidateIDs(year: Int?, search: MovieSearchResult) -> [Int] {
-    Array(Set(search.movies.filter { year == .none || $0.releaseYear == year }.map(\.id))).sorted()
+    Array(Set(search.movies.filter { movie in
+      guard let year, let primaryYear = movie.releaseYear else { return true }
+
+      return (year - 1...year + 1).contains(primaryYear)
+    }.map(\.id))).sorted()
   }
 
-  /// Rejects invalid, incomplete, inconsistent, or oversized assessments before any alias request.
+  /// Rejects invalid, incomplete, inconsistent, or oversized search results before any alias request.
   func candidateIssue(title: String, year: Int?, search: MovieSearchResult,
                       configuration: MovieMatchingConfiguration = MovieMatchingConfiguration()) -> MovieMatchIssue? {
     guard !normalized(title).isEmpty, year.map({ (1888...2099).contains($0) }) ?? true else { return .invalidQuery }

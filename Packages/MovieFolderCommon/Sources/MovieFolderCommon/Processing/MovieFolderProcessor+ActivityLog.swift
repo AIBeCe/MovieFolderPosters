@@ -12,8 +12,8 @@ final class ProcessorActivityLog {
   let groupID = UUID()
   /// Newest events retained within the same bound as durable Activity history.
   private(set) var events: [MovieFolderActivityLogEvent] = []
-  /// Prior committed assessments used only to avoid repeating unchanged preservation and inclusion decisions.
-  var priorAssessments: [String: FolderProcessingRecord] = [:]
+  /// Prior committed folder results used only to avoid repeating unchanged preservation and inclusion decisions.
+  var priorFolderResults: [String: FolderProcessingRecord] = [:]
   /// Current immediate-child name, captured before provider or icon work begins.
   var child: String?
   /// Confirmed identity, populated only after a match or verified saved decision.
@@ -82,15 +82,15 @@ final class ProcessorActivityLog {
     append(.failed, reason: failure.reason == .storage ? .storageUnavailable : .processingFailure, failure: failure)
   }
 
-  /// Captures this attempt's explicit assessment rather than reconstructing the latest stored folder after the run.
+  /// Captures this attempt's folder result rather than reconstructing the latest stored folder after the run.
   /// - Parameters:
-  ///   - record: The folder assessment produced by this operation.
-  ///   - onlyWhenChanged: Whether to omit an assessment identical to the prior saved assessment.
-  ///   - failure: Safe failure evidence associated with this assessment, when present.
+  ///   - record: The folder result produced by this operation.
+  ///   - onlyWhenChanged: Whether to omit a result identical to the prior saved result.
+  ///   - failure: Safe failure evidence associated with this result, when present.
   func append(
     _ record: FolderProcessingRecord, onlyWhenChanged: Bool = false, failure: FolderProcessingFailure? = .none
   ) {
-    if onlyWhenChanged, let previous = priorAssessments[record.name], previous.identity == record.identity,
+    if onlyWhenChanged, let previous = priorFolderResults[record.name], previous.identity == record.identity,
       previous.state == record.state, previous.reason == record.reason, previous.movieID == record.movieID {
       return
     }

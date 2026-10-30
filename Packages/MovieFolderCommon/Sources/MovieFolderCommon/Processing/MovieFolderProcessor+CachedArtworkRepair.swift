@@ -32,8 +32,10 @@ extension MovieFolderProcessor {
         movieYear: assignment.record.movieYear,
         movieIdentitySource: assignment.record.movieIdentitySource ?? .savedDecision
       )
+      cachedRecord.acceptedReleaseDates = assignment.record.acceptedReleaseDates
+      cachedRecord.savedMatchingRulesVersion = assignment.record.savedMatchingRulesVersion
       cachedRecord.nameParserRevision = assignment.record.nameParserRevision
-      cachedRecord.requiresAutomaticReassessment = assignment.record.requiresAutomaticReassessment
+      cachedRecord.requiresAutomaticReview = assignment.record.requiresAutomaticReview
       visit.cache.folders[candidate.name] = cachedRecord
 
       try saveAssignedState(
@@ -58,7 +60,7 @@ extension MovieFolderProcessor {
 
       recordTransientFailure(candidate, in: &visit.cache, stage: .assignPoster, movie: movie)
       visit.cache.folders[candidate.name]?.movieIdentitySource = assignment.record.movieIdentitySource
-      var failureRecord = failedFolderAssessment(candidate, stage: .assignPoster, movie: movie)
+      var failureRecord = failedFolderResult(candidate, stage: .assignPoster, movie: movie)
       failureRecord.movieIdentitySource = assignment.record.movieIdentitySource
       visit.activity?.append(failureRecord,
         failure: MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .assignPoster, occurredAt: now()))
@@ -115,13 +117,15 @@ extension MovieFolderProcessor {
     if let error = error as? ProcessingRecoveryError {
       return try recordRecoveryAdmissionFailure(
         error, candidate: context.candidate, access: context.access, visit: &visit,
-        attempt: PosterAttempt(stage: .artwork, movie: decision.movie),
+        attempt: PosterAttempt(stage: .artwork, movie: decision.movie,
+          releaseDates: decision.record.acceptedReleaseDates ?? []),
         identitySource: decision.record.movieIdentitySource)
     }
     if let error = error as? TMDbError {
       return try recordProviderFailure(
         error, candidate: context.candidate, access: context.access, visit: &visit,
-        attempt: PosterAttempt(stage: .artwork, movie: decision.movie),
+        attempt: PosterAttempt(stage: .artwork, movie: decision.movie,
+          releaseDates: decision.record.acceptedReleaseDates ?? []),
         identitySource: decision.record.movieIdentitySource)
     }
 
@@ -140,7 +144,7 @@ extension MovieFolderProcessor {
     if let identitySource = decision.record.movieIdentitySource {
       visit.cache.folders[context.candidate.name]?.movieIdentitySource = identitySource
     }
-    var failureRecord = failedFolderAssessment(
+    var failureRecord = failedFolderResult(
       context.candidate, stage: .artwork, movie: decision.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
     failureRecord.movieIdentitySource = decision.record.movieIdentitySource
@@ -218,8 +222,10 @@ extension MovieFolderProcessor {
         fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
         matchedMovieID: movieID, posterPath: posterPath, movieTitle: record.movieTitle,
         movieYear: record.movieYear, movieIdentitySource: record.movieIdentitySource ?? .savedDecision)
+      repairedRecord.acceptedReleaseDates = record.acceptedReleaseDates
+      repairedRecord.savedMatchingRulesVersion = record.savedMatchingRulesVersion
       repairedRecord.nameParserRevision = record.nameParserRevision
-      repairedRecord.requiresAutomaticReassessment = record.requiresAutomaticReassessment
+      repairedRecord.requiresAutomaticReview = record.requiresAutomaticReview
       repairedRecord.lastFailure = .none
       visit.cache.folders[candidate.name] = repairedRecord
 

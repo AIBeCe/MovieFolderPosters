@@ -137,9 +137,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     var statuses: [ConfiguredDirectoryStatus] = []
     var refreshed: [UUID: MonitoredDirectory] = [:]
     for directory in configuration.directories {
-      let assessment = assessDirectory(directory)
-      let availability = assessment.availability
-      if let updated = assessment.refreshed { refreshed[directory.id] = updated }
+      let inspection = inspectDirectory(directory)
+      let availability = inspection.availability
+      if let updated = inspection.refreshed { refreshed[directory.id] = updated }
       statuses.append(
         ConfiguredDirectoryStatus(
           id: directory.id,
@@ -148,9 +148,9 @@ actor DirectoryConfigurationService: ConfigurationServicing {
           processingConfiguration: directory.processingConfiguration, authorizationRevision: directory.authorizationVersion,
           movieMatchingConfiguration: directory.movieMatchingConfiguration, usesPrivateHistory: directory.usesPrivateHistory))
     }
-    var assessed = configuration
-    assessed.directories = configuration.directories.map { refreshed[$0.id] ?? $0 }
-    let overlapping = assessed.findOverlappingDirectoryIDs()
+    var inspected = configuration
+    inspected.directories = configuration.directories.map { refreshed[$0.id] ?? $0 }
+    let overlapping = inspected.findOverlappingDirectoryIDs()
     statuses = statuses.map { status in
       guard overlapping.contains(status.id) else { return status }
 
@@ -166,7 +166,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
       posterAppearance: configuration.posterAppearance, movieMatchingConfiguration: configuration.movieMatchingConfiguration)
   }
 
-  /// Saves refreshed evidence only while each root still equals the originally assessed configuration.
+  /// Saves refreshed evidence only while each root still equals the originally inspected configuration.
   /// - Parameters:
   ///   - refreshed: Roots with validated replacement evidence.
   ///   - original: Configuration against which authorization was checked.
@@ -192,15 +192,15 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// Resolves one root's access evidence while retaining authorization through inspection and bookmark refresh.
   /// - Parameter directory: The saved root whose identity must still match.
   /// - Returns: Availability and any safely refreshed path or bookmark metadata.
-  private func assessDirectory(
+  private func inspectDirectory(
     _ directory: MonitoredDirectory
   ) -> (availability: DirectoryAvailability, refreshed: MonitoredDirectory?) {
     var refreshed: MonitoredDirectory?
     let availability: DirectoryAvailability
     do {
-      let assessment = try inspectAuthorizedDirectory(directory)
-      availability = assessment.availability
-      refreshed = assessment.refreshed
+      let inspection = try inspectAuthorizedDirectory(directory)
+      availability = inspection.availability
+      refreshed = inspection.refreshed
     } catch ConfigurationError.busy {
       availability = .checkUnavailable
     } catch DirectoryAccessError.identityChanged {

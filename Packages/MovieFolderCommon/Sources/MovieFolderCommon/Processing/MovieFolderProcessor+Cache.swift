@@ -24,7 +24,8 @@ extension MovieFolderProcessor {
   ///   - state: The root processing state being inspected or updated.
   func recordUnresolved(
     _ candidate: FolderCandidate, in state: inout ProcessingState,
-    reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = .none
+    reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = .none,
+    releaseDates: [MovieReleaseDate]? = .none
   ) {
     let saved = state.folders[candidate.name]
     let confirmed = saved?.fingerprint == candidate.fingerprint && saved?.matchedMovieID != .none
@@ -40,6 +41,8 @@ extension MovieFolderProcessor {
       movieYear: confirmed ? saved?.movieYear : movie?.releaseYear,
       movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
+    record.acceptedReleaseDates = savedReleaseDates(releaseDates, movie: movie, candidate: candidate, saved: saved)
+    record.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
     record.nameParserRevision = ReleaseNameParser.revision
     state.folders[candidate.name] = record
   }
@@ -52,11 +55,12 @@ extension MovieFolderProcessor {
   func recordTransientFailure(
     _ candidate: FolderCandidate, in state: inout ProcessingState,
     stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none,
-    reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
+    reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable,
+    releaseDates: [MovieReleaseDate]? = .none
   ) {
     let saved = state.folders[candidate.name]
     let confirmed = saved?.fingerprint == candidate.fingerprint && saved?.matchedMovieID != .none
-    let requiresReassessment = saved?.requiresAutomaticReassessment
+    let requiresReview = saved?.requiresAutomaticReview
     state.folders[candidate.name] = FolderRecord(
       fingerprint: candidate.fingerprint,
       status: .transientFailure,
@@ -71,7 +75,24 @@ extension MovieFolderProcessor {
       lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
-    state.folders[candidate.name]?.requiresAutomaticReassessment = requiresReassessment
+    state.folders[candidate.name]?.acceptedReleaseDates = savedReleaseDates(
+      releaseDates, movie: movie, candidate: candidate, saved: saved)
+    state.folders[candidate.name]?.savedMatchingRulesVersion = movie == .none
+      ? saved?.savedMatchingRulesVersion : Self.savedMatchingRulesVersion
+    state.folders[candidate.name]?.requiresAutomaticReview = requiresReview
+  }
+
+  /// Retains dated provenance only for a confirmed current folder identity when no replacement events were requested.
+  /// Explicit manual selection creates a new record and deliberately bypasses this automatic-evidence rule.
+  func savedReleaseDates(_ dates: [MovieReleaseDate]?, movie: MovieMetadata?, candidate: FolderCandidate,
+                           saved: FolderRecord?) -> [MovieReleaseDate]? {
+    guard let saved, saved.fingerprint == candidate.fingerprint, let savedID = saved.matchedMovieID else {
+      return dates
+    }
+
+    guard movie == .none || movie?.id == savedID else { return saved.acceptedReleaseDates }
+
+    return dates?.isEmpty == false ? dates : (saved.acceptedReleaseDates ?? dates)
   }
 
   /// Decodes root processing state or supplies empty state when no record exists.
@@ -99,7 +120,7 @@ extension MovieFolderProcessor {
     } catch {
       activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       if processingState != .none {
-        var record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
+        var record = try folderProcessingResult(candidate, root: root, saved: state.folders[candidate.name])
         record.reason = .cachePersistenceFailure
         record.lastFailure = FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now())
         try recordFolderProcessing(record, in: &processingState, activity: activity)
@@ -108,7 +129,7 @@ extension MovieFolderProcessor {
       throw error
     }
     if processingState != .none {
-      let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[candidate.name])
+      let record = try folderProcessingResult(candidate, root: root, saved: state.folders[candidate.name])
       try recordFolderProcessing(record, in: &processingState, activity: activity)
     }
   }

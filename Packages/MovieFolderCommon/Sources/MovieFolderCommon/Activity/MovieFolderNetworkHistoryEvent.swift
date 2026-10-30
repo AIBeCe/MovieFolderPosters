@@ -29,6 +29,7 @@ nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equ
     case .posterConfiguration: "Poster Configuration"
     case .posterDownload: "Poster Download"
     case .alternativeTitles: "Alternative Titles"
+    case .releaseDates: "Release Dates"
     }
   }
 

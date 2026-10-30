@@ -67,13 +67,13 @@ extension MovieFolderProcessor {
     activity.movie = savedActivityMovie(prior, candidate: candidate)
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
     if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
-    let needsLegacyReassessment = sameFingerprint && prior?.needsLegacyReassessment == true
-    if !needsLegacyReassessment, let deadline = cache.providerRetryAt, deadline > now() {
+    let isLegacyUnresolvedResult = sameFingerprint && prior?.isLegacyUnresolvedResult == true
+    if !isLegacyUnresolvedResult, let deadline = cache.providerRetryAt, deadline > now() {
       activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
 
       return .waiting(until: deadline)
     }
-    if !needsLegacyReassessment, prior?.processingReason != .interrupted, record.reason != .interrupted {
+    if !isLegacyUnresolvedResult, prior?.processingReason != .interrupted, record.reason != .interrupted {
       let cacheDeadline = sameFingerprint ? prior?.retryDate : .none
       if let deadline = [cacheDeadline, record.retryAt].compactMap({ $0 }).max(), deadline > now() {
         activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)

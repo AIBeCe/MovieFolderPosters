@@ -63,6 +63,8 @@ final class MoviePosterActionViewModel {
   private(set) var searchLanguage: TMDbLanguage?
   /// Latest search response, if a search has completed.
   private(set) var searchResult: MovieSearchResult?
+  /// Title submitted by the successful search that produced the current results.
+  private var searchedTitle: String?
   /// Identifier of the selected movie result.
   private(set) var selectedMovieID: Int?
   /// Whether a search or poster operation is running.
@@ -149,7 +151,9 @@ final class MoviePosterActionViewModel {
   ///
   /// - Parameter value: The title entered by the user.
   func setQuery(_ value: String) {
+    guard value != query else { return }
     query = value
+    invalidateSearchState()
     publish()
   }
 
@@ -157,8 +161,19 @@ final class MoviePosterActionViewModel {
   ///
   /// - Parameter value: The year entered by the user, or an empty string.
   func setYear(_ value: String) {
+    guard value != yearText else { return }
     yearText = value
+    invalidateSearchState()
     publish()
+  }
+
+  /// Returns a possible spelling difference for one current search result.
+  /// - Parameter movie: A movie from the current provider response.
+  /// - Returns: A qualifying returned title, or `.none` when no title qualifies.
+  func spellingSuggestion(for movie: MovieMetadata) -> String? {
+    guard let searchedTitle else { return .none }
+
+    return MovieTitleSpellingDifferenceChecker().possibleSpellingDifference(from: searchedTitle, movie: movie)
   }
 
   /// Searches TMDb using the current title and optional valid release year.
@@ -179,6 +194,7 @@ final class MoviePosterActionViewModel {
     }
 
     searchResult = .none
+    searchedTitle = .none
     selectedMovieID = .none
     statusMessage = .none
     let service = service
@@ -190,6 +206,7 @@ final class MoviePosterActionViewModel {
       },
       completion: { [weak self] result in
         self?.searchResult = result
+        self?.searchedTitle = matching.title
         self?.selectedMovieID = .none
         self?.statusMessage =
           result.movies.contains(where: Self.hasPoster)
@@ -216,6 +233,12 @@ final class MoviePosterActionViewModel {
     }
     selectedMovieID = movie.id
     errorMessage = .none
+    if let suggestedTitle = possibleSpellingDifference(for: movie), let searchedTitle {
+      statusMessage = "Possible spelling difference: “\(searchedTitle)” → “\(suggestedTitle)”."
+        + " Review this movie before applying."
+    } else {
+      statusMessage = "Choose a poster below and apply it when ready."
+    }
     publish()
 
     return true
@@ -315,6 +338,9 @@ final class MoviePosterActionViewModel {
   /// Cancels work because folder authorization or configuration may have changed.
   func configurationDidChange() {
     isConfigurationInvalidated = true
+    searchedTitle = .none
+    searchResult = .none
+    selectedMovieID = .none
     cancelRetryTask()
     errorMessage = "Directory configuration changed. Reopen this action to continue."
     if !isBusy { statusMessage = .none }
@@ -373,6 +399,15 @@ final class MoviePosterActionViewModel {
     errorMessage = message
     statusMessage = .none
     publish()
+  }
+
+  /// Clears results tied to earlier inputs and cancels work that could publish those results.
+  private func invalidateSearchState() {
+    searchedTitle = .none
+    searchResult = .none
+    selectedMovieID = .none
+    statusMessage = .none
+    if isBusy { cancelRetryTask() }
   }
 
   /// Notifies the current observer of updated presentation state.

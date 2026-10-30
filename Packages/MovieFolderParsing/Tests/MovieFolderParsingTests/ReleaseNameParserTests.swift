@@ -43,6 +43,53 @@ struct ReleaseNameParserTests {
     #expect(parser.parse(fixture.name) == .parsed(ParsedReleaseName(title: fixture.title, year: fixture.year)))
   }
 
+  /// Complete edition phrases after a year are discarded while their title and year remain intact.
+  @Test(arguments: [
+    ReleaseFixture("Dune (2021) Director's Cut", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Director’s Cut 2160p WEB-DL", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Directors Cut 1080p BluRay", "Dune", 2021),
+    ReleaseFixture("Dune (2021) dIrEcToR's cUt", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Collector's Edition", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Collector’s Edition HDR", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Collectors Edition", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Special Edition", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Final Cut", "Dune", 2021),
+    ReleaseFixture("Dune (2021) Theatrical Cut", "Dune", 2021)
+  ])
+  func discardsCompleteEditionSuffixes(_ fixture: ReleaseFixture) {
+    let parser = ReleaseNameParser()
+
+    #expect(parser.hasRecognizedEditionSuffix(fixture.name))
+    #expect(parser.parse(fixture.name) == .parsed(ParsedReleaseName(title: fixture.title, year: fixture.year)))
+  }
+
+  /// Incomplete edition phrases and conflicting years remain unresolved rather than being discarded.
+  @Test(arguments: [
+    UnresolvedFixture("Dune (2021) Director's 2160p", .ambiguousMetadata),
+    UnresolvedFixture("Dune (2021) Special Cut 1080p", .ambiguousMetadata),
+    UnresolvedFixture("Dune (2021) Final Cut Extra 2160p", .ambiguousMetadata),
+    UnresolvedFixture("Dune (2021) Final Cut 2022", .ambiguousYear)
+  ])
+  func rejectsIncompleteEditionSuffixes(_ fixture: UnresolvedFixture) {
+    let parser = ReleaseNameParser()
+
+    #expect(!parser.hasRecognizedEditionSuffix(fixture.name))
+    #expect(parser.parse(fixture.name) == .unresolved(fixture.issue))
+  }
+
+  /// Numeric titles and edition-like title words separated from a year remain part of the title.
+  @Test(arguments: [
+    ReleaseFixture("1984.Final.Cut", "1984 Final Cut", .none),
+    ReleaseFixture("1917.Special.Edition", "1917 Special Edition", .none),
+    ReleaseFixture("Summer.of.1984.The.Final.Cut", "Summer of 1984 The Final Cut", .none)
+  ])
+  func preservesEditionLikeTitleTokens(_ fixture: ReleaseFixture) {
+    let parser = ReleaseNameParser()
+
+    #expect(!parser.hasRecognizedEditionSuffix(fixture.name))
+    #expect(parser.parse(fixture.name) == .parsed(ParsedReleaseName(title: fixture.title, year: fixture.year)))
+  }
+
   /// Unknown bracketed text and identifiers embedded in titles remain available to conservative parsing.
   @Test(arguments: [
     UnresolvedFixture("Dune (2021) [unknown-12345]", .ambiguousMetadata),
@@ -115,7 +162,8 @@ struct ReleaseNameParserTests {
     ReleaseFixture("1984", "1984", .none),
     ReleaseFixture("Movie.BluRay", "Movie BluRay", .none),
     ReleaseFixture("Amélie.(2001).1080p.BluRay", "Amélie", 2001),
-    ReleaseFixture("Schindler's.List.1993.1080p.BluRay", "Schindler's List", 1993)
+    ReleaseFixture("Schindler's.List.1993.1080p.BluRay", "Schindler's List", 1993),
+    ReleaseFixture("Dune.Final.Cut.(2021)", "Dune Final Cut", 2021)
   ])
   func preservesLegitimateTitleTokens(_ fixture: ReleaseFixture) {
     #expect(

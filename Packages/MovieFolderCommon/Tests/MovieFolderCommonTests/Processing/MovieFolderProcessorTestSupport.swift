@@ -98,6 +98,8 @@ actor CountingProvider {
   private(set) var posterCount = Int.zero
   /// An optional configured search response overriding the default movie fixture.
   private let search: MovieSearchResult?
+  /// Primary release year supplied independently of unfiltered request parameters.
+  private let primaryReleaseYear: Int
   /// Whether a search suspends until the test explicitly releases its continuation.
   private let delaysSearch: Bool
   /// Whether an image download suspends until the test explicitly releases its continuation.
@@ -134,6 +136,7 @@ actor CountingProvider {
   ///   - failuresRemaining: How many initial provider requests must fail before normal responses resume.
   init(
     search: MovieSearchResult? = .none,
+    primaryReleaseYear: Int = 2021,
     delaysSearch: Bool = false,
     delaysPoster: Bool = false,
     searchError: TMDbError? = .none,
@@ -143,6 +146,7 @@ actor CountingProvider {
     failuresRemaining: Int = .max
   ) {
     self.search = search
+    self.primaryReleaseYear = primaryReleaseYear
     self.delaysSearch = delaysSearch
     self.delaysPoster = delaysPoster
     self.searchError = searchError
@@ -160,6 +164,8 @@ actor CountingProvider {
   /// - Returns: Provider candidates and evidence indicating whether more pages remain.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles {
     alternativeTitleCount += 1
 
@@ -192,7 +198,7 @@ actor CountingProvider {
       ?? MovieSearchResult(
         movies: [
           MovieMetadata(
-            id: 42, title: title, originalTitle: title, releaseYear: year,
+            id: 42, title: title, originalTitle: title, releaseYear: primaryReleaseYear,
             posterPath: "/dune.jpg")
         ], hasMorePages: false)
   }

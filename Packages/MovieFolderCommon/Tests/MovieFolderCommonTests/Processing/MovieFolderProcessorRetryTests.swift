@@ -41,7 +41,7 @@ extension MovieFolderProcessorTests {
     for index in 0..<498 {
       try fixture.addFolder(String(format: "Movie %03d (2020)", index))
     }
-    let provider = CountingProvider()
+    let provider = CountingProvider(primaryReleaseYear: 2020)
     let processor = try fixture.processor(provider: provider)
     let clock = ContinuousClock()
 

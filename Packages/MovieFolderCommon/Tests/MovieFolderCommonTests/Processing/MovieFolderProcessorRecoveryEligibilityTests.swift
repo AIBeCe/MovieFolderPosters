@@ -42,7 +42,7 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
   try fixture.addFolder("Dune (2021) [tt1160419]")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
   let staleSearch = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
   try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
@@ -89,6 +89,37 @@ func cachedIdentifierSuffixReassessmentStopsAfterCurrentUnresolvedDecision() asy
   #expect(saved.folders[candidate.name]?.nameParserRevision == ReleaseNameParser.revision)
 }
 
+/// An old unresolved edition-name decision receives fresh evidence once and preserves unrelated cached data.
+@Test
+func cachedEditionSuffixDecisionIsReassessedOnce() async throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  try fixture.addFolder("Dune (2021) Director’s Cut")
+  let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
+  let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
+  let staleSearch = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
+  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+    fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
+    matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)],
+    queries: [queryKey: staleSearch, "unrelated": staleSearch]), fixture: fixture)
+  let provider = CountingProvider()
+  let processor = try fixture.processor(provider: provider, clock: { clock.now })
+
+  let first = try await processor.process(root: fixture.movies)
+  let restarted = try fixture.processor(provider: provider, clock: { clock.now })
+  let second = try await restarted.process(root: fixture.movies)
+
+  #expect(first.assigned == 1)
+  #expect(second.examined == 0)
+  #expect(await provider.searchCount == 1)
+  let saved = try readRecoveryCache(fixture)
+  #expect(saved.folders[candidate.name]?.status == .processed)
+  #expect(saved.folders[candidate.name]?.nameParserRevision == ReleaseNameParser.revision)
+  #expect(saved.queries[queryKey]?.searchResult().movies.count == 1)
+  #expect(saved.queries["unrelated"] != nil)
+}
+
 /// An individual processor applies its configured delay to this folder's incomplete search result.
 @Test
 func customConfigurationSetsIncompleteSearchRetryDeadline() async throws {
@@ -119,7 +150,7 @@ func incompleteSearchRecoveryEvictsOnlyItsQueryBeforeRetry() async throws {
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
   let incomplete = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
   try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
@@ -145,7 +176,7 @@ func legacyUnresolvedRecoveryReassessesFreshAndPersistsClassification() async th
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: 2021)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
   let incomplete = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
   try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,

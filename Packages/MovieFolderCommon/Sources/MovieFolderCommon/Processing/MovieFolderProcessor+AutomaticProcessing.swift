@@ -46,7 +46,7 @@ extension MovieFolderProcessor {
     let access = retainedAccess.access
 
     if let processingContext, let previous = try? processingStore?.read(rootID: processingContext.rootID) {
-      activity.priorAssessments = previous.folders.reduce(into: [:]) { $0[$1.name] = $1 }
+      activity.priorFolderResults = previous.folders.reduce(into: [:]) { $0[$1.name] = $1 }
     }
 
     var visit = AutomaticProcessingVisit(
@@ -144,7 +144,7 @@ extension MovieFolderProcessor {
     _ candidates: [FolderCandidate], currentTime: Date, stateChanged: Bool,
     access: PersistenceAccess, visit: inout AutomaticProcessingVisit
   ) throws -> Bool {
-    guard recovery == nil, !hasLegacyReassessment(candidates, cache: visit.cache),
+    guard recovery == nil, !hasLegacyUnresolvedResult(candidates, cache: visit.cache),
       let backoff = visit.cache.providerRetryAt, backoff > currentTime
     else { return false }
 
@@ -156,18 +156,18 @@ extension MovieFolderProcessor {
         movie: savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate))
       visit.activity?.append(.deferred, reason: .retryDeferred, retryAt: backoff)
     }
-    deferPendingFolderAssessments(&visit.recording, until: backoff)
+    deferPendingFolderResults(&visit.recording, until: backoff)
     try finishProcessingRun(&visit.recording, state: .partial, activity: visit.activity)
 
     return true
   }
 
   /// Detects unchanged reasonless decisions whose obsolete root delay cannot block their fresh classification.
-  private func hasLegacyReassessment(_ candidates: [FolderCandidate], cache: ProcessingState) -> Bool {
+  private func hasLegacyUnresolvedResult(_ candidates: [FolderCandidate], cache: ProcessingState) -> Bool {
     candidates.contains {
       let saved = cache.folders[$0.name]
 
-      return saved?.fingerprint == $0.fingerprint && saved?.needsLegacyReassessment == true
+      return saved?.fingerprint == $0.fingerprint && saved?.isLegacyUnresolvedResult == true
     }
   }
 
@@ -248,9 +248,9 @@ extension MovieFolderProcessor {
         } else {
           visit.summary.skippedExistingIcons += 1
         }
-        let assessment = try assessFolderProcessing(candidate, root: root, saved: visit.cache.folders[candidate.name])
-        visit.activity?.append(assessment, onlyWhenChanged: true)
-        try recordFolderProcessing(assessment, in: &visit.recording, activity: visit.activity)
+        let folderResult = try folderProcessingResult(candidate, root: root, saved: visit.cache.folders[candidate.name])
+        visit.activity?.append(folderResult, onlyWhenChanged: true)
+        try recordFolderProcessing(folderResult, in: &visit.recording, activity: visit.activity)
       } catch let error as CollectionProcessingError {
         throw error
       } catch is CancellationError {
@@ -263,8 +263,8 @@ extension MovieFolderProcessor {
         visit.activity?.append(.failed, reason: .filesystemFailure,
           failure: MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .assignPoster, occurredAt: now()))
         if visit.recording != .none {
-          var record = (try? assessFolderProcessing(candidate, root: root, saved: visit.cache.folders[candidate.name]))
-            ?? failedFolderAssessment(candidate, stage: .validateIdentity)
+          var record = (try? folderProcessingResult(candidate, root: root, saved: visit.cache.folders[candidate.name]))
+            ?? failedFolderResult(candidate, stage: .validateIdentity)
           record.lastFailure = FolderProcessingFailure(reason: .filesystem, stage: .assignPoster, occurredAt: now())
           if record.state != .done { record.reason = .filesystemFailure }
           try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
@@ -294,7 +294,7 @@ extension MovieFolderProcessor {
       throw error
     } catch {
       visit.summary.transientFailures += 1
-      let record = failedFolderAssessment(candidate, stage: .validateIdentity)
+      let record = failedFolderResult(candidate, stage: .validateIdentity)
       visit.activity?.append(record)
       try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
       return true

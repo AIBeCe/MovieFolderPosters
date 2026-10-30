@@ -8,6 +8,8 @@ public enum TMDbRequestCategory: String, Codable, Sendable, CaseIterable {
   case movieSearch
   /// Retrieves provider-verified alternative titles for one movie.
   case alternativeTitles
+  /// Retrieves dated release events for one movie.
+  case releaseDates
   /// Retrieves TMDb poster image configuration.
   case posterConfiguration
   /// Downloads a poster image.

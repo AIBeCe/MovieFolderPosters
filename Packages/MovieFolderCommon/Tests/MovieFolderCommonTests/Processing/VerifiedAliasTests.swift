@@ -13,7 +13,7 @@ import Testing
     posterPath: "/alien.jpg", movieIdentitySource: .conservativeMatch)
   state.updateMatchingConfiguration(MovieMatchingConfiguration(searchLanguage: try TMDbLanguage("pt-BR")))
   #expect(state.folders["Alien"]?.matchedMovieID == 42)
-  #expect(state.folders["Alien"]?.requiresAutomaticReassessment != true)
+  #expect(state.folders["Alien"]?.requiresAutomaticReview != true)
 }
 
 /// Verified exact aliases join direct titles without choosing an artwork-bearing tie.
@@ -50,6 +50,8 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   func searchMovies(title: String, year: Int?, language: TMDbLanguage) -> MovieSearchResult {
     MovieSearchResult(movies: [], hasMorePages: false)
   }
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles {
     requestedIDs.append(movieID)
     if let failure { throw failure }
@@ -148,7 +150,7 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   #expect(MovieMatcher().matchMovie(title: "O Oitavo Passageiro", year: 1979,
     search: search, alternativeTitles: evidence) == .matched(movie))
   #expect(MovieMatcher().matchMovie(title: "O Oitavo Passageiro", year: 1980,
-    search: search, alternativeTitles: [:]) == .unresolved(.noSuitableMatch))
+    search: search, alternativeTitles: evidence, releaseDates: [42: []]) == .unresolved(.noSuitableMatch))
 }
 
 /// Reassessment cannot silently replace a confirmed identity for an unchanged folder fingerprint.
@@ -160,7 +162,7 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   var state = ProcessingState()
   state.folders[candidate.name] = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
     matchedMovieID: 42, posterPath: "/old.jpg", movieTitle: "Original identity", movieYear: 1979,
-    movieIdentitySource: .conservativeMatch, requiresAutomaticReassessment: true)
+    movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true)
   do {
     let access = try #require(try fixture.persistence.acquireAccess(for:
       MovieFolderProcessor.processingStateKey(for: fixture.movies)))
@@ -191,7 +193,7 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   var state = ProcessingState()
   state.folders[candidate.name] = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
     matchedMovieID: 42, posterPath: "/old.jpg", movieTitle: "Alien", movieYear: 1979,
-    movieIdentitySource: .conservativeMatch, requiresAutomaticReassessment: true)
+    movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true)
   do {
     let access = try #require(try fixture.persistence.acquireAccess(for:
       MovieFolderProcessor.processingStateKey(for: fixture.movies)))

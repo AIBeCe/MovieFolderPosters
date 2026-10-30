@@ -232,7 +232,7 @@ struct CollectionProcessingIntegrationTests {
     let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
     let previous = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
       matchedMovieID: 42, posterPath: "/previous.jpg", movieTitle: "Prior identity", movieYear: 2021,
-      movieIdentitySource: .conservativeMatch, requiresAutomaticReassessment: true)
+      movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true)
     do {
       let access = try #require(try fixture.processing.acquireAccess(for:
         MovieFolderProcessor.processingStateKey(for: fixture.root)))
@@ -568,6 +568,8 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
 
   /// Returns the configured offline search scenario, including incomplete or ambiguous results.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
@@ -575,20 +577,20 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
     if missingArtwork {
       return MovieSearchResult(
         movies: [
-          MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year, posterPath: .none)
+          MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year ?? 2021, posterPath: .none)
         ], hasMorePages: false)
     }
     if posterData != .none {
       return MovieSearchResult(
         movies: [
-          MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year, posterPath: "/chosen.jpg")
+          MovieMetadata(id: 7, title: title, originalTitle: title, releaseYear: year ?? 2021, posterPath: "/chosen.jpg")
         ], hasMorePages: false)
     }
     if title == "Ambiguous" {
       return MovieSearchResult(
         movies: [
-          MovieMetadata(id: 1, title: title, originalTitle: title, releaseYear: year, posterPath: "/one.jpg"),
-          MovieMetadata(id: 2, title: title, originalTitle: title, releaseYear: year, posterPath: "/two.jpg")
+          MovieMetadata(id: 1, title: title, originalTitle: title, releaseYear: year ?? 2021, posterPath: "/one.jpg"),
+          MovieMetadata(id: 2, title: title, originalTitle: title, releaseYear: year ?? 2021, posterPath: "/two.jpg")
         ], hasMorePages: false)
     }
 
@@ -651,6 +653,8 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
 
   /// Signals search entry and suspends long enough for the test to cancel processing.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed release events for this provider.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {

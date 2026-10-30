@@ -43,17 +43,30 @@ nonisolated struct FolderRecord: Codable {
     case lastFailure = "latestAttempt"
     case movieIdentitySource
     case nameParserRevision
-    case requiresAutomaticReassessment
+    case requiresAutomaticReview = "requiresAutomaticReassessment"
+    case acceptedReleaseDates, savedMatchingRulesVersion
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
   /// Parser revision that produced an unresolved decision, absent in older saved records.
   var nameParserRevision: Int? = .none
   /// Retains historical installed-poster evidence while preventing assignment from an obsolete automatic decision.
-  var requiresAutomaticReassessment: Bool? = .none
+  var requiresAutomaticReview: Bool? = .none
 
-  /// Whether historic unresolved evidence needs a fresh classification rather than a cooldown retry.
-  var needsLegacyReassessment: Bool { status == .unresolved && processingReason == .none }
+  /// Raw dated events supporting an automatic identity, absent in older records and explicit selections.
+  var acceptedReleaseDates: [MovieReleaseDate]? = .none
+  /// Matching revision that completed a matching run; absent older unresolved decisions can be reviewed once.
+  var savedMatchingRulesVersion: Int? = .none
+
+  /// Derives all source-classified years without duplicating writable year evidence.
+  func movieYears() -> [MovieYear] {
+    let primary = movieYear.map { [MovieYear(year: $0, type: .primaryRelease)] } ?? []
+
+    return primary + (acceptedReleaseDates ?? []).compactMap(\.movieYear)
+  }
+
+  /// Whether older unresolved evidence needs fresh matching rather than a cooldown retry.
+  var isLegacyUnresolvedResult: Bool { status == .unresolved && processingReason == .none }
 
   /// Whether unchanged evidence requires explicit action or a changed folder before another automatic attempt.
   var blocksAutomaticRecovery: Bool {
@@ -128,7 +141,7 @@ nonisolated struct ProcessingState: Codable {
         guard saved.matchedMovieID != .none else { return .none }
 
         var retained = saved
-        if !languageOnly { retained.requiresAutomaticReassessment = true }
+        if !languageOnly { retained.requiresAutomaticReview = true }
 
         return retained
       }

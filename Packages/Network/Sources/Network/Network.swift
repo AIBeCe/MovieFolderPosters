@@ -371,6 +371,47 @@ public struct TMDbClient: Sendable {
     }
   }
 
+  /// Retrieves complete dated release evidence for one positive provider identity.
+  /// - Parameter movieID: The requested TMDb identity.
+  /// - Returns: Exactly one keyed entry, including a valid completed empty event list.
+  /// - Throws: `TMDbError` for invalid input, malformed evidence, provider failures, or cancellation.
+  public func releaseDates(movieID: Int) async throws -> MovieReleaseDates {
+    guard movieID > 0 else { throw TMDbError.invalidQuery }
+
+    guard let base = Self.apiBase else { throw TMDbError.invalidConfiguration }
+
+    let request = authenticatedRequest(url: base.appending(path: "movie/\(movieID)/release_dates"))
+    let response = try await send(request, purpose: .releaseDates)
+    try validateStatus(response)
+
+    guard response.contentType?.split(separator: ";").first?
+      .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "application/json" else {
+      throw TMDbError.malformedResponse
+    }
+
+    do {
+      let evidence = try JSONDecoder().decode(ReleaseDateResponse.self, from: response.data)
+
+      guard evidence.id == movieID else { throw TMDbError.malformedResponse }
+
+      var dates = [MovieReleaseDate]()
+      for country in evidence.results {
+        guard MovieReleaseDate.isValidCountryCode(country.countryCode) else { throw TMDbError.malformedResponse }
+
+        for event in country.releaseDates {
+          dates.append(try MovieReleaseDate(countryCode: country.countryCode,
+            timestamp: event.releaseDate, type: event.type))
+        }
+      }
+
+      return [movieID: dates]
+    } catch let error as TMDbError {
+      throw error
+    } catch {
+      throw TMDbError.malformedResponse
+    }
+  }
+
   /// Downloads and validates the poster at a TMDb-relative poster path.
   ///
   /// - Parameter path: A single relative poster path beginning with `/`.
@@ -681,5 +722,33 @@ private struct AlternativeTitleResponse: Decodable {
     let type: String
     /// Maps only the transport-specific country name.
     enum CodingKeys: String, CodingKey { case countryCode = "iso_3166_1", title, type }
+  }
+}
+
+/// Provider transport envelope, validated before dated events become public evidence.
+private struct ReleaseDateResponse: Decodable {
+  /// Identity checked against the requested movie.
+  let id: Int
+  /// Complete country groups returned for the movie.
+  let results: [Country]
+
+  /// Country provenance and all its dated releases.
+  struct Country: Decodable {
+    /// Two-letter country code.
+    let countryCode: String
+    /// Raw events requiring calendar and type validation.
+    let releaseDates: [Event]
+    /// TMDb transport field mappings.
+    enum CodingKeys: String, CodingKey { case countryCode = "iso_3166_1", releaseDates = "release_dates" }
+  }
+
+  /// Raw event timestamp and provider type.
+  struct Event: Decodable {
+    /// Original ISO timestamp.
+    let releaseDate: String
+    /// Positive provider type.
+    let type: Int
+    /// TMDb timestamp field mapping.
+    enum CodingKeys: String, CodingKey { case releaseDate = "release_date", type }
   }
 }

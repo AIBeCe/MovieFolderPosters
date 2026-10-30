@@ -78,8 +78,10 @@ extension MovieFolderProcessor {
     var refreshedRecord = processedRecord(for: candidate, movieID: movieID, posterPath: posterPath)
     refreshedRecord.movieTitle = selection.movieTitle
     refreshedRecord.movieYear = selection.movieYear
+    refreshedRecord.acceptedReleaseDates = selection.releaseDates
+    refreshedRecord.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
     refreshedRecord.movieIdentitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
-    refreshedRecord.requiresAutomaticReassessment = state.folders[child]?.requiresAutomaticReassessment
+    refreshedRecord.requiresAutomaticReview = state.folders[child]?.requiresAutomaticReview
     state.folders[child] = refreshedRecord
     state.providerRetryAt = .none
     try saveAssignedState(
@@ -226,7 +228,7 @@ extension MovieFolderProcessor {
       if candidate.hasCustomIcon { throw PosterActionError.foreignIcon }
 
       if processingState != .none {
-        let record = try assessFolderProcessing(candidate, root: root, saved: state.folders[child])
+        let record = try folderProcessingResult(candidate, root: root, saved: state.folders[child])
         try recordFolderProcessing(record, in: &processingState, activity: activity)
         try finishProcessingRun(&processingState, state: .completed, activity: activity)
       }
@@ -418,6 +420,7 @@ extension MovieFolderProcessor {
     let posterPath: String
     var movieTitle = state.folders[child]?.movieTitle
     var movieYear = state.folders[child]?.movieYear
+    var releaseDates = state.folders[child]?.acceptedReleaseDates ?? []
     if let record = state.folders[child], record.fingerprint == candidate.fingerprint,
       record.status == .processed, let savedMovieID = record.matchedMovieID,
       let savedPosterPath = record.posterPath,
@@ -429,12 +432,15 @@ extension MovieFolderProcessor {
       movieID = result.movie.id
       movieTitle = result.movie.title
       movieYear = result.movie.releaseYear
+      releaseDates = savedReleaseDates(result.releaseDates, movie: result.movie, candidate: candidate,
+        saved: state.folders[child]) ?? []
       posterPath = result.posterPath
       state.queries[result.queryKey] = CachedSearch(result: result.search, createdAt: now())
     }
 
     return RefreshMovieSelection(
-      movieID: movieID, posterPath: posterPath, movieTitle: movieTitle, movieYear: movieYear)
+      movieID: movieID, posterPath: posterPath, movieTitle: movieTitle, movieYear: movieYear,
+      releaseDates: releaseDates)
   }
 
   /// Searches and conservatively validates a fresh refresh choice before caching its result.
@@ -454,16 +460,20 @@ extension MovieFolderProcessor {
     }
 
     activity.stage = .search
-    let queryKey = try Self.queryKey(title: parsed.title, year: parsed.year,
+    let queryKey = try Self.queryKey(title: parsed.title, year: .none,
       language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
       usesFixtures: usesFixtureMetadata)
-    let search = try await provider.searchMovies(title: parsed.title, year: parsed.year,
+    let search = try await provider.searchMovies(title: parsed.title, year: .none,
       language: movieMatchingConfiguration.searchLanguage)
     try Task.checkCancellation()
     candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
     try ensureReplaceableIcon(for: candidate, in: root)
     let match = try await assessMovie(title: parsed.title, year: parsed.year, search: search, state: &state)
-    guard case .matched(let movie) = match else {
+    try Task.checkCancellation()
+    candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
+    try ensureReplaceableIcon(for: candidate, in: root)
+
+    guard case .matched(let movie, let releaseDates) = match else {
       let (reason, identifiedMovie) = unresolvedIdentity(match)
       activity.movie = identifiedMovie
       let result: MovieFolderActivityLogEvent.FolderResult = switch reason {
@@ -490,7 +500,8 @@ extension MovieFolderProcessor {
       throw PosterActionError.noPoster
     }
 
-    return RefreshSearchResult(queryKey: queryKey, search: search, movie: movie, posterPath: posterPath)
+    return RefreshSearchResult(queryKey: queryKey, search: search, movie: movie, posterPath: posterPath,
+      releaseDates: releaseDates)
   }
 
   /// Saves an explicit manual-resolution requirement when a fresh search cannot replace confirmed evidence.
@@ -502,7 +513,7 @@ extension MovieFolderProcessor {
       saved.processingReason == .manualMatchingRequired else { return }
 
     try saveState(state, to: access, activity: activity)
-    try recordFolderProcessing(cachedFolderAssessment(candidate, saved: saved),
+    try recordFolderProcessing(cachedFolderResult(candidate, saved: saved),
       in: &processingState, activity: activity)
     try finishProcessingRun(&processingState, state: .failed, activity: activity)
   }
@@ -546,7 +557,7 @@ extension MovieFolderProcessor {
   /// - Returns: Whether explicit/current decisions or verified installed-poster evidence permit identity reuse.
   /// - Throws: Filesystem inspection or identity errors.
   private func mayReuseSavedIdentity(_ record: FolderRecord, candidate: FolderCandidate, root: URL) throws -> Bool {
-    if record.requiresAutomaticReassessment != true { return true }
+    if record.requiresAutomaticReview != true { return true }
 
     return try fileSystem.hasAssignedPoster(toChild: candidate.name, in: root, expectedIdentity: candidate.identity)
   }
@@ -562,6 +573,8 @@ private struct RefreshMovieSelection {
   let movieTitle: String?
   /// Saved or freshly matched release year evidence.
   let movieYear: Int?
+  /// Dated events that supported the automatic identity.
+  let releaseDates: [MovieReleaseDate]
 }
 
 /// Search evidence retained until a refresh selection has passed identity and artwork checks.
@@ -574,4 +587,6 @@ private struct RefreshSearchResult {
   let movie: MovieMetadata
   /// Nonempty artwork path checked before returning.
   let posterPath: String
+  /// Dated events that supported the fresh automatic identity.
+  let releaseDates: [MovieReleaseDate]
 }

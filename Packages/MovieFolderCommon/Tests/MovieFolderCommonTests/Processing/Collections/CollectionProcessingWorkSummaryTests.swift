@@ -33,7 +33,7 @@ struct CollectionProcessingWorkSummaryTests {
     #expect(work.needsProcessing == 1)
     #expect(work.waitingToRetry == 1)
     #expect(work.needsManualResolution == 1)
-    #expect(work.needsReassessment == 1)
+    #expect(work.needsReview == 1)
     #expect(work.preserved == 1)
     #expect(work.suppressed == 1)
     #expect(!work.isComplete)
@@ -80,7 +80,7 @@ struct CollectionProcessingWorkSummaryTests {
 
     #expect(work.needsProcessing == 1)
     #expect(work.needsManualResolution == 2)
-    #expect(work.needsReassessment == 1)
+    #expect(work.needsReview == 1)
     #expect(work.waitingToRetry == .zero)
   }
 

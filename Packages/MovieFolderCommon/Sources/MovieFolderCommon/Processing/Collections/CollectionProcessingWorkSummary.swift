@@ -8,8 +8,8 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
   public private(set) var waitingToRetry: Int = .zero
   /// Conclusive outcomes requiring explicit user action or changed folder evidence.
   public private(set) var needsManualResolution: Int = .zero
-  /// Legacy or uncertain evidence that requires a fresh assessment.
-  public private(set) var needsReassessment: Int = .zero
+  /// Legacy or uncertain evidence that requires a fresh review.
+  public private(set) var needsReview: Int = .zero
   /// Verified installed posters retained independently of pending work.
   public private(set) var done: Int = .zero
   /// Existing icons intentionally retained.
@@ -23,14 +23,14 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
   /// Whether all current folders have a verified or intentional terminal outcome.
   public var isComplete: Bool {
     isKnown && needsProcessing == .zero && waitingToRetry == .zero && needsManualResolution == .zero
-      && needsReassessment == .zero
+      && needsReview == .zero
   }
   /// Safe mixed-condition labels, with freshness presented separately by the caller.
   public var description: String {
     if isComplete { return "Complete" }
     let counts = [
       ("Needs processing", needsProcessing), ("Waiting to retry", waitingToRetry),
-      ("Needs manual resolution", needsManualResolution), ("Needs reassessment", needsReassessment)
+      ("Needs manual resolution", needsManualResolution), ("Needs review", needsReview)
     ]
     let observed = counts.filter { $0.1 > .zero }.map { "\($0.0): \($0.1)" }.joined(separator: " · ")
     guard isKnown else { return observed.isEmpty ? "Unknown" : "Unverified saved work · \(observed)" }
@@ -56,8 +56,8 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
     if folder.state == .suppressed { suppressed += 1; return }
     if folder.state == .excluded { excluded += 1; return }
     if folder.state == .pending { needsProcessing += 1; return }
-    if folder.state == .uncertain || folder.state == .done { needsReassessment += 1; return }
-    guard let reason = folder.reason, reason != .unknown else { needsReassessment += 1; return }
+    if folder.state == .uncertain || folder.state == .done { needsReview += 1; return }
+    guard let reason = folder.reason, reason != .unknown else { needsReview += 1; return }
     switch reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .manualMatchingRequired:
       needsManualResolution += 1

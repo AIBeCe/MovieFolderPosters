@@ -73,7 +73,7 @@ private struct OperationalMigrationFixture {
       retryDate: Date(timeIntervalSince1970: 1234), matchedMovieID: 42, posterPath: "/alien.jpg",
       movieTitle: "Alien", movieYear: 1979, movieIdentitySource: .explicitSelection)],
       providerRetryAt: Date(timeIntervalSince1970: 5678), credentialRevision: configuration.credentialRevision)
-    state.folders["Alien"]?.requiresAutomaticReassessment = true
+    state.folders["Alien"]?.requiresAutomaticReview = true
     var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
     object.removeValue(forKey: "schemaVersion")
     object.removeValue(forKey: "alternativeTitles")
@@ -119,7 +119,7 @@ private struct OperationalMigrationFixture {
   #expect(state.folders["Alien"]?.matchedMovieID == 42)
   #expect(state.folders["Alien"]?.posterPath == "/alien.jpg")
   #expect(state.folders["Alien"]?.movieIdentitySource == .explicitSelection)
-  #expect(state.folders["Alien"]?.requiresAutomaticReassessment == true)
+  #expect(state.folders["Alien"]?.requiresAutomaticReview == true)
   #expect(state.folders["Alien"]?.retryDate == Date(timeIntervalSince1970: 1234))
   #expect(state.providerRetryAt == Date(timeIntervalSince1970: 5678))
   #expect(state.credentialRevision == current.credentialRevision)

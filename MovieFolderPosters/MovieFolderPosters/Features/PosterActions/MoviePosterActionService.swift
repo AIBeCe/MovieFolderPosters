@@ -667,6 +667,8 @@ private struct MissingTokenProvider: MovieMetadataProvider {
   ///   - title: The requested movie title.
   ///   - year: The optional release year.
   /// - Throws: `TMDbError.missingToken` for every search request.
+  /// Refuses release evidence when no credential is configured.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDates { throw TMDbError.missingToken }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { throw TMDbError.missingToken }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {

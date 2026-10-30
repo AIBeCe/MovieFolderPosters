@@ -79,7 +79,8 @@ struct MovieMatcherTests {
   /// Verifies unknown Candidate Year Cannot Satisfy Supplied Year.
   @Test func unknownCandidateYearCannotSatisfySuppliedYear() {
     let search = results([candidate(1, "The Drama", .none)])
-    #expect(MovieMatcher().match(title: "The Drama", year: 2026, search: search) == .unresolved(.noSuitableMatch))
+    #expect(MovieMatcher().match(title: "The Drama", year: 2026, search: search)
+      == .unresolved(.incompleteYearEvidence))
   }
 
   /// Verifies unknown Query Year Still Allows Unique Exact Title.
