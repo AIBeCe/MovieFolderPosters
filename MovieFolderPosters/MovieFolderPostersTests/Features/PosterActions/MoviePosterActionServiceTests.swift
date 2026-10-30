@@ -10,6 +10,20 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// Explicit movie search forwards the saved regional language through the authorized action service.
+  @Test func movieSelectionSearchUsesSavedLanguage() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let language = try TMDbLanguage("pt-BR")
+    try fixture.repository.update { $0.movieMatchingConfiguration.searchLanguage = language }
+    let provider = ActionProvider(changesDuringDownload: true)
+    let result = try await fixture.service(movieMetadataProvider: provider).searchMovies(
+      for: fixture.request, query: "Dune", year: 2021, language: language)
+
+    #expect(result.movies.first?.title == "Dune")
+    #expect(await provider.searchLanguages == ["pt-BR"])
+  }
+
   /// Actual user-requested actions identify their authorized collection and immediate child folder.
   @Test func activityIdentifiesTheCollectionFolderAndMovie() async throws {
     let fixture = try PosterActionFixture()
@@ -405,6 +419,8 @@ private struct ActionCredentials: CredentialStoring {
 private actor ActionProvider: MovieMetadataProvider {
   /// Provider calls recorded to distinguish a saved selection from an automatic search.
   private(set) var searches: [String] = []
+  /// Regional search language recorded at the actual metadata provider boundary.
+  private(set) var searchLanguages: [String] = []
   /// Downloaded poster paths establish whether refresh used the saved movie.
   private(set) var downloads: [String] = []
   /// Optional real configuration change during the asynchronous network boundary.
@@ -426,6 +442,7 @@ private actor ActionProvider: MovieMetadataProvider {
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searches.append("\(title):\(year.map(String.init) ?? "none")")
+    searchLanguages.append(language.rawValue)
     if cancels { throw CancellationError() }
     if !changesDuringDownload { try repository?.update { $0.credentialRevision = UUID() } }
 

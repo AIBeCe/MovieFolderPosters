@@ -8,7 +8,7 @@
 import XCTest
 
 /// Captures a launch screenshot for each configured UI test environment.
-final class MovieFolderPostersUITestsLaunchTests: XCTestCase {
+final class MovieFolderPostersUITestsLaunchTests: IsolatedMovieFolderPostersUITestCase {
 
   /// Runs the launch test for each target application UI configuration.
   override static var runsForEachTargetApplicationUIConfiguration: Bool { true }
@@ -17,8 +17,7 @@ final class MovieFolderPostersUITestsLaunchTests: XCTestCase {
   @MainActor
   func testLaunch() throws {
     continueAfterFailure = false
-    let app = XCUIApplication()
-    app.launch()
+    let (app, _) = try launchIsolatedApp()
 
     // Insert steps here to perform after app launch but before taking a screenshot,
     // such as logging into a test account or navigating somewhere in the app

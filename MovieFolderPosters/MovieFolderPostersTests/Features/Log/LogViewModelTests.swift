@@ -6,7 +6,9 @@ import Testing
 @testable import MovieFolderPosters
 
 /// Controlled in-memory history used only by explicitly injected host tests.
-actor ActivityServiceFake: MovieFolderActivityServicing {
+final class ActivityServiceFake: MovieFolderActivityServicing, @unchecked Sendable {
+  /// Serializes fake history, failure controls, and held-read state.
+  private let lock = NSLock()
   /// Retained fake committed entries.
   private var history: [MovieFolderActivityLogEntry] = []
   /// Increasing sequence preserved across Clear.
@@ -22,49 +24,69 @@ actor ActivityServiceFake: MovieFolderActivityServicing {
   /// Whether the next read should be suspended after taking its snapshot.
   private var shouldHoldRead = false
   /// Number of reads, used to observe a suspension without a timer.
-  private(set) var readCount = Int.zero
+  private var storedReadCount = Int.zero
+  var readCount: Int { lock.withLock { storedReadCount } }
 
   /// Controlled service failure without arbitrary descriptions.
   enum Failure: Error { case unavailable }
 
   /// Configures independent history failures.
   func setFailures(write: Bool = false, read: Bool = false, clear: Bool = false) {
-    failsWrites = write
-    failsReads = read
-    failsClear = clear
+    lock.withLock {
+      failsWrites = write
+      failsReads = read
+      failsClear = clear
+    }
   }
 
   /// Suspends the next read after snapshot capture.
-  func holdNextRead() { shouldHoldRead = true }
+  func holdNextRead() { lock.withLock { shouldHoldRead = true } }
   /// Releases the captured read.
-  func releaseRead() { heldRead?.resume(); heldRead = .none }
+  func releaseRead() {
+    let continuation = lock.withLock {
+      defer { heldRead = .none }
+
+      return heldRead
+    }
+    continuation?.resume()
+  }
   /// Whether a read is currently suspended.
-  var isReadHeld: Bool { heldRead != nil }
+  var isReadHeld: Bool { lock.withLock { heldRead != nil } }
 
   func record(_ event: MovieFolderActivityLogEvent) -> Bool {
-    guard !failsWrites else { return false }
-    sequence += 1
-    history.append(MovieFolderActivityLogEntry(id: UUID(), sequence: sequence, occurredAt: Date(), event: event))
-    if history.count > 500 { history.removeFirst(history.count - 500) }
+    lock.withLock {
+      guard !failsWrites else { return false }
+      sequence += 1
+      history.append(MovieFolderActivityLogEntry(id: UUID(), sequence: sequence, occurredAt: Date(), event: event))
+      if history.count > 500 { history.removeFirst(history.count - 500) }
 
-    return true
+      return true
+    }
   }
 
   func entries() async throws -> [MovieFolderActivityLogEntry] {
-    readCount += 1
-    if failsReads { throw Failure.unavailable }
-    let snapshot = history
-    if shouldHoldRead {
+    let (snapshot, shouldHold, shouldFail) = lock.withLock {
+      storedReadCount += 1
+      let shouldHold = shouldHoldRead
       shouldHoldRead = false
-      await withCheckedContinuation { heldRead = $0 }
+
+      return (history, shouldHold, failsReads)
+    }
+    if shouldFail { throw Failure.unavailable }
+    if shouldHold {
+      await withCheckedContinuation { continuation in
+        lock.withLock { heldRead = continuation }
+      }
     }
 
     return snapshot
   }
 
   func clear() throws {
-    if failsClear { throw Failure.unavailable }
-    history = []
+    try lock.withLock {
+      if failsClear { throw Failure.unavailable }
+      history = []
+    }
   }
 }
 

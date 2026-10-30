@@ -18,11 +18,14 @@
 		F50000000000000000000050 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000032 /* Persistence */; };
 		F50000000000000000000051 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000033 /* Persistence */; };
 		F50000000000000000000052 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000034 /* Persistence */; };
+		F50000000000000000000053 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = F50000000000000000000035 /* Persistence */; };
+		F50000000000000000000054 /* FileSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000002B /* FileSystem */; };
 		F5000000000000000000005B /* Network in Frameworks */ = {isa = PBXBuildFile; productRef = F5000000000000000000005A /* Network */; };
 		F70000000000000000000005 /* TestPoster.png in Resources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* TestPoster.png */; };
 		FC0000000000000000000001 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000011 /* MovieFolderCommon */; };
 		FC0000000000000000000002 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000012 /* MovieFolderCommon */; };
 		FC0000000000000000000003 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000013 /* MovieFolderCommon */; };
+		FC0000000000000000000004 /* MovieFolderCommon in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000014 /* MovieFolderCommon */; };
 		FC0000000000000000000031 /* MovieFolderParsing in Frameworks */ = {isa = PBXBuildFile; productRef = FC0000000000000000000032 /* MovieFolderParsing */; };
 		FD1000000000000000000001 /* FinderRuntimeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000003 /* FinderRuntimeEnvironment.swift */; };
 		FD1000000000000000000002 /* MovieFolderContextMenuHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1000000000000000000004 /* MovieFolderContextMenuHandler.swift */; };
@@ -138,6 +141,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC0000000000000000000004 /* MovieFolderCommon in Frameworks */,
+				F50000000000000000000053 /* Persistence in Frameworks */,
+				F50000000000000000000054 /* FileSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -291,6 +297,9 @@
 			);
 			name = MovieFolderPostersUITests;
 			packageProductDependencies = (
+				FC0000000000000000000014 /* MovieFolderCommon */,
+				F50000000000000000000035 /* Persistence */,
+				F5000000000000000000002B /* FileSystem */,
 			);
 			productName = MovieFolderPostersUITests;
 			productReference = 4EA84251307BE08B005A22E4 /* MovieFolderPostersUITests.xctest */;
@@ -901,6 +910,16 @@
 			package = F5000000000000000000001F /* XCLocalSwiftPackageReference "../Packages/Persistence" */;
 			productName = Persistence;
 		};
+		F50000000000000000000035 /* Persistence */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F5000000000000000000001F /* XCLocalSwiftPackageReference "../Packages/Persistence" */;
+			productName = Persistence;
+		};
+		F5000000000000000000002B /* FileSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F5000000000000000000001E /* XCLocalSwiftPackageReference "../Packages/FileSystem" */;
+			productName = FileSystem;
+		};
 		F5000000000000000000005A /* Network */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F40000000000000000000005 /* XCLocalSwiftPackageReference "../Packages/Network" */;
@@ -917,6 +936,11 @@
 			productName = MovieFolderCommon;
 		};
 		FC0000000000000000000013 /* MovieFolderCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */;
+			productName = MovieFolderCommon;
+		};
+		FC0000000000000000000014 /* MovieFolderCommon */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FC0000000000000000000020 /* XCLocalSwiftPackageReference "../Packages/MovieFolderCommon" */;
 			productName = MovieFolderCommon;

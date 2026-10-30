@@ -101,7 +101,9 @@ struct LocalDataExportTests {
 }
 
 /// Controlled finite source for stale-preview and availability behavior.
-actor LocalDataExportSourcesFake: LocalDataExportServicing {
+final class LocalDataExportSourcesFake: LocalDataExportServicing, @unchecked Sendable {
+  /// Serializes the replaceable source and suspended storage capture.
+  private let lock = NSLock()
   /// Current retained sources and privacy fingerprint.
   private var evidence: LocalDataExportSources
   /// Suspended metadata capture used to test late completion fences.
@@ -109,28 +111,39 @@ actor LocalDataExportSourcesFake: LocalDataExportServicing {
   /// Whether the next storage capture must wait for the test.
   private var holdsStorage = false
   /// Whether a metadata capture is currently suspended.
-  var isStorageHeld: Bool { storageContinuation != nil }
+  var isStorageHeld: Bool { lock.withLock { storageContinuation != nil } }
   /// Holds one metadata capture without timers.
-  func holdStorage() { holdsStorage = true }
+  func holdStorage() { lock.withLock { holdsStorage = true } }
   /// Releases held metadata capture.
   func releaseStorage() {
-    storageContinuation?.resume()
-    storageContinuation = nil
+    let continuation = lock.withLock {
+      defer { storageContinuation = .none }
+
+      return storageContinuation
+    }
+    continuation?.resume()
   }
   /// Creates a controlled source without production storage.
   /// - Parameter evidence: Initial retained history and privacy evidence.
   init(_ evidence: LocalDataExportSources) { self.evidence = evidence }
   /// Replaces committed evidence between preview and save.
   /// - Parameter evidence: New retained history and privacy evidence.
-  func replace(_ evidence: LocalDataExportSources) { self.evidence = evidence }
+  func replace(_ evidence: LocalDataExportSources) { lock.withLock { self.evidence = evidence } }
   /// Returns the currently committed source evidence.
-  func load() -> LocalDataExportSources { evidence }
+  func load() async -> LocalDataExportSources { lock.withLock { evidence } }
   /// Captures fixed local-storage evidence, suspending when the test requested a hold.
   /// - Returns: A bounded report with unavailable app-owned locations.
   func storage() async -> LocalStorageReport {
-    if holdsStorage {
+    let shouldHold = lock.withLock {
+      guard holdsStorage else { return false }
       holdsStorage = false
-      await withCheckedContinuation { storageContinuation = $0 }
+
+      return true
+    }
+    if shouldHold {
+      await withCheckedContinuation { continuation in
+        lock.withLock { storageContinuation = continuation }
+      }
     }
 
     return .capture(sharedContainer: nil, hostApplicationSupport: nil)
