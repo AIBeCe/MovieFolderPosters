@@ -13,8 +13,8 @@ Settings and Choose Movie interfaces expose the choice and incomplete results.
 
 **Specification:** GitHub issue #17 and the four proposals approved in this chat on 2026-10-31. The decisions
 below are the durable specification. The initial fixed three-page proposal was superseded by the approved
-global setting (default 3, range 1–5). Implementation is authorized; formal Validation, Acceptance Testing,
-committing, merging, and pushing are not authorized.
+global setting (default 3, range 1–5). Implementation was approved and committed as `8b1a0c8`. Formal Validation and Apple documentation review
+were authorized on 2026-10-31. Acceptance Testing, merging, and pushing remain separately gated.
 
 ## Global constraints and approved design
 
@@ -109,7 +109,8 @@ SettingsViewController, PosterActions presentation, activity/result explanation,
 
 ## Implementation status and focused evidence
 
-Implementation is complete on `feature/bounded-search-pagination`, uncommitted and ready for user review.
+Implementation was approved and committed on `feature/bounded-search-pagination` as `8b1a0c8`.
+The focused implementation evidence below describes checks performed before that commit.
 Independent implementation review: **PASS**, with no remaining Critical/Important findings. This is not formal
 Validation or Acceptance approval. No commit, merge, push, lint, app launch, extension registration, live TMDb,
 real settings/credentials, or real movie-folder icon operations were performed.
@@ -175,7 +176,9 @@ Independent review report: `/private/tmp/R120-03-review-report.md`. Full worker 
 - Root spot checks restored the approved invalid-limit error type and ensured a conflicting historical
   `searchPageLimit` field is rejected rather than silently overwritten during migration.
 
-### Remaining phase gates and limits
+### Limits recorded at implementation handoff
+
+The following paragraph records the pre-validation handoff; current phase status appears below.
 
 No rendered AppKit inspection, Light/Dark check, XCUITest acceptance run, Finder runtime/icon persistence,
 live-user-data migration qualification, signing/notarization, or full project suite was performed. The installed
@@ -183,3 +186,63 @@ Swift Style Guide was applied during implementation/review; formal four-part Val
 requires separate authorization. Acceptance requires its own scenario discovery, preflight, approved executable
 coverage, and actual execution. Implementation approval is required before committing these changes. Nothing
 in these focused results authorizes formal Validation, Acceptance, feature completion, merge, or push.
+
+
+## Validation — 2026-10-31
+
+**Result: PASS for issue-scoped technical validation; awaiting user approval.** No validation commit,
+Acceptance Testing, merge, or push has been performed. The user authorized completing remaining corrections
+as a group and requesting approval at the end.
+
+| Required activity | Final result and evidence |
+| --- | --- |
+| Verification | Reviewed bounded sequential pagination, completeness refusal, conflicting duplicates, captured budgets, cache-key separation, per-page recovery admission, passive setting reload, strict schema 7 conversion and preservation. Relevant automated checks passed. |
+| Unit/integration testing | Network: 59 tests/1 suite (`/private/tmp/r12003-validation-network-split-tests.log`). Common: 188 tests/13 suites (`/private/tmp/r12003-validation-final-common.log`). Host/Finder: 100 tests/10 suites (`/private/tmp/r12003-validation-final-host.log`). Counts describe separate runs and are not a unique combined coverage total. |
+| SwiftLint | Repository configuration, no rule suppression or weakening. Final scan of 61 issue-modified Swift files: 39 warnings, zero errors; all remaining warnings have pre-feature equivalents. Baseline: 40 warnings (35 line length, 4 async-without-await, 1 parameter alignment); final: 34 line length, 4 async-without-await, 1 parameter alignment. Evidence: `/private/tmp/r12003-validation-baseline-lint.json`, `/private/tmp/r12003-validation-completed-lint.json`. |
+| Swift Style / Apple documentation | Applied installed Swift Style Guide to corrections. Fixed misplaced DocC, public aggregation/error contracts, import grouping, line wrapping and closure return spacing; preserved approved naming, visibility and isolation. Checked native popup selection/action conventions and Apple parameter/throws markup. |
+
+### Corrections retained for approval
+
+- Restored the matching-setting setter's DocC and documented the page-limit setter independently.
+- Updated the existing coordinator control assertion to require the complete approved incomplete-search guidance.
+  The previously failing test and its suite passed after correction (4 tests); final host run includes it.
+- Fixed imports, 10 overlong lines introduced by renames, and closure return spacing.
+- Grouped existing private methods into same-file extensions for TMDbClient and MoviePosterActionViewModel.
+- Moved ConfigurationSummary into its own Configuration source file, preserving API and adding its required
+  FileSystem import. An initial compile failed without that import; the corrected run passed 42 tests.
+- Split scheduler test support, the Finder notification test and CollectionProcessingTestEnvironment into
+  focused files; preserved suites and behavior. Scheduler helpers are internal within the test target so both
+  files can use them. SwiftPM and the existing application harness discover the files automatically.
+- Made eight synchronous test-provider page implementations synchronous witnesses of the existing asynchronous
+  protocol; production protocol and actor ownership are unchanged. Final Common and host/Finder runs passed.
+- Clarified aggregation deduplication, incomplete-success and error contracts, cancellation documentation and
+  scheduling terminology. Documentation changes after test execution do not change executable behavior.
+
+### Apple references
+
+- [Pop-up controls and actions](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/MenuList/Articles/ManagingPopUpItems.html): native option selection with pullsDown false and target/action is appropriate.
+- [Parameters markup](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/Parameters.html) and [Throws markup](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/Throws.html): parameter and error descriptions attach to the documented symbol. Source DocC was inspected; a generated DocC archive was not built.
+
+### Failures, scope and limits
+
+An exploratory host harness selection ran 322 tests/39 suites and failed with four recorded issues, including
+one known issue (`/private/tmp/r12003-validation-host.log`). The directly affected coordinator assertion used
+the old message and is now corrected. Two About-panel icon-size assertions failed because the disposable
+harness supplied a 128-point icon rather than the expected 1254-point icon; About-panel behavior is outside
+R120-03, and those assertions were not modified or relabeled PASS. The run is preserved as a failed run.
+The final scoped host run includes all affected configuration, poster-action and Finder integration suites.
+
+A later command initially failed while SwiftPM attempted to use the protected default Clang cache; it was
+rerun successfully with explicit writable temporary Clang and SwiftPM module caches. No signing, entitlement
+or credential changes were made. An initial ConfigurationSummary split compile failure is recorded above.
+
+Tests used disposable stores, scripted providers and the existing isolated source harness. Host/Finder current
+sources compiled through that harness; this is not an Xcode app build or a launched full-app E2E test.
+No live TMDb calls, extension registration, real movie-folder writes, or real settings/credential operations
+were performed. Existing untracked Xcode user data and parser build state remain preserved.
+
+Rendered full-app Light/Dark layout inspection, full-app XCUITest, Finder runtime icon persistence and real
+user-data migration qualification remain unperformed. AppKit harness tests verify relevant control behavior,
+including the displayed guidance; they do not establish full-app visual or E2E acceptance. Acceptance Testing
+requires separate authorization, scenario discovery and executable coverage approval. No test was skipped in
+the final selected runs; no full-project test-suite pass is claimed.

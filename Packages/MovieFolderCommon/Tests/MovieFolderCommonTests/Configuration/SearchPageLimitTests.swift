@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import MovieFolderCommon
 
 /// Current settings preserve the global budget independently of collection overrides.

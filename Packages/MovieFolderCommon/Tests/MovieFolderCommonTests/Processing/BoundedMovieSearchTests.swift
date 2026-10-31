@@ -1,8 +1,9 @@
-import Foundation
 import CryptoKit
+import Foundation
 import Network
 import Persistence
 import Testing
+
 @testable import MovieFolderCommon
 
 /// Supplies explicitly scripted pages and rejects every unexpected request.
@@ -223,6 +224,7 @@ private func paginationMovie(_ id: Int, title: String = "Dune") -> MovieMetadata
   let pages = Dictionary(uniqueKeysWithValues: (1...5).map { page in
     let movie = MovieMetadata(id: page, title: "Dune", originalTitle: "Dune", releaseYear: 2020,
       posterPath: "/movie.jpg")
+
     return (page, Result<MovieSearchPage, TMDbError>.success(
       MovieSearchPage(movies: [movie], page: page, totalPages: 5)))
   })

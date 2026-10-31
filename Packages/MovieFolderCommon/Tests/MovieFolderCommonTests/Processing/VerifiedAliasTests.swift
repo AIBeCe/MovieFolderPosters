@@ -47,7 +47,7 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   let failure: TMDbError?
   /// Creates a provider with completed empty evidence or one controlled failure.
   init(failure: TMDbError? = .none) { self.failure = failure }
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
     -> MovieSearchPage {
     guard page == 1 else { throw TMDbError.invalidQuery }
 

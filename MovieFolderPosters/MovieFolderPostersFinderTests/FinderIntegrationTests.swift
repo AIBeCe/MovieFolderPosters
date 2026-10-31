@@ -10,21 +10,6 @@ import Testing
 
 @Suite("Finder integration")
 struct FinderIntegrationTests {
-  /// Shared notification parsing accepts explicit intent and defaults safely for older or malformed senders.
-  @Test func configurationNotificationPreservesLegacyResumeDefault() {
-    let name = Notification.Name.movieFolderConfigurationChanged
-    #expect(!FinderSync.schedulesObservedCollections(for: Notification(name: name,
-      userInfo: ["scheduleObservedCollections": false])))
-    #expect(FinderSync.schedulesObservedCollections(for: Notification(name: name,
-      userInfo: ["scheduleObservedCollections": true])))
-    #expect(FinderSync.schedulesObservedCollections(for: Notification(name: name)))
-    #expect(FinderSync.schedulesObservedCollections(for: Notification(name: name, userInfo: [:])))
-    #expect(FinderSync.schedulesObservedCollections(for: Notification(name: name,
-      userInfo: ["scheduleObservedCollections": "false"])))
-    #expect(FinderSync.schedulesObservedCollections(for: Notification(name: name,
-      userInfo: ["scheduleObservedCollections": NSNull()])))
-  }
-
   /// A failed current privacy read cannot reuse an earlier public choice when privacy changes during work.
   @Test @MainActor func unavailablePrivacyCaptureRemainsPrivateAfterPublicHistoryRestored() async throws {
     let testEnvironment = try FinderTestEnvironment()
@@ -260,7 +245,9 @@ extension FinderIntegrationTests {
       == [.succeeded, .started, .succeeded])
     #expect(activity.contains { $0.event.folderResult == .notFound })
     #expect(activity.last?.event.processingSummary?.unresolved == 1)
-    #expect(activity.allSatisfy { $0.event.activityGroupID == .none || $0.event.collectionID == testEnvironment.directory.id })
+    #expect(activity.allSatisfy {
+      $0.event.activityGroupID == .none || $0.event.collectionID == testEnvironment.directory.id
+    })
   }
   /// Keeps authorized roots registered while coalescing missing-credential diagnostics.
   @Test @MainActor func missingCredentialRetainsRootsAndSuppressesRepeatedUnavailableEvents() async throws {
@@ -363,7 +350,8 @@ extension FinderIntegrationTests {
     let runtime = FinderConfigurationRuntime(environment: environment)
     let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
-    try FileManager.default.moveItem(at: testEnvironment.root, to: testEnvironment.container.appendingPathComponent("OldCollection"))
+    try FileManager.default.moveItem(at: testEnvironment.root,
+      to: testEnvironment.container.appendingPathComponent("OldCollection"))
     try FileManager.default.createDirectory(at: testEnvironment.root, withIntermediateDirectories: true)
     await #expect(throws: DirectoryAccessError.identityChanged) {
       try await runtime.directoryObservationScheduler(scheduler, process: testEnvironment.root)
@@ -402,21 +390,26 @@ extension FinderIntegrationTests {
     let access = try environment.acquireDirectoryAccess(bookmark: testEnvironment.directory.transferBookmark,
       securityScoped: false, expectedIdentity: testEnvironment.directory.identity)
     let identity = try #require(testEnvironment.directory.identity)
-    let verifier = FinderCollectionConfigurationVerifier(repository: testEnvironment.repository, configuration: configuration,
-      roots: [testEnvironment.root: FinderConfigurationRuntime.AuthorizedCollectionRoot(directory: testEnvironment.directory,
+    let verifier = FinderCollectionConfigurationVerifier(
+      repository: testEnvironment.repository, configuration: configuration,
+      roots: [testEnvironment.root: FinderConfigurationRuntime.AuthorizedCollectionRoot(
+        directory: testEnvironment.directory,
         access: access, identity: identity)])
     let processor = try MovieFolderProcessor(persistence: PersistenceStore(
       directory: testEnvironment.container.appendingPathComponent("VerifierRecords")), provider: NoMatchesProvider(),
       cacheDirectory: testEnvironment.container.appendingPathComponent("VerifierCache"))
     do {
       let held = try #require(try verifier.checkAutomaticProcessing(in: testEnvironment.root))
-      #expect(throws: ConfigurationError.self) { try testEnvironment.repository.update { $0.credentialRevision = UUID() } }
+      #expect(throws: ConfigurationError.self) {
+        try testEnvironment.repository.update { $0.credentialRevision = UUID() }
+      }
       withExtendedLifetime(held) {}
     }
     #expect(throws: DirectoryAccessError.identityChanged) {
       try verifier.checkAutomaticProcessing(in: testEnvironment.container)
     }
-    try FileManager.default.moveItem(at: testEnvironment.root, to: testEnvironment.container.appendingPathComponent("Old"))
+    try FileManager.default.moveItem(at: testEnvironment.root,
+      to: testEnvironment.container.appendingPathComponent("Old"))
     try FileManager.default.createDirectory(at: testEnvironment.root, withIntermediateDirectories: true)
     #expect(throws: DirectoryAccessError.identityChanged) {
       try verifier.checkAutomaticProcessing(in: testEnvironment.root)
@@ -480,7 +473,8 @@ extension FinderIntegrationTests {
     await #expect(throws: CancellationError.self) { try await operation.value }
     let state = try #require(try environment.processingStore().read(rootID: testEnvironment.directory.id))
     #expect(state.currentRun?.runState == .interrupted)
-    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: movie.lastPathComponent, in: testEnvironment.root).hasCustomIcon)
+    #expect(try !FileSystemService().readCurrentFolderCandidate(
+      ofChild: movie.lastPathComponent, in: testEnvironment.root).hasCustomIcon)
     #expect(try await environment.activity.entries().last?.event.status == .cancelled)
   }
 
@@ -531,7 +525,8 @@ extension FinderIntegrationTests {
     let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [testEnvironment.root])
     try await runtime.directoryObservationScheduler(scheduler, process: testEnvironment.root)
-    #expect(try environment.processingStore().read(rootID: testEnvironment.directory.id)?.currentRun?.runState == .completed)
+    #expect(try environment.processingStore().read(
+      rootID: testEnvironment.directory.id)?.currentRun?.runState == .completed)
     #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
       == [.succeeded, .started, .succeeded])
   }

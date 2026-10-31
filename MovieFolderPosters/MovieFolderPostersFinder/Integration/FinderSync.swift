@@ -359,7 +359,7 @@ final class FinderSync: FIFinderSync {
 
   /// Reads passive reload intent while preserving ordinary behavior for older or malformed notifications.
   /// - Parameter notification: Shared configuration change received from the host or another process.
-  /// - Returns: False only for an explicit false resume flag; absent or malformed values resume observations.
+  /// - Returns: False only for an explicit false scheduling flag; absent or malformed values schedule collections.
   static func schedulesObservedCollections(for notification: Notification) -> Bool {
     notification.userInfo?["scheduleObservedCollections"] as? Bool ?? true
   }

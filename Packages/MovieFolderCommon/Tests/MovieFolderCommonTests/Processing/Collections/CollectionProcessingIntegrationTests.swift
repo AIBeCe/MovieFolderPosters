@@ -146,7 +146,8 @@ struct CollectionProcessingIntegrationTests {
 
   /// Complete negative and ambiguous searches remain distinguishable after reopening storage.
   @Test func distinctMatchingResultsSurviveReopening() async throws {
-    let fixture = try CollectionProcessingTestEnvironment(names: ["Missing (2021)", "Ambiguous (2021)", "Incomplete (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(
+      names: ["Missing (2021)", "Ambiguous (2021)", "Incomplete (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let processor = fixture.processor(provider: CollectionProcessingMetadataProvider())
     let summary = try await processor.process(root: fixture.root, processingContext: fixture.context)
@@ -320,66 +321,6 @@ struct CollectionProcessingIntegrationTests {
 
 }
 
-/// Local collection and current configuration required by the result change fence.
-struct CollectionProcessingTestEnvironment {
-  /// Root directory holding all disposable test inputs and records.
-  let base: URL
-  /// Collection containing only test-created child folders.
-  let root: URL
-  /// Persisted processing context.
-  let context: CollectionProcessingContext
-  /// Authoritative processing store under test.
-  let processingStore: CollectionProcessingStore
-  /// Existing processing decision store.
-  let processing: PersistenceStore
-  /// Cross-generation collection coordination store.
-  let coordination: PersistenceStore
-  /// Settings repository shared with the authoritative result store.
-  let configuration: ConfigurationRepository
-  /// Creates a disposable configured collection with the requested immediate-child directories.
-  ///
-  /// - Parameter names: Child folder names to create in the test collection.
-  /// - Throws: Filesystem setup, identity lookup, or persistence errors.
-  init(names: [String], matchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration()) throws {
-    base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    root = base.appendingPathComponent("Movies")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    for name in names {
-      try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: false)
-    }
-    configuration = ConfigurationRepository(
-      store: try PersistenceStore(directory: base.appendingPathComponent("Settings")))
-    let identity = try FileSystemService().persistentDirectoryIdentity(at: root)
-    let directory = MonitoredDirectory(
-      id: UUID(), path: root.path, transferBookmark: Data([1]), authorizationVersion: UUID(), identity: identity)
-    try configuration.update {
-      $0.directories = [directory]
-      $0.movieMatchingConfiguration = matchingConfiguration
-    }
-    let settings = try configuration.read()
-    context = CollectionProcessingContext(
-      rootID: directory.id, rootIdentity: identity, authorizationVersion: directory.authorizationVersion,
-      credentialRevision: settings.credentialRevision, usesStubTMDbResponses: false, appearance: .softFinish,
-      movieMatchingConfiguration: settings.effectiveMovieMatchingConfiguration(for: directory),
-      processingConfigurationRevision: directory.processingConfiguration.revision)
-    processingStore = CollectionProcessingStore(
-      store: try PersistenceStore(
-        directory: base.appendingPathComponent("Outcomes"), maximumRecordBytes: 8 * 1024 * 1024),
-      configuration: configuration)
-    processing = try PersistenceStore(directory: base.appendingPathComponent("Processing"))
-    coordination = try PersistenceStore(directory: base.appendingPathComponent("Locks"))
-  }
-
-  /// Creates the real processing pipeline with a controlled metadata source.
-  func processor(provider: any MovieMetadataProvider) -> MovieFolderProcessor {
-    MovieFolderProcessor(
-      persistence: processing, provider: provider, cacheDirectory: base.appendingPathComponent("Posters"),
-      processingLockStore: coordination, processingStore: processingStore,
-      credentialRevision: context.credentialRevision,
-      movieMatchingConfiguration: context.movieMatchingConfiguration)
-  }
-}
-
 /// Finite deterministic provider responses without credentials, remote requests, or poster writes.
 private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   /// Whether every search should produce an authentication backoff.
@@ -397,7 +338,7 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
     -> MovieSearchPage {
     if page > 1 {
       guard (2...6).contains(page), title == "Incomplete" else { throw TMDbError.invalidQuery }

@@ -134,13 +134,13 @@ private actor MatchingAcceptanceProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page fixture independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage) async throws -> MovieSearchResult {
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage) throws -> MovieSearchResult {
     MovieSearchResult(movies: movies, hasMorePages: false)
   }
 
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitlesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func releaseDates(movieID: Int) async throws -> MovieReleaseDatesByID { [movieID: dates[movieID] ?? []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: dates[movieID] ?? []] }
 
-  func downloadPoster(path: String) async throws -> Data { throw TMDbError.invalidConfiguration }
+  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidConfiguration }
 }

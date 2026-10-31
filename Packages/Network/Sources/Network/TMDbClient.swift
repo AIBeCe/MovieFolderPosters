@@ -87,7 +87,8 @@ public struct TMDbClient: Sendable {
   ///   - language: Validated language sent unchanged as the single provider language parameter.
   ///   - page: Positive provider page to request; exactly one request is dispatched.
   /// - Returns: Validated movie records and the returned page metadata.
-  /// - Throws: ``TMDbError`` for invalid input, rejected responses, or transport failures.
+  /// - Throws: ``TMDbError`` for invalid input, rejected responses, or transport failures; `CancellationError`
+  ///   when the task or transport is cancelled.
   public func searchMoviePage(title: String, year: Int?, language: TMDbLanguage = .english, page: Int)
     async throws -> MovieSearchPage {
     guard page > 0 else { throw TMDbError.invalidQuery }
@@ -229,6 +230,9 @@ public struct TMDbClient: Sendable {
     return response.data
   }
 
+}
+
+extension TMDbClient {
   /// Builds an authenticated JSON request for a TMDb API endpoint.
   private func authenticatedRequest(url: URL) -> URLRequest {
     var request = URLRequest(url: url)

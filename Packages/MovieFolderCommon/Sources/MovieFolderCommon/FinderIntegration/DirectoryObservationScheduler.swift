@@ -68,7 +68,8 @@ public actor FinderDirectoryObservationScheduler {
     guard !isStopped else { return }
 
     reloadRequested = true
-    shouldResumeObservedCollectionsAfterReload = shouldResumeObservedCollectionsAfterReload || scheduleObservedCollections
+    shouldResumeObservedCollectionsAfterReload =
+      shouldResumeObservedCollectionsAfterReload || scheduleObservedCollections
 
     guard !isReloading else { return }
 

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import Network
 
 /// Verifies that the client dispatches exactly the requested page.

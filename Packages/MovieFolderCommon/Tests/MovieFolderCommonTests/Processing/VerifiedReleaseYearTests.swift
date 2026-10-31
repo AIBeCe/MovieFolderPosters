@@ -55,7 +55,7 @@ private actor ReleaseYearProvider: MovieMetadataProvider {
     self.posterError = posterError
   }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
     -> MovieSearchPage {
     if page > 1 {
       guard (2...6).contains(page), hasMorePages else { throw TMDbError.invalidQuery }

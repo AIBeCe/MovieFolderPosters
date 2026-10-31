@@ -3,13 +3,21 @@ import Network
 
 nonisolated public extension MovieMetadataProvider {
   /// Collects pages sequentially within a captured global budget, publishing only a successful whole search.
+  ///
+  /// Identical records are deduplicated in provider order. Conflicting records or inconsistent page totals fail
+  /// the entire search. Reaching the budget returns incomplete results; a page failure never returns partial success.
+  ///
+  /// ```swift
+  /// let result = try await provider.searchMovies(title: "Dune", year: 2021, language: .english, pageLimit: 3)
+  /// ```
   /// - Parameters:
   ///   - title: The provider query.
   ///   - year: Optional release year.
   ///   - language: Captured provider language.
   ///   - pageLimit: Captured maximum number of pages, from one through five.
   /// - Returns: First-seen unique movies and whether the finite budget left additional pages.
-  /// - Throws: Invalid input, inconsistent provider records, any page failure, or cancellation.
+  /// - Throws: `ConfigurationError.invalidConfiguration` for an invalid budget, `TMDbError.malformedResponse`
+  ///   for inconsistent pages or conflicting records, `CancellationError`, or the provider's page error.
   func searchMovies(title: String, year: Int?, language: TMDbLanguage, pageLimit: Int) async throws
     -> MovieSearchResult {
     guard (1...5).contains(pageLimit) else { throw ConfigurationError.invalidConfiguration }

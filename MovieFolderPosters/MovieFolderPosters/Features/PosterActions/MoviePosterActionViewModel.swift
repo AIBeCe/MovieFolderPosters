@@ -358,6 +358,9 @@ final class MoviePosterActionViewModel {
     publish()
   }
 
+}
+
+extension MoviePosterActionViewModel {
   /// Runs an asynchronous operation and publishes its result only while it remains current.
   ///
   /// - Parameters:

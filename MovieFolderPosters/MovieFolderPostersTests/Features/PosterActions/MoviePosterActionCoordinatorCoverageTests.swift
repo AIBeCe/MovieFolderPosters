@@ -77,7 +77,9 @@ struct MoviePosterActionCoordinatorCoverageTests {
       "Unknown release (Year unknown) · TMDb ID 43"])
     let apply = try button("Apply Selected Movie", in: controls)
     #expect(!apply.isEnabled)
-    #expect(fields.contains { $0.stringValue.contains("More results may be available on TMDb.") })
+    let incompleteMessage = "Search page limit reached. Results are incomplete. "
+      + "Refine the title or year, or increase Maximum search pages in Settings."
+    #expect(fields.contains { $0.stringValue.contains(incompleteMessage) })
     picker.selectItem(withTag: 42)
     picker.sendAction(picker.action, to: picker.target)
     #expect(model.canApplySelectedMovie)
