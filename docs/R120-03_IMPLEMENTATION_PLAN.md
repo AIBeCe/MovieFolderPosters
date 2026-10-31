@@ -13,8 +13,9 @@ Settings and Choose Movie interfaces expose the choice and incomplete results.
 
 **Specification:** GitHub issue #17 and the four proposals approved in this chat on 2026-10-31. The decisions
 below are the durable specification. The initial fixed three-page proposal was superseded by the approved
-global setting (default 3, range 1–5). Implementation was approved and committed as `8b1a0c8`. Formal Validation and Apple documentation review
-were authorized on 2026-10-31. Acceptance Testing, merging, and pushing remain separately gated.
+global setting (default 3, range 1–5). Implementation was committed as `8b1a0c8`; Validation was completed in
+`3f1d426`; acceptance coverage and its deferred execution report were committed in `00cb965`. The feature was
+fast-forwarded to `develop` on 2026-10-31. See Feature completion below for remaining acceptance limitations.
 
 ## Global constraints and approved design
 
@@ -190,9 +191,8 @@ in these focused results authorizes formal Validation, Acceptance, feature compl
 
 ## Validation — 2026-10-31
 
-**Result: PASS for issue-scoped technical validation; awaiting user approval.** No validation commit,
-Acceptance Testing, merge, or push has been performed. The user authorized completing remaining corrections
-as a group and requesting approval at the end.
+**Result: PASS for issue-scoped technical validation.** The user approved Validation and the verified changes
+were committed as `3f1d426` before Acceptance Testing began.
 
 | Required activity | Final result and evidence |
 | --- | --- |
@@ -241,8 +241,29 @@ sources compiled through that harness; this is not an Xcode app build or a launc
 No live TMDb calls, extension registration, real movie-folder writes, or real settings/credential operations
 were performed. Existing untracked Xcode user data and parser build state remain preserved.
 
-Rendered full-app Light/Dark layout inspection, full-app XCUITest, Finder runtime icon persistence and real
-user-data migration qualification remain unperformed. AppKit harness tests verify relevant control behavior,
-including the displayed guidance; they do not establish full-app visual or E2E acceptance. Acceptance Testing
-requires separate authorization, scenario discovery and executable coverage approval. No test was skipped in
-the final selected runs; no full-project test-suite pass is claimed.
+Rendered full-app Light/Dark layout inspection, Finder runtime icon persistence and real user-data migration
+qualification remain unperformed. AppKit harness tests verify relevant control behavior, including displayed
+guidance; they do not establish full-app visual or E2E acceptance. The full-project test suite was not run.
+
+## Feature completion — 2026-10-31
+
+The user authorized finishing the feature while recording the blocked acceptance scenarios as deferred. The
+feature branch was fast-forwarded to `develop` from `168fded` through `00cb965` with no merge commit. The
+integrated commits are:
+
+- `8b1a0c8` — bounded TMDb search pagination implementation.
+- `3f1d426` — issue-scoped Validation corrections and results.
+- `09797b9` — SwiftLint warning fixes.
+- `00cb965` — persistent acceptance scenarios and deferred-test report.
+
+Acceptance execution is incomplete by explicit deferral. PG-04 and PG-06 passed in the focused Common package
+run. PG-01 through PG-03 (full-app XCUITest) and PG-05 (focused host integration test) have no execution
+result. The first UI runner lacked signing and macOS refused to open it; an ad-hoc-signed `build-for-testing`
+then succeeded. The subsequent focused test run was stopped after the computer destabilized, before test
+results were collected. The `CoordinatorLifecycleTests.swift` helper's `@MainActor` isolation was corrected so
+the test target compiles. See [R120-03_ACCEPTANCE_TESTS.md](R120-03_ACCEPTANCE_TESTS.md) for scenario-level
+evidence and the safe temporary signing/storage setup for a future rerun.
+
+The acceptance report is not an overall pass. No further tests or builds were run during feature integration.
+The existing Xcode user data and SwiftPM parser artifacts were preserved. Documentation, Git history, and
+remote target were verified before publishing; only R120-03 commits and documentation are included.
