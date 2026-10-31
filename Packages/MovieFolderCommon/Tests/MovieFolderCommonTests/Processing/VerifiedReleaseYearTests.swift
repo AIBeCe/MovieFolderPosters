@@ -284,7 +284,8 @@ func releaseYearHistoricUnresolvedResultIsReviewedOnce(reason: FolderProcessingR
   let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Alien (1980)", in: fixture.movies)
   let stale = CachedMovieSearch(result: MovieSearchResult(movies: [releaseYearMovie(42)], hasMorePages: false),
     createdAt: Date())
-  var state = CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(fingerprint: candidate.fingerprint,
+  var state = CollectionProcessingCache(folders: [candidate.name:
+    FolderProcessingCacheRecord(fingerprint: candidate.fingerprint,
     status: .unresolved, retryDate: .distantFuture, matchedMovieID: .none, posterPath: .none,
     processingReason: reason)],
     queries: [try MovieFolderProcessor.queryKey(title: "Alien", year: .none, pageLimit: 3): stale, "keep": stale])
@@ -423,7 +424,8 @@ func releaseYearFreshExactMatchRetainsOnlyCurrentIdentity(refresh: Bool, sameFin
   try fixture.addFolder("Alien (1980)")
   let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Alien (1980)", in: fixture.movies)
   let events = try releaseYearEvents([1979, 1980])
-  let saved = FolderProcessingCacheRecord(fingerprint: sameFingerprint ? candidate.fingerprint : "obsolete", status: .processed,
+  let saved = FolderProcessingCacheRecord(fingerprint: sameFingerprint ?
+    candidate.fingerprint : "obsolete", status: .processed,
     matchedMovieID: 42, posterPath: "/alien.jpg", movieTitle: "Alien", movieYear: 1979,
     movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true, acceptedMovieReleaseDates: events)
   do {

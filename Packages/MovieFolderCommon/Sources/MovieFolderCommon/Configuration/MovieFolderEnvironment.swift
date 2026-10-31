@@ -30,7 +30,8 @@ nonisolated public enum MovieFolderEnvironment {
   }
 
   /// Creates best-effort history using explicitly supplied process storage locations.
-  static func makeActivityRecorder(locations: any MovieFolderApplicationStorageLocations) -> any MovieFolderActivityServicing {
+  static func makeActivityRecorder(locations: any MovieFolderApplicationStorageLocations)
+    -> any MovieFolderActivityServicing {
     do {
       let storeFactory = try locations.persistenceStoreFactory()
       return MovieFolderActivityRecorder(
@@ -187,7 +188,8 @@ nonisolated public enum MovieFolderEnvironment {
   }
 
   /// Opens private bookmarks beneath the supplied process Application Support directory.
-  static func makePrivateAuthorizationStore(locations: any MovieFolderApplicationStorageLocations) throws -> PersistenceStore {
+  static func makePrivateAuthorizationStore(locations: any MovieFolderApplicationStorageLocations)
+    throws -> PersistenceStore {
     let support = try locations.applicationSupportURL()
 
     return try locations.makePersistenceStore(

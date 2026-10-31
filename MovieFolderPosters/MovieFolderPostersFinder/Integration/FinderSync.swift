@@ -110,7 +110,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         token: token, configuration: configuration, collectionID: root.directory.id)
       processors[url] = MovieFolderProcessor(
         persistence: try PersistenceStore(directory: records),
-        provider: RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token),
+        provider: RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider,
+          recovery: recovery, credential: token),
         cacheDirectory: container.appendingPathComponent("Posters"),
         processingLockStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
         processingVerifier: processingVerifier, appearance: configuration.posterAppearance,

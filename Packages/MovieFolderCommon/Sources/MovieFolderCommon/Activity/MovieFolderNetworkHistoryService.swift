@@ -201,7 +201,7 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
 }
 
 /// Binds one provider client to global or collection-scoped request history without retaining requests.
-nonisolated public struct MovieFolderNetworkRequestRecorder: TMDbClientRequestDelegate {
+nonisolated public final class MovieFolderNetworkRequestRecorder: TMDbClientRequestDelegate {
   /// Required optional-history service retained for the provider client's lifetime.
   private let networkHistoryService: any MovieFolderNetworkHistoryServicing
   /// Configured collection identity, or absence for application-wide diagnostics.

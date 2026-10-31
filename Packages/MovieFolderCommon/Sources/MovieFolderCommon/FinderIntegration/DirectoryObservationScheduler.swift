@@ -17,7 +17,9 @@ public protocol DirectoryObservationSchedulerDelegate: AnyObject, Sendable {
   ///   - url: The observed collection root URL.
   /// - Returns: The next eligible retry deadline while this root remains observed.
   /// - Throws: Cancellation or a failure reported by the configured processing collaborator.
-  func directoryObservationScheduler(_ scheduler: FinderDirectoryObservationScheduler, process url: URL) async throws -> Date?
+  func directoryObservationScheduler(
+    _ scheduler: FinderDirectoryObservationScheduler, process url: URL
+  ) async throws -> Date?
 }
 
 /// Serializes observed-root work and drains cancelled work before loading new configuration.

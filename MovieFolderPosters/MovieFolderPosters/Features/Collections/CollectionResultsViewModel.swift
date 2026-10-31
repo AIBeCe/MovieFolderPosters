@@ -55,9 +55,11 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   var canFilter: Bool { !isBusy }
   /// Displayed and recorded counts, independent of completeness and retryTask warnings.
   var unresolvedFolderResultCountText: String {
-    let count = "Showing \(unresolvedFolderRecords.count) of \(recordedUnresolvedFolderCount) recorded unresolved folders."
+    let count = "Showing \(unresolvedFolderRecords.count) of " +
+      "\(recordedUnresolvedFolderCount) recorded unresolved folders."
 
-    return recordedUnresolvedFolderCount > .zero && unresolvedFolderRecords.isEmpty ? count + " No matches for these filters." : count
+    return recordedUnresolvedFolderCount > .zero && unresolvedFolderRecords.isEmpty
+      ? count + " No matches for these filters." : count
   }
   /// Safe current status, including incomplete or unavailable evidence.
   private(set) var statusMessage = "No saved results are available. Outcome is unknown."
@@ -67,7 +69,9 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   var isBusy: Bool { retryTask != .none }
   /// Row indexes derived from stable selected identities.
   var selectedRows: IndexSet {
-    IndexSet(unresolvedFolderRecords.indices.filter { selectedFolderIdentities.contains(key(for: unresolvedFolderRecords[$0])) })
+    IndexSet(unresolvedFolderRecords.indices.filter {
+      selectedFolderIdentities.contains(key(for: unresolvedFolderRecords[$0]))
+    })
   }
   /// Whether one selected, identified row can enter the explicit selectedFolderIdentities flow.
   var canChooseMovie: Bool {
@@ -76,7 +80,8 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   }
   /// Whether the selectedFolderIdentities contains eligible work within the explicit invocation limit.
   var canRetrySelected: Bool {
-    !isBusy && savedProcessingEvidenceAllowsActions && !eligibleSelectedFolderRecords.isEmpty && selectedFolderRecords.count <= 32
+    !isBusy && savedProcessingEvidenceAllowsActions && !eligibleSelectedFolderRecords.isEmpty
+      && selectedFolderRecords.count <= 32
   }
   /// Whether current-context evidence supports actions; completeness is not a prerequisite.
   private var savedProcessingEvidenceAllowsActions: Bool {
@@ -119,7 +124,8 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   func selectRows(_ indexes: IndexSet) {
     guard !isBusy else { return }
 
-    selectedFolderIdentities = Set(indexes.filter { unresolvedFolderRecords.indices.contains($0) }.map { key(for: unresolvedFolderRecords[$0]) })
+    selectedFolderIdentities = Set(indexes.filter { unresolvedFolderRecords.indices.contains($0) }
+      .map { key(for: unresolvedFolderRecords[$0]) })
     publish()
   }
 
@@ -251,7 +257,10 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   }
 
   /// Runs one explicit selectedFolderIdentities in order and stops after shared admission rejection.
-  private func runRetries(_ folders: [FolderProcessingRecord], uiInvalidationGeneration expectedGeneration: UInt64) async {
+  private func runRetries(
+    _ folders: [FolderProcessingRecord],
+    uiInvalidationGeneration expectedGeneration: UInt64
+  ) async {
     var skippedIneligibleFolder = false
     for (index, folder) in folders.enumerated() {
       guard !Task.isCancelled, uiInvalidationGeneration == expectedGeneration else { break }

@@ -21,7 +21,8 @@ import Testing
   let first = MovieMetadata(id: 1, title: "Alien", originalTitle: "Alien", releaseYear: 1979, posterPath: "/a.jpg")
   let second = MovieMetadata(id: 2, title: "Other", originalTitle: "Other", releaseYear: 1979, posterPath: .none)
   let search = MovieSearchResult(movies: [first, second], hasMorePages: false)
-  let titles: MovieAlternativeTitlesByID = [1: [], 2: [MovieAlternativeTitle(countryCode: "BR", title: "Alien", type: "")]]
+  let titles: MovieAlternativeTitlesByID = [1: [], 2: [MovieAlternativeTitle(countryCode:
+    "BR", title: "Alien", type: "")]]
   #expect(MovieMatcher().matchMovie(title: "Alien", year: 1979, search: search, alternativeTitles: titles)
     == .unresolved(.ambiguous))
   #expect(MovieMatcher().matchMovie(title: "Alien", year: 1979, search: search, alternativeTitles: [1: []])
@@ -137,7 +138,8 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
 /// Alias eviction is deterministic and cannot discard unrelated confirmed folder decisions.
 @Test func alternativeTitleCacheBoundsKeepDecisions() throws {
   var state = CollectionProcessingCache()
-  state.folders["Alien"] = FolderProcessingCacheRecord(fingerprint: "same", status: .processed, matchedMovieID: 42, posterPath: .none)
+  state.folders["Alien"] = FolderProcessingCacheRecord(fingerprint: "same", status:
+    .processed, matchedMovieID: 42, posterPath: .none)
   for id in 1...129 {
     state.alternativeTitles[String(format: "%03d", id)] = CachedMovieAlternativeTitles(movieID: id, titles: [],
       createdAt: Date(timeIntervalSince1970: Double(id)))
@@ -147,7 +149,8 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   #expect(!state.alternativeTitles.keys.contains("001"))
   #expect(state.folders["Alien"]?.matchedMovieID == 42)
   let title = MovieAlternativeTitle(countryCode: "US", title: String(repeating: "a", count: 600 * 1_024), type: "")
-  state.alternativeTitles["big"] = CachedMovieAlternativeTitles(movieID: 999, titles: [title], createdAt: .distantFuture)
+  state.alternativeTitles["big"] = CachedMovieAlternativeTitles(movieID: 999, titles:
+    [title], createdAt: .distantFuture)
   try state.boundAlternativeTitleCache()
   #expect(try JSONEncoder().encode(state.alternativeTitles).count <= 512 * 1_024)
   #expect(state.folders["Alien"]?.matchedMovieID == 42)
@@ -239,5 +242,6 @@ func refreshRejectsMissingOrBlankArtworkBeforeDownload(path: String?) async thro
   }
   #expect(await provider.posterCount == 0)
   #expect(fixture.assigner.assignmentCount == 0)
-  #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: candidate.name, in: fixture.movies).hasCustomIcon)
+  #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: candidate.name,
+    in: fixture.movies).hasCustomIcon)
 }

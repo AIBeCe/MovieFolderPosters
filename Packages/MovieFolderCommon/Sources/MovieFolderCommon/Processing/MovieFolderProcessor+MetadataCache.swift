@@ -45,15 +45,17 @@ nonisolated private struct MetadataCacheKey: Encodable {
 extension MovieFolderProcessor {
   /// Derives the query key using complete captured request context.
   static func queryKey(title: String, year: Int?, language: TMDbLanguage = .english,
-                       credentialRevision: UUID? = .none, usesFixtures: Bool = false, pageLimit: Int) throws -> String {
+                       credentialRevision: UUID? = .none,
+                       usesFixtures: Bool = false, pageLimit: Int) throws -> String {
     try MetadataCacheKey(category: .movieSearch, title: title.trimmingCharacters(in: .whitespacesAndNewlines),
       year: year, movieID: .none, language: language, credentialRevision: credentialRevision,
       usesFixtures: usesFixtures, pageLimit: pageLimit).digest()
   }
 
   /// Loads every eligible alias sequentially and applies the fixed five-ID ceiling before cache lookup.
-  func matchMovieUsingEvidence(title: String, year: Int?, search: MovieSearchResult,
-                   state: inout CollectionProcessingCache) async throws -> MovieMatchResult {
+  func matchMovieUsingEvidence(
+    title: String, year: Int?, search: MovieSearchResult, state: inout CollectionProcessingCache
+  ) async throws -> MovieMatchResult {
     if let issue = matcher.candidateIssue(title: title, year: year, search: search,
       configuration: movieMatchingConfiguration) { return .unresolved(issue) }
     let identifiers = matcher.candidateIDs(year: year, search: search)

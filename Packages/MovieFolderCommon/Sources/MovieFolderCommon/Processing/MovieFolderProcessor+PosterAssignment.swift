@@ -39,7 +39,9 @@ extension MovieFolderProcessor {
   ///   - state: The root processing state being inspected or updated.
   /// - Returns: Whether an owned poster was rewritten using the selected finish.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func restyleOwnedPosterIfPossible(_ candidate: MovieFolderCandidate, in root: URL, state: CollectionProcessingCache) throws -> Bool {
+  func restyleOwnedPosterIfPossible(
+    _ candidate: MovieFolderCandidate, in root: URL, state: CollectionProcessingCache
+  ) throws -> Bool {
     guard try !fileSystem.isPosterSuppressed(toChild: candidate.name, in: root),
       try fileSystem.hasAssignedPoster(
         toChild: candidate.name, in: root,

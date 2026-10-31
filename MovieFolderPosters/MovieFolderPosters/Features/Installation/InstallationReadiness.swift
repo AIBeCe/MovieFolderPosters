@@ -41,7 +41,8 @@ nonisolated struct SystemInstallationReadinessEnvironment: InstallationReadiness
   /// Reads the persisted activation receipt without exposing storage errors.
   func readReceipt() -> FinderExtensionReceiptEvidence { InstallationReadinessService.readExtensionReceipt() }
   /// Runs a read/write probe in the shared App Group storage.
-  func checkSharedStorage() throws -> AppGroupStorageEvidence { InstallationReadinessService.performSharedStorageCheck() }
+  func checkSharedStorage() throws -> AppGroupStorageEvidence {
+    InstallationReadinessService.performSharedStorageCheck() }
   /// Returns the current system date for receipt-age calculations.
   func currentDate() -> Date { Date() }
 }

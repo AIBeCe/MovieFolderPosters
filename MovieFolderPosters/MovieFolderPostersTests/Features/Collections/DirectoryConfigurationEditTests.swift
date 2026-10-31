@@ -41,7 +41,8 @@ struct DirectoryConfigurationEditTests {
     try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
     try await fixture.service.addDirectory(root)
     let directory = try #require(try fixture.repository.read().directories.first)
-    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: child.lastPathComponent, in: root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild:
+      child.lastPathComponent, in: root).identity
     let activity = InclusionCommittedHistoryProbe(repository: fixture.repository,
       authorizations: fixture.authorizations, directory: directory, childIdentity: identity,
       authorization: authorization)
@@ -68,7 +69,8 @@ struct DirectoryConfigurationEditTests {
     try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
     try await fixture.service.addDirectory(root)
     let directory = try #require(try fixture.repository.read().directories.first)
-    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: child.lastPathComponent, in: root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild:
+      child.lastPathComponent, in: root).identity
     let invalid = MovieFolderInclusionRequest(action: .exclude, collectionID: directory.id, folderURL: child,
       folderIdentity: "replacement",
       expectedProcessingConfigurationRevision: directory.processingConfiguration.revision)

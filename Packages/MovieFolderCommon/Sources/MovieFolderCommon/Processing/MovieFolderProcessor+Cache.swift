@@ -120,7 +120,8 @@ extension MovieFolderProcessor {
     do {
       try saveState(state, to: access)
     } catch {
-      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
+      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason:
+        .storage, stage: .persist, occurredAt: now()))
       if processingState != .none {
         var record = try folderProcessingResult(candidate, root: root, saved: state.folders[candidate.name])
         record.processingReason = .cachePersistenceFailure
@@ -153,7 +154,8 @@ extension MovieFolderProcessor {
     do {
       try access.write(encoder.encode(state))
     } catch {
-      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
+      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason:
+        .storage, stage: .persist, occurredAt: now()))
       // A recorded operation must stop before another change if its operational cache cannot commit.
       if processingStore != nil { throw CollectionProcessingError.unavailable }
       throw error

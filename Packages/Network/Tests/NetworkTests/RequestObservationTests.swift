@@ -68,7 +68,8 @@ actor TMDbRequestObservationRecorderDelegate: TMDbClientRequestDelegate {
   }
 
   /// Returns the observations collected so far.
-  func captured() -> (prepared: [TMDbRequestCategory], completed: [(TMDbRequestCategory, TMDbRequestCompletionResult, UUID)]) {
+  func captured() -> (prepared: [TMDbRequestCategory], completed: [(TMDbRequestCategory,
+    TMDbRequestCompletionResult, UUID)]) {
     (preparedPurposes, completions)
   }
 }

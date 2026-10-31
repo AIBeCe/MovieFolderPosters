@@ -70,7 +70,8 @@ private struct OperationalMigrationFixture {
     }
     let outcomePayload = try JSONSerialization.data(withJSONObject: outcomesObject)
     try write(outcomePayload, store: outcomes, key: CollectionProcessingStore.processingStateKey(for: root.id))
-    var state = CollectionProcessingCache(folders: ["Alien": FolderProcessingCacheRecord(fingerprint: "original", status: .processed,
+    var state = CollectionProcessingCache(folders: ["Alien": FolderProcessingCacheRecord(fingerprint:
+      "original", status: .processed,
       retryDate: Date(timeIntervalSince1970: 1234), matchedMovieID: 42, posterPath: "/alien.jpg",
       movieTitle: "Alien", movieYear: 1979, movieIdentitySource: .explicitSelection)],
       providerRetryAt: Date(timeIntervalSince1970: 5678), credentialRevision: configuration.credentialRevision)

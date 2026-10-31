@@ -50,7 +50,8 @@ extension MovieFolderProcessor {
     }
 
     var visit = AutomaticProcessingPass(
-      collectionProcessingRecord: try recordProcessingStart(context: processingContext, action: .automatic), activityLog: activity)
+      collectionProcessingRecord: try recordProcessingStart(context: processingContext,
+        action: .automatic), activityLog: activity)
     defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord) }
     let inventory = try processingCandidates(in: root, recording: &visit.collectionProcessingRecord)
     let candidates = inventory.filter { !processingConfiguration.excludesFolder(identity: $0.identity) }
@@ -82,8 +83,10 @@ extension MovieFolderProcessor {
     }
 
     try finishProcessingRun(
-      &visit.collectionProcessingRecord, state: visit.providerAdmissionStoppedPass ? .partial : .completed, activity: visit.activityLog)
-    visit.processingSummary.nextAutomaticRetryAt = visit.collectionProcessingRecord?.folders.compactMap(\.automaticRetryAt).min()
+      &visit.collectionProcessingRecord, state: visit.providerAdmissionStoppedPass
+        ? .partial : .completed, activity: visit.activityLog)
+    visit.processingSummary.nextAutomaticRetryAt =
+      visit.collectionProcessingRecord?.folders.compactMap(\.automaticRetryAt).min()
 
     return visit.processingSummary
   }
@@ -163,7 +166,8 @@ extension MovieFolderProcessor {
   }
 
   /// Detects unchanged reasonless decisions whose obsolete root delay cannot block their fresh classification.
-  private func hasLegacyUnresolvedResult(_ candidates: [MovieFolderCandidate], cache: CollectionProcessingCache) -> Bool {
+  private func hasLegacyUnresolvedResult(_ candidates: [MovieFolderCandidate], cache:
+    CollectionProcessingCache) -> Bool {
     candidates.contains {
       let saved = cache.folders[$0.name]
 
@@ -212,7 +216,9 @@ extension MovieFolderProcessor {
   }
 
   /// Prunes disappeared folder decisions and expired query responses.
-  private func pruneCache(_ state: inout CollectionProcessingCache, candidates: [MovieFolderCandidate], currentTime: Date) -> Bool {
+  private func pruneCache(
+    _ state: inout CollectionProcessingCache, candidates: [MovieFolderCandidate], currentTime: Date
+  ) -> Bool {
     var stateChanged = false
     let currentNames = Set(candidates.map(\.name))
     for name in Array(state.folders.keys) where !currentNames.contains(name) {
@@ -238,17 +244,20 @@ extension MovieFolderProcessor {
   ) throws {
     for candidate in candidates where candidate.hasCustomIcon {
       visit.activityLog?.begin(candidate.name,
-        movie: savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate), stage: .assignPoster)
+        movie: savedActivityMovie(visit.processingCache.folders[candidate.name],
+          candidate: candidate), stage: .assignPoster)
       try Task.checkCancellation()
       do {
         if try restyleOwnedPosterIfPossible(candidate, in: root, state: visit.processingCache) {
           visit.processingSummary.restyled += 1
-          visit.activityLog?.movie = savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate)
+          visit.activityLog?.movie = savedActivityMovie(visit.processingCache.folders[candidate.name],
+            candidate: candidate)
           visit.activityLog?.append(.posterRestyled)
         } else {
           visit.processingSummary.skippedExistingIcons += 1
         }
-        let folderResult = try folderProcessingResult(candidate, root: root, saved: visit.processingCache.folders[candidate.name])
+        let folderResult = try folderProcessingResult(candidate, root: root, saved:
+          visit.processingCache.folders[candidate.name])
         visit.activityLog?.append(folderResult, onlyWhenChanged: true)
         try recordFolderProcessing(folderResult, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
       } catch let error as CollectionProcessingError {
@@ -263,9 +272,11 @@ extension MovieFolderProcessor {
         visit.activityLog?.append(.failed, reason: .filesystemFailure,
           failure: MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .assignPoster, occurredAt: now()))
         if visit.collectionProcessingRecord != .none {
-          var record = (try? folderProcessingResult(candidate, root: root, saved: visit.processingCache.folders[candidate.name]))
+          var record = (try? folderProcessingResult(candidate, root: root, saved:
+            visit.processingCache.folders[candidate.name]))
             ?? failedFolderResult(candidate, stage: .validateIdentity)
-          record.lastFailure = AutomaticFolderProcessingFailure(reason: .filesystem, stage: .assignPoster, occurredAt: now())
+          record.lastFailure = AutomaticFolderProcessingFailure(reason: .filesystem,
+            stage: .assignPoster, occurredAt: now())
           if record.processingState != .done { record.processingReason = .filesystemFailure }
           try recordFolderProcessing(record, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
         }

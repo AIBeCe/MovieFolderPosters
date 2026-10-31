@@ -398,7 +398,8 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   /// Composes the real action service without external storage, credentials, or networking.
   func service(token: String? = "fixture-token", movieMetadataProvider: (any MovieMetadataProvider)? = .none,
                activity: (any MovieFolderActivityServicing)? = .none) -> MoviePosterActionService {
-    MoviePosterActionService(credentials: ActionCredentials(token: token), activity: activity ?? MovieFolderActivityServiceFake(),
+    MoviePosterActionService(credentials: ActionCredentials(token: token), activity:
+      activity ?? MovieFolderActivityServiceFake(),
       environment: self, movieMetadataProvider: movieMetadataProvider ?? ActionProvider())
   }
 

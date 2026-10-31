@@ -94,7 +94,8 @@ private struct SelectedRetryScenario {
     processor = try source.fixture.processor(
       provider: provider, clock: { source.clock.now }, posterAssigner: FileSystemService(),
       processingStore: source.collectionStore)
-    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: source.fixture.movies)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild:
+      "Dune (2021)", in: source.fixture.movies)
     identity = candidate.identity
     unrelated = [
       FolderProcessingRecord(name: "Pending (2020)", identity: "pending-identity", state: .pending,
@@ -126,7 +127,8 @@ private struct SelectedRetryScenario {
 
   /// Persists operational retry evidence alongside an unrelated decision that must survive the attempt.
   func seedCache(reason: FolderProcessingReason?, retryDate: Date? = .none, rootDeadline: Date? = .none) throws {
-    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: source.fixture.movies)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild:
+      "Dune (2021)", in: source.fixture.movies)
     let state = CollectionProcessingCache(folders: [
       "Dune (2021)": FolderProcessingCacheRecord(
         fingerprint: candidate.fingerprint, status: reason == .none ? .unresolved : .transientFailure,

@@ -177,7 +177,8 @@ extension R12001MatchingAcceptanceTests {
 
     let first = try await portuguese.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
     let second = try await german.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
-    let third = try await newCredential.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
+    let third = try await newCredential.matchMovieUsingEvidence(title: "Alien",
+      year: 1979, search: search, state: &state)
 
     #expect(first == .matched(movie))
     #expect(second == .matched(movie))

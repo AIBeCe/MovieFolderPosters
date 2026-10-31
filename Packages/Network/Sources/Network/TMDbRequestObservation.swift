@@ -29,7 +29,7 @@ public enum TMDbRequestCompletionResult: Codable, Sendable, Equatable {
 }
 
 /// Receives safe request preparation and completion callbacks.
-public protocol TMDbClientRequestDelegate: Sendable {
+public protocol TMDbClientRequestDelegate: AnyObject, Sendable {
   /// Prepares optional history recording for a request.
   ///
   /// - Parameter purpose: The request category, without request-specific data.

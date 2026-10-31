@@ -387,7 +387,9 @@ extension MovieFolderProcessor {
   ///   - movieID: The TMDb movie identifier retained with the processing record.
   ///   - posterPath: The provider-relative source poster path.
   /// - Returns: A completed decision recording this folder fingerprint and selected movie/poster.
-  private func processedRecord(for candidate: MovieFolderCandidate, movieID: Int, posterPath: String) -> FolderProcessingCacheRecord {
+  private func processedRecord(
+    for candidate: MovieFolderCandidate, movieID: Int, posterPath: String
+  ) -> FolderProcessingCacheRecord {
     FolderProcessingCacheRecord(
       fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
       matchedMovieID: movieID, posterPath: posterPath)
@@ -413,7 +415,8 @@ extension MovieFolderProcessor {
 
   /// Resolves the saved refresh identity or searches and rechecks the manual target after suspension.
   private func refreshSelection(
-    root: URL, candidate: inout MovieFolderCandidate, state: inout CollectionProcessingCache, activity: ProcessorActivityLog
+    root: URL, candidate: inout MovieFolderCandidate, state: inout CollectionProcessingCache,
+    activity: ProcessorActivityLog
   ) async throws -> RefreshMovieSelection {
     let child = candidate.name
     let movieID: Int
@@ -556,7 +559,9 @@ extension MovieFolderProcessor {
   ///   - root: Authorized collection root.
   /// - Returns: Whether explicit/current decisions or verified installed-poster evidence permit identity reuse.
   /// - Throws: Filesystem inspection or identity errors.
-  private func mayReuseSavedIdentity(_ record: FolderProcessingCacheRecord, candidate: MovieFolderCandidate, root: URL) throws -> Bool {
+  private func mayReuseSavedIdentity(
+    _ record: FolderProcessingCacheRecord, candidate: MovieFolderCandidate, root: URL
+  ) throws -> Bool {
     if record.requiresAutomaticReview != true { return true }
 
     return try fileSystem.hasAssignedPoster(toChild: candidate.name, in: root, expectedIdentity: candidate.identity)

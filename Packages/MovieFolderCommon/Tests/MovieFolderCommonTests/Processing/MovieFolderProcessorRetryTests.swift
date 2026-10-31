@@ -448,7 +448,8 @@ extension MovieFolderProcessorTests {
     }
 
     defer { withExtendedLifetime(finalAccess) {} }
-    let finalState = try JSONDecoder().decode(CollectionProcessingCache.self, from: try #require(try finalAccess.read()))
+    let finalState = try JSONDecoder().decode(CollectionProcessingCache.self, from:
+      try #require(try finalAccess.read()))
 
     #expect(finalState.folders["Dune (2021)"]?.movieIdentitySource == .explicitSelection)
   }

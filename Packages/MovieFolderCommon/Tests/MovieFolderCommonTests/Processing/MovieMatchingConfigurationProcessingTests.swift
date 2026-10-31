@@ -76,7 +76,8 @@ struct MovieMatchingConfigurationProcessingTests {
     let changed = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
       cacheDirectory: fixture.cache, posterAssigner: fixture.assigner,
       movieMatchingConfiguration: MovieMatchingConfiguration(comparesOriginalTitles: false))
-    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(
+      ofChild: "Dune (2021)", in: fixture.movies).identity
     #expect(try await changed.matchedMovieID(root: fixture.movies, child: "Dune (2021)",
       expectedIdentity: identity) == .none)
     #expect(try await changed.process(root: fixture.movies).unresolved == 1)

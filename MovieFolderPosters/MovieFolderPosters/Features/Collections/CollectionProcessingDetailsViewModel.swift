@@ -49,8 +49,10 @@ final class CollectionProcessingDetailsViewModel: CollectionSummaryViewModelDele
   /// Display-only evidence; invocation independently validates every field.
   func canCopy(_ action: MovieFolderContextMenuAction) -> Bool {
     guard isAuthorized, !isBusy, case .child(let name, let identity) = capturedTargetRequest.target,
-      let savedProcessingSummary, ![.stale, .unavailable, .busy, .running].contains(savedProcessingSummary.displayState),
-      let record = savedProcessingSummary.processingState?.folders.first(where: { $0.folderName == name && $0.folderIdentity == identity }),
+      let savedProcessingSummary, ![.stale, .unavailable, .busy,
+        .running].contains(savedProcessingSummary.displayState),
+      let record = savedProcessingSummary.processingState?.folders.first(where: {
+        $0.folderName == name && $0.folderIdentity == identity }),
       let details = VerifiedMovieDetails(record: record) else { return false }
 
     return action == .copyMovieIdentifier || action == .copyMovieTitle && details.title != .none

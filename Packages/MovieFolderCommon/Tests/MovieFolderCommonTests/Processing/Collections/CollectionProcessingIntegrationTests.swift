@@ -87,7 +87,8 @@ struct CollectionProcessingIntegrationTests {
     #endif
     let provider = CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image))
     let processor = fixture.processor(provider: provider)
-    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: "Missing (2021)", in: fixture.root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild:
+      "Missing (2021)", in: fixture.root).identity
     let movie = MovieMetadata(
       id: 7, title: "Chosen", originalTitle: "Chosen", releaseYear: 2021, posterPath: "/chosen.jpg")
     _ = try await processor.applyMoviePoster(
@@ -249,7 +250,8 @@ struct CollectionProcessingIntegrationTests {
         processingContext: fixture.context)
     }
     #expect(await provider.posterCount == 0)
-    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: candidate.name, in: fixture.root).hasCustomIcon)
+    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: candidate.name,
+      in: fixture.root).hasCustomIcon)
     let access = try #require(try fixture.processing.acquireAccess(for:
       MovieFolderProcessor.processingStateKey(for: fixture.root)))
     let saved = try await processor.loadState(from: access).folders[candidate.name]
@@ -510,7 +512,8 @@ struct CollectionProcessingArtworkIntegrationTests {
     #endif
     let movie = MovieMetadata(
       id: 7, title: "Chosen", originalTitle: "Chosen", releaseYear: 2021, posterPath: "/chosen.jpg")
-    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(
+      ofChild: "Movie (2021)", in: fixture.root).identity
     let provider = CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image))
     _ = try await fixture.processor(provider: provider)
       .applyMoviePoster(

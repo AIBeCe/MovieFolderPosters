@@ -90,7 +90,8 @@ final class ProcessorActivityLog {
   func append(
     _ record: FolderProcessingRecord, onlyWhenChanged: Bool = false, failure: AutomaticFolderProcessingFailure? = .none
   ) {
-    if onlyWhenChanged, let previous = priorFolderResults[record.folderName], previous.folderIdentity == record.folderIdentity,
+    if onlyWhenChanged, let previous = priorFolderResults[record.folderName],
+      previous.folderIdentity == record.folderIdentity,
       previous.processingState == record.processingState, previous.processingReason == record.processingReason,
       previous.matchedMovieID == record.matchedMovieID {
       return

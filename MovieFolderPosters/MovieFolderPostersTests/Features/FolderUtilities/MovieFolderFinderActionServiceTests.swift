@@ -157,7 +157,8 @@ extension MovieFolderFinderActionServiceTests {
     _ = try fixture.processing.commit(state, expectedRevision: state.revision)
     let summaries = CollectionSummaryViewModel(service: CollectionSummaryService(
       configuration: fixture.repository, processingStore: fixture.processing,
-      processingLockStore: try PersistenceStore(directory: fixture.container.appendingPathComponent("ProcessingLocks"))))
+      processingLockStore: try PersistenceStore(directory:
+        fixture.container.appendingPathComponent("ProcessingLocks"))))
     summaries.reload()
     for _ in 0..<200 where summaries.summary(for: fixture.request.rootID) == .none {
       try await Task.sleep(for: .milliseconds(5))
@@ -174,12 +175,7 @@ extension MovieFolderFinderActionServiceTests {
     model.selectRows(IndexSet([1, 2]))
     model.revealSelected()
     if completion != "success" {
-      await gate.waitForPreparation()
-      #expect(model.isBusy && !model.canFilter && !model.canChooseMovie && !model.canRetrySelected)
-      model.selectRows(IndexSet(integer: .zero))
-      #expect(model.selectedRows == IndexSet([1, 2]))
-      if completion == "close" { model.cancelRetryTask() } else { model.configurationDidChange() }
-      await gate.finish()
+      await suppressPendingReveal(completion, model: model, gate: gate)
     }
     for _ in 0..<200 where model.isBusy { try await Task.sleep(for: .milliseconds(5)) }
     #expect(!model.isBusy)
@@ -192,6 +188,19 @@ extension MovieFolderFinderActionServiceTests {
     }
     #expect(platform.copied.isEmpty)
     #expect(try fixture.repository.read().directories.count == 1)
+  }
+
+  /// Invalidates a suspended reveal through the selected close or configuration path.
+  @MainActor
+  private func suppressPendingReveal(
+    _ completion: String, model: CollectionResultsViewModel, gate: MovieFolderUtilityPreparationGate
+  ) async {
+    await gate.waitForPreparation()
+    #expect(model.isBusy && !model.canFilter && !model.canChooseMovie && !model.canRetrySelected)
+    model.selectRows(IndexSet(integer: .zero))
+    #expect(model.selectedRows == IndexSet([1, 2]))
+    if completion == "close" { model.cancelRetryTask() } else { model.configurationDidChange() }
+    await gate.finish()
   }
 
   /// The actual platform invocation still owns settings access and reports clipboard failure independently.

@@ -240,20 +240,24 @@ public final class PersistenceAccess: Sendable {
     try validateExistingRecord()
     try validatePayloadSize(data)
 
-    let envelope = VersionedKeyBoundRecord(version: 1, keyDigest: keyDigest, payload: data)
-    let encoded: Data
-    do {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-      encoded = try encoder.encode(envelope)
-    } catch {
-      throw PersistenceError.corruptRecord
-    }
+    let encoded = try encodedRecord(for: data)
     if let maximumRecordBytes, encoded.count > maximumRecordBytes {
       throw PersistenceError.recordTooLarge
     }
 
     try atomicWrite(encoded, named: recordName)
+  }
+
+  /// Encodes a key-bound record envelope using the store's stable JSON representation.
+  private func encodedRecord(for data: Data) throws -> Data {
+    let envelope = VersionedKeyBoundRecord(version: 1, keyDigest: keyDigest, payload: data)
+    do {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+      return try encoder.encode(envelope)
+    } catch {
+      throw PersistenceError.corruptRecord
+    }
   }
 
   /// Validates the existing record while the caller retains the access mutex.
@@ -457,46 +461,58 @@ private final class OpenedDirectoryDescriptor: Sendable {
       #endif
       throw PersistenceError.io(code)
     }
-    var current = root
+    let current = try openComponents(components, from: root)
 
+    return OpenedDirectoryDescriptor(fileDescriptor: current)
+  }
+
+  /// Opens each path component relative to its pinned parent, creating missing directories safely.
+  private static func openComponents(_ components: [Substring], from root: Int32) throws -> Int32 {
+    var current = root
     for (index, component) in components.enumerated() {
-      let name = String(component)
-      let access = index == components.count - 1 ? O_RDONLY : O_SEARCH
-      let flags = access | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
-      var next = openat(current, name, flags)
-      var openedAfterCreation = false
-      if next < 0, errno == ENOENT {
-        guard mkdirat(current, name, S_IRWXU) == 0 || errno == EEXIST else {
-          let code = errno
-          #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
-              Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Persistence")
-                .error("Acceptance persistence mkdirat failed at component index \(index), errno=\(code)")
-            }
-          #endif
-          close(current)
-          throw PersistenceError.io(code)
-        }
-        openedAfterCreation = true
-        next = openat(current, name, flags)
-      }
-      guard next >= 0 else {
+      current = try openComponent(component, at: index, of: components.count, from: current)
+    }
+    return current
+  }
+
+  /// Opens or creates one directory component and closes the previous descriptor on every path.
+  private static func openComponent(
+    _ component: Substring, at index: Int, of componentCount: Int, from current: Int32
+  ) throws -> Int32 {
+    let name = String(component)
+    let access = index == componentCount - 1 ? O_RDONLY : O_SEARCH
+    let flags = access | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+    var next = openat(current, name, flags)
+    var openedAfterCreation = false
+    if next < 0, errno == ENOENT {
+      guard mkdirat(current, name, S_IRWXU) == 0 || errno == EEXIST else {
         let code = errno
         #if DEBUG
           if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
-            let operation = openedAfterCreation ? "openat after mkdir" : "openat"
             Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Persistence")
-              .error("Acceptance persistence \(operation) failed at component index \(index), errno=\(code)")
+              .error("Acceptance persistence mkdirat failed at component index \(index), errno=\(code)")
           }
         #endif
         close(current)
         throw PersistenceError.io(code)
       }
-      close(current)
-      current = next
+      openedAfterCreation = true
+      next = openat(current, name, flags)
     }
-
-    return OpenedDirectoryDescriptor(fileDescriptor: current)
+    guard next >= 0 else {
+      let code = errno
+      #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+          let operation = openedAfterCreation ? "openat after mkdir" : "openat"
+          Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Persistence")
+            .error("Acceptance persistence \(operation) failed at component index \(index), errno=\(code)")
+        }
+      #endif
+      close(current)
+      throw PersistenceError.io(code)
+    }
+    close(current)
+    return next
   }
 
   /// Rewrites the standard `/var` alias while preserving the path spelling used by the caller.

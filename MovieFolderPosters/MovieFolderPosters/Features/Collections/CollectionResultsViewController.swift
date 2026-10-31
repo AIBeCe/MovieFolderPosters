@@ -218,11 +218,16 @@ final class CollectionResultsViewController: NSViewController {
     processingStateFilterPopUpButton.isEnabled = viewModel.canFilter
     processingReasonFilterPopUpButton.isEnabled = viewModel.canFilter
     processingStateFilterPopUpButton.selectItem(at:
-      viewModel.processingStateFilter.flatMap { FolderProcessingState.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
+      viewModel.processingStateFilter.flatMap {
+        FolderProcessingState.allCases.firstIndex(of: $0)
+      }.map { $0 + 1 } ?? .zero)
     processingReasonFilterPopUpButton.selectItem(at:
-      viewModel.processingReasonFilter.flatMap { FolderProcessingReason.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
+      viewModel.processingReasonFilter.flatMap {
+        FolderProcessingReason.allCases.firstIndex(of: $0)
+      }.map { $0 + 1 } ?? .zero)
     let selection = "\(viewModel.selectedRows.count) selected."
-    statusLabel.stringValue = viewModel.unresolvedFolderResultCountText + " " + selection + " " + viewModel.statusMessage
+    statusLabel.stringValue = viewModel.unresolvedFolderResultCountText + " " +
+      selection + " " + viewModel.statusMessage
     tableView.setAccessibilityHelp(selection + " Select one folder to choose a movie, or multiple folders to retry.")
   }
 

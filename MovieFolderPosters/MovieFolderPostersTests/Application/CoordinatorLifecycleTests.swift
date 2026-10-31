@@ -15,7 +15,7 @@ struct CoordinatorLifecycleTests {
   @Test func migrationRequiredStartupRecordsTheRecoveryAction() async throws {
     let activity = MovieFolderActivityServiceFake()
     let root = AppCoordinator(activity: activity, configurationBuilder: MigrationRequiredConfigurationBuilder(),
-      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+      posterService: CoordinatorPosterService(), appearance: try coordinatorLifecycleAppearance())
     #expect(throws: MovieFolderStorageMigrationError.self) { try root.start() }
     for _ in 0..<100 {
       if try await activity.entries().contains(where: { $0.event.action == .configurationLoaded }) { break }
@@ -35,8 +35,9 @@ struct CoordinatorLifecycleTests {
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let builder = RecoveryCheckingConfigurationBuilder(recovery: recovery)
     let root = AppCoordinator(
-      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
-      appearance: try isolatedAppearance(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder,
+        posterService: CoordinatorPosterService(),
+      appearance: try coordinatorLifecycleAppearance(),
       recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
     let request = MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: .change)
     root.openPosterAction(request)
@@ -57,8 +58,9 @@ struct CoordinatorLifecycleTests {
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let builder = RecoveryCheckingConfigurationBuilder(recovery: recovery)
     let root = AppCoordinator(
-      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
-      appearance: try isolatedAppearance(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder,
+        posterService: CoordinatorPosterService(),
+      appearance: try coordinatorLifecycleAppearance(),
       recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
 
     try root.showSettings()
@@ -75,7 +77,7 @@ struct CoordinatorLifecycleTests {
     let change = try recovery.acquireProcessingAccess()
     let root = AppCoordinator(
       activity: MovieFolderActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
-      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance(),
+      posterService: CoordinatorPosterService(), appearance: try coordinatorLifecycleAppearance(),
       recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
     #expect(throws: ProcessingRecoveryError.busy) { try root.start() }
     #expect(root.configurationCoordinator != .none)
@@ -95,7 +97,7 @@ struct CoordinatorLifecycleTests {
     defer { application.appearance = previousAppearance }
     let root = AppCoordinator(
       activity: MovieFolderActivityServiceFake(), configurationBuilder: UnavailableConfigurationBuilder(),
-      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+      posterService: CoordinatorPosterService(), appearance: try coordinatorLifecycleAppearance())
     #expect(throws: CocoaError.self) { try root.start() }
     root.showLog()
     let firstWindow = try #require(root.logCoordinator.windowController?.window)
@@ -112,7 +114,7 @@ struct CoordinatorLifecycleTests {
   @Test func settingsCanStartBeforeMainAndActivationPreservesIndependentFlows() throws {
     let root = AppCoordinator(
       activity: MovieFolderActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
-      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+      posterService: CoordinatorPosterService(), appearance: try coordinatorLifecycleAppearance())
     root.applicationDidBecomeActive()
     #expect(root.configurationCoordinator == .none)
     #expect(root.logCoordinator.windowController == .none)
@@ -137,7 +139,7 @@ struct CoordinatorLifecycleTests {
     let builder = RetryingConfigurationBuilder()
     let root = AppCoordinator(
       activity: MovieFolderActivityServiceFake(), configurationBuilder: builder,
-      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+      posterService: CoordinatorPosterService(), appearance: try coordinatorLifecycleAppearance())
     #expect(throws: CocoaError.self) { try root.showSettings() }
     #expect(root.configurationCoordinator == .none)
     try root.showSettings()
@@ -162,7 +164,7 @@ struct CoordinatorLifecycleTests {
     let application = NSApplication.shared
     let previousAppearance = application.appearance
     defer { application.appearance = previousAppearance }
-    let settings = try isolatedAppearance()
+    let settings = try coordinatorLifecycleAppearance()
     settings.select(.dark)
     let root = AppCoordinator(
       activity: MovieFolderActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
@@ -211,7 +213,7 @@ struct CoordinatorLifecycleTests {
   @Test func localDataWindowIsDedicatedReusableAndClosable() throws {
     let root = AppCoordinator(
       activity: MovieFolderActivityServiceFake(), configurationBuilder: LocalDataConfigurationBuilder(),
-      posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
+      posterService: CoordinatorPosterService(), appearance: try coordinatorLifecycleAppearance())
     try root.showConfiguration()
     let configuration = try #require(root.configurationCoordinator)
     let mainWindow = try #require(configuration.mainWindow?.window)
@@ -258,7 +260,7 @@ struct CoordinatorLifecycleTests {
     let application = NSApplication.shared
     let previousAppearance = application.appearance
     defer { application.appearance = previousAppearance }
-    let settings = try isolatedAppearance()
+    let settings = try coordinatorLifecycleAppearance()
     let activity = MovieFolderActivityServiceFake()
     let root = AppCoordinator(
       activity: activity, configurationBuilder: UnavailableConfigurationBuilder(),
@@ -273,13 +275,6 @@ struct CoordinatorLifecycleTests {
     let deadline = clock.now.advanced(by: .seconds(2))
     while !containsWriteFailure(in: content), clock.now < deadline { await Task.yield() }
     #expect(containsWriteFailure(in: content))
-  }
-
-  /// Finds the user-facing failure state rather than relying on a mocked navigation callback.
-  private func containsWriteFailure(in view: NSView) -> Bool {
-    if let text = view as? NSTextField, text.stringValue.contains("Some activity could not be saved") { return true }
-
-    return view.subviews.contains { containsWriteFailure(in: $0) }
   }
 
   /// Replacing or closing an action cancels its operation and releases the previous flow.
@@ -326,7 +321,8 @@ struct CoordinatorLifecycleTests {
     log = .none
     #expect(logIsReleased())
     var configuration: ConfigurationCoordinator? = ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: MovieFolderActivityServiceFake(), appearance: try isolatedAppearance())
+      service: CoordinatorConfigurationService(), activity: MovieFolderActivityServiceFake(),
+        appearance: try coordinatorLifecycleAppearance())
     let configurationIsReleased = { [weak configuration] in configuration == .none }
     configuration?.start()
     configuration?.mainWindow?.close()
@@ -337,14 +333,22 @@ struct CoordinatorLifecycleTests {
     #expect(configurationIsReleased())
   }
 
-  /// Creates preference storage that cannot change the user's application settings.
-  private func isolatedAppearance() throws -> AppAppearanceSettings {
-    let name = "CoordinatorLifecycleTests.\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: name))
-    defaults.removePersistentDomain(forName: name)
+}
 
-    return AppAppearanceSettings(defaults: defaults)
-  }
+/// Creates preference storage that cannot change the user's application settings.
+private func coordinatorLifecycleAppearance() throws -> AppAppearanceSettings {
+  let name = "CoordinatorLifecycleTests.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defaults.removePersistentDomain(forName: name)
+
+  return AppAppearanceSettings(defaults: defaults)
+}
+
+/// Finds the user-facing failure state rather than relying on a mocked navigation callback.
+private func containsWriteFailure(in view: NSView) -> Bool {
+  if let text = view as? NSTextField, text.stringValue.contains("Some activity could not be saved") { return true }
+
+  return view.subviews.contains { containsWriteFailure(in: $0) }
 }
 
 /// Fails the first construction without poisoning subsequent explicit configuration requests.

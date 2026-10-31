@@ -80,17 +80,20 @@ extension MovieFolderProcessor {
     }
 
     var visit = AutomaticProcessingPass(
-      processingCache: cache, collectionProcessingRecord: try recordProcessingStart(context: processingContext, action: .manual, child: child),
+      processingCache: cache, collectionProcessingRecord: try recordProcessingStart(context:
+        processingContext, action: .manual, child: child),
       activityLog: activity, selectedRetryChildName: child)
     defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord, child: child) }
 
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
       try await !reuseCachedDecision(candidate, root: root, access: access, visit: &visit) {
-      visit.providerAdmissionStoppedPass = try await processCandidate(candidate, root: root, access: access, visit: &visit)
+      visit.providerAdmissionStoppedPass = try await processCandidate(candidate,
+        root: root, access: access, visit: &visit)
     }
 
     try finishProcessingRun(
-      &visit.collectionProcessingRecord, state: visit.providerAdmissionStoppedPass ? .partial : .completed, activity: visit.activityLog)
+      &visit.collectionProcessingRecord, state: visit.providerAdmissionStoppedPass
+        ? .partial : .completed, activity: visit.activityLog)
 
     return .attempted(visit.processingSummary, stopSelection: visit.providerAdmissionStoppedPass)
   }

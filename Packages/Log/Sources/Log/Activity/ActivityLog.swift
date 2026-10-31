@@ -146,7 +146,8 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   }
 
   /// Decodes and validates the complete activity history record before any operation uses or replaces it.
-  private func readActivityHistory(using persistenceAccess: PersistenceAccess) throws -> PersistedActivityHistory<Event> {
+  private func readActivityHistory(using persistenceAccess: PersistenceAccess) throws
+    -> PersistedActivityHistory<Event> {
     guard let data = try persistenceAccess.read() else { return PersistedActivityHistory() }
     let activityHistoryRecord: PersistedActivityHistory<Event>
     do {

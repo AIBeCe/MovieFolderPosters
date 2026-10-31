@@ -27,7 +27,8 @@ extension MovieFolderProcessor {
         MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .persist, occurredAt: now()))
       throw error
     } catch {
-      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
+      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason:
+        .storage, stage: .persist, occurredAt: now()))
       // Storage errors must escape folder recovery before any subsequent icon change.
       throw CollectionProcessingError.unavailable
     }
@@ -58,7 +59,8 @@ extension MovieFolderProcessor {
       var record = try? folderProcessingResult(candidate, root: root, saved: saved) {
       record.lastFailure = AutomaticFolderProcessingFailure(
         reason: Task.isCancelled ? .cancelled : .unknown, stage: .unknown, occurredAt: now())
-      if record.processingState != .done && record.processingState != .preserved && record.processingState != .suppressed {
+      if record.processingState != .done && record.processingState != .preserved &&
+        record.processingState != .suppressed {
         record.processingState = .uncertain
         record.processingReason = .interrupted
       }
@@ -139,7 +141,8 @@ extension MovieFolderProcessor {
   }
 
   /// Preserves the original unresolved reason while existing retry configuration defers another provider request.
-  func cachedFolderResult(_ candidate: MovieFolderCandidate, saved: FolderProcessingCacheRecord) -> FolderProcessingRecord {
+  func cachedFolderResult(_ candidate: MovieFolderCandidate, saved: FolderProcessingCacheRecord)
+    -> FolderProcessingRecord {
     var record = unresolvedFolderResult(candidate, reason: saved.processingReason ?? .retryDeferred)
     if saved.status == .transientFailure {
       record.processingState = .failed

@@ -83,7 +83,8 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
     copyIdentifierButton.action = #selector(copyIdentifier)
     let actions = NSStackView(views: [copyTitleButton, copyIdentifierButton])
     actions.spacing = 8
-    if case .child = viewModel?.capturedTargetRequest.target { actions.isHidden = false } else { actions.isHidden = true }
+    if case .child = viewModel?.capturedTargetRequest.target { actions.isHidden =
+      false } else { actions.isHidden = true }
     for child in [closeButton, scrollView, actions] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)

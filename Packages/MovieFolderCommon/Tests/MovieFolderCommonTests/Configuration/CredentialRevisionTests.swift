@@ -99,7 +99,8 @@ struct CredentialRevisionTests {
     var manual = explicit
     manual.processingReason = .ambiguousMovie
     var state = CollectionProcessingCache(folders: ["explicit": explicit, "manual": manual],
-      queries: ["query": CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: Date())],
+      queries: ["query": CachedMovieSearch(result: MovieSearchResult(movies: [],
+        hasMorePages: false), createdAt: Date())],
       providerRetryAt: deadline, credentialRevision: UUID())
     let current = UUID()
     state.reconcileCredentialRevision(current)
@@ -165,7 +166,8 @@ struct CredentialRevisionTests {
     #expect(reconciled.folders["Movie"]?.matchedMovieID == 42)
     try await current.saveState(reconciled, to: persistenceAccess)
     let updated = try #require(try persistenceAccess.read())
-    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from: updated).credentialRevision == currentRevision)
+    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from:
+      updated).credentialRevision == currentRevision)
   }
 
   /// Cancellation before the commit leaves persisted generation and Keychain callback untouched.

@@ -43,7 +43,8 @@ struct MoviePosterActionTests {
       _ = try await task.value
       Issue.record("A newly overlapping root must prevent change after network suspension")
     } catch ConfigurationError.configurationChanged {}
-    #expect(!(try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon))
+    #expect(!(try FileSystemService().readCurrentFolderCandidate(
+      ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon))
   }
 
   /// Verifies selecting Explicit Movie Bypasses Ambiguous Search And Records Selection.

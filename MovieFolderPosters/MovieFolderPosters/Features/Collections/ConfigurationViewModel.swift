@@ -396,7 +396,8 @@ final class ConfigurationViewModel {
   /// Notifies all currently retained observers of the latest state.
   private func publish() {
     delegates.removeAll { $0.configurationViewModelDelegate == nil }
-    for delegate in delegates.compactMap(\.configurationViewModelDelegate) { delegate.configurationViewModelDidChange(self) }
+    for delegate in delegates.compactMap(\.configurationViewModelDelegate) {
+      delegate.configurationViewModelDidChange(self) }
   }
 }
 

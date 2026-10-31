@@ -110,121 +110,6 @@ final class MovieFolderPostersUITests: XCTestCase {
     XCTAssertTrue((reopenedEditWindow.popUpButtons["Search language"].value as? String)?.contains("(pt-PT)") == true)
   }
 
-  /// An unresolved folder opens the real Choose Movie flow and searches only after explicit user action.
-  @MainActor
-  func testChooseMovieUsesSavedLanguageAndSearchesDeterministicFixture() throws {
-    let support = try MovieFolderPostersAcceptanceSupport()
-    defer { support.tearDown() }
-    let (app, root) = support.launchIsolatedApp()
-    let main = app.windows["Movie Folder Posters"]
-    XCTAssertTrue(main.waitForExistence(timeout: 10))
-    main.buttons["Settings"].click()
-    let matchingTab = app.toolbars.buttons["Matching Defaults"]
-    XCTAssertTrue(matchingTab.waitForExistence(timeout: 5))
-    matchingTab.click()
-    selectLanguage("pt-BR", in: app.popUpButtons["Search language"])
-    app.windows["Matching Defaults"].buttons[XCUIIdentifierCloseWindow].click()
-
-    let collectionRoot = root.appendingPathComponent("Test Movies", isDirectory: true)
-    try FileManager.default.createDirectory(at: collectionRoot, withIntermediateDirectories: true)
-    let child = collectionRoot.appendingPathComponent("The Last Frame", isDirectory: true)
-    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
-    addCollection(at: collectionRoot, in: app, main: main)
-    try seedUnresolvedOutcome(collectionRoot: collectionRoot, child: child, sharedRoot: root)
-
-    app.terminate()
-    app.launch()
-    XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
-    let collectionRow = app.tables.cells.firstMatch
-    XCTAssertTrue(collectionRow.waitForExistence(timeout: 10))
-    collectionRow.rightClick()
-    let unresolvedAction = app.menuItems["Unresolved Results…"]
-    XCTAssertTrue(unresolvedAction.waitForExistence(timeout: 5))
-    waitUntilEnabled(unresolvedAction)
-    unresolvedAction.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-
-    let results = app.sheets.firstMatch
-    XCTAssertTrue(results.waitForExistence(timeout: 5))
-    let unresolvedRow = results.tables["Unresolved collection folders"].cells.firstMatch
-    XCTAssertTrue(unresolvedRow.waitForExistence(timeout: 5))
-    unresolvedRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-    results.buttons["Choose Movie…"].click()
-
-    let chooseMovie = app.sheets.element(boundBy: 1)
-    XCTAssertTrue(chooseMovie.waitForExistence(timeout: 5))
-    XCTAssertTrue(chooseMovie.staticTexts.matching(
-      NSPredicate(format: "value CONTAINS %@", "Search language: Portuguese (Brazil) (pt-BR)")).firstMatch
-      .waitForExistence(timeout: 5))
-    let resultsPicker = chooseMovie.popUpButtons.firstMatch
-    XCTAssertTrue(resultsPicker.exists)
-    XCTAssertFalse((resultsPicker.value as? String)?.contains("The Last Frame") == true)
-
-    let searchButton = chooseMovie.buttons["Search TMDb"]
-    waitUntilEnabled(searchButton)
-    searchButton.click()
-    let resultsAvailable = chooseMovie.staticTexts.matching(
-      NSPredicate(format: "value == %@", "Choose a poster below and apply it when ready.")).firstMatch
-    XCTAssertTrue(resultsAvailable.waitForExistence(timeout: 10))
-    resultsPicker.click()
-    let fixtureMovie = resultsPicker.menuItems["The Last Frame (2026) · TMDb ID 1"]
-    XCTAssertTrue(fixtureMovie.waitForExistence(timeout: 5))
-    fixtureMovie.click()
-    XCTAssertTrue(
-      (resultsPicker.value as? String)?.contains("The Last Frame (2026) · TMDb ID 1") == true)
-    XCTAssertTrue(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
-  }
-
-  /// A possible spelling difference stays unselected and unapplied until the user explicitly chooses it.
-  @MainActor
-  func testSpellingSuggestionRequiresExplicitSelection() throws {
-    let support = try MovieFolderPostersAcceptanceSupport()
-    defer { support.tearDown() }
-    let root = support.root
-    let collectionRoot = root.appendingPathComponent("Test Movies", isDirectory: true)
-    try FileManager.default.createDirectory(at: collectionRoot, withIntermediateDirectories: true)
-    let child = collectionRoot.appendingPathComponent("The Last Frane", isDirectory: true)
-    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
-    try seedFixtureMode(sharedRoot: root)
-    let (app, _) = support.launchIsolatedApp()
-    let main = app.windows["Movie Folder Posters"]
-    XCTAssertTrue(main.waitForExistence(timeout: 10))
-    addCollection(at: collectionRoot, in: app, main: main)
-    try seedUnresolvedOutcome(collectionRoot: collectionRoot, child: child, sharedRoot: root)
-
-    let collectionRow = app.tables.cells.firstMatch
-    XCTAssertTrue(collectionRow.waitForExistence(timeout: 10))
-    collectionRow.rightClick()
-    let unresolvedAction = app.menuItems["Unresolved Results…"]
-    XCTAssertTrue(unresolvedAction.waitForExistence(timeout: 5))
-    unresolvedAction.click()
-    let results = app.sheets.firstMatch
-    XCTAssertTrue(results.waitForExistence(timeout: 5))
-    let unresolvedRow = results.tables["Unresolved collection folders"].cells.firstMatch
-    XCTAssertTrue(unresolvedRow.waitForExistence(timeout: 5))
-    app.activate()
-    app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
-    let chooseMovieButton = results.buttons["Choose Movie…"]
-    XCTAssertTrue(chooseMovieButton.waitForExistence(timeout: 5))
-    let chooseMovieEnabled = NSPredicate(format: "isEnabled == true")
-    expectation(for: chooseMovieEnabled, evaluatedWith: chooseMovieButton)
-    waitForExpectations(timeout: 5)
-    chooseMovieButton.click()
-
-    let chooseMovie = app.sheets.element(boundBy: 1)
-    XCTAssertTrue(chooseMovie.waitForExistence(timeout: 5))
-    chooseMovie.buttons["Search TMDb"].click()
-    let resultsPicker = chooseMovie.popUpButtons.firstMatch
-    XCTAssertTrue(resultsPicker.waitForExistence(timeout: 10))
-    XCTAssertFalse(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
-    resultsPicker.click()
-    app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
-    app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
-    let selectedSuggestion = NSPredicate(format: "value CONTAINS %@", "Possible spelling difference")
-    expectation(for: selectedSuggestion, evaluatedWith: resultsPicker)
-    waitForExpectations(timeout: 5)
-    XCTAssertTrue(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
-  }
-
   /// Adds a collection with an explicit language override and verifies the setup controls.
   @MainActor
   private func addCollectionWithLanguageOverride(
@@ -327,7 +212,8 @@ final class MovieFolderPostersUITests: XCTestCase {
     var state = try processing.recordProcessingStart(context: context, action: .automatic)
     state.folders = [FolderProcessingRecord(
       name: child.lastPathComponent,
-      identity: try fileSystem.readCurrentFolderCandidate(ofChild: child.lastPathComponent, in: collectionRoot).identity,
+      identity: try fileSystem.readCurrentFolderCandidate(ofChild: child.lastPathComponent,
+        in: collectionRoot).identity,
       state: .unresolved, reason: .manualMatchingRequired)]
     state.isInventoryComplete = true
     state.inspectedAt = Date()
@@ -373,4 +259,121 @@ final class MovieFolderPostersUITests: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed)
   }
 
+}
+
+/// Exercises explicit movie selection and spelling review in isolated full-app journeys.
+final class MovieFolderPostersMovieSelectionUITests: MovieFolderPostersUITests {
+  /// An unresolved folder opens the real Choose Movie flow and searches only after explicit user action.
+  @MainActor
+  func testChooseMovieUsesSavedLanguageAndSearchesDeterministicFixture() throws {
+    let support = try MovieFolderPostersAcceptanceSupport()
+    defer { support.tearDown() }
+    let (app, root) = support.launchIsolatedApp()
+    let main = app.windows["Movie Folder Posters"]
+    XCTAssertTrue(main.waitForExistence(timeout: 10))
+    try performChooseMovieJourney(app: app, root: root, main: main)
+  }
+
+  /// Runs the explicit unresolved-folder selection and deterministic provider search journey.
+  @MainActor
+  private func performChooseMovieJourney(app: XCUIApplication, root: URL, main: XCUIElement) throws {
+    let collectionRoot = root.appendingPathComponent("Test Movies", isDirectory: true)
+    try FileManager.default.createDirectory(at: collectionRoot, withIntermediateDirectories: true)
+    let child = collectionRoot.appendingPathComponent("The Last Frame", isDirectory: true)
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
+    addCollection(at: collectionRoot, in: app, main: main)
+    try seedUnresolvedOutcome(collectionRoot: collectionRoot, child: child, sharedRoot: root)
+
+    app.terminate()
+    app.launch()
+    XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
+    let collectionRow = app.tables.cells.firstMatch
+    XCTAssertTrue(collectionRow.waitForExistence(timeout: 10))
+    collectionRow.rightClick()
+    let unresolvedAction = app.menuItems["Unresolved Results…"]
+    XCTAssertTrue(unresolvedAction.waitForExistence(timeout: 5))
+    waitUntilEnabled(unresolvedAction)
+    unresolvedAction.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+
+    let results = app.sheets.firstMatch
+    XCTAssertTrue(results.waitForExistence(timeout: 5))
+    let unresolvedRow = results.tables["Unresolved collection folders"].cells.firstMatch
+    XCTAssertTrue(unresolvedRow.waitForExistence(timeout: 5))
+    unresolvedRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    results.buttons["Choose Movie…"].click()
+
+    let chooseMovie = app.sheets.element(boundBy: 1)
+    XCTAssertTrue(chooseMovie.waitForExistence(timeout: 5))
+    XCTAssertTrue(chooseMovie.staticTexts.matching(
+      NSPredicate(format: "value CONTAINS %@", "Search language: Portuguese (Brazil) (pt-BR)")).firstMatch
+      .waitForExistence(timeout: 5))
+    let resultsPicker = chooseMovie.popUpButtons.firstMatch
+    XCTAssertTrue(resultsPicker.exists)
+    XCTAssertFalse((resultsPicker.value as? String)?.contains("The Last Frame") == true)
+
+    let searchButton = chooseMovie.buttons["Search TMDb"]
+    waitUntilEnabled(searchButton)
+    searchButton.click()
+    let resultsAvailable = chooseMovie.staticTexts.matching(
+      NSPredicate(format: "value == %@", "Choose a poster below and apply it when ready.")).firstMatch
+    XCTAssertTrue(resultsAvailable.waitForExistence(timeout: 10))
+    resultsPicker.click()
+    let fixtureMovie = resultsPicker.menuItems["The Last Frame (2026) · TMDb ID 1"]
+    XCTAssertTrue(fixtureMovie.waitForExistence(timeout: 5))
+    fixtureMovie.click()
+    XCTAssertTrue(
+      (resultsPicker.value as? String)?.contains("The Last Frame (2026) · TMDb ID 1") == true)
+    XCTAssertTrue(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
+  }
+
+  /// A possible spelling difference stays unselected and unapplied until the user explicitly chooses it.
+  @MainActor
+  func testSpellingSuggestionRequiresExplicitSelection() throws {
+    let support = try MovieFolderPostersAcceptanceSupport()
+    defer { support.tearDown() }
+    let root = support.root
+    let collectionRoot = root.appendingPathComponent("Test Movies", isDirectory: true)
+    try FileManager.default.createDirectory(at: collectionRoot, withIntermediateDirectories: true)
+    let child = collectionRoot.appendingPathComponent("The Last Frane", isDirectory: true)
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
+    try seedFixtureMode(sharedRoot: root)
+    let (app, _) = support.launchIsolatedApp()
+    let main = app.windows["Movie Folder Posters"]
+    XCTAssertTrue(main.waitForExistence(timeout: 10))
+    addCollection(at: collectionRoot, in: app, main: main)
+    try seedUnresolvedOutcome(collectionRoot: collectionRoot, child: child, sharedRoot: root)
+
+    let collectionRow = app.tables.cells.firstMatch
+    XCTAssertTrue(collectionRow.waitForExistence(timeout: 10))
+    collectionRow.rightClick()
+    let unresolvedAction = app.menuItems["Unresolved Results…"]
+    XCTAssertTrue(unresolvedAction.waitForExistence(timeout: 5))
+    unresolvedAction.click()
+    let results = app.sheets.firstMatch
+    XCTAssertTrue(results.waitForExistence(timeout: 5))
+    let unresolvedRow = results.tables["Unresolved collection folders"].cells.firstMatch
+    XCTAssertTrue(unresolvedRow.waitForExistence(timeout: 5))
+    app.activate()
+    app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
+    let chooseMovieButton = results.buttons["Choose Movie…"]
+    XCTAssertTrue(chooseMovieButton.waitForExistence(timeout: 5))
+    let chooseMovieEnabled = NSPredicate(format: "isEnabled == true")
+    expectation(for: chooseMovieEnabled, evaluatedWith: chooseMovieButton)
+    waitForExpectations(timeout: 5)
+    chooseMovieButton.click()
+
+    let chooseMovie = app.sheets.element(boundBy: 1)
+    XCTAssertTrue(chooseMovie.waitForExistence(timeout: 5))
+    chooseMovie.buttons["Search TMDb"].click()
+    let resultsPicker = chooseMovie.popUpButtons.firstMatch
+    XCTAssertTrue(resultsPicker.waitForExistence(timeout: 10))
+    XCTAssertFalse(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
+    resultsPicker.click()
+    app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
+    app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+    let selectedSuggestion = NSPredicate(format: "value CONTAINS %@", "Possible spelling difference")
+    expectation(for: selectedSuggestion, evaluatedWith: resultsPicker)
+    waitForExpectations(timeout: 5)
+    XCTAssertTrue(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
+  }
 }
