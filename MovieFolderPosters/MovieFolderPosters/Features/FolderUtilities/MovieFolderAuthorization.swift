@@ -14,7 +14,7 @@ nonisolated struct MovieFolderAuthorizedRoot: Sendable {
   /// Private grant access retained through the operation.
   let authorizationAccess: PersistenceAccess
   /// Security scope retained through the operation.
-  let rootAccess: DirectoryAccess
+  let rootAccess: AuthorizedDirectoryAccess
   /// Physical root identity captured after access acquisition.
   let rootIdentity: String
 }
@@ -50,7 +50,7 @@ nonisolated struct MovieFolderAuthorization: Sendable {
       throw ConfigurationError.busy
     }
 
-    let rootAccess: DirectoryAccess
+    let rootAccess: AuthorizedDirectoryAccess
     if let bookmark = try authorizationAccess.read(),
       let persisted = try? fileSystem.acquireDirectoryAccess(
         bookmark: bookmark, securityScoped: true,

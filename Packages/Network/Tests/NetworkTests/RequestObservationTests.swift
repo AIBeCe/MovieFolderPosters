@@ -4,7 +4,7 @@ import Testing
 @testable import Network
 
 /// Records request observations and can suspend ticket preparation for cancellation tests.
-actor RecordingRequestDelegate: TMDbClientRequestDelegate {
+actor TMDbRequestObservationRecorderDelegate: TMDbClientRequestDelegate {
   /// The ticket returned by preparation.
   private let recordingTicket: UUID?
   /// Whether preparation should wait until the test resumes it.
@@ -18,7 +18,7 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
   /// Purposes whose preparation was requested.
   private(set) var preparedPurposes: [TMDbRequestCategory] = []
   /// Completed observations in callback order.
-  private(set) var completions: [(TMDbRequestCategory, TMDbRequestResult, UUID)] = []
+  private(set) var completions: [(TMDbRequestCategory, TMDbRequestCompletionResult, UUID)] = []
 
   /// Creates a recorder with the requested optional ticket and preparation behavior.
   init(recordingTicket: UUID? = UUID(), shouldSuspendPreparation: Bool = false) {
@@ -45,7 +45,7 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
   /// Records safe, bounded completion metadata.
   func tmdbClientDidCompleteRequest(
     purpose: TMDbRequestCategory,
-    result: TMDbRequestResult,
+    result: TMDbRequestCompletionResult,
     completedAt: Date,
     recordingTicket: UUID
   ) {
@@ -68,15 +68,15 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
   }
 
   /// Returns the observations collected so far.
-  func captured() -> (prepared: [TMDbRequestCategory], completed: [(TMDbRequestCategory, TMDbRequestResult, UUID)]) {
+  func captured() -> (prepared: [TMDbRequestCategory], completed: [(TMDbRequestCategory, TMDbRequestCompletionResult, UUID)]) {
     (preparedPurposes, completions)
   }
 }
 
 /// Observes an HTTP response independently of later response decoding.
 @Test func observesMalformedSuccessfulResponseOnlyOnce() async throws {
-  let delegate = RecordingRequestDelegate()
-  let transport = ScriptedTransport([.success(response("not-json"))])
+  let delegate = TMDbRequestObservationRecorderDelegate()
+  let transport = ScriptedHTTPTransport([.success(response("not-json"))])
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
 
@@ -94,16 +94,16 @@ actor RecordingRequestDelegate: TMDbClientRequestDelegate {
 /// Observes HTTP failures and transport failures without retaining their private details.
 @Test(arguments: [
   (
-    Result<HTTPResponse, Error>.success(response("private body", status: 503)),
-    TMDbRequestResult.response(statusCode: 503)
+    Result<HTTPTransportResponse, Error>.success(response("private body", status: 503)),
+    TMDbRequestCompletionResult.response(statusCode: 503)
   ),
   (.failure(URLError(.notConnectedToInternet)), .transportFailure)
 ])
 func observesHTTPAndTransportFailures(
-  result: Result<HTTPResponse, Error>, expected: TMDbRequestResult
+  result: Result<HTTPTransportResponse, Error>, expected: TMDbRequestCompletionResult
 ) async throws {
-  let delegate = RecordingRequestDelegate()
-  let transport = ScriptedTransport([result])
+  let delegate = TMDbRequestObservationRecorderDelegate()
+  let transport = ScriptedHTTPTransport([result])
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
 
@@ -119,9 +119,9 @@ func observesHTTPAndTransportFailures(
 
 /// Records response-size rejection at the HTTP boundary.
 @Test func observesOversizedResponse() async throws {
-  let delegate = RecordingRequestDelegate()
+  let delegate = TMDbRequestObservationRecorderDelegate()
   let oversized = Data(repeating: 0x61, count: 10 * 1_024 * 1_024 + 1)
-  let transport = ScriptedTransport([.success(HTTPResponse(
+  let transport = ScriptedHTTPTransport([.success(HTTPTransportResponse(
     data: oversized, statusCode: 200, contentType: "application/json"))])
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
@@ -134,8 +134,8 @@ func observesHTTPAndTransportFailures(
 
 /// A cancelled preparation never dispatches or completes a request observation.
 @Test func cancellationDuringPreparationPreventsDispatchAndCompletion() async throws {
-  let delegate = RecordingRequestDelegate(shouldSuspendPreparation: true)
-  let transport = ScriptedTransport([])
+  let delegate = TMDbRequestObservationRecorderDelegate(shouldSuspendPreparation: true)
+  let transport = ScriptedHTTPTransport([])
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
   let task = Task { try await tmdbClient.validateCredential() }
@@ -150,8 +150,8 @@ func observesHTTPAndTransportFailures(
 
 /// A missing ticket does not prevent normal request dispatch.
 @Test func missingTicketStillSendsRequestWithoutCompletion() async throws {
-  let delegate = RecordingRequestDelegate(recordingTicket: .none)
-  let transport = ScriptedTransport([.success(response("{\"success\":true}"))])
+  let delegate = TMDbRequestObservationRecorderDelegate(recordingTicket: .none)
+  let transport = ScriptedHTTPTransport([.success(response("{\"success\":true}"))])
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
 
@@ -163,16 +163,16 @@ func observesHTTPAndTransportFailures(
 
 /// Assigns separate purposes to poster configuration and image HTTP requests.
 @Test func posterRequestsHaveSeparatePurposes() async throws {
-  let delegate = RecordingRequestDelegate()
-  let configuration = HTTPResponse(
+  let delegate = TMDbRequestObservationRecorderDelegate()
+  let configuration = HTTPTransportResponse(
     data: Data(
       """
       {"images":{"secure_base_url":"https://image.tmdb.org/t/p/","poster_sizes":["w500"]}}
       """.utf8),
     statusCode: 200,
     contentType: "application/json")
-  let image = HTTPResponse(data: Data("not an image".utf8), statusCode: 200, contentType: "image/png")
-  let transport = ScriptedTransport([.success(configuration), .success(image)])
+  let image = HTTPTransportResponse(data: Data("not an image".utf8), statusCode: 200, contentType: "image/png")
+  let transport = ScriptedHTTPTransport([.success(configuration), .success(image)])
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
 
@@ -188,8 +188,8 @@ func observesHTTPAndTransportFailures(
 
 /// Reports cancellation after a request was dispatched exactly once.
 @Test func cancellationDuringTransportCompletesOnceAsCancelled() async throws {
-  let delegate = RecordingRequestDelegate()
-  let transport = BlockingTransport()
+  let delegate = TMDbRequestObservationRecorderDelegate()
+  let transport = SuspendedHTTPTransport()
   let tmdbClient = try TMDbClient(
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
   let task = Task { try await tmdbClient.validateCredential() }

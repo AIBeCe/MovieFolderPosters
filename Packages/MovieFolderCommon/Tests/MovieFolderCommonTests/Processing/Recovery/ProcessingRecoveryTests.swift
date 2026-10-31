@@ -31,16 +31,16 @@ struct ProcessingRecoveryTests {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = try coordinator(at: directory)
-    let rejected = RecoveryMovieMetadataProvider(
+    let rejected = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: .authentication), recovery: recovery, credential: "secret-token")
     await #expect(throws: TMDbError.authentication) { try await rejected.searchMovies(title: "Title", year: .none) }
     let reopened = try coordinator(at: directory)
-    let same = RecoveryMovieMetadataProvider(
+    let same = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: reopened, credential: " secret-token ")
     await #expect(throws: ProcessingRecoveryError.authenticationRequired) {
       try await same.downloadPoster(path: "/poster.jpg")
     }
-    let changed = RecoveryMovieMetadataProvider(
+    let changed = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: reopened, credential: "replacement")
     #expect(try await changed.downloadPoster(path: "/poster.jpg") == Data([1]))
     let store = try PersistenceStore(directory: directory)
@@ -61,7 +61,7 @@ struct ProcessingRecoveryTests {
     try recovery.recordProviderFailure(TMDbError.rateLimited(retryAfter: "60"), credentialDigest: "b".repeated64)
     let reopened = ProcessingRecoveryService(store: try PersistenceStore(directory: directory), now: { timestamp })
     #expect(try reopened.read().providerRetryAt == timestamp.addingTimeInterval(1_200))
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: reopened, credential: "changed")
     await #expect(throws: ProcessingRecoveryError.providerBackoff(
       until: timestamp.addingTimeInterval(1_200), reason: .rateLimited)) {
@@ -96,14 +96,14 @@ struct ProcessingRecoveryTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory), now: { timestamp })
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: failure), recovery: recovery, credential: "credential")
     await #expect(throws: failure) { try await provider.downloadPoster(path: "/poster.jpg") }
     #expect(try recovery.read().providerFailureReason == reason)
     #expect(try recovery.read().providerRetryAt == timestamp.addingTimeInterval(60))
     let later = ProcessingRecoveryService(
       store: try PersistenceStore(directory: directory), now: { timestamp.addingTimeInterval(61) })
-    let success = RecoveryMovieMetadataProvider(
+    let success = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(recovery: later), recovery: later, credential: "credential")
     #expect(try await success.searchMovies(title: "Title", year: .none).movies.isEmpty)
   }
@@ -198,7 +198,7 @@ extension ProcessingRecoveryTests {
     #expect(throws: ProcessingRecoveryError.authenticationRequired) {
       try reopened.validateProviderAllowed(credentialDigest: secondDigest)
     }
-    let changed = RecoveryMovieMetadataProvider(
+    let changed = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: reopened, credential: "third")
     #expect(try await changed.searchMovies(title: "Title", year: .none).movies.isEmpty)
   }
@@ -271,7 +271,7 @@ extension ProcessingRecoveryTests {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = try coordinator(at: directory)
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: failure), recovery: recovery, credential: "credential")
     await #expect(throws: failure) { try await provider.searchMovies(title: "Title", year: .none) }
     #expect(try recovery.read().providerRetryAt == .none)
@@ -283,7 +283,7 @@ extension ProcessingRecoveryTests {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = try coordinator(at: directory)
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: recovery, credential: "credential")
     try recovery.setRecoveryModeEnabled(true)
     await #expect(throws: ProcessingRecoveryError.recoveryMode) {
@@ -302,12 +302,12 @@ extension ProcessingRecoveryTests {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = try coordinator(at: directory)
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: failure), recovery: recovery, credential: "credential")
     await #expect(throws: failure) { try await provider.downloadPoster(path: "/poster.jpg") }
     let future = ProcessingRecoveryService(
       store: try PersistenceStore(directory: directory), now: { Date.distantFuture })
-    let reopened = RecoveryMovieMetadataProvider(
+    let reopened = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: future, credential: "credential")
     await #expect(throws: ProcessingRecoveryError.authenticationRequired) {
       try await reopened.searchMovies(title: "Title", year: .none)
@@ -337,7 +337,7 @@ extension ProcessingRecoveryTests {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = try coordinator(at: directory)
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: .authentication), recovery: recovery, credential: "credential")
     let task = Task {
       withUnsafeCurrentTask { $0?.cancel() }
@@ -369,8 +369,8 @@ private struct RecoveryTestProvider: MovieMetadataProvider {
   var recovery: ProcessingRecoveryService?
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     _ = try recovery?.read()

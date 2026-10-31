@@ -33,7 +33,7 @@ final class ConfigurationViewModel {
   /// Weakly retains one view-model observer without extending its lifetime.
   private struct WeakDelegate {
     /// The observer, if it is still alive.
-    weak var value: (any ConfigurationViewModelDelegate)?
+    weak var configurationViewModelDelegate: (any ConfigurationViewModelDelegate)?
   }
 
   /// Receives activity messages that should appear in the host log.
@@ -45,16 +45,16 @@ final class ConfigurationViewModel {
   ///
   /// - Parameter delegate: The view controller to notify of state changes.
   func addDelegate(_ delegate: any ConfigurationViewModelDelegate) {
-    delegates.removeAll { $0.value == nil }
-    guard !delegates.contains(where: { $0.value === delegate }) else { return }
-    delegates.append(WeakDelegate(value: delegate))
+    delegates.removeAll { $0.configurationViewModelDelegate == nil }
+    guard !delegates.contains(where: { $0.configurationViewModelDelegate === delegate }) else { return }
+    delegates.append(WeakDelegate(configurationViewModelDelegate: delegate))
   }
 
   /// Removes an observer and any observers that have already been released.
   ///
   /// - Parameter delegate: The observer to remove.
   func removeDelegate(_ delegate: any ConfigurationViewModelDelegate) {
-    delegates.removeAll { $0.value == nil || $0.value === delegate }
+    delegates.removeAll { $0.configurationViewModelDelegate == nil || $0.configurationViewModelDelegate === delegate }
   }
 
   /// Current configured collection rows and their latest availability evidence.
@@ -361,7 +361,7 @@ final class ConfigurationViewModel {
   /// Persists only typed evidence and reports logging failure separately from configuration results.
   private func recordActivity(
     action: MovieFolderActivityLogEvent.Action, status: MovieFolderActivityLogEvent.Status,
-    activityLogContext: MovieFolderActivityLogContext? = .none, failure: FolderProcessingFailure? = .none
+    activityLogContext: MovieFolderActivityLogContext? = .none, failure: AutomaticFolderProcessingFailure? = .none
   ) async {
     let event = activityLogContext?.event(action: action, status: status, failure: failure)
       ?? MovieFolderActivityLogEvent(action: action, status: status, failure: failure)
@@ -382,8 +382,8 @@ final class ConfigurationViewModel {
 
   /// Notifies all currently retained observers of the latest state.
   private func publish() {
-    delegates.removeAll { $0.value == nil }
-    for delegate in delegates.compactMap(\.value) { delegate.configurationViewModelDidChange(self) }
+    delegates.removeAll { $0.configurationViewModelDelegate == nil }
+    for delegate in delegates.compactMap(\.configurationViewModelDelegate) { delegate.configurationViewModelDidChange(self) }
   }
 }
 

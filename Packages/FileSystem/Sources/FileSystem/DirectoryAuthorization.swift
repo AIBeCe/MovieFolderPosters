@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// Retains a resolved directory URL and its security-scoped access for the access's lifetime.
-public final class DirectoryAccess: Sendable {
+public final class AuthorizedDirectoryAccess: Sendable {
   /// The resolved directory URL whose access is held for this access's lifetime.
   public let url: URL
 
@@ -50,7 +50,7 @@ extension FileSystemService {
     bookmark: Data,
     securityScoped: Bool,
     expectedIdentity: String? = .none
-  ) throws -> DirectoryAccess {
+  ) throws -> AuthorizedDirectoryAccess {
     var resolutionOptions: URL.BookmarkResolutionOptions = [.withoutUI, .withoutMounting]
     if securityScoped {
       resolutionOptions.insert(.withSecurityScope)
@@ -90,7 +90,7 @@ extension FileSystemService {
 
     transferAccessToAccess = startedAccessing
 
-    return DirectoryAccess(
+    return AuthorizedDirectoryAccess(
       url: directory,
       isAccessingSecurityScopedResource: startedAccessing
     )
@@ -143,7 +143,7 @@ private func validateDirectoryDescriptorAccess(
       currentPathIdentity: openedPersistentIdentity,
       expectedIdentity: expectedIdentity
     )
-  } catch is DirectoryIdentityUnavailable where expectedIdentity == .none {
+  } catch is DirectoryIdentityUnavailableError where expectedIdentity == .none {
     // The descriptor and current path already match; durable identity is optional for this access.
   }
 }

@@ -106,6 +106,164 @@ struct MoviePosterActionViewModelTests {
     #expect(appliedMovieID == 7)
   }
 
+  /// Verifies that cancelling a search prevents late results from changing state.
+  @Test func cancelledSearchDoesNotPublishLateResults() async {
+    let service = ActionServiceStub(searchDelay: .seconds(30))
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
+    viewModel.search()
+
+    #expect(viewModel.isBusy)
+    viewModel.cancelRetryTask()
+
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(!viewModel.isBusy)
+    #expect(viewModel.movies.isEmpty)
+    #expect(viewModel.searchResult == .none)
+  }
+
+  /// Verifies that search failures remain visible and recoverable.
+  @Test func searchFailureRemainsVisibleAsRecoverableState() async {
+    let service = ActionServiceStub()
+    await service.failSearch()
+    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
+    viewModel.setQuery("Dune")
+
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
+    viewModel.search()
+    await waitForIdle(viewModel)
+
+    #expect(!viewModel.isBusy)
+    #expect(viewModel.errorMessage != .none)
+  }
+
+  /// Creates a test request for the sample movie folder.
+  private func request(_ action: MoviePosterAction) -> MoviePosterRequest {
+    MoviePosterRequest(
+      rootID: UUID(), childName: "Dune (2021)", identity: "identity", action: action)
+  }
+
+  /// Creates sample movie metadata with the supplied identifier and poster path.
+  private static func movie(id: Int, posterPath: String?) -> MovieMetadata {
+    MovieMetadata(
+      id: id, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: posterPath)
+  }
+
+  /// Waits until the view model publishes completion of its current operation.
+  private func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
+    let existingDelegate = viewModel.delegate
+    defer { viewModel.delegate = existingDelegate }
+    let probe = MoviePosterActionViewModelStateDelegate()
+    viewModel.delegate = probe
+    await probe.waitForIdle(viewModel)
+  }
+
+  /// Verifies that the state delegate reads updated values from the sending model.
+  @Test func stateDelegateReadsUpdatedStateFromSender() async {
+    let viewModel = MoviePosterActionViewModel(
+      service: ActionServiceStub(), request: request(.change))
+    let state = MoviePosterActionViewModelStateDelegate()
+    let navigation = ActionNavigationProbe()
+    viewModel.delegate = state
+    viewModel.navigationDelegate = navigation
+
+    viewModel.setQuery("Updated title")
+    viewModel.setYear("invalid")
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
+    viewModel.search()
+
+    #expect(state.sender === viewModel)
+    #expect(state.query == "Updated title")
+    #expect(state.yearText == "invalid")
+    #expect(state.errorMessage == "Enter a release year from 1888 through 2099, or leave it blank.")
+    #expect(navigation.openedURL == .none)
+  }
+
+  /// Verifies that navigation uses its own delegate and preserves the state delegate.
+  @Test func navigationDelegateReceivesAssignedMovieURLWithoutReplacingStateDelegate() async {
+    let viewModel = MoviePosterActionViewModel(
+      service: ActionServiceStub(), request: request(.view))
+    let state = MoviePosterActionViewModelStateDelegate()
+    let navigation = ActionNavigationProbe()
+    viewModel.delegate = state
+    viewModel.navigationDelegate = navigation
+
+    viewModel.openMoviePage()
+    await state.waitForIdle(viewModel)
+
+    #expect(navigation.sender === viewModel)
+    #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
+    #expect(navigation.statusMessage == "Opening the assigned movie on TMDb.")
+    #expect(state.statusMessage == "Opening the assigned movie on TMDb.")
+    #expect(state.isBusy == false)
+    #expect(viewModel.delegate === state)
+  }
+
+  /// Verifies that delegates are weak and operations remain safe after their release.
+  @Test func delegatesAreWeakAndTasksRemainSafeAfterTheirRelease() async {
+    let viewModel = MoviePosterActionViewModel(
+      service: ActionServiceStub(), request: request(.change))
+    var state: MoviePosterActionViewModelStateDelegate? = MoviePosterActionViewModelStateDelegate()
+    var navigation: ActionNavigationProbe? = ActionNavigationProbe()
+    weak var weakState = state
+    weak var weakNavigation = navigation
+    viewModel.delegate = state
+    viewModel.navigationDelegate = navigation
+
+    state = .none
+    navigation = .none
+
+    #expect(weakState == nil)
+    #expect(weakNavigation == nil)
+    #expect(viewModel.delegate == nil)
+    #expect(viewModel.navigationDelegate == nil)
+    viewModel.setQuery("")
+    if viewModel.searchLanguage == .none {
+      viewModel.prepareSearchLanguage()
+      await waitForIdle(viewModel)
+    }
+    viewModel.search()
+    #expect(viewModel.errorMessage == "Enter a movie title to search.")
+  }
+
+  /// Failed or cancelled authorization must not enable an undisclosed language search.
+  @Test(arguments: [false, true])
+  func missingLanguageCaptureBlocksSearchUntilSuccessfulRetry(cancelled: Bool) async {
+    let service = ActionServiceStub()
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    await service.configureLanguageCapture(fails: !cancelled, delay: cancelled ? .seconds(60) : .zero)
+    model.prepareSearchLanguage()
+    if cancelled { model.cancelRetryTask() }
+    await waitForIdle(model)
+    #expect(model.searchLanguage == .none)
+    model.search()
+    await waitForIdle(model)
+    #expect(await service.callCounts.search == 0)
+    await service.configureLanguageCapture(fails: false, delay: .zero)
+    model.prepareSearchLanguage()
+    await waitForIdle(model)
+    #expect(model.searchLanguage == .english)
+    model.search()
+    await waitForIdle(model)
+    #expect(await service.callCounts.search == 1)
+  }
+
+}
+
+/// Covers search-result review and invalidation when explicit inputs or authorization change.
+@MainActor
+struct MoviePosterActionSearchReviewTests {
   /// Editing either submitted field invalidates results, their selection, and spelling context.
   @Test(arguments: [false, true])
   func editingSubmittedQueryOrYearClearsSearchState(editYear: Bool) async {
@@ -226,159 +384,24 @@ struct MoviePosterActionViewModelTests {
     #expect(viewModel.possibleSpellingDifference(for: Self.movie(id: 7, posterPath: "/dune.jpg")) == .none)
   }
 
-  /// Verifies that cancelling a search prevents late results from changing state.
-  @Test func cancelledSearchDoesNotPublishLateResults() async {
-    let service = ActionServiceStub(searchDelay: .seconds(30))
-    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-    viewModel.setQuery("Dune")
-    if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
-      await waitForIdle(viewModel)
-    }
-    viewModel.search()
-
-    #expect(viewModel.isBusy)
-    viewModel.cancelRetryTask()
-
-    try? await Task.sleep(for: .milliseconds(20))
-    #expect(!viewModel.isBusy)
-    #expect(viewModel.movies.isEmpty)
-    #expect(viewModel.searchResult == .none)
-  }
-
-  /// Verifies that search failures remain visible and recoverable.
-  @Test func searchFailureRemainsVisibleAsRecoverableState() async {
-    let service = ActionServiceStub()
-    await service.failSearch()
-    let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-    viewModel.setQuery("Dune")
-
-    if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
-      await waitForIdle(viewModel)
-    }
-    viewModel.search()
-    await waitForIdle(viewModel)
-
-    #expect(!viewModel.isBusy)
-    #expect(viewModel.errorMessage != .none)
-  }
-
   /// Creates a test request for the sample movie folder.
   private func request(_ action: MoviePosterAction) -> MoviePosterRequest {
-    MoviePosterRequest(
-      rootID: UUID(), childName: "Dune (2021)", identity: "identity", action: action)
+    MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "identity", action: action)
   }
 
   /// Creates sample movie metadata with the supplied identifier and poster path.
   private static func movie(id: Int, posterPath: String?) -> MovieMetadata {
-    MovieMetadata(
-      id: id, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
-      posterPath: posterPath)
+    MovieMetadata(id: id, title: "Dune", originalTitle: "Dune", releaseYear: 2021, posterPath: posterPath)
   }
 
   /// Waits until the view model publishes completion of its current operation.
   private func waitForIdle(_ viewModel: MoviePosterActionViewModel) async {
     let existingDelegate = viewModel.delegate
     defer { viewModel.delegate = existingDelegate }
-    let probe = ActionStateProbe()
+    let probe = MoviePosterActionViewModelStateDelegate()
     viewModel.delegate = probe
     await probe.waitForIdle(viewModel)
   }
-
-  /// Verifies that the state delegate reads updated values from the sending model.
-  @Test func stateDelegateReadsUpdatedStateFromSender() async {
-    let viewModel = MoviePosterActionViewModel(
-      service: ActionServiceStub(), request: request(.change))
-    let state = ActionStateProbe()
-    let navigation = ActionNavigationProbe()
-    viewModel.delegate = state
-    viewModel.navigationDelegate = navigation
-
-    viewModel.setQuery("Updated title")
-    viewModel.setYear("invalid")
-    if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
-      await waitForIdle(viewModel)
-    }
-    viewModel.search()
-
-    #expect(state.sender === viewModel)
-    #expect(state.query == "Updated title")
-    #expect(state.yearText == "invalid")
-    #expect(state.errorMessage == "Enter a release year from 1888 through 2099, or leave it blank.")
-    #expect(navigation.openedURL == .none)
-  }
-
-  /// Verifies that navigation uses its own delegate and preserves the state delegate.
-  @Test func navigationDelegateReceivesAssignedMovieURLWithoutReplacingStateDelegate() async {
-    let viewModel = MoviePosterActionViewModel(
-      service: ActionServiceStub(), request: request(.view))
-    let state = ActionStateProbe()
-    let navigation = ActionNavigationProbe()
-    viewModel.delegate = state
-    viewModel.navigationDelegate = navigation
-
-    viewModel.openMoviePage()
-    await state.waitForIdle(viewModel)
-
-    #expect(navigation.sender === viewModel)
-    #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
-    #expect(navigation.statusMessage == "Opening the assigned movie on TMDb.")
-    #expect(state.statusMessage == "Opening the assigned movie on TMDb.")
-    #expect(state.isBusy == false)
-    #expect(viewModel.delegate === state)
-  }
-
-  /// Verifies that delegates are weak and operations remain safe after their release.
-  @Test func delegatesAreWeakAndTasksRemainSafeAfterTheirRelease() async {
-    let viewModel = MoviePosterActionViewModel(
-      service: ActionServiceStub(), request: request(.change))
-    var state: ActionStateProbe? = ActionStateProbe()
-    var navigation: ActionNavigationProbe? = ActionNavigationProbe()
-    weak var weakState = state
-    weak var weakNavigation = navigation
-    viewModel.delegate = state
-    viewModel.navigationDelegate = navigation
-
-    state = .none
-    navigation = .none
-
-    #expect(weakState == nil)
-    #expect(weakNavigation == nil)
-    #expect(viewModel.delegate == nil)
-    #expect(viewModel.navigationDelegate == nil)
-    viewModel.setQuery("")
-    if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
-      await waitForIdle(viewModel)
-    }
-    viewModel.search()
-    #expect(viewModel.errorMessage == "Enter a movie title to search.")
-  }
-
-  /// Failed or cancelled authorization must not enable an undisclosed language search.
-  @Test(arguments: [false, true])
-  func missingLanguageCaptureBlocksSearchUntilSuccessfulRetry(cancelled: Bool) async {
-    let service = ActionServiceStub()
-    let model = MoviePosterActionViewModel(service: service, request: request(.change))
-    await service.configureLanguageCapture(fails: !cancelled, delay: cancelled ? .seconds(60) : .zero)
-    model.prepareSearchLanguage()
-    if cancelled { model.cancelRetryTask() }
-    await waitForIdle(model)
-    #expect(model.searchLanguage == .none)
-    model.search()
-    await waitForIdle(model)
-    #expect(await service.callCounts.search == 0)
-    await service.configureLanguageCapture(fails: false, delay: .zero)
-    model.prepareSearchLanguage()
-    await waitForIdle(model)
-    #expect(model.searchLanguage == .english)
-    model.search()
-    await waitForIdle(model)
-    #expect(await service.callCounts.search == 1)
-  }
-
 }
 
 /// Actor-isolated fake that records poster-action service calls.
@@ -517,7 +540,7 @@ private actor ActionServiceStub: MoviePosterActionServicing {
 
 /// Captures state notifications from a poster-action view model.
 @MainActor
-private final class ActionStateProbe: MoviePosterActionViewModelDelegate {
+private final class MoviePosterActionViewModelStateDelegate: MoviePosterActionViewModelDelegate {
   /// The most recent model that published state.
   weak var sender: MoviePosterActionViewModel?
   /// Last observed search title.

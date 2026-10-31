@@ -191,7 +191,7 @@ struct ConfigurationViewModelTests {
     let service = ConfigurationServiceFake(
       summary: ConfigurationSummary(directories: [directory], credentialConfigured: false),
       failsSummaryAfterRemoval: true)
-    let activityHistoryService = ActivityServiceFake()
+    let activityHistoryService = MovieFolderActivityServiceFake()
     let viewModel = ConfigurationViewModel(service: service, activity: activityHistoryService)
     await viewModel.load()
     await viewModel.removeDirectory(directory.id)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A typed activity event in durable commit order.
-public struct ActivityEntry<Event: Codable & Sendable>: Codable, Sendable, Identifiable {
+public struct CommittedActivityEntry<Event: Codable & Sendable>: Codable, Sendable, Identifiable {
   /// The stable identity assigned when the event is committed.
   public let id: UUID
   /// The increasing commit sequence, independent of the event's occurrence time.

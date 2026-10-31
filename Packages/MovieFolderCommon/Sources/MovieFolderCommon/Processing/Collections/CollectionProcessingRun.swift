@@ -19,9 +19,10 @@ nonisolated public struct CollectionProcessingRun: Codable, Sendable, Equatable 
   /// End time, absent while the run remains active.
   public var endedAt: Date?
   /// Current lifecycle result.
-  public var state: CollectionProcessingRunState
+  public var runState: CollectionProcessingRunState
   /// Preserves the persisted field names independently of Swift property naming.
-  private enum CodingKeys: String, CodingKey { case id, action = "kind", startedAt, endedAt, state }
+  private enum CodingKeys: String, CodingKey { case id, action = "kind", startedAt, endedAt
+    case runState = "state" }
 
   /// Creates run metadata with a fresh identifier by default.
   ///
@@ -30,13 +31,13 @@ nonisolated public struct CollectionProcessingRun: Codable, Sendable, Equatable 
   ///   - action: Scope of the run.
   ///   - startedAt: Time the run start was persisted.
   ///   - endedAt: Time the run ended, if known.
-  ///   - state: Current lifecycle result.
+  ///   - runState: Current lifecycle result.
   public init(id: UUID = UUID(), action: CollectionProcessingAction, startedAt: Date,
-              endedAt: Date? = .none, state: CollectionProcessingRunState = .running) {
+              endedAt: Date? = .none, runState: CollectionProcessingRunState = .running) {
     self.id = id
     self.action = action
     self.startedAt = startedAt
     self.endedAt = endedAt
-    self.state = state
+    self.runState = runState
   }
 }

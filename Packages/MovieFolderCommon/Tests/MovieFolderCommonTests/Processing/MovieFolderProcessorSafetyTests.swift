@@ -17,7 +17,7 @@ extension MovieFolderProcessorTests {
     try fixture.addFolder("Dune (2021)")
     let store = try PersistenceStore(directory: fixture.base.appendingPathComponent("guard"))
     var guardProbe: AccessIconChangeVerifier? = AccessIconChangeVerifier(store: store)
-    weak var weakVerifier = guardProbe
+    weak let weakVerifier = guardProbe
     let processor = MovieFolderProcessor(
       persistence: fixture.persistence, provider: CountingProvider(),
       cacheDirectory: fixture.cache, posterAssigner: AccessCheckingAssigner(store: store),
@@ -134,16 +134,11 @@ extension MovieFolderProcessorTests {
     let fileSystem = FileSystemService()
     let candidate = try #require(fileSystem.candidates(in: fixture.movies).first { $0.name == "Dune (2021)" })
     let canonicalPath = fixture.movies.resolvingSymlinksInPath().standardizedFileURL.path
-    let legacyCache = """
-    {"folders":{"Dune (2021)":{"fingerprint":"\(candidate.fingerprint)","status":"transientFailure",\
-    "retryDate":20000,"matchedMovieID":null,"posterPath":null,"latestAttempt":{"code":"timeout",\
-    "stage":"search","occurredAt":9000}},"Removed":{"fingerprint":"gone","status":"unresolved",\
-    "retryDate":null,"matchedMovieID":null,"posterPath":null}},"queries":{},"rootBackoffUntil":null}
-    """
+    let legacyCache = try makeLegacyCache(fingerprint: candidate.fingerprint)
     let cacheKey = "movie-folder-processing:\(canonicalPath)"
     do {
       let access = try #require(try fixture.persistence.acquireAccess(for: cacheKey))
-      try access.write(Data(legacyCache.utf8))
+      try access.write(legacyCache)
     }
 
     let provider = CountingProvider()
@@ -170,12 +165,12 @@ extension MovieFolderProcessorTests {
   /// The clearer Swift name retains the existing on-disk provider deadline field.
   @Test func providerRetryDatePreservesSavedCacheKey() throws {
     let deadline = Date(timeIntervalSince1970: 20_000)
-    let data = try JSONEncoder().encode(ProcessingState(providerRetryAt: deadline))
+    let data = try JSONEncoder().encode(CollectionProcessingCache(providerRetryAt: deadline))
     let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
     #expect(object["rootBackoffUntil"] != nil)
     #expect(object["providerRetryAt"] == nil)
-    #expect(try JSONDecoder().decode(ProcessingState.self, from: data).providerRetryAt == deadline)
+    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from: data).providerRetryAt == deadline)
   }
 
   /// Verifies enumeration Skips Hidden Folders Symlinks And Nested Folders.
@@ -287,5 +282,40 @@ extension MovieFolderProcessorTests {
     #expect(concurrent.rootAccessUnavailable)
     let searchCount = await provider.searchCount
     #expect(searchCount == 1)
+  }
+
+  /// Encodes a prior cache record with the current envelope and a saved retry failure.
+  /// - Parameter fingerprint: Current filesystem identity for the retryable folder.
+  /// - Returns: JSON data consumed by the processor's cache decoder.
+  /// - Throws: JSON serialization errors.
+  private func makeLegacyCache(fingerprint: String) throws -> Data {
+    try JSONSerialization.data(withJSONObject: [
+      "schemaVersion": 1,
+      "alternativeTitles": [String: String](),
+      "movieMatchingConfiguration": [
+        "requiresReleaseYearForAutomaticMatching": false,
+        "comparesOriginalTitles": true,
+        "searchLanguage": "en-US"
+      ],
+      "folders": [
+        "Dune (2021)": [
+          "fingerprint": fingerprint,
+          "status": "transientFailure",
+          "retryDate": 20_000,
+          "matchedMovieID": NSNull(),
+          "posterPath": NSNull(),
+          "latestAttempt": ["code": "timeout", "stage": "search", "occurredAt": 9_000]
+        ],
+        "Removed": [
+          "fingerprint": "gone",
+          "status": "unresolved",
+          "retryDate": NSNull(),
+          "matchedMovieID": NSNull(),
+          "posterPath": NSNull()
+        ]
+      ],
+      "queries": [String: String](),
+      "rootBackoffUntil": NSNull()
+    ])
   }
 }

@@ -441,33 +441,14 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   /// - Parameter identifier: Stable collection identifier.
   /// - Returns: Current collection choices and inherited application defaults.
   func savedCollectionState(_ identifier: UUID) async throws -> SavedCollectionState
-  /// Atomically saves collection setup and optional privacy against the captured state.
+  /// Atomically saves a complete collection edit against the captured state.
   /// - Parameters:
   ///   - identifier: Stable configured collection identity.
-  ///   - displayName: Friendly name, with blank text clearing the override.
-  ///   - movieMatchingConfiguration: Explicit matching choices, or absence to inherit defaults.
-  ///   - processingConfiguration: Requested inclusion choices.
-  ///   - usesPrivateHistory: Whether new collection history omits linked identifiers; absence preserves the saved choice.
+  ///   - update: Proposed presentation, matching, processing, and history choices.
   ///   - expected: Captured state used to reject stale edits.
   /// - Throws: Stale configuration, missing collection, authorization, or persistence failures.
   func updateCollection(
-    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration,
-    expected: SavedCollectionState
-  ) async throws
-  /// Atomically saves collection setup and an explicit privacy choice against the captured state.
-  /// - Parameters:
-  ///   - identifier: Stable configured collection identity.
-  ///   - displayName: Friendly name, with blank text clearing the override.
-  ///   - movieMatchingConfiguration: Explicit matching choices, or absence to inherit defaults.
-  ///   - processingConfiguration: Requested inclusion choices.
-  ///   - usesPrivateHistory: Whether new collection history omits linked identifiers.
-  ///   - expected: Captured state used to reject stale edits.
-  /// - Throws: Stale configuration, missing collection, authorization, or persistence failures.
-  func updateCollection(
-    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool,
-    expected: SavedCollectionState
+    _ identifier: UUID, update: CollectionConfigurationUpdate, expected: SavedCollectionState
   ) async throws
 }
 
@@ -485,6 +466,34 @@ nonisolated public struct PreparedCollection: Sendable, Equatable {
   public init(directory: MonitoredDirectory, hostBookmark: Data) {
     self.directory = directory
     self.hostBookmark = hostBookmark
+  }
+}
+
+/// One atomic edit to a collection's presentation, matching, processing, and history choices.
+nonisolated public struct CollectionConfigurationUpdate: Sendable, Equatable {
+  /// Proposed custom name; `nil` restores the default name.
+  public let displayName: String?
+  /// Proposed collection-specific matching rules; `nil` inherits application defaults.
+  public let movieMatchingConfiguration: MovieMatchingConfiguration?
+  /// Proposed processing inclusion and pause state.
+  public let processingConfiguration: CollectionProcessingConfiguration
+  /// Whether future activity entries omit collection details.
+  public let usesPrivateHistory: Bool
+
+  /// Creates a complete collection edit request.
+  /// - Parameters:
+  ///   - displayName: Proposed custom name, or `nil` to use the default.
+  ///   - movieMatchingConfiguration: Collection-specific matching rules, or `nil` to inherit application defaults.
+  ///   - processingConfiguration: Proposed pause and inclusion choices.
+  ///   - usesPrivateHistory: Whether future history omits collection details.
+  public init(
+    displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
+    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool
+  ) {
+    self.displayName = displayName
+    self.movieMatchingConfiguration = movieMatchingConfiguration
+    self.processingConfiguration = processingConfiguration
+    self.usesPrivateHistory = usesPrivateHistory
   }
 }
 
@@ -557,17 +566,7 @@ nonisolated public extension ConfigurationServicing {
   }
   /// Rejects services that cannot persist collection choices atomically.
   func updateCollection(
-    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration,
-    expected: SavedCollectionState
-  ) throws {
-    throw ConfigurationError.configurationChanged
-  }
-  /// Rejects services that cannot persist collection choices and privacy atomically.
-  func updateCollection(
-    _ identifier: UUID, displayName: String?, movieMatchingConfiguration: MovieMatchingConfiguration?,
-    processingConfiguration: CollectionProcessingConfiguration, usesPrivateHistory: Bool,
-    expected: SavedCollectionState
+    _ identifier: UUID, update: CollectionConfigurationUpdate, expected: SavedCollectionState
   ) throws {
     throw ConfigurationError.configurationChanged
   }

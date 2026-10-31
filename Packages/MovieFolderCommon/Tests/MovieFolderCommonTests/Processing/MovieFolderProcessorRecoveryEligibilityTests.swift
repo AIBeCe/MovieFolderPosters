@@ -7,7 +7,7 @@ import Testing
 
 @testable import MovieFolderCommon
 
-/// A changed retry timestamp cannot authorize repeating a stable blocked assessment.
+/// A changed retry timestamp cannot authorize retrying a stable blocked result.
 @Test(arguments: [FolderProcessingReason.parsingProblem, .missingArtwork])
 func automaticRecoveryKeepsBlockedReasonsUntilFolderEvidenceChanges(reason: FolderProcessingReason) async throws {
   let fixture = try Fixture()
@@ -15,7 +15,7 @@ func automaticRecoveryKeepsBlockedReasonsUntilFolderEvidenceChanges(reason: Fold
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
     retryDate: clock.now.addingTimeInterval(-1), matchedMovieID: .none, posterPath: .none,
     processingReason: reason)]), fixture: fixture)
@@ -43,8 +43,8 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
   let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
-  let staleSearch = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  let staleSearch = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
     matchedMovieID: .none, posterPath: .none, processingReason: reason)],
     queries: [queryKey: staleSearch, "unrelated": staleSearch]), fixture: fixture)
@@ -66,12 +66,12 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
 
 /// A still-unmatched suffix folder is not retried forever after its old parse result is migrated.
 @Test
-func cachedIdentifierSuffixReassessmentStopsAfterCurrentUnresolvedDecision() async throws {
+func cachedIdentifierSuffixReviewStopsAfterCurrentUnresolvedDecision() async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Dune (2021) [tt1160419]")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
     matchedMovieID: .none, posterPath: .none, processingReason: .parsingProblem)]), fixture: fixture)
   let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false))
@@ -98,8 +98,8 @@ func cachedEditionSuffixDecisionIsReassessedOnce() async throws {
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
   let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
-  let staleSearch = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  let staleSearch = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
     matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)],
     queries: [queryKey: staleSearch, "unrelated": staleSearch]), fixture: fixture)
@@ -151,8 +151,8 @@ func incompleteSearchRecoveryEvictsOnlyItsQueryBeforeRetry() async throws {
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
   let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
-  let incomplete = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  let incomplete = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
     retryDate: clock.now.addingTimeInterval(-1), matchedMovieID: .none, posterPath: .none,
     processingReason: .incompleteSearch)], queries: [queryKey: incomplete, "unrelated": incomplete]), fixture: fixture)
@@ -177,8 +177,8 @@ func legacyUnresolvedRecoveryReassessesFreshAndPersistsClassification() async th
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
   let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
-  let incomplete = CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  let incomplete = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
     retryDate: clock.now.addingTimeInterval(86_400), matchedMovieID: .none, posterPath: .none)],
     queries: [queryKey: incomplete, "unrelated": incomplete],
@@ -228,13 +228,13 @@ func automaticRecoveryPersistsProviderFailureCategory(
 
 /// An interruption is durably classified before awaiting fresh legacy evidence, then resumes after restart.
 @Test
-func legacyReassessmentInterruptionPersistsResumeReason() async throws {
+func legacyReviewInterruptionPersistsResumeReason() async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  try writeRecoveryCache(ProcessingState(folders: [candidate.name: FolderRecord(
+  try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
     retryDate: clock.now.addingTimeInterval(86_400), matchedMovieID: .none, posterPath: .none)]), fixture: fixture)
   let provider = CountingProvider(delaysSearch: true)
@@ -255,7 +255,8 @@ func legacyReassessmentInterruptionPersistsResumeReason() async throws {
   #expect(try readRecoveryCache(fixture).folders[candidate.name]?.processingReason == .noSuitableMovie)
 }
 
-/// Nonfinite Retry-After text cannot corrupt the processor cache after shared configuration safely handles the response.
+/// Nonfinite Retry-After text cannot corrupt the processor cache after shared configuration safely handles the
+/// response.
 @Test(arguments: ["nan", "inf", "-inf"])
 func wrappedRateLimitRecoveryUsesFinitePersistedDeadline(header: String) async throws {
   let fixture = try Fixture()
@@ -266,7 +267,7 @@ func wrappedRateLimitRecoveryUsesFinitePersistedDeadline(header: String) async t
     store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")), now: { clock.now })
   let processor = MovieFolderProcessor(
     persistence: fixture.persistence,
-    provider: RecoveryMovieMetadataProvider(
+    provider: RecoveryAwareMovieMetadataProvider(
       provider: CountingProvider(searchError: .rateLimited(retryAfter: header)),
       recovery: recovery, credential: "token"),
     cacheDirectory: fixture.cache, now: { clock.now }, recovery: recovery)
@@ -281,17 +282,17 @@ func wrappedRateLimitRecoveryUsesFinitePersistedDeadline(header: String) async t
 }
 
 /// Seeds the real operational store with historic evidence without touching movie contents.
-private func writeRecoveryCache(_ state: ProcessingState, fixture: Fixture) throws {
+private func writeRecoveryCache(_ state: CollectionProcessingCache, fixture: Fixture) throws {
   let access = try #require(try fixture.persistence.acquireAccess(
     for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
   try access.write(JSONEncoder().encode(state))
 }
 
 /// Reads durable cache evidence after processing has released the root access.
-private func readRecoveryCache(_ fixture: Fixture) throws -> ProcessingState {
+private func readRecoveryCache(_ fixture: Fixture) throws -> CollectionProcessingCache {
   let access = try #require(try fixture.persistence.acquireAccess(
     for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
   let bytes = try #require(try access.read())
 
-  return try JSONDecoder().decode(ProcessingState.self, from: bytes)
+  return try JSONDecoder().decode(CollectionProcessingCache.self, from: bytes)
 }

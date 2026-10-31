@@ -10,7 +10,7 @@ import Testing
 struct MovieFolderFinderActionServiceTests {
   /// Artwork failure and partial collection work preserve a verified movie identity.
   @Test func copiesVerifiedFailureAndRetainsSettingsFence() async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: "  Dune  ")
     let service = MovieFolderFinderActionService(environment: fixture)
@@ -27,7 +27,7 @@ struct MovieFolderFinderActionServiceTests {
 
   /// Identifier copying does not depend on a saved title, while Title never falls back to parsed text.
   @Test func identifierWithoutTitleAndStaleEvidence() async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: " ")
     let service = MovieFolderFinderActionService(environment: fixture)
@@ -51,7 +51,7 @@ struct MovieFolderFinderActionServiceTests {
 
   /// Any invalid member rejects the whole Reveal instead of silently filtering the selection.
   @Test func rejectsWholeRevealWhenOneIdentityDiffers() async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: "Dune")
     let service = MovieFolderFinderActionService(environment: fixture)
@@ -64,7 +64,7 @@ struct MovieFolderFinderActionServiceTests {
   }
 
   /// Saves a verified metadata identity with failed artwork, without making provider or icon calls.
-  private func seed(_ fixture: UtilityFixture, title: String) throws {
+  private func seed(_ fixture: MovieFolderFinderActionTestEnvironment, title: String) throws {
     let configuration = try fixture.repository.read()
     let directory = try #require(configuration.directories.first)
     let context = CollectionProcessingContext(rootID: directory.id,
@@ -77,7 +77,7 @@ struct MovieFolderFinderActionServiceTests {
     state.folders = [FolderProcessingRecord(name: fixture.request.childName, identity: fixture.request.identity,
       state: .failed, reason: .missingArtwork, movieID: 7, movieTitle: title,
       movieIdentitySource: .explicitSelection, assessedAt: Date())]
-    state.currentRun?.state = .partial
+    state.currentRun?.runState = .partial
     _ = try fixture.processing.commit(state, expectedRevision: state.revision)
   }
 }
@@ -86,7 +86,7 @@ extension MovieFolderFinderActionServiceTests {
   /// Unverified provenance, replacement folders, and zero/oversized Reveal selections reject admission.
   @Test(arguments: ["provenance", "replacement", "empty", "oversized", "resolved"])
   func rejectsInvalidUtilityEvidence(_ scenario: String) async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: "Dune")
     let service = MovieFolderFinderActionService(environment: fixture)
@@ -101,7 +101,7 @@ extension MovieFolderFinderActionServiceTests {
     if scenario == "provenance" || scenario == "resolved" {
       var state = try #require(try fixture.processing.read(rootID: fixture.request.rootID))
       if scenario == "provenance" { state.folders[0].movieIdentitySource = .none }
-      if scenario == "resolved" { state.folders[0].state = .preserved }
+      if scenario == "resolved" { state.folders[0].processingState = .preserved }
       _ = try fixture.processing.commit(state, expectedRevision: state.revision)
     }
     if scenario == "provenance" || scenario == "replacement" {
@@ -118,16 +118,16 @@ extension MovieFolderFinderActionServiceTests {
 
   /// Closing or configuration invalidation prevents late effects from noncooperative preparation.
   @Test @MainActor func invalidationSuppressesPreparedClipboardEffect() async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: "Dune")
-    let gate = UtilityPreparationGate()
+    let gate = MovieFolderUtilityPreparationGate()
     let utilities = SuspendedUtilityService(base: MovieFolderFinderActionService(environment: fixture), gate: gate)
     let platform = UtilityPlatformProbe(repository: fixture.repository)
     let request = try MovieFolderContextMenuRequest(rootID: fixture.request.rootID,
       target: .child(name: fixture.request.childName, identity: fixture.request.identity), action: .copyMovieTitle)
     let summaries = CollectionSummaryViewModel(service: EmptyCollectionSummaryService())
-    let model = CollectionProcessingDetailsViewModel(request: request, summaries: summaries,
+    let model = CollectionProcessingDetailsViewModel(capturedTargetRequest: request, summaries: summaries,
       utilities: utilities, platform: platform)
     model.copy(.copyMovieTitle)
     await gate.waitForPreparation()
@@ -141,7 +141,7 @@ extension MovieFolderFinderActionServiceTests {
   /// - Parameter completion: Whether admission completes normally or after its sheet invalidates the pending effect.
   @Test(arguments: ["success", "close", "configuration"]) @MainActor
   func resultsViewModelRevealsExactSelectionAndSuppressesLateEffects(_ completion: String) async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: "Dune")
     var state = try #require(try fixture.processing.read(rootID: fixture.request.rootID))
@@ -151,13 +151,13 @@ extension MovieFolderFinderActionServiceTests {
         withIntermediateDirectories: false)
 
       return FolderProcessingRecord(name: name,
-        identity: try fileSystem.readCurrentState(ofChild: name, in: fixture.movies).identity,
+        identity: try fileSystem.readCurrentFolderCandidate(ofChild: name, in: fixture.movies).identity,
         state: .failed, reason: .connectivity)
     }
     _ = try fixture.processing.commit(state, expectedRevision: state.revision)
     let summaries = CollectionSummaryViewModel(service: CollectionSummaryService(
       configuration: fixture.repository, processingStore: fixture.processing,
-      coordinationStore: try PersistenceStore(directory: fixture.container.appendingPathComponent("ProcessingLocks"))))
+      processingLockStore: try PersistenceStore(directory: fixture.container.appendingPathComponent("ProcessingLocks"))))
     summaries.reload()
     for _ in 0..<200 where summaries.summary(for: fixture.request.rootID) == .none {
       try await Task.sleep(for: .milliseconds(5))
@@ -165,12 +165,12 @@ extension MovieFolderFinderActionServiceTests {
     #expect(try #require(summaries.summary(for: fixture.request.rootID)).unresolvedFolders()?.count == 3)
     let platform = UtilityPlatformProbe(repository: fixture.repository)
     let base = MovieFolderFinderActionService(environment: fixture)
-    let gate = UtilityPreparationGate()
+    let gate = MovieFolderUtilityPreparationGate()
     let utilities: any MovieFolderFinderActionServicing = completion == "success" ? base
       : SuspendedUtilityService(base: base, gate: gate)
     let model = CollectionResultsViewModel(rootID: fixture.request.rootID, summaries: summaries,
       retryService: UnavailableCollectionRetryService(), utilityService: utilities, utilityPlatform: platform)
-    #expect(model.rows.map(\.name) == ["Movie 1", "Movie 2", "Movie 10"])
+    #expect(model.unresolvedFolderRecords.map(\.folderName) == ["Movie 1", "Movie 2", "Movie 10"])
     model.selectRows(IndexSet([1, 2]))
     model.revealSelected()
     if completion != "success" {
@@ -196,7 +196,7 @@ extension MovieFolderFinderActionServiceTests {
 
   /// The actual platform invocation still owns settings access and reports clipboard failure independently.
   @Test @MainActor func platformCallRetainsFenceAndReportsClipboardFailure() async throws {
-    let fixture = try UtilityFixture()
+    let fixture = try MovieFolderFinderActionTestEnvironment()
     defer { fixture.cleanup() }
     try seed(fixture, title: "Dune")
     let request = try MovieFolderContextMenuRequest(rootID: fixture.request.rootID,
@@ -211,7 +211,7 @@ extension MovieFolderFinderActionServiceTests {
 }
 
 /// Captures only test-owned text without touching the system clipboard or Finder.
-@MainActor private final class UtilityPlatformProbe: MovieFolderUtilityPlatform {
+@MainActor private final class UtilityPlatformProbe: MovieFolderFinderUtilityPlatform {
   /// Repository checked synchronously inside the platform boundary.
   let repository: ConfigurationRepository
   /// Whether the simulated clipboard accepts its write.
@@ -237,7 +237,7 @@ extension MovieFolderFinderActionServiceTests {
 }
 
 /// Holds prepared access until the test invalidates its presentation owner.
-private actor UtilityPreparationGate {
+private actor MovieFolderUtilityPreparationGate {
   /// Noncooperative response released explicitly by the test.
   private var response: CheckedContinuation<Void, Never>?
   /// Preparation notification.
@@ -265,7 +265,7 @@ private struct SuspendedUtilityService: MovieFolderFinderActionServicing {
   /// Real test-owned authorization service.
   let base: MovieFolderFinderActionService
   /// Deterministic noncooperative suspension boundary.
-  let gate: UtilityPreparationGate
+  let gate: MovieFolderUtilityPreparationGate
   @concurrent func inspectionStatus(_ request: MovieFolderContextMenuRequest) async throws -> String {
     try await base.inspectionStatus(request)
   }
@@ -285,7 +285,7 @@ private struct SuspendedUtilityService: MovieFolderFinderActionServicing {
 }
 
 /// Real disposable utility authorization and saved outcome storage.
-private struct UtilityFixture: MoviePosterActionEnvironment {
+private struct MovieFolderFinderActionTestEnvironment: MoviePosterActionEnvironment {
   /// Parent of every disposable file used by the test.
   let container: URL
   /// Configured movie root.
@@ -317,7 +317,7 @@ private struct UtilityFixture: MoviePosterActionEnvironment {
       identity: try fileSystem.persistentDirectoryIdentity(at: movies))
     try repository.update { $0.directories = [directory] }
     request = MoviePosterRequest(rootID: directory.id, childName: "Dune (2021)",
-      identity: try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: movies).identity, action: .change)
+      identity: try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: movies).identity, action: .change)
   }
 
   func makeDirectoryBookmark(for directory: URL) throws -> Data {

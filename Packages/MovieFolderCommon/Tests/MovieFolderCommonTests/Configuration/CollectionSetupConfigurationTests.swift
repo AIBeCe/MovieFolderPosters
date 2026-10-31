@@ -30,8 +30,8 @@ struct CollectionSetupPolicyTests {
     var fields = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
       as? [String: Any])
     fields.removeValue(forKey: "movieMatchingConfiguration")
-    let old = try JSONDecoder().decode(DirectoryConfiguration.self,
-      from: JSONSerialization.data(withJSONObject: fields))
+    fields["version"] = 1
+    let old = try convertLegacySettingsFixture(JSONSerialization.data(withJSONObject: fields))
     #expect(old.movieMatchingConfiguration == MovieMatchingConfiguration())
     configuration.movieMatchingConfiguration.comparesOriginalTitles = false
     #expect(!configuration.effectiveMovieMatchingConfiguration(for: root).comparesOriginalTitles)

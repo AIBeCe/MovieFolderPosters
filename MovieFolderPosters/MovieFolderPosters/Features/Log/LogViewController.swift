@@ -51,7 +51,16 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   /// Builds the table, clear action, and surrounding layout.
   override func loadView() {
     view = NSView()
+    configureControls()
     configureTable()
+    configureLayout()
+    configureKeyboardNavigation()
+    viewModel.delegate = self
+    refresh()
+  }
+
+  /// Sets up selectors, actions, and accessibility labels for log controls.
+  private func configureControls() {
     historySourcePopUpButton.addItems(withTitles: LogViewModel.HistorySource.allCases.map(\.rawValue))
     severityFilterPopUpButton.addItems(withTitles: ["All severities", "Information", "Warning", "Error"])
     historySearchField.placeholderString = "Search messages and categories"
@@ -71,6 +80,15 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     copyButton.action = #selector(copy(_:))
     copyButton.keyEquivalent = "c"
     copyButton.keyEquivalentModifierMask = .command
+    clearButton.target = self
+    clearButton.action = #selector(clear)
+    clearButton.setAccessibilityLabel("Clear all retained history from the selected source")
+    clearButton.toolTip =
+      "Clears all retained entries from the selected source, including filtered rows. Settings and posters are kept."
+  }
+
+  /// Arranges filter, retention, status, table, and action rows in the log window.
+  private func configureLayout() {
     let sourceRow = NSStackView(views: [NSTextField(labelWithString: "Source:"),
       historySourcePopUpButton, historySearchField])
     sourceRow.spacing = 8
@@ -82,26 +100,8 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     controls.alignment = .leading
     controls.spacing = 8
     sourceRow.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
-    let historyRetentionExplanationLabel = NSTextField(wrappingLabelWithString:
-      "Recording defaults off. Disabling recording and private collection choices retain existing history. "
-        + "Clear removes all retained entries from the selected source, including hidden rows.")
-    historyRetentionExplanationLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-    historyRetentionExplanationLabel.textColor = .secondaryLabelColor
-    let recordingRow = NSStackView(views: [networkHistoryRecordingCheckbox, historyRetentionExplanationLabel])
-    recordingRow.spacing = 12
-    clearButton.target = self
-    clearButton.action = #selector(clear)
-    clearButton.setAccessibilityLabel("Clear all retained history from the selected source")
-    clearButton.toolTip =
-      "Clears all retained entries from the selected source, including filtered rows. Settings and posters are kept."
-    let clearHistoryExplanationLabel = NSTextField(wrappingLabelWithString:
-      "Clear removes every retained entry in the selected source. Settings and posters are kept.")
-    clearHistoryExplanationLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-    clearHistoryExplanationLabel.textColor = .secondaryLabelColor
-    clearHistoryExplanationLabel.setAccessibilityLabel(clearHistoryExplanationLabel.stringValue)
-    let footer = NSStackView(views: [clearHistoryExplanationLabel, NSView(), copyButton, clearButton])
-    footer.orientation = .horizontal
-    footer.alignment = .centerY
+    let recordingRow = makeRecordingRow()
+    let footer = makeFooter()
     for child in [controls, recordingRow, statusLabel, historyScrollView, footer] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
@@ -124,13 +124,42 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
       footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -14)
     ])
+  }
+
+  /// Creates the network-retention row and its explanation.
+  private func makeRecordingRow() -> NSStackView {
+    let explanation = NSTextField(wrappingLabelWithString:
+      "Recording defaults off. Disabling recording and private collection choices retain existing history. "
+        + "Clear removes all retained entries from the selected source, including hidden rows.")
+    explanation.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    explanation.textColor = .secondaryLabelColor
+    let row = NSStackView(views: [networkHistoryRecordingCheckbox, explanation])
+    row.spacing = 12
+
+    return row
+  }
+
+  /// Creates the clear-history explanation and action footer.
+  private func makeFooter() -> NSStackView {
+    let explanation = NSTextField(wrappingLabelWithString:
+      "Clear removes every retained entry in the selected source. Settings and posters are kept.")
+    explanation.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    explanation.textColor = .secondaryLabelColor
+    explanation.setAccessibilityLabel(explanation.stringValue)
+    let footer = NSStackView(views: [explanation, NSView(), copyButton, clearButton])
+    footer.orientation = .horizontal
+    footer.alignment = .centerY
+
+    return footer
+  }
+
+  /// Establishes predictable keyboard focus order across the history controls.
+  private func configureKeyboardNavigation() {
     let keyboardControls: [NSView] = [historySourcePopUpButton, historySearchField, categoryFilterPopUpButton,
       severityFilterPopUpButton, networkHistoryRecordingCheckbox, historyTableView, copyButton, clearButton]
     for (current, next) in zip(keyboardControls, keyboardControls.dropFirst() + [historySourcePopUpButton]) {
       current.nextKeyView = next
     }
-    viewModel.delegate = self
-    refresh()
   }
 
   /// Configures the activity columns and their scrolling container.
@@ -244,7 +273,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     if let selected = LogViewModel.HistorySource(rawValue: historySourcePopUpButton.titleOfSelectedItem ?? "") {
       viewModel.setSource(selected)
     }
-    viewModel.setFilters(searchText: historySearchField.stringValue,
+    viewModel.setProcessingFilters(searchText: historySearchField.stringValue,
       category: categoryFilterPopUpButton.indexOfSelectedItem > .zero
         ? categoryFilterPopUpButton.titleOfSelectedItem : .none,
       severity: severityFilterPopUpButton.indexOfSelectedItem > .zero

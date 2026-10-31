@@ -10,10 +10,12 @@ struct MovieMatcherTests {
     let movie = candidate(1, "Spirited Away", 2001, original: "千と千尋の神隠し")
     let matcher = MovieMatcher()
     let configuration = MovieMatchingConfiguration(comparesOriginalTitles: false)
-    #expect(matcher.matchMovie(title: "千と千尋の神隠し", year: 2001, search: results([movie]), configuration: configuration)
-      == .unresolved(.noSuitableMatch))
-    #expect(matcher.matchMovie(title: "Spirited Away", year: 2001, search: results([movie]), configuration: configuration)
-      == .matched(movie))
+    let originalTitleResult = matcher.matchMovie(
+      title: "千と千尋の神隠し", year: 2001, search: results([movie]), configuration: configuration)
+    let localizedTitleResult = matcher.matchMovie(
+      title: "Spirited Away", year: 2001, search: results([movie]), configuration: configuration)
+    #expect(originalTitleResult == .unresolved(.noSuitableMatch))
+    #expect(localizedTitleResult == .matched(movie))
   }
   /// Verifies accepts Unique Title And Year Agreement.
   @Test func acceptsUniqueTitleAndYearAgreement() {

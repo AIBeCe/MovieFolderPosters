@@ -6,7 +6,7 @@ import Persistence
 
 /// The immediate platform effects, invoked only after explicit host confirmation.
 @MainActor
-protocol MovieFolderUtilityPlatform: AnyObject {
+protocol MovieFolderFinderUtilityPlatform: AnyObject {
   /// Writes one verified value and reports the actual clipboard result.
   func copy(_ text: String) -> Bool
   /// Reveals the entire validated selection in one platform call.
@@ -15,7 +15,7 @@ protocol MovieFolderUtilityPlatform: AnyObject {
 
 /// Uses native clipboard and Finder presentation.
 @MainActor
-final class SystemMovieFolderUtilityPlatform: MovieFolderUtilityPlatform {
+final class SystemMovieFolderUtilityPlatform: MovieFolderFinderUtilityPlatform {
   func copy(_ text: String) -> Bool {
     NSPasteboard.general.clearContents()
 
@@ -54,7 +54,7 @@ nonisolated struct PreparedMovieFolderUtility: Sendable {
   let urls: [URL]
 
   /// Performs exactly one explicit effect synchronously; the caller checks its UI generation immediately before this.
-  @MainActor func perform(using platform: any MovieFolderUtilityPlatform) throws {
+  @MainActor func perform(using platform: any MovieFolderFinderUtilityPlatform) throws {
     try Task.checkCancellation()
     defer { withExtendedLifetime(self) {} }
     if let text {
@@ -95,7 +95,7 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
 
     var status = "Current collection: " + (root.directory.processingConfiguration.isPaused ? "Paused" : "Active")
     if case .child(let name, let identity) = request.target {
-      let child = try FileSystemService().readCurrentState(ofChild: name, in: root.root)
+      let child = try FileSystemService().readCurrentFolderCandidate(ofChild: name, in: root.root)
 
       guard child.identity == identity else { throw MovieFolderUtilityError.changed }
 
@@ -113,13 +113,13 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
     }
 
     let prepared = try await prepare(rootID: request.rootID)
-    let child = try FileSystemService().readCurrentState(ofChild: name, in: prepared.authorization.root)
+    let child = try FileSystemService().readCurrentFolderCandidate(ofChild: name, in: prepared.authorization.root)
     let state = try environment.makeCollectionProcessingStore().read(rootID: request.rootID)
 
     guard child.identity == identity, let state,
       CollectionSummaryService.matches(state.context, root: prepared.authorization.directory,
         configuration: prepared.authorization.configuration),
-      let record = state.folders.first(where: { $0.name == name && $0.identity == identity }),
+      let record = state.folders.first(where: { $0.folderName == name && $0.folderIdentity == identity }),
       let verified = VerifiedMovieDetails(record: record)
     else { throw MovieFolderUtilityError.unverified }
 
@@ -156,10 +156,10 @@ nonisolated struct MovieFolderFinderActionService: MovieFolderFinderActionServic
     for selection in selections {
       guard case .child(let name, let identity) = selection,
         (try? MovieFolderContextMenuRequest(rootID: rootID, target: selection, action: .inspect)) != .none,
-        unresolved.contains(where: { $0.name == name && $0.identity == identity })
+        unresolved.contains(where: { $0.folderName == name && $0.folderIdentity == identity })
       else { throw MovieFolderUtilityError.changed }
 
-      let child = try FileSystemService().readCurrentState(ofChild: name, in: prepared.authorization.root)
+      let child = try FileSystemService().readCurrentFolderCandidate(ofChild: name, in: prepared.authorization.root)
 
       guard child.identity == identity else { throw MovieFolderUtilityError.changed }
 

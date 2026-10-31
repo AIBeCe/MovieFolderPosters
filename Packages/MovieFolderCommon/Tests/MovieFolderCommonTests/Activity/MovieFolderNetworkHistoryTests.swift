@@ -125,7 +125,7 @@ struct MovieFolderNetworkHistoryTests {
 /// The closed representation has no slot for paths, request bodies, queries, or arbitrary error strings.
 @Test func networkHistoryVocabularyRoundTrips() throws {
   for purpose: TMDbRequestCategory in [.credentialValidation, .movieSearch, .posterConfiguration, .posterDownload] {
-    for result: TMDbRequestResult in [.response(statusCode: 200), .transportFailure, .cancelled, .responseTooLarge] {
+    for result: TMDbRequestCompletionResult in [.response(statusCode: 200), .transportFailure, .cancelled, .responseTooLarge] {
       let event = MovieFolderNetworkHistoryEvent(purpose: purpose, result: result, collectionID: UUID())
       let encoded = try JSONEncoder().encode(event)
       #expect(try JSONDecoder().decode(MovieFolderNetworkHistoryEvent.self, from: encoded) == event)

@@ -17,7 +17,7 @@ public enum TMDbRequestCategory: String, Codable, Sendable, CaseIterable {
 }
 
 /// A privacy-safe terminal result for one dispatched TMDb HTTP attempt.
-public enum TMDbRequestResult: Codable, Sendable, Equatable {
+public enum TMDbRequestCompletionResult: Codable, Sendable, Equatable {
   /// The server returned an HTTP response, regardless of later decoding success.
   case response(statusCode: Int)
   /// The transport failed without returning an HTTP response.
@@ -28,8 +28,8 @@ public enum TMDbRequestResult: Codable, Sendable, Equatable {
   case responseTooLarge
 }
 
-/// Supplies an opaque recording ticket before dispatch and receives safe completion metadata.
-public protocol TMDbClientRequestObserver: Sendable {
+/// Receives safe request preparation and completion callbacks.
+public protocol TMDbClientRequestDelegate: Sendable {
   /// Prepares optional history recording for a request.
   ///
   /// - Parameter purpose: The request category, without request-specific data.
@@ -45,11 +45,8 @@ public protocol TMDbClientRequestObserver: Sendable {
   ///   - recordingTicket: The opaque ticket returned before dispatch.
   func tmdbClientDidCompleteRequest(
     purpose: TMDbRequestCategory,
-    result: TMDbRequestResult,
+    result: TMDbRequestCompletionResult,
     completedAt: Date,
     recordingTicket: UUID
   ) async
 }
-
-/// Retains the established name for clients that already conform to the request observer contract.
-public typealias TMDbClientRequestDelegate = TMDbClientRequestObserver

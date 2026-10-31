@@ -63,7 +63,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
   /// - Parameter viewModel: The model that emitted the state update.
   func configurationViewModelDidChange(_ viewModel: ConfigurationViewModel) {
     guard tabViewItems.indices.contains(selectedTabViewItemIndex),
-      let pane = tabViewItems[selectedTabViewItemIndex].viewController as? SettingsPaneController,
+      let pane = tabViewItems[selectedTabViewItemIndex].viewController as? SettingsTabViewController,
       pane.isViewLoaded
     else { return }
     pane.updatePresentation()
@@ -74,7 +74,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
   ///   - label: The tab's visible title.
   ///   - image: Optional toolbar image for the tab.
   ///   - pane: Factory that creates the tab's view controller.
-  private func addTab(label: String, image: NSImage?, pane: () -> SettingsPaneController) {
+  private func addTab(label: String, image: NSImage?, pane: () -> SettingsTabViewController) {
     let controller = pane()
     controller.title = label
     let item = NSTabViewItem(viewController: controller)
@@ -86,7 +86,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
 
 /// Edits application-wide matching defaults in the established native preference pane layout.
 @MainActor
-private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
+private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
   /// Performs persistence and publishes effective application defaults.
   private let viewModel: ConfigurationViewModel
   /// Requires a parsed release year before requesting automatic matching.
@@ -235,7 +235,7 @@ private final class MatchingPane: SettingsPaneController, NSPopoverDelegate {
 
 /// Provides shared layout helpers for the settings panes.
 @MainActor
-class SettingsPaneController: NSViewController {
+class SettingsTabViewController: NSViewController {
   /// Refreshes pane content when it becomes visible or its model changes.
   func updatePresentation() {}
 
@@ -284,7 +284,7 @@ class SettingsPaneController: NSViewController {
 
 /// Lets the user choose the finish applied to movie folder posters.
 @MainActor
-private final class PosterLayoutPane: SettingsPaneController {
+private final class PosterLayoutPane: SettingsTabViewController {
   /// Model used to save the selected poster appearance.
   private let viewModel: ConfigurationViewModel
   /// Buttons representing each available poster appearance.
@@ -318,7 +318,7 @@ private final class PosterLayoutPane: SettingsPaneController {
     let titles = ["Raw", "Soft finish", "Matte frame"]
     let columns = PosterAppearance.allCases.enumerated().map { index, appearance in
       let preview =
-        SettingsPreviewArtwork.poster(appearance)
+        SettingsChoicePreviewArtwork.poster(appearance)
         ?? NSImage(systemSymbolName: "photo", accessibilityDescription: "Preview unavailable")
         ?? NSImage()
       let button = PreviewChoiceButton(
@@ -386,7 +386,7 @@ private final class PosterLayoutPane: SettingsPaneController {
 
 /// Lets the user choose whether app windows follow, force, or override macOS appearance.
 @MainActor
-private final class AppAppearancePane: SettingsPaneController {
+private final class AppAppearancePane: SettingsTabViewController {
   /// Persists the selected color appearance.
   private let settings: AppAppearanceSettings
   /// Buttons representing each supported color appearance.
@@ -407,7 +407,7 @@ private final class AppAppearancePane: SettingsPaneController {
   override func loadView() {
     choices = AppColorAppearance.allCases.enumerated().map { index, appearance in
       let button = PreviewChoiceButton(
-        title: appearance.title, image: SettingsPreviewArtwork.appearance(appearance),
+        title: appearance.title, image: SettingsChoicePreviewArtwork.appearance(appearance),
         target: self, action: #selector(selectionChanged(_:))
       )
       button.tag = index

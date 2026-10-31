@@ -37,7 +37,7 @@ struct CollectionInclusionProcessingTests {
       posterAssigner: fixture.assigner, processingStore: store, processingConfiguration: configuration)
     _ = try await processor.process(root: fixture.movies, processingContext: context)
     let before = try #require(try store.read(rootID: root.id))
-    #expect(before.folders.first?.state == .excluded)
+    #expect(before.folders.first?.processingState == .excluded)
 
     await #expect(throws: CollectionProcessingError.configurationChanged) {
       if refresh {

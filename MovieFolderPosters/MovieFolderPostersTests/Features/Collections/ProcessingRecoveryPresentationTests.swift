@@ -28,7 +28,7 @@ import Testing
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let service = ConfigurationServiceFake()
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake(), recovery: recovery)
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake(), recovery: recovery)
     await model.reloadRecoveryMode()
     #expect(model.isRecoveryModeAvailable)
     #expect(!model.isRecoveryModeEnabled)
@@ -41,7 +41,20 @@ import Testing
       .first { $0.accessibilityIdentifier() == "processingRecoveryMode" })
     #expect(button.title == "Resume Processing")
     await model.setRecoveryModeEnabled(false)
-    #expect(try !recovery.read().isRecoveryModeEnabled)
+    #expect(!model.isRecoveryModeEnabled)
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(3))
+    var persistedMode: Bool?
+    while persistedMode != false, clock.now < deadline {
+      persistedMode = try? recovery.read().isRecoveryModeEnabled
+      if persistedMode != false {
+        try await Task.sleep(for: .milliseconds(5))
+      }
+    }
+    #expect(persistedMode == false)
+    while model.isBusy, clock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
     #expect(button.title == "Enable Recovery Mode")
     #expect(!model.hasLoadedSummary)
   }
@@ -52,7 +65,7 @@ import Testing
     defer { try? FileManager.default.removeItem(at: directory) }
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let model = ConfigurationViewModel(
-      service: ConfigurationServiceFake(), activity: ActivityServiceFake(), recovery: recovery)
+      service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake(), recovery: recovery)
     await model.reloadRecoveryMode()
     let change = try recovery.acquireProcessingAccess()
     await model.setRecoveryModeEnabled(true)

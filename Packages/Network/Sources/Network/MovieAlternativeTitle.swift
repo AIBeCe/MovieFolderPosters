@@ -18,4 +18,4 @@ public struct MovieAlternativeTitle: Codable, Equatable, Sendable {
 }
 
 /// Complete alternative-title evidence keyed by the requested provider movie identity.
-public typealias MovieAlternativeTitles = [Int: [MovieAlternativeTitle]]
+public typealias MovieAlternativeTitlesByID = [Int: [MovieAlternativeTitle]]

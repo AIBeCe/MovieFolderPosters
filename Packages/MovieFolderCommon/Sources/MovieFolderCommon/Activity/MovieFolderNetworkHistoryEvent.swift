@@ -6,7 +6,7 @@ nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equ
   /// The closed kind of attempted provider request.
   public let purpose: TMDbRequestCategory
   /// The observed HTTP or transport result, independent of product decoding and matching.
-  public let result: TMDbRequestResult
+  public let result: TMDbRequestCompletionResult
   /// An optional current nonprivate configured collection identity.
   public let collectionID: UUID?
 
@@ -15,7 +15,7 @@ nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equ
   ///   - purpose: Request kind from the closed provider vocabulary.
   ///   - result: Terminal HTTP evidence without request or error details.
   ///   - collectionID: Existing nonprivate collection, or absence for global requests.
-  public init(purpose: TMDbRequestCategory, result: TMDbRequestResult, collectionID: UUID? = .none) {
+  public init(purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, collectionID: UUID? = .none) {
     self.purpose = purpose
     self.result = result
     self.collectionID = collectionID

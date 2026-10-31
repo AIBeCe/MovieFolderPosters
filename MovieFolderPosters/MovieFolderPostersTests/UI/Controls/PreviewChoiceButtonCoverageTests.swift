@@ -32,7 +32,7 @@ struct PreviewChoiceButtonCoverageTests {
   /// Verifies that each bundled poster finish produces a correctly sized preview image.
   @Test func posterArtworkRendersEverySupportedFinish() throws {
     for appearance in PosterAppearance.allCases {
-      let image = try #require(SettingsPreviewArtwork.poster(appearance))
+      let image = try #require(SettingsChoicePreviewArtwork.poster(appearance))
       #expect(image.size == NSSize(width: 164, height: 164))
       #expect(image.cgImage(forProposedRect: .none, context: .none, hints: .none) != nil)
     }
@@ -41,7 +41,7 @@ struct PreviewChoiceButtonCoverageTests {
   /// Verifies that each color appearance draws a nonempty preview at its documented size.
   @Test func colorAppearanceArtworkRendersForEveryChoice() {
     for appearance in AppColorAppearance.allCases {
-      let image = SettingsPreviewArtwork.appearance(appearance)
+      let image = SettingsChoicePreviewArtwork.appearance(appearance)
       #expect(image.size == NSSize(width: 144, height: 94))
       #expect(image.cgImage(forProposedRect: .none, context: .none, hints: .none) != nil)
     }

@@ -17,7 +17,7 @@ nonisolated struct MovieTitleSpellingDifferenceChecker {
   ///   - query: The title submitted in the explicit search.
   ///   - movie: One movie from that search's provider response.
   /// - Returns: The localized title, or original title when it qualifies first; otherwise `.none`.
-  func suggestedTitle(for query: String, movie: MovieMetadata) -> String? {
+  func possibleSpellingDifference(from query: String, movie: MovieMetadata) -> String? {
     let titles = [movie.title, movie.originalTitle]
     guard Self.isWithinTitleLimit(query, maximum: maximumTitleScalars),
       titles.allSatisfy({ Self.isWithinTitleLimit($0, maximum: maximumTitleScalars) })

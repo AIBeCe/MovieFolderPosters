@@ -7,7 +7,7 @@ import Network
 import Persistence
 
 /// Result of reading one provider-artwork source cache entry.
-nonisolated enum CachedPosterRead: Sendable {
+nonisolated enum CachedPosterReadResult: Sendable {
   /// Encoded image data that passed complete ImageIO validation.
   case valid(Data)
   /// No cache file exists for the provider path.
@@ -23,13 +23,13 @@ extension MovieFolderProcessor {
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - state: The root processing state being inspected or updated.
   func recordUnresolved(
-    _ candidate: FolderCandidate, in state: inout ProcessingState,
+    _ candidate: MovieFolderCandidate, in state: inout CollectionProcessingCache,
     reason: FolderProcessingReason = .parsingProblem, movie: MovieMetadata? = .none,
     releaseDates: [MovieReleaseDate]? = .none
   ) {
     let saved = state.folders[candidate.name]
     let confirmed = saved?.fingerprint == candidate.fingerprint && saved?.matchedMovieID != .none
-    var record = FolderRecord(
+    var record = FolderProcessingCacheRecord(
       fingerprint: candidate.fingerprint,
       status: .unresolved,
       retryDate: reason == .incompleteSearch
@@ -41,7 +41,7 @@ extension MovieFolderProcessor {
       movieYear: confirmed ? saved?.movieYear : movie?.releaseYear,
       movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
-    record.acceptedReleaseDates = savedReleaseDates(releaseDates, movie: movie, candidate: candidate, saved: saved)
+    record.acceptedMovieReleaseDates = savedReleaseDates(releaseDates, movie: movie, candidate: candidate, saved: saved)
     record.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
     record.nameParserRevision = ReleaseNameParser.revision
     state.folders[candidate.name] = record
@@ -53,7 +53,7 @@ extension MovieFolderProcessor {
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - state: The root processing state being inspected or updated.
   func recordTransientFailure(
-    _ candidate: FolderCandidate, in state: inout ProcessingState,
+    _ candidate: MovieFolderCandidate, in state: inout CollectionProcessingCache,
     stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none,
     reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable,
     releaseDates: [MovieReleaseDate]? = .none
@@ -61,7 +61,7 @@ extension MovieFolderProcessor {
     let saved = state.folders[candidate.name]
     let confirmed = saved?.fingerprint == candidate.fingerprint && saved?.matchedMovieID != .none
     let requiresReview = saved?.requiresAutomaticReview
-    state.folders[candidate.name] = FolderRecord(
+    state.folders[candidate.name] = FolderProcessingCacheRecord(
       fingerprint: candidate.fingerprint,
       status: .transientFailure,
       retryDate: reason == .authentication
@@ -72,10 +72,10 @@ extension MovieFolderProcessor {
         (stage == .search ? .metadataFailure : (stage == .artwork ? .posterFailure : .processingFailure)),
       movieTitle: confirmed ? saved?.movieTitle : movie?.title,
       movieYear: confirmed ? saved?.movieYear : movie?.releaseYear,
-      lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
+      lastFailure: AutomaticFolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
-    state.folders[candidate.name]?.acceptedReleaseDates = savedReleaseDates(
+    state.folders[candidate.name]?.acceptedMovieReleaseDates = savedReleaseDates(
       releaseDates, movie: movie, candidate: candidate, saved: saved)
     state.folders[candidate.name]?.savedMatchingRulesVersion = movie == .none
       ? saved?.savedMatchingRulesVersion : Self.savedMatchingRulesVersion
@@ -84,15 +84,17 @@ extension MovieFolderProcessor {
 
   /// Retains dated provenance only for a confirmed current folder identity when no replacement events were requested.
   /// Explicit manual selection creates a new record and deliberately bypasses this automatic-evidence rule.
-  func savedReleaseDates(_ dates: [MovieReleaseDate]?, movie: MovieMetadata?, candidate: FolderCandidate,
-                           saved: FolderRecord?) -> [MovieReleaseDate]? {
+  func savedReleaseDates(
+    _ dates: [MovieReleaseDate]?, movie: MovieMetadata?, candidate: MovieFolderCandidate,
+    saved: FolderProcessingCacheRecord?
+  ) -> [MovieReleaseDate]? {
     guard let saved, saved.fingerprint == candidate.fingerprint, let savedID = saved.matchedMovieID else {
       return dates
     }
 
-    guard movie == .none || movie?.id == savedID else { return saved.acceptedReleaseDates }
+    guard movie == .none || movie?.id == savedID else { return saved.acceptedMovieReleaseDates }
 
-    return dates?.isEmpty == false ? dates : (saved.acceptedReleaseDates ?? dates)
+    return dates?.isEmpty == false ? dates : (saved.acceptedMovieReleaseDates ?? dates)
   }
 
   /// Decodes root processing state or supplies empty state when no record exists.
@@ -100,10 +102,10 @@ extension MovieFolderProcessor {
   /// - Parameter access: The already-held persistence access used throughout this operation.
   /// - Returns: The decoded root state, or empty state when no record has been saved.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func loadState(from access: PersistenceAccess) throws -> ProcessingState {
-    guard let data = try access.read() else { return ProcessingState() }
+  func loadState(from access: PersistenceAccess) throws -> CollectionProcessingCache {
+    guard let data = try access.read() else { return CollectionProcessingCache() }
 
-    var state = try JSONDecoder().decode(ProcessingState.self, from: data)
+    var state = try JSONDecoder().decode(CollectionProcessingCache.self, from: data)
     state.reconcileCredentialRevision(credentialRevision)
     state.updateMatchingConfiguration(movieMatchingConfiguration)
 
@@ -112,17 +114,17 @@ extension MovieFolderProcessor {
 
   /// Keeps a verified icon outcome distinct from failure to persist its operational cache.
   func saveAssignedState(
-    _ state: ProcessingState, to access: PersistenceAccess, candidate: FolderCandidate,
+    _ state: CollectionProcessingCache, to access: PersistenceAccess, candidate: MovieFolderCandidate,
     root: URL, processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog? = .none
   ) throws {
     do {
       try saveState(state, to: access)
     } catch {
-      activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
+      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       if processingState != .none {
         var record = try folderProcessingResult(candidate, root: root, saved: state.folders[candidate.name])
-        record.reason = .cachePersistenceFailure
-        record.lastFailure = FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now())
+        record.processingReason = .cachePersistenceFailure
+        record.lastFailure = AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now())
         try recordFolderProcessing(record, in: &processingState, activity: activity)
         try finishProcessingRun(&processingState, state: .failed, activity: activity)
       }
@@ -141,7 +143,7 @@ extension MovieFolderProcessor {
   ///   - access: The already-held persistence access used throughout this operation.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func saveState(
-    _ state: ProcessingState, to access: PersistenceAccess, activity: ProcessorActivityLog? = .none
+    _ state: CollectionProcessingCache, to access: PersistenceAccess, activity: ProcessorActivityLog? = .none
   ) throws {
     var state = state
     state.credentialRevision = credentialRevision
@@ -151,7 +153,7 @@ extension MovieFolderProcessor {
     do {
       try access.write(encoder.encode(state))
     } catch {
-      activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
+      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       // A recorded operation must stop before another change if its operational cache cannot commit.
       if processingStore != nil { throw CollectionProcessingError.unavailable }
       throw error
@@ -162,7 +164,7 @@ extension MovieFolderProcessor {
   ///
   /// - Parameter path: The provider-relative source poster path.
   /// - Returns: The cache state after complete-image validation.
-  func cachedPoster(for path: String) -> CachedPosterRead {
+  func cachedPoster(for path: String) -> CachedPosterReadResult {
     let name = Self.posterCacheName(path)
 
     guard let data = try? fileSystem.readData(named: name, in: cacheDirectory) else { return .missing }

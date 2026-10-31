@@ -23,19 +23,19 @@ struct CollectionProcessingIntegrationTests {
       provider: CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image)),
       cacheDirectory: fixture.base.appendingPathComponent("Posters"),
       posterAssigner: CacheFailurePosterAssigner(directory: fixture.base.appendingPathComponent("Processing")),
-      coordinationStore: fixture.coordination, processingStore: fixture.processingStore)
+      processingLockStore: fixture.coordination, processingStore: fixture.processingStore)
     do {
       _ = try await processor.process(root: fixture.root, processingContext: fixture.context)
       Issue.record("A broken processing cache must stop this attempt")
     } catch CollectionProcessingError.unavailable {}
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    let alpha = try #require(processingState.folders.first { $0.name == "Alpha (2021)" })
-    #expect(alpha.state == .done)
-    #expect(alpha.reason == .cachePersistenceFailure)
+    let alpha = try #require(processingState.folders.first { $0.folderName == "Alpha (2021)" })
+    #expect(alpha.processingState == .done)
+    #expect(alpha.processingReason == .cachePersistenceFailure)
     #expect(alpha.lastFailure?.stage == .persist)
-    #expect(processingState.currentRun?.state == .failed)
+    #expect(processingState.currentRun?.runState == .failed)
     #expect(try FileSystemService().hasAssignedPoster(toChild: "Alpha (2021)", in: fixture.root))
-    #expect(try !FileSystemService().readCurrentState(ofChild: "Beta (2021)", in: fixture.root).hasCustomIcon)
+    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: "Beta (2021)", in: fixture.root).hasCustomIcon)
   }
 
   /// A result-store failure after a real assignment retains both operation success and failed persistence.
@@ -57,7 +57,7 @@ struct CollectionProcessingIntegrationTests {
       provider: CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image)),
       cacheDirectory: fixture.base.appendingPathComponent("Posters"),
       posterAssigner: CacheFailurePosterAssigner(directory: fixture.base.appendingPathComponent("Outcomes")),
-      coordinationStore: fixture.coordination, processingStore: fixture.processingStore,
+      processingLockStore: fixture.coordination, processingStore: fixture.processingStore,
       activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: directory))
     await #expect(throws: CollectionProcessingError.unavailable) {
       try await processor.process(root: fixture.root, processingContext: fixture.context)
@@ -87,15 +87,15 @@ struct CollectionProcessingIntegrationTests {
     #endif
     let provider = CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image))
     let processor = fixture.processor(provider: provider)
-    let identity = try FileSystemService().readCurrentState(ofChild: "Missing (2021)", in: fixture.root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: "Missing (2021)", in: fixture.root).identity
     let movie = MovieMetadata(
       id: 7, title: "Chosen", originalTitle: "Chosen", releaseYear: 2021, posterPath: "/chosen.jpg")
     _ = try await processor.applyMoviePoster(
       movie, root: fixture.root, child: "Missing (2021)", expectedIdentity: identity,
       processingContext: fixture.context)
     let selected = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(selected.folders.first?.state == .done)
-    #expect(selected.folders.first?.movieID == 7)
+    #expect(selected.folders.first?.processingState == .done)
+    #expect(selected.folders.first?.matchedMovieID == 7)
     #expect(selected.folders.first?.ownership == .owned)
     #expect(selected.calculateCounts().done == 1)
     #expect(selected.currentRun?.action == .selection)
@@ -109,14 +109,14 @@ struct CollectionProcessingIntegrationTests {
       Issue.record("The controlled poster download must fail")
     } catch TMDbError.invalidPosterPath {}
     let failedRefresh = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(failedRefresh.folders.first?.state == .done)
+    #expect(failedRefresh.folders.first?.processingState == .done)
     #expect(failedRefresh.folders.first?.lastFailure != .none)
-    #expect(failedRefresh.currentRun?.state == .failed)
+    #expect(failedRefresh.currentRun?.runState == .failed)
 
     _ = try await processor.removePoster(
       root: fixture.root, child: "Missing (2021)", expectedIdentity: identity, processingContext: fixture.context)
     let removed = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(removed.folders.first?.state == .suppressed)
+    #expect(removed.folders.first?.processingState == .suppressed)
     #expect(removed.calculateCounts().done == 0)
     #expect(removed.lastCompletedRun == before.lastCompletedRun)
   }
@@ -130,7 +130,7 @@ struct CollectionProcessingIntegrationTests {
     let task = Task { try await processor.process(root: fixture.root, processingContext: fixture.context) }
     await provider.waitForSearch()
     let running = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(running.currentRun?.state == .running)
+    #expect(running.currentRun?.runState == .running)
     #expect(running.calculateCounts().total == 1)
     #expect(running.calculateCounts().notFound == .none)
     task.cancel()
@@ -139,8 +139,8 @@ struct CollectionProcessingIntegrationTests {
       Issue.record("Cancellation must propagate")
     } catch is CancellationError {}
     let interrupted = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(interrupted.currentRun?.state == .interrupted)
-    #expect(interrupted.folders.first?.state == .uncertain)
+    #expect(interrupted.currentRun?.runState == .interrupted)
+    #expect(interrupted.folders.first?.processingState == .uncertain)
     #expect(interrupted.lastCompletedRun == .none)
   }
 
@@ -151,15 +151,15 @@ struct CollectionProcessingIntegrationTests {
     let processor = fixture.processor(provider: CollectionProcessingMetadataProvider())
     let summary = try await processor.process(root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    let records = Dictionary(uniqueKeysWithValues: processingState.folders.map { ($0.name, $0) })
-    #expect(records["Missing (2021)"]?.state == .notFound)
-    #expect(records["Ambiguous (2021)"]?.state == .severalMatches)
-    #expect(records["Incomplete (2021)"]?.reason == .incompleteSearch)
-    #expect(summary.nextAutomaticRetryAt == records["Incomplete (2021)"]?.retryAt)
+    let records = Dictionary(uniqueKeysWithValues: processingState.folders.map { ($0.folderName, $0) })
+    #expect(records["Missing (2021)"]?.processingState == .notFound)
+    #expect(records["Ambiguous (2021)"]?.processingState == .severalMatches)
+    #expect(records["Incomplete (2021)"]?.processingReason == .incompleteSearch)
+    #expect(summary.nextAutomaticRetryAt == records["Incomplete (2021)"]?.nextRetryAt)
     #expect(processingState.calculateCounts().total == 3)
     #expect(processingState.calculateCounts().notFound == 1)
     #expect(processingState.calculateCounts().severalMatches == 1)
-    #expect(processingState.currentRun?.state == .completed)
+    #expect(processingState.currentRun?.runState == .completed)
   }
 
   /// Conclusive negative and ambiguous matches never arm an automatic retry.
@@ -182,7 +182,7 @@ struct CollectionProcessingIntegrationTests {
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     #expect(processingState.calculateCounts().total == 0)
     #expect(processingState.calculateCounts().done == 0)
-    #expect(processingState.lastCompletedRun?.state == .completed)
+    #expect(processingState.lastCompletedRun?.runState == .completed)
   }
 
   /// Authentication backoff stops the traversal without inventing processingStore for unvisited folders.
@@ -193,10 +193,10 @@ struct CollectionProcessingIntegrationTests {
     _ = try await fixture.processor(provider: provider).process(
       root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(processingState.currentRun?.state == .partial)
+    #expect(processingState.currentRun?.runState == .partial)
     #expect(processingState.lastCompletedRun == .none)
-    #expect(processingState.folders.contains { $0.state == .pending || $0.state == .deferred })
-    #expect(processingState.folders.contains { $0.reason == .authentication })
+    #expect(processingState.folders.contains { $0.processingState == .pending || $0.processingState == .deferred })
+    #expect(processingState.folders.contains { $0.processingReason == .authentication })
   }
 
   /// Neither a new authentication failure nor cached rejection can fabricate a completed collection run.
@@ -206,7 +206,7 @@ struct CollectionProcessingIntegrationTests {
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let recovery = ProcessingRecoveryService(
       store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
-    let provider = RecoveryMovieMetadataProvider(
+    let provider = RecoveryAwareMovieMetadataProvider(
       provider: CollectionProcessingMetadataProvider(authenticationFailure: true),
       recovery: recovery, credential: "token")
     if cachedRejection {
@@ -215,28 +215,28 @@ struct CollectionProcessingIntegrationTests {
     let processor = MovieFolderProcessor(
       persistence: fixture.processing, provider: provider,
       cacheDirectory: fixture.base.appendingPathComponent("Posters"),
-      coordinationStore: fixture.coordination, processingStore: fixture.processingStore, recovery: recovery)
+      processingLockStore: fixture.coordination, processingStore: fixture.processingStore, recovery: recovery)
 
     _ = try await processor.process(root: fixture.root, processingContext: fixture.context)
 
     let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(state.currentRun?.state == .partial)
+    #expect(state.currentRun?.runState == .partial)
     #expect(state.lastCompletedRun == .none)
-    #expect(state.folders.contains { $0.state == .pending })
-    #expect(state.folders.contains { $0.reason == .authentication })
+    #expect(state.folders.contains { $0.processingState == .pending })
+    #expect(state.folders.contains { $0.processingReason == .authentication })
   }
   /// An explicit refresh cannot replace unchanged confirmed identity or hide its manual-resolution result.
   @Test func refreshIdentityConflictRetainsDecisionAndManualResult() async throws {
     let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
-    let previous = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root)
+    let previous = FolderProcessingCacheRecord(fingerprint: candidate.fingerprint, status: .processed,
       matchedMovieID: 42, posterPath: "/previous.jpg", movieTitle: "Prior identity", movieYear: 2021,
       movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true)
     do {
       let access = try #require(try fixture.processing.acquireAccess(for:
         MovieFolderProcessor.processingStateKey(for: fixture.root)))
-      try access.write(JSONEncoder().encode(ProcessingState(folders: [candidate.name: previous])))
+      try access.write(JSONEncoder().encode(CollectionProcessingCache(folders: [candidate.name: previous])))
     }
     let provider = CountingProvider(search: MovieSearchResult(movies: [MovieMetadata(id: 43, title: "Movie",
       originalTitle: "Movie", releaseYear: 2021, posterPath: "/replacement.jpg")], hasMorePages: false))
@@ -246,7 +246,7 @@ struct CollectionProcessingIntegrationTests {
         processingContext: fixture.context)
     }
     #expect(await provider.posterCount == 0)
-    #expect(try !FileSystemService().readCurrentState(ofChild: candidate.name, in: fixture.root).hasCustomIcon)
+    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: candidate.name, in: fixture.root).hasCustomIcon)
     let access = try #require(try fixture.processing.acquireAccess(for:
       MovieFolderProcessor.processingStateKey(for: fixture.root)))
     let saved = try await processor.loadState(from: access).folders[candidate.name]
@@ -255,9 +255,9 @@ struct CollectionProcessingIntegrationTests {
     #expect(saved?.movieIdentitySource == .conservativeMatch)
     #expect(saved?.processingReason == .manualMatchingRequired)
     let result = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID)).folders.first
-    #expect(result?.state == .unresolved)
-    #expect(result?.reason == .manualMatchingRequired)
-    #expect(result?.movieID == 42)
+    #expect(result?.processingState == .unresolved)
+    #expect(result?.processingReason == .manualMatchingRequired)
+    #expect(result?.matchedMovieID == 42)
     #expect(result?.movieIdentitySource == .conservativeMatch)
   }
 
@@ -265,14 +265,14 @@ struct CollectionProcessingIntegrationTests {
   @Test func refreshFailureDoesNotProjectIdentityAcrossChangedFingerprint() async throws {
     let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
-    let previous = FolderRecord(fingerprint: "obsolete", status: .unresolved,
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root)
+    let previous = FolderProcessingCacheRecord(fingerprint: "obsolete", status: .unresolved,
       matchedMovieID: 42, posterPath: "/previous.jpg", processingReason: .manualMatchingRequired,
       movieTitle: "Prior identity", movieYear: 2021, movieIdentitySource: .conservativeMatch)
     do {
       let access = try #require(try fixture.processing.acquireAccess(for:
         MovieFolderProcessor.processingStateKey(for: fixture.root)))
-      try access.write(JSONEncoder().encode(ProcessingState(folders: [candidate.name: previous])))
+      try access.write(JSONEncoder().encode(CollectionProcessingCache(folders: [candidate.name: previous])))
     }
     let provider = CountingProvider(searchError: .authentication)
     let processor = fixture.processor(provider: provider)
@@ -282,9 +282,9 @@ struct CollectionProcessingIntegrationTests {
     }
     let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     let result = try #require(state.folders.first)
-    #expect(result.movieID == .none)
+    #expect(result.matchedMovieID == .none)
     #expect(result.movieIdentitySource == .none)
-    #expect(result.reason != .manualMatchingRequired)
+    #expect(result.processingReason != .manualMatchingRequired)
     #expect(await provider.posterCount == 0)
   }
 
@@ -292,7 +292,7 @@ struct CollectionProcessingIntegrationTests {
   @Test func refreshOverBudgetPersistsManualMatchingRequired() async throws {
     let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root)
     let movies = (1...6).map {
       MovieMetadata(id: $0, title: "Other \($0)", originalTitle: "Other \($0)", releaseYear: 2021,
         posterPath: "/poster.jpg")
@@ -311,15 +311,15 @@ struct CollectionProcessingIntegrationTests {
     #expect(saved?.processingReason == .manualMatchingRequired)
     let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     let result = try #require(state.folders.first)
-    #expect(result.state == .unresolved)
-    #expect(result.reason == .manualMatchingRequired)
-    #expect(result.movieID == .none)
+    #expect(result.processingState == .unresolved)
+    #expect(result.processingReason == .manualMatchingRequired)
+    #expect(result.matchedMovieID == .none)
   }
 
 }
 
 /// Local collection and current configuration required by the result change fence.
-private struct CollectionProcessingFixture {
+struct CollectionProcessingFixture {
   /// Root directory holding all disposable test inputs and records.
   let base: URL
   /// Collection containing only test-created child folders.
@@ -372,186 +372,9 @@ private struct CollectionProcessingFixture {
   func processor(provider: any MovieMetadataProvider) -> MovieFolderProcessor {
     MovieFolderProcessor(
       persistence: processing, provider: provider, cacheDirectory: base.appendingPathComponent("Posters"),
-      coordinationStore: coordination, processingStore: processingStore,
+      processingLockStore: coordination, processingStore: processingStore,
       credentialRevision: context.credentialRevision,
       movieMatchingConfiguration: context.movieMatchingConfiguration)
-  }
-}
-
-/// Exercises R120-01 through automatic collection processing and its durable user-facing outcomes.
-struct R12001MatchingAcceptanceTests {
-  /// Given a Brazilian folder title and a verified TMDb alias, processing preserves that movie identity.
-  @Test func verifiedInternationalAliasPersistsProviderMovieIdentity() async throws {
-    let language = try TMDbLanguage("pt-BR")
-    let fixture = try CollectionProcessingFixture(
-      names: ["Coração Valente (1995)"],
-      matchingConfiguration: MovieMatchingConfiguration(searchLanguage: language))
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let movie = MovieMetadata(
-      id: 42, title: "Braveheart", originalTitle: "Braveheart", releaseYear: 1995, posterPath: .none)
-    let evidence = MovieAlternativeTitle(countryCode: "BR", title: "Coração Valente", type: "")
-    let transport = try R120AcceptanceTransport(movies: [movie], alternatives: [42: [evidence]])
-    let provider = TMDbClient(token: try TMDbAccessToken("acceptance-fixture"), transport: transport)
-
-    _ = try await fixture.processor(provider: provider).process(
-      root: fixture.root, processingContext: fixture.context)
-
-    let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    let result = try #require(state.folders.first)
-    #expect(result.movieID == 42)
-    #expect(result.movieIdentitySource == .conservativeMatch)
-    #expect(result.reason == .missingArtwork)
-    #expect(await transport.searchLanguages == ["pt-BR"])
-    #expect(await transport.requestedAliasIDs == [42])
-  }
-
-  /// Given direct and verified alias evidence for different IDs, the persisted result remains ambiguous.
-  @Test func competingInternationalEvidencePersistsSeveralMatches() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Coração Valente (1995)"])
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let search = MovieSearchResult(movies: [
-      MovieMetadata(id: 42, title: "Coração Valente", originalTitle: "Braveheart", releaseYear: 1995,
-        posterPath: .none),
-      MovieMetadata(id: 43, title: "Other Film", originalTitle: "Other Film", releaseYear: 1995, posterPath: .none)
-    ], hasMorePages: false)
-    let alias = MovieAlternativeTitle(countryCode: "BR", title: "Coração Valente", type: "")
-    let transport = try R120AcceptanceTransport(movies: search.movies, alternatives: [42: [], 43: [alias]])
-    let provider = TMDbClient(token: try TMDbAccessToken("acceptance-fixture"), transport: transport)
-
-    _ = try await fixture.processor(provider: provider).process(
-      root: fixture.root, processingContext: fixture.context)
-
-    let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    let result = try #require(state.folders.first)
-    #expect(result.state == .severalMatches)
-    #expect(result.reason == .ambiguousMovie)
-    #expect(result.movieID == .none)
-    #expect(await transport.requestedAliasIDs == [42, 43])
-  }
-
-  /// Given five candidates, processing spends at most five alias requests; six candidates remain unresolved.
-  @Test(arguments: [5, 6])
-  func candidateBoundaryPersistsBoundedMatchingResult(candidateCount: Int) async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Unknown Title (1995)"])
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let movies = (1...candidateCount).map {
-      MovieMetadata(id: $0, title: "Candidate \($0)", originalTitle: "Candidate \($0)", releaseYear: 1995,
-        posterPath: .none)
-    }
-    let transport = try R120AcceptanceTransport(
-      movies: movies, alternatives: Dictionary(uniqueKeysWithValues: movies.map { ($0.id, []) }))
-    let provider = TMDbClient(token: try TMDbAccessToken("acceptance-fixture"), transport: transport)
-
-    _ = try await fixture.processor(provider: provider).process(
-      root: fixture.root, processingContext: fixture.context)
-
-    let state = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    let result = try #require(state.folders.first)
-    if candidateCount == 5 {
-      #expect(result.state == .notFound)
-      #expect(await transport.requestedAliasIDs.count == 5)
-    } else {
-      #expect(result.state == .unresolved)
-      #expect(result.reason == .manualMatchingRequired)
-      #expect(await transport.requestedAliasIDs.isEmpty)
-    }
-  }
-}
-
-/// Deterministic HTTP fixture that exercises TMDb decoding, request language, and alias provenance.
-private actor R120AcceptanceTransport: HTTPTransport {
-  /// Encoded complete search result returned by the controlled API.
-  private let searchResponse: Data
-  /// Encoded alternative-title response for each configured provider identity.
-  private let alternativeResponses: [Int: Data]
-  /// Language query parameters observed by the transport.
-  private(set) var searchLanguages = [String]()
-  /// Candidate IDs whose alias evidence was requested.
-  private(set) var requestedAliasIDs = [Int]()
-
-  /// Encodes controlled provider responses without network or Keychain access.
-  init(movies: [MovieMetadata], alternatives: MovieAlternativeTitles) throws {
-    let results = movies.map { movie in
-      [
-        "id": movie.id,
-        "title": movie.title,
-        "original_title": movie.originalTitle,
-        "release_date": movie.releaseYear.map { "\($0)-01-01" } ?? "",
-        "poster_path": movie.posterPath.map { $0 as Any } ?? NSNull()
-      ] as [String: Any]
-    }
-    searchResponse = try JSONSerialization.data(withJSONObject: [
-      "page": 1, "total_pages": 1, "results": results
-    ])
-    alternativeResponses = try Dictionary(uniqueKeysWithValues: alternatives.map { id, titles in
-      let entries = titles.map { title in
-        ["iso_3166_1": title.countryCode, "title": title.title, "type": title.type]
-      }
-
-      return (id, try JSONSerialization.data(withJSONObject: ["id": id, "titles": entries]))
-    })
-  }
-
-  func send(_ request: URLRequest) async throws -> HTTPResponse {
-    guard let url = request.url else { throw TMDbError.invalidQuery }
-    if url.path == "/3/search/movie" {
-      let language = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-        .first { $0.name == "language" }?.value
-      searchLanguages.append(language ?? "")
-
-      return HTTPResponse(data: searchResponse, statusCode: 200, contentType: "application/json")
-    }
-    let components = url.path.split(separator: "/")
-    if components.count == 4, components[0] == "3", components[1] == "movie",
-      components[3] == "alternative_titles", let id = Int(components[2]) {
-      requestedAliasIDs.append(id)
-      let response: Data
-      if let configured = alternativeResponses[id] {
-        response = configured
-      } else {
-        response = try JSONSerialization.data(withJSONObject: ["id": id, "titles": []])
-      }
-
-      return HTTPResponse(data: response, statusCode: 200, contentType: "application/json")
-    }
-
-    throw TMDbError.invalidConfiguration
-  }
-}
-
-extension R12001MatchingAcceptanceTests {
-  /// Given warm alias evidence, changing language or credential revision forces a fresh provider response.
-  @Test func languageAndCredentialChangesDoNotReuseCachedAliasEvidence() async throws {
-    let fixture = try Fixture()
-    defer { try? FileManager.default.removeItem(at: fixture.base) }
-    let movie = MovieMetadata(id: 42, title: "Alien", originalTitle: "Alien", releaseYear: 1979, posterPath: "/alien.jpg")
-    let alias = MovieAlternativeTitle(countryCode: "BR", title: "Alien", type: "")
-    let transport = try R120AcceptanceTransport(movies: [movie], alternatives: [42: [alias]])
-    let provider = TMDbClient(token: try TMDbAccessToken("acceptance-fixture"), transport: transport)
-    let credential = UUID()
-    let search = MovieSearchResult(movies: [movie], hasMorePages: false)
-    let portuguese = MovieFolderProcessor(
-      persistence: fixture.persistence, provider: provider, cacheDirectory: fixture.cache,
-      credentialRevision: credential, movieMatchingConfiguration: MovieMatchingConfiguration(
-        searchLanguage: try TMDbLanguage("pt-BR")))
-    let german = MovieFolderProcessor(
-      persistence: fixture.persistence, provider: provider, cacheDirectory: fixture.cache,
-      credentialRevision: credential, movieMatchingConfiguration: MovieMatchingConfiguration(
-        searchLanguage: try TMDbLanguage("de-DE")))
-    let newCredential = MovieFolderProcessor(
-      persistence: fixture.persistence, provider: provider, cacheDirectory: fixture.cache,
-      credentialRevision: UUID(), movieMatchingConfiguration: MovieMatchingConfiguration(
-        searchLanguage: try TMDbLanguage("de-DE")))
-    var state = ProcessingState()
-
-    let first = try await portuguese.assessMovie(title: "Alien", year: 1979, search: search, state: &state)
-    let second = try await german.assessMovie(title: "Alien", year: 1979, search: search, state: &state)
-    let third = try await newCredential.assessMovie(title: "Alien", year: 1979, search: search, state: &state)
-
-    #expect(first == .matched(movie))
-    #expect(second == .matched(movie))
-    #expect(third == .matched(movie))
-    #expect(await transport.requestedAliasIDs == [42, 42, 42])
   }
 }
 
@@ -569,8 +392,8 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   /// Returns the configured offline search scenario, including incomplete or ambiguous results.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     if authenticationFailure { throw TMDbError.authentication }
@@ -614,7 +437,7 @@ private struct CacheFailurePosterAssigner: PosterAssigner {
   /// Assigns the real test icon, then corrupts only test outcome records to simulate a later cache failure.
   func assignPoster(
     _ imageData: Data, toChild name: String, in root: URL, expectedIdentity: String?
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     let result = try FileSystemService().assignPoster(
       imageData, toChild: name, in: root, expectedIdentity: expectedIdentity)
     let records = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: .none)
@@ -632,7 +455,7 @@ private struct RefusingRestyleVerifier: MovieFolderProcessingVerifier {
 
   /// Rejects restyling with the configured icon-assignment failure.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     throw FolderPosterError.iconAssignmentFailed
   }
@@ -654,8 +477,8 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
   /// Signals search entry and suspends long enough for the test to cancel processing.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     started = true
@@ -681,9 +504,9 @@ struct CollectionProcessingArtworkIntegrationTests {
     _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider(missingArtwork: true)).process(
       root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
-    #expect(processingState.folders.first?.state == .unresolved)
-    #expect(processingState.folders.first?.reason == .missingArtwork)
-    #expect(processingState.folders.first?.movieID == 7)
+    #expect(processingState.folders.first?.processingState == .unresolved)
+    #expect(processingState.folders.first?.processingReason == .missingArtwork)
+    #expect(processingState.folders.first?.matchedMovieID == 7)
     #expect(processingState.folders.first?.movieIdentitySource == .conservativeMatch)
     #expect(processingState.calculateCounts().notFound == 0)
   }
@@ -697,13 +520,13 @@ struct CollectionProcessingArtworkIntegrationTests {
       root: fixture.root, processingContext: fixture.context)
     let processingState = try #require(try fixture.processingStore.read(rootID: fixture.context.rootID))
     let record = try #require(processingState.folders.first)
-    #expect(record.state == .failed)
-    #expect(record.reason == .connectivity)
+    #expect(record.processingState == .failed)
+    #expect(record.processingReason == .connectivity)
     #expect(record.lastFailure?.reason == .connectivity)
     #expect(record.lastFailure?.stage == .artwork)
-    #expect(record.movieID == 7)
-    #expect(record.movieTitle == "Movie")
-    #expect(summary.nextAutomaticRetryAt == record.retryAt)
+    #expect(record.matchedMovieID == 7)
+    #expect(record.matchedMovieTitle == "Movie")
+    #expect(summary.nextAutomaticRetryAt == record.nextRetryAt)
     #expect(processingState.calculateCounts().notFound == 0)
   }
 
@@ -719,7 +542,7 @@ struct CollectionProcessingArtworkIntegrationTests {
     #endif
     let movie = MovieMetadata(
       id: 7, title: "Chosen", originalTitle: "Chosen", releaseYear: 2021, posterPath: "/chosen.jpg")
-    let identity = try FileSystemService().readCurrentState(ofChild: "Movie (2021)", in: fixture.root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root).identity
     let provider = CollectionProcessingMetadataProvider(posterData: try Data(contentsOf: image))
     _ = try await fixture.processor(provider: provider)
       .applyMoviePoster(
@@ -738,12 +561,12 @@ struct CollectionProcessingArtworkIntegrationTests {
     let directory = try #require(try configuration.read().directories.first)
     let processor = MovieFolderProcessor(
       persistence: fixture.processing, provider: CollectionProcessingMetadataProvider(),
-      cacheDirectory: fixture.base.appendingPathComponent("Posters"), coordinationStore: fixture.coordination,
+      cacheDirectory: fixture.base.appendingPathComponent("Posters"), processingLockStore: fixture.coordination,
       processingVerifier: RefusingRestyleVerifier(), appearance: .raw, processingStore: fixture.processingStore,
       activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: directory))
     _ = try await processor.process(root: fixture.root, processingContext: context)
     let processingState = try #require(try fixture.processingStore.read(rootID: context.rootID))
-    #expect(processingState.folders.first?.state == .done)
+    #expect(processingState.folders.first?.processingState == .done)
     #expect(processingState.folders.first?.lastFailure?.stage == .assignPoster)
     let failure = try #require(await activity.events.first { $0.folderResult == .failed })
     #expect(failure.target?.movieID == 7)

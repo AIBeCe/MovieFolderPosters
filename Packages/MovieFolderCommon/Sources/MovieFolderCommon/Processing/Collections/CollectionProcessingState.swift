@@ -134,10 +134,10 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
       throw MovieFolderStorageMigrationError.unsupportedVersion(
         record: .collectionOutcomes(context.rootID), version: schemaVersion)
     }
-    guard folders.count <= 10_000, Set(folders.map(\.name)).count == folders.count else {
+    guard folders.count <= 10_000, Set(folders.map(\.folderName)).count == folders.count else {
       throw CollectionProcessingError.invalidState
     }
-    guard folders.allSatisfy({ $0.state != .done || $0.isVerifiedDone }) else {
+    guard folders.allSatisfy({ $0.processingState != .done || $0.isVerifiedDone }) else {
       throw CollectionProcessingError.invalidState
     }
     guard !isInventoryComplete || inspectedAt != .none else { throw CollectionProcessingError.invalidState }
@@ -148,12 +148,12 @@ nonisolated public struct CollectionProcessingState: Codable, Sendable, Equatabl
     guard hasKnownTotal else {
       return CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)
     }
-    let assessed = folders.allSatisfy { $0.state != .pending && $0.state != .uncertain }
+    let assessed = folders.allSatisfy { $0.processingState != .pending && $0.processingState != .uncertain }
 
     return CollectionProcessingCounts(
       done: assessed ? folders.filter { $0.isVerifiedDone }.count : .none,
-      notFound: assessed ? folders.filter { $0.state == .notFound }.count : .none,
-      severalMatches: assessed ? folders.filter { $0.state == .severalMatches }.count : .none,
+      notFound: assessed ? folders.filter { $0.processingState == .notFound }.count : .none,
+      severalMatches: assessed ? folders.filter { $0.processingState == .severalMatches }.count : .none,
       total: folders.count
     )
   }

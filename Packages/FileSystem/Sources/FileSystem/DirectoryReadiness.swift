@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// The result of checking whether a configured directory can be used now.
-public enum DirectoryReadinessState: Sendable, Equatable {
+public enum DirectoryAvailability: Sendable, Equatable {
   case accessible
   case disconnected
   case missing
@@ -14,16 +14,16 @@ public enum DirectoryReadinessState: Sendable, Equatable {
 }
 
 /// A directory's current availability together with identities useful for detecting replacement.
-public struct DirectoryReadiness: Sendable, Equatable {
+public struct DirectoryAvailabilityResult: Sendable, Equatable {
   /// The availability or failure category observed during inspection.
-  public let state: DirectoryReadinessState
+  public let state: DirectoryAvailability
   /// The persistent identity, when the mounted volume provides one.
   public let identity: String?
   /// The mounted volume path, when it could be determined.
   public let volumePath: String?
 
   /// Creates a readiness result with optional directory and volume identity details.
-  public init(state: DirectoryReadinessState, identity: String? = .none, volumePath: String? = .none) {
+  public init(state: DirectoryAvailability, identity: String? = .none, volumePath: String? = .none) {
     self.state = state
     self.identity = identity
     self.volumePath = volumePath
@@ -62,42 +62,42 @@ extension FileSystemService {
     at directory: URL,
     expectedIdentity: String? = .none,
     expectedVolumePath: String? = .none
-  ) -> DirectoryReadiness {
-    guard directory.isFileURL else { return DirectoryReadiness(state: .unsupported) }
+  ) -> DirectoryAvailabilityResult {
+    guard directory.isFileURL else { return DirectoryAvailabilityResult(state: .unsupported) }
 
     var pathInfo = stat()
     guard lstat(directory.path, &pathInfo) == 0 else {
       if errno == ENOENT || errno == ENOTDIR {
-        return DirectoryReadiness(state: missingPathState(expectedVolumePath: expectedVolumePath))
+        return DirectoryAvailabilityResult(state: missingPathState(expectedVolumePath: expectedVolumePath))
       }
-      return DirectoryReadiness(state: errno == EACCES || errno == EPERM ? .accessDenied : .unknown)
+      return DirectoryAvailabilityResult(state: errno == EACCES || errno == EPERM ? .accessDenied : .unknown)
     }
     guard (pathInfo.st_mode & S_IFMT) == S_IFDIR else {
-      return DirectoryReadiness(state: .unsupported)
+      return DirectoryAvailabilityResult(state: .unsupported)
     }
 
     let pathIdentity = volatileIdentity(from: pathInfo)
 
     let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard descriptor >= 0 else {
-      let state: DirectoryReadinessState
+      let state: DirectoryAvailability
       switch errno {
       case EACCES, EPERM: state = .accessDenied
       case ENOENT, ENOTDIR:
         state = missingPathState(expectedVolumePath: expectedVolumePath)
       default: state = .unknown
       }
-      return DirectoryReadiness(state: state)
+      return DirectoryAvailabilityResult(state: state)
     }
     defer { _ = close(descriptor) }
 
     var descriptorInfo = stat()
     guard fstat(descriptor, &descriptorInfo) == 0 else {
-      return DirectoryReadiness(state: .unknown)
+      return DirectoryAvailabilityResult(state: .unknown)
     }
     let openedObjectIdentity = volatileIdentity(from: descriptorInfo)
     guard (descriptorInfo.st_mode & S_IFMT) == S_IFDIR, openedObjectIdentity == pathIdentity else {
-      return DirectoryReadiness(state: .identityChanged)
+      return DirectoryAvailabilityResult(state: .identityChanged)
     }
 
     return inspectOpenedDirectory(at: directory, descriptor: descriptor, expectedIdentity: expectedIdentity)
@@ -111,29 +111,29 @@ extension FileSystemService {
   /// - Returns: Readiness evidence collected from the same open directory.
   private func inspectOpenedDirectory(
     at directory: URL, descriptor: Int32, expectedIdentity: String?
-  ) -> DirectoryReadiness {
+  ) -> DirectoryAvailabilityResult {
     var filesystem = statfs()
     guard fstatfs(descriptor, &filesystem) == 0 else {
-      return DirectoryReadiness(state: .unknown)
+      return DirectoryAvailabilityResult(state: .unknown)
     }
     let volumePath = cString(filesystem.f_mntonname)
     let identity: String
     do {
       identity = try persistentIdentity(at: directory, descriptor: descriptor, service: self)
     } catch DirectoryAccessError.identityChanged {
-      return DirectoryReadiness(state: .identityChanged, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .identityChanged, volumePath: volumePath)
     } catch {
-      return DirectoryReadiness(state: .unknown, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .unknown, volumePath: volumePath)
     }
     guard expectedIdentity == .none || expectedIdentity == identity else {
-      return DirectoryReadiness(state: .identityChanged, identity: identity, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .identityChanged, identity: identity, volumePath: volumePath)
     }
     if (filesystem.f_flags & UInt32(MNT_RDONLY)) != 0 {
-      return DirectoryReadiness(state: .readOnly, identity: identity, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .readOnly, identity: identity, volumePath: volumePath)
     }
 
     guard faccessat(descriptor, ".", W_OK, AT_EACCESS) == 0 else {
-      return DirectoryReadiness(
+      return DirectoryAvailabilityResult(
         state: errno == EACCES || errno == EPERM || errno == EROFS
           ? .readOnly : .unknown, identity: identity, volumePath: volumePath)
     }
@@ -141,18 +141,18 @@ extension FileSystemService {
     errno = 0
     let attributeCount = flistxattr(descriptor, nil, 0, 0)
     if attributeCount < 0, errno == ENOTSUP {
-      return DirectoryReadiness(state: .unsupported, identity: identity, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .unsupported, identity: identity, volumePath: volumePath)
     }
     guard attributeCount >= 0 else {
-      return DirectoryReadiness(state: .unknown, identity: identity, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .unknown, identity: identity, volumePath: volumePath)
     }
 
     let filesystemName = cString(filesystem.f_fstypename).lowercased()
     guard filesystemName == "apfs" || filesystemName == "hfs" else {
-      return DirectoryReadiness(state: .unknown, identity: identity, volumePath: volumePath)
+      return DirectoryAvailabilityResult(state: .unknown, identity: identity, volumePath: volumePath)
     }
 
-    return DirectoryReadiness(state: .accessible, identity: identity, volumePath: volumePath)
+    return DirectoryAvailabilityResult(state: .accessible, identity: identity, volumePath: volumePath)
   }
 }
 
@@ -171,7 +171,7 @@ func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSyste
 
   let values = try directory.resourceValues(forKeys: [.volumeUUIDStringKey])
   guard let volumeUUID = values.volumeUUIDString, !volumeUUID.isEmpty else {
-    throw DirectoryIdentityUnavailable()
+    throw DirectoryIdentityUnavailableError()
   }
 
   var after = stat()
@@ -187,7 +187,7 @@ func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSyste
 }
 
 /// Indicates that the mounted volume does not provide a persistent UUID.
-struct DirectoryIdentityUnavailable: Error {}
+struct DirectoryIdentityUnavailableError: Error {}
 
 /// Converts the current open failure into the directory-specific error model.
 private func directoryIdentityOpenError() -> Error {
@@ -214,7 +214,7 @@ private func isKnownUnmountedVolumePath(_ path: String) -> Bool? {
 }
 
 /// Maps a missing directory path to removal, disconnection, or an unknown state.
-private func missingPathState(expectedVolumePath: String?) -> DirectoryReadinessState {
+private func missingPathState(expectedVolumePath: String?) -> DirectoryAvailability {
   guard let expectedVolumePath else { return .missing }
   switch isKnownUnmountedVolumePath(expectedVolumePath) {
   case true: return .disconnected

@@ -7,8 +7,8 @@ import Testing
 struct CredentialValidationTests {
   /// Sends the token only as a bearer header to the TMDb authentication endpoint.
   @Test func sendsAuthenticatedAuthenticationRequest() async throws {
-    let transport = ScriptedTransport([
-      .success(HTTPResponse(
+    let transport = ScriptedHTTPTransport([
+      .success(HTTPTransportResponse(
         data: Data("{\"success\":true}".utf8), statusCode: 200,
         contentType: "Application/JSON; charset=utf-8"))
     ])
@@ -40,8 +40,8 @@ struct CredentialValidationTests {
     ("{\"success\":true}", "text/plain")
   ])
   func rejectsMalformedOrUntrustedResponses(json: String, contentType: String) async throws {
-    let transport = ScriptedTransport([
-      .success(HTTPResponse(data: Data(json.utf8), statusCode: 200, contentType: contentType))
+    let transport = ScriptedHTTPTransport([
+      .success(HTTPTransportResponse(data: Data(json.utf8), statusCode: 200, contentType: contentType))
     ])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
 
@@ -58,8 +58,8 @@ struct CredentialValidationTests {
   /// Maps provider authentication responses to the existing typed error.
   @Test(arguments: [401, 403])
   func mapsAuthenticationStatus(status: Int) async throws {
-    let transport = ScriptedTransport([
-      .success(HTTPResponse(data: Data("private body".utf8), statusCode: status, contentType: "text/plain"))
+    let transport = ScriptedHTTPTransport([
+      .success(HTTPTransportResponse(data: Data("private body".utf8), statusCode: status, contentType: "text/plain"))
     ])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
 
@@ -68,8 +68,8 @@ struct CredentialValidationTests {
 
   /// Preserves provider retry metadata when the endpoint is rate limited.
   @Test func preservesRateLimitRetryAfter() async throws {
-    let transport = ScriptedTransport([
-      .success(HTTPResponse(data: Data("private body".utf8), statusCode: 429,
+    let transport = ScriptedHTTPTransport([
+      .success(HTTPTransportResponse(data: Data("private body".utf8), statusCode: 429,
         contentType: "text/plain", retryAfter: "45"))
     ])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
@@ -82,7 +82,7 @@ struct CredentialValidationTests {
   /// Rejects unexpected success and server statuses through the common status boundary.
   @Test(arguments: [204, 500, 503])
   func rejectsUnexpectedStatus(status: Int) async throws {
-    let transport = ScriptedTransport([.success(response("{\"success\":true}", status: status))])
+    let transport = ScriptedHTTPTransport([.success(response("{\"success\":true}", status: status))])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
 
     await #expect(throws: TMDbError.httpStatus(status)) { try await client.validateCredential() }
@@ -90,7 +90,7 @@ struct CredentialValidationTests {
 
   /// Keeps offline failures typed without exposing the credential.
   @Test func handlesOfflineFailureWithoutLeakingToken() async throws {
-    let transport = ScriptedTransport([.failure(URLError(.notConnectedToInternet))])
+    let transport = ScriptedHTTPTransport([.failure(URLError(.notConnectedToInternet))])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
 
     await #expect(throws: TMDbError.transport(code: URLError.notConnectedToInternet.rawValue)) {
@@ -101,8 +101,8 @@ struct CredentialValidationTests {
   /// Applies the shared response-size limit to authentication responses.
   @Test func rejectsOversizedResponse() async throws {
     let oversized = Data(repeating: 0x61, count: 10 * 1_024 * 1_024 + 1)
-    let transport = ScriptedTransport([
-      .success(HTTPResponse(data: oversized, statusCode: 200, contentType: "application/json"))
+    let transport = ScriptedHTTPTransport([
+      .success(HTTPTransportResponse(data: oversized, statusCode: 200, contentType: "application/json"))
     ])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
 
@@ -111,7 +111,7 @@ struct CredentialValidationTests {
 
   /// Observes cancellation before sending any request.
   @Test func honorsCancellationBeforeSending() async throws {
-    let transport = ScriptedTransport([])
+    let transport = ScriptedHTTPTransport([])
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
     let task = Task { @Sendable in
       withUnsafeCurrentTask { $0?.cancel() }
@@ -125,7 +125,7 @@ struct CredentialValidationTests {
 
   /// Observes cancellation while the credential request is suspended in its transport.
   @Test func honorsCancellationDuringTransport() async throws {
-    let transport = BlockingTransport()
+    let transport = SuspendedHTTPTransport()
     let client = try TMDbClient(token: TMDbAccessToken("credential-secret"), transport: transport)
     let task = Task { try await client.validateCredential() }
     await transport.waitUntilStarted()

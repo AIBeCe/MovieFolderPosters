@@ -89,12 +89,16 @@
 ## Naming
 
 - Prefer names that describe the domain concept or concrete behavior; avoid vague or implementation-metaphor terms.
+- Name delegate protocols, delegate properties, and delegate implementations with the `Delegate` suffix.
 - Choose role suffixes such as Validator, Verifier, Inspector, or Evaluator only when they accurately describe
   the type's responsibility.
 - Use Configuration for persisted, user-configurable choices and Settings for their user-facing controls. Reserve
   Policy for a distinct set of decision rules.
 - Use Inclusion for whether an item belongs in a collection, and Included when describing its resulting state.
 - Do not use Snapshot in names unless the user explicitly requests it.
+- Avoid static functions used only to share implementation between types. When multiple types need the same behavior,
+  give that behavior a focused helper type with an instance method. Use static functions only when the behavior is truly
+  type-level or independent of instance ownership; explain the reason when it is not obvious.
 
 ## Testing and verification
 

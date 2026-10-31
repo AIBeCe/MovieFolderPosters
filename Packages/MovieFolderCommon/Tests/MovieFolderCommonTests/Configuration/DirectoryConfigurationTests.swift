@@ -11,9 +11,10 @@ struct DirectoryConfigurationTests {
   @Test func matchingDefaultsArePersisted() throws {
     let encoded = try JSONEncoder().encode(DirectoryConfiguration())
     let fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-    let configuration = try #require(fields["movieMatchingConfiguration"] as? [String: Bool])
-    #expect(configuration["requiresReleaseYearForAutomaticMatching"] == false)
-    #expect(configuration["comparesOriginalTitles"] == true)
+    let configuration = try #require(fields["movieMatchingConfiguration"] as? [String: Any])
+    #expect(configuration["requiresReleaseYearForAutomaticMatching"] as? Bool == false)
+    #expect(configuration["comparesOriginalTitles"] as? Bool == true)
+    #expect(configuration["searchLanguage"] as? String == "en-US")
   }
 
   /// Inclusion changes fence processing, while repeated requests preserve the active revision.
@@ -119,7 +120,7 @@ struct DirectoryConfigurationTests {
   }
   /// Access failures must describe a recovery action consistent with the assessed evidence.
   @Test(arguments: [
-    (DirectoryAvailability.available, "not verified"),
+    (MovieFolderCommon.DirectoryAvailability.available, "not verified"),
     (.unavailable, "Refresh Status"),
     (.reauthorizationRequired, "Locate Folder"),
     (.checkUnavailable, "busy"),
@@ -131,7 +132,7 @@ struct DirectoryConfigurationTests {
     (.compatibilityUnknown, "unverified"),
     (.overlapping, "Remove one")
   ])
-  func accessEvidenceExplainsRecovery(availability: DirectoryAvailability, guidance: String) {
+  func accessEvidenceExplainsRecovery(availability: MovieFolderCommon.DirectoryAvailability, guidance: String) {
     #expect(availability.explanation.contains(guidance))
   }
 
@@ -208,6 +209,9 @@ struct DirectoryConfigurationTests {
   }
 
   /// Verifies detects Nested Roots But Not Sibling Name Prefixes.
+}
+
+extension DirectoryConfigurationTests {
   @Test func detectsNestedRootsButNotSiblingNamePrefixes() {
     var configuration = DirectoryConfiguration()
     let parent = MonitoredDirectory(
@@ -329,7 +333,7 @@ struct DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 6 } }
+    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 7 } }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID())

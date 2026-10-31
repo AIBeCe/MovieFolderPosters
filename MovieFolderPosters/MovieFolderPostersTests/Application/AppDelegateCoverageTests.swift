@@ -12,7 +12,7 @@ import Testing
 struct AppDelegateCoverageTests {
   /// Data repair remains reachable when saved data prevents configuration startup.
   @Test func migrationMenuRemainsAvailableAfterConfigurationStartupFailure() throws {
-    let fixture = try DelegateFixture(failure: .storage)
+    let fixture = try AppDelegateTestDependencies(failure: .storage)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
@@ -27,7 +27,7 @@ struct AppDelegateCoverageTests {
 
   /// Storage startup errors offer a useful next action without assuming a signing problem.
   @Test func storageFailureDoesNotMisdiagnoseSigning() throws {
-    let fixture = try DelegateFixture(failure: .storage)
+    let fixture = try AppDelegateTestDependencies(failure: .storage)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
@@ -41,7 +41,7 @@ struct AppDelegateCoverageTests {
   /// The menu confirms and executes the independent service even when configuration cannot open.
   @Test func migrationCommandRunsWithoutConfigurationAndReportsActualCounts() async throws {
     let migrationService = SavedDataMigrationProbe()
-    let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
+    let fixture = try AppDelegateTestDependencies(failure: .storage, savedDataMigrationService: migrationService)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     alerts.shouldConfirmMigration = true
@@ -63,7 +63,7 @@ struct AppDelegateCoverageTests {
   /// Cancelling the confirmation must not open or modify any migration storage.
   @Test func cancellingMigrationDoesNotInvokeTheService() throws {
     let migrationService = SavedDataMigrationProbe()
-    let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
+    let fixture = try AppDelegateTestDependencies(failure: .storage, savedDataMigrationService: migrationService)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
@@ -77,7 +77,7 @@ struct AppDelegateCoverageTests {
 
   /// An outdated schema alert points to the menu action rather than suggesting permission repair.
   @Test func outdatedSchemaAlertNamesTheMigrationAction() throws {
-    let fixture = try DelegateFixture(failure: .schemaMigration)
+    let fixture = try AppDelegateTestDependencies(failure: .schemaMigration)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
@@ -92,7 +92,7 @@ struct AppDelegateCoverageTests {
   /// A stopped run explains that completed records and backups remain available for a safe retry.
   @Test func stoppedMigrationExplainsPreservedProgress() async throws {
     let migrationService = SavedDataMigrationProbe(failure: .busy(record: .collectionOutcomes(UUID())))
-    let fixture = try DelegateFixture(failure: .storage, savedDataMigrationService: migrationService)
+    let fixture = try AppDelegateTestDependencies(failure: .storage, savedDataMigrationService: migrationService)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     alerts.shouldConfirmMigration = true
@@ -114,7 +114,7 @@ struct AppDelegateCoverageTests {
 
   /// The About menu leads with product identity and keeps TMDb attribution compact.
   @Test func aboutPanelDisplaysRequiredTMDbAttribution() throws {
-    let fixture = try DelegateFixture()
+    let fixture = try AppDelegateTestDependencies()
     defer { fixture.cleanup() }
     let delegate = AppDelegate(coordinator: fixture.root)
     delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
@@ -126,7 +126,7 @@ struct AppDelegateCoverageTests {
 
     let window = try #require(NSApplication.shared.windows.first { $0.title == "About Movie Folder Posters" })
     defer { window.close() }
-    let controller = try #require(window.contentViewController as? AboutViewController)
+    let controller = try #require(window.contentViewController as? AboutWindowViewController)
     let content = controller.view
 
     func allSubviews(of view: NSView) -> [NSView] {
@@ -142,14 +142,14 @@ struct AppDelegateCoverageTests {
     #expect(appIcon.image != .none)
     #expect(appIcon.image?.size == NSSize(width: 1254, height: 1254))
     #expect(logo.image != .none)
-    #expect(notice.stringValue == AboutViewController.requiredNotice)
+    #expect(notice.stringValue == AboutWindowViewController.requiredNotice)
     #expect(link.title == "Visit TMDB")
     #expect(link.accessibilityLabel() == "Visit The Movie Database website")
   }
 
   /// Launch must install actionable feature menus; reopening reuses the configuration flow.
   @Test func launchMenusRouteToRetainedWindows() throws {
-    let fixture = try DelegateFixture()
+    let fixture = try AppDelegateTestDependencies()
     defer { fixture.cleanup() }
     let delegate = AppDelegate(coordinator: fixture.root)
     delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
@@ -178,7 +178,7 @@ struct AppDelegateCoverageTests {
 
   /// Invalid external URLs cannot replace an authorized action; valid requests reach their real window model.
   @Test func externalURLsRejectInvalidRequestsAndRouteValidActions() throws {
-    let fixture = try DelegateFixture()
+    let fixture = try AppDelegateTestDependencies()
     defer { fixture.cleanup() }
     let delegate = AppDelegate(coordinator: fixture.root)
     let invalid = try #require(URL(string: "https://example.invalid/not-an-action"))
@@ -196,7 +196,7 @@ struct AppDelegateCoverageTests {
   /// Startup failures explain the recoverable condition while preserving independent routes.
   @Test(arguments: [false, true])
   func startupFailuresExplainRecoveryAndKeepLogAvailable(_ migrationRequired: Bool) throws {
-    let fixture = try DelegateFixture(failure: migrationRequired ? .migration : .storage)
+    let fixture = try AppDelegateTestDependencies(failure: migrationRequired ? .migration : .storage)
     defer { fixture.cleanup() }
     let alerts = DelegateAlertRecorder()
     let delegate = AppDelegate(coordinator: fixture.root, alerts: alerts)
@@ -226,7 +226,7 @@ struct AppDelegateCoverageTests {
 
 /// Retains isolated defaults and feature services while restoring AppKit process state.
 @MainActor
-private struct DelegateFixture {
+private struct AppDelegateTestDependencies {
   /// Live root under test with all external dependencies replaced.
   let root: AppCoordinator
   /// User defaults suite owned exclusively by this fixture.
@@ -249,9 +249,9 @@ private struct DelegateFixture {
     menu = NSApplication.shared.mainMenu
     applicationIconImage = NSApplication.shared.applicationIconImage
     root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: DelegateConfigurationBuilder(failure: failure),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: DelegateConfigurationBuilder(failure: failure),
       posterService: DelegatePosterService(), appearance: AppAppearanceSettings(defaults: defaults),
-      savedDataMigrationService: savedDataMigrationService ?? SavedDataMigrationService())
+      savedDataMigrationService: savedDataMigrationService ?? SavedApplicationDataMigrationService())
   }
 
   /// Closes all owned windows and restores the application's pre-test preferences and menus.
@@ -269,7 +269,7 @@ private struct DelegateFixture {
 
 /// Builds configuration without consulting App Group or Keychain storage.
 @MainActor
-private struct DelegateConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private struct DelegateConfigurationBuilder: ConfigurationFlowBuilding {
   /// Distinct recovery conditions that must produce different user guidance.
   enum Failure { case migration, schemaMigration, storage }
   /// Failure delivered by dependency construction without inspecting live storage.

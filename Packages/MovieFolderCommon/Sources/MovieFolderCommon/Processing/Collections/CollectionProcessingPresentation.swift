@@ -3,7 +3,7 @@ import Foundation
 /// Read-only projection that does not trigger inventory or processing work.
 nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable {
   /// Lifecycle label for the visible processing state.
-  public let state: CollectionProcessingDisplayState
+  public let displayState: CollectionProcessingDisplayState
   /// Counts are present only when their supporting evidence is complete.
   public let counts: CollectionProcessingCounts
   /// Eligibility categories independent of lifecycle and inspection freshness.
@@ -26,7 +26,7 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
               stateOverride: CollectionProcessingDisplayState? = .none) {
     work = CollectionProcessingWorkSummary(processingState: processingState, isStale: isStale)
     guard let processingState else {
-      state = .unavailable
+      displayState = .unavailable
       counts = CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none)
       inspectedAt = .none
       lastCompletedRun = .none
@@ -38,21 +38,21 @@ nonisolated public struct CollectionProcessingPresentation: Sendable, Equatable 
     lastCompletedRun = processingState.lastCompletedRun
     lastCompletedRunIsCurrentContext = processingState.lastCompletedRunContext == processingState.context
     if let stateOverride {
-      state = stateOverride
+      displayState = stateOverride
     } else if isBusy {
-      state = .busy
+      displayState = .busy
     } else if isStale {
-      state = .stale
-    } else if processingState.currentRun?.state == .running {
-      state = .running
-    } else if processingState.currentRun?.state == .partial {
-      state = .partial
-    } else if processingState.currentRun?.state == .interrupted {
-      state = .interrupted
-    } else if processingState.currentRun?.state == .failed {
-      state = .failed
+      displayState = .stale
+    } else if processingState.currentRun?.runState == .running {
+      displayState = .running
+    } else if processingState.currentRun?.runState == .partial {
+      displayState = .partial
+    } else if processingState.currentRun?.runState == .interrupted {
+      displayState = .interrupted
+    } else if processingState.currentRun?.runState == .failed {
+      displayState = .failed
     } else {
-      state = .current
+      displayState = .current
     }
   }
 }

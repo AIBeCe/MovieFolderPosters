@@ -30,7 +30,7 @@ struct HistoryConfigurationTests {
     let initial = try repository.read()
     try repository.update { $0.isNetworkHistoryRecordingEnabled = true }
     let enabled = try repository.read()
-    #expect(enabled.version == 5)
+    #expect(enabled.version == 6)
     #expect(enabled.networkHistoryConfigurationRevision != initial.networkHistoryConfigurationRevision)
     #expect(enabled.credentialRevision == initial.credentialRevision)
     #expect(enabled.processingCacheRevision == initial.processingCacheRevision)
@@ -43,7 +43,7 @@ struct HistoryConfigurationTests {
     #expect(try repository.read().networkHistoryConfigurationRevision
       == privateSettings.networkHistoryConfigurationRevision)
     try repository.updateCredential(expectedRevision: privateSettings.credentialRevision)
-    #expect(try repository.read().version == 5)
+    #expect(try repository.read().version == 6)
     #expect(try repository.read().networkHistoryConfigurationRevision
       == privateSettings.networkHistoryConfigurationRevision)
   }

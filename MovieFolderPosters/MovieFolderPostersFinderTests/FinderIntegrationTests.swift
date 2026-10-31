@@ -19,7 +19,7 @@ struct FinderIntegrationTests {
     environment.movieMetadataProvider = PublicHistoryRestoringProvider(repository: fixture.repository,
       configurationReadControl: environment.configurationReadControl)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     try fixture.repository.update { $0.directories[0].usesPrivateHistory = true }
     environment.configurationReadControl.failsCurrentRead.withLock { $0 = true }
@@ -39,7 +39,7 @@ struct FinderIntegrationTests {
     _ = try fixture.movie()
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     _ = try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     let recordedMessages = try await environment.activity.entries().map { $0.event.text }
@@ -53,7 +53,7 @@ struct FinderIntegrationTests {
     let fixture = try FinderFixture()
     defer { fixture.remove() }
     let child = try fixture.movie()
-    let identity = try FileSystemService().readCurrentState(
+    let identity = try FileSystemService().readCurrentFolderCandidate(
       ofChild: child.lastPathComponent, in: fixture.root).identity
     try fixture.repository.update {
       $0.directories[0].processingConfiguration.setPaused(true)
@@ -100,7 +100,7 @@ struct FinderIntegrationTests {
     #expect(environment.opened.allSatisfy {
       $0.rootID == fixture.directory.id && $0.childName == child.lastPathComponent
     })
-    let identity = try FileSystemService().readCurrentState(
+    let identity = try FileSystemService().readCurrentFolderCandidate(
       ofChild: child.lastPathComponent, in: fixture.root).identity
     #expect(environment.opened.allSatisfy { $0.identity == identity })
     let secondChild = try fixture.movie("Dune (2021)")
@@ -166,7 +166,7 @@ extension FinderIntegrationTests {
     try fixture.repository.update { $0.directories.append(secondDirectory) }
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
 
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root, secondRoot])
     #expect(Set(environment.providerCollections.collectionIDs.withLock { $0 })
@@ -183,7 +183,7 @@ extension FinderIntegrationTests {
     let movieMetadataProvider = CountingNoMatchesProvider()
     environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) == .none)
     #expect(await movieMetadataProvider.searchCount == .zero)
@@ -202,7 +202,7 @@ extension FinderIntegrationTests {
     let movieMetadataProvider = CountingNoMatchesProvider()
     environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     let recovery = try environment.processingRecoveryService()
     try recovery.setRecoveryModeEnabled(true)
@@ -211,12 +211,12 @@ extension FinderIntegrationTests {
     }
     #expect(await movieMetadataProvider.searchCount == .zero)
     let paused = try environment.processingStore().read(rootID: fixture.directory.id)
-    #expect(paused?.folders.contains { $0.state == .notFound } != true)
+    #expect(paused?.folders.contains { $0.processingState == .notFound } != true)
     try recovery.setRecoveryModeEnabled(false)
     #expect(try environment.processingStore().read(rootID: fixture.directory.id) == paused)
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
     let resumed = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
-    #expect(resumed.folders.first?.state == .notFound)
+    #expect(resumed.folders.first?.processingState == .notFound)
     #expect(await movieMetadataProvider.searchCount == 1)
   }
 
@@ -227,7 +227,7 @@ extension FinderIntegrationTests {
     _ = try fixture.movie()
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     let roots = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     #expect(roots == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
@@ -235,7 +235,7 @@ extension FinderIntegrationTests {
     #expect(state.context.authorizationVersion == fixture.directory.authorizationVersion)
     #expect(state.context.rootIdentity == fixture.directory.identity)
     #expect(state.folders.count == 1)
-    #expect(state.folders.first?.state == .notFound)
+    #expect(state.folders.first?.processingState == .notFound)
     let store = try PersistenceStore(directory: fixture.container.appendingPathComponent("Readiness"))
     let persistenceAccess = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
     let receipt = try JSONDecoder().decode(ExtensionReadinessReceipt.self, from: #require(try persistenceAccess.read()))
@@ -255,7 +255,7 @@ extension FinderIntegrationTests {
     environment.token = .none
     environment.buildVersion = .none
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
@@ -272,7 +272,7 @@ extension FinderIntegrationTests {
     var environment = IsolatedFinderEnvironment(fixture)
     environment.providerFailure = true
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
       == [.unavailable])
@@ -286,7 +286,7 @@ extension FinderIntegrationTests {
     defer { fixture.remove() }
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     try fixture.repository.update { $0.credentialRevision = UUID() }
     await #expect(throws: (any Error).self) {
@@ -308,7 +308,7 @@ extension FinderIntegrationTests {
     defer { fixture.remove() }
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let store = try PersistenceStore(directory: fixture.container.appendingPathComponent("Settings"))
     do {
@@ -328,7 +328,7 @@ extension FinderIntegrationTests {
     defer { fixture.remove() }
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     try fixture.repository.update { $0.directories[0].transferBookmark = Data("invalid".utf8) }
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
     let nested = try fixture.movie()
@@ -346,7 +346,7 @@ extension FinderIntegrationTests {
     defer { fixture.remove() }
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     try FileManager.default.moveItem(at: fixture.root, to: fixture.container.appendingPathComponent("OldCollection"))
     try FileManager.default.createDirectory(at: fixture.root, withIntermediateDirectories: true)
@@ -363,7 +363,7 @@ extension FinderIntegrationTests {
     defer { fixture.remove() }
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let visit = Task {
       withUnsafeCurrentTask { $0?.cancel() }
@@ -388,7 +388,7 @@ extension FinderIntegrationTests {
       securityScoped: false, expectedIdentity: fixture.directory.identity)
     let identity = try #require(fixture.directory.identity)
     let verifier = FinderCollectionConfigurationVerifier(repository: fixture.repository, configuration: configuration,
-      roots: [fixture.root: FinderConfigurationRuntime.AuthorizedRoot(directory: fixture.directory,
+      roots: [fixture.root: FinderConfigurationRuntime.AuthorizedCollectionRoot(directory: fixture.directory,
         access: access, identity: identity)])
     let processor = try MovieFolderProcessor(persistence: PersistenceStore(
       directory: fixture.container.appendingPathComponent("VerifierRecords")), provider: NoMatchesProvider(),
@@ -421,7 +421,7 @@ extension FinderIntegrationTests {
     let store = try PersistenceStore(directory: fixture.container.appendingPathComponent("Readiness"))
     let held = try #require(try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey))
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     #expect(try held.read() == .none)
     withExtendedLifetime(held) {}
@@ -437,13 +437,13 @@ extension FinderIntegrationTests {
     do {
       let held = try #require(try store.acquireAccess(for: key))
       let runtime = FinderConfigurationRuntime(environment: environment)
-      let scheduler = DirectoryObservationScheduler(delegate: runtime)
+      let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
       #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
       withExtendedLifetime(held) {}
     }
     try fixture.repository.update { $0.directories[0].path = fixture.container.path }
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler).isEmpty)
   }
 
@@ -456,7 +456,7 @@ extension FinderIntegrationTests {
     var environment = IsolatedFinderEnvironment(fixture)
     environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let operation = Task { try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) }
     await movieMetadataProvider.waitUntilStarted()
@@ -464,8 +464,8 @@ extension FinderIntegrationTests {
     await movieMetadataProvider.finish()
     await #expect(throws: CancellationError.self) { try await operation.value }
     let state = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
-    #expect(state.currentRun?.state == .interrupted)
-    #expect(try !FileSystemService().readCurrentState(ofChild: movie.lastPathComponent, in: fixture.root).hasCustomIcon)
+    #expect(state.currentRun?.runState == .interrupted)
+    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: movie.lastPathComponent, in: fixture.root).hasCustomIcon)
     #expect(try await environment.activity.entries().last?.event.status == .cancelled)
   }
 
@@ -478,7 +478,7 @@ extension FinderIntegrationTests {
     var environment = IsolatedFinderEnvironment(fixture)
     environment.movieMetadataProvider = movieMetadataProvider
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     _ = await runtime.directoryObservationSchedulerLoadRoots(scheduler)
     let operation = Task { try await runtime.directoryObservationScheduler(scheduler, process: fixture.root) }
     await movieMetadataProvider.waitUntilStarted()
@@ -486,7 +486,7 @@ extension FinderIntegrationTests {
     await movieMetadataProvider.finish()
     await #expect(throws: (any Error).self) { try await operation.value }
     let state = try #require(try environment.processingStore().read(rootID: fixture.directory.id))
-    #expect(state.currentRun?.state != .completed)
+    #expect(state.currentRun?.runState != .completed)
     #expect(state.context.credentialRevision != (try fixture.repository.read()).credentialRevision)
     #expect(try await environment.activity.entries().last?.event.status == .failed)
   }
@@ -513,10 +513,10 @@ extension FinderIntegrationTests {
     try Data("not-a-directory".utf8).write(to: fixture.container.appendingPathComponent("Readiness"))
     let environment = IsolatedFinderEnvironment(fixture)
     let runtime = FinderConfigurationRuntime(environment: environment)
-    let scheduler = DirectoryObservationScheduler(delegate: runtime)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
     #expect(await runtime.directoryObservationSchedulerLoadRoots(scheduler) == [fixture.root])
     try await runtime.directoryObservationScheduler(scheduler, process: fixture.root)
-    #expect(try environment.processingStore().read(rootID: fixture.directory.id)?.currentRun?.state == .completed)
+    #expect(try environment.processingStore().read(rootID: fixture.directory.id)?.currentRun?.runState == .completed)
     #expect(try await environment.activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
       == [.succeeded, .started, .succeeded])
   }

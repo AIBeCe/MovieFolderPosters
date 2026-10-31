@@ -43,7 +43,7 @@ struct MoviePosterActionTests {
       _ = try await task.value
       Issue.record("A newly overlapping root must prevent change after network suspension")
     } catch ConfigurationError.configurationChanged {}
-    #expect(!(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon))
+    #expect(!(try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon))
   }
 
   /// Verifies selecting Explicit Movie Bypasses Ambiguous Search And Records Selection.
@@ -273,7 +273,7 @@ struct MoviePosterActionTests {
       )
       Issue.record("Corrupt processing state must fail before assigning an icon")
     } catch {
-      #expect(!(try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
+      #expect(!(try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies)
           .hasCustomIcon))
     }
     let posterPaths = await provider.posterPaths
@@ -320,7 +320,7 @@ extension MoviePosterActionTests {
     let provider = ActionProvider(posterData: fixture.posterData, searchError: .rateLimited(retryAfter: "600"))
     let processor = MovieFolderProcessor(
       persistence: fixture.persistence,
-      provider: RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: "token"),
+      provider: RecoveryAwareMovieMetadataProvider(provider: provider, recovery: recovery, credential: "token"),
       cacheDirectory: fixture.base.appendingPathComponent("cache"), now: { clock.now }, recovery: recovery)
     let first = try await processor.process(root: fixture.movies)
     #expect(first.providerRetryAt != nil)
@@ -374,7 +374,7 @@ extension MoviePosterActionTests {
     let storedID = try await processor.matchedMovieID(
       root: fixture.movies, child: "Dune (2021)", expectedIdentity: identity
     )
-    let hasCustomIcon = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
+    let hasCustomIcon = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies)
       .hasCustomIcon
     let posterPaths = await provider.posterPaths
     #expect(storedID == nil)
@@ -391,11 +391,11 @@ extension MoviePosterActionTests {
     let secondStateStore = try PersistenceStore(directory: fixture.base.appendingPathComponent("second-state"))
     let firstProvider = ActionProvider(posterData: fixture.posterData, delaysSearch: true)
     let secondProvider = ActionProvider(posterData: fixture.posterData)
-    let first = fixture.processor(provider: firstProvider, coordinationStore: stableStore)
+    let first = fixture.processor(provider: firstProvider, processingLockStore: stableStore)
     let second = MovieFolderProcessor(
       persistence: secondStateStore, provider: secondProvider,
       cacheDirectory: fixture.base.appendingPathComponent("second-cache"),
-      coordinationStore: stableStore
+      processingLockStore: stableStore
     )
 
     let firstTask = Task { try await first.process(root: fixture.movies) }
@@ -471,7 +471,7 @@ private struct ActionFixture {
   /// - Returns: The derived text or identity.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func identity(of child: String) throws -> String {
-    try FileSystemService().readCurrentState(ofChild: child, in: movies).identity
+    try FileSystemService().readCurrentFolderCandidate(ofChild: child, in: movies).identity
   }
 
   /// Writes test-controlled bytes into the root processing record.
@@ -490,18 +490,18 @@ private struct ActionFixture {
   ///
   /// - Parameters:
   ///   - provider: The source of movie metadata and poster images.
-  ///   - coordinationStore: Optional stable locks shared across processing generations.
+  ///   - processingLockStore: Optional stable locks shared across processing generations.
   ///   - processingVerifier: Optional retained collaborator enforcing live settings authorization.
   /// - Returns: The constructed MovieFolderProcessor result.
   func processor(
     provider: ActionProvider,
-    coordinationStore: PersistenceStore? = .none,
+    processingLockStore: PersistenceStore? = .none,
     processingVerifier: (any MovieFolderProcessingVerifier)? = .none
   ) -> MovieFolderProcessor {
     MovieFolderProcessor(
       persistence: persistence, provider: provider,
       cacheDirectory: base.appendingPathComponent("cache"),
-      coordinationStore: coordinationStore,
+      processingLockStore: processingLockStore,
       processingVerifier: processingVerifier)
   }
 }
@@ -551,8 +551,8 @@ private actor ActionProvider: MovieMetadataProvider {
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
@@ -638,7 +638,7 @@ private struct ConfigurationIconChangeVerifier: MovieFolderProcessingVerifier {
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
@@ -664,7 +664,7 @@ private final class RefusingIconChangeVerifier: MovieFolderProcessingVerifier, @
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     let count = lock.withLock { calls += 1; return calls }
     if count > 1 { throw PosterActionError.busy }

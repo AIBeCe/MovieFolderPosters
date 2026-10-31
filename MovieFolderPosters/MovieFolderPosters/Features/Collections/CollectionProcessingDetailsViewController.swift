@@ -22,7 +22,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   private var summary: CollectionProcessingSummary {
     guard let viewModel else { return initialSummary }
 
-    return viewModel.summary ?? CollectionProcessingSummary(processingState: .none,
+    return viewModel.savedProcessingSummary ?? CollectionProcessingSummary(processingState: .none,
       presentation: CollectionProcessingPresentation(processingState: .none),
       counts: CollectionProcessingCounts(done: .none, notFound: .none, severalMatches: .none, total: .none),
       displayState: .unavailable)
@@ -83,7 +83,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
     copyIdentifierButton.action = #selector(copyIdentifier)
     let actions = NSStackView(views: [copyTitleButton, copyIdentifierButton])
     actions.spacing = 8
-    if case .child = viewModel?.request.target { actions.isHidden = false } else { actions.isHidden = true }
+    if case .child = viewModel?.capturedTargetRequest.target { actions.isHidden = false } else { actions.isHidden = true }
     for child in [closeButton, scrollView, actions] {
       child.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(child)
@@ -104,7 +104,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   /// Applies the requested Copy focus after the sheet has acquired its window.
   override func viewDidAppear() {
     super.viewDidAppear()
-    focus(viewModel?.request.action ?? .inspect)
+    focus(viewModel?.capturedTargetRequest.action ?? .inspect)
   }
 
   /// Focuses a requested host control without invoking it.
@@ -125,7 +125,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   private func render() {
     guard isViewLoaded else { return }
 
-    detailsView.string = (viewModel?.currentStatus ?? "") + "\n\n" + reportText
+    detailsView.string = (viewModel?.currentAuthorizationStatus ?? "") + "\n\n" + reportText
       + "\n" + (viewModel?.statusMessage ?? "")
     copyTitleButton.isEnabled = viewModel?.canCopy(.copyMovieTitle) ?? false
     copyIdentifierButton.isEnabled = viewModel?.canCopy(.copyMovieIdentifier) ?? false
@@ -166,24 +166,24 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
     lines.append("Folders (\(processingState.folders.count))")
     lines.append(String(repeating: "—", count: 72))
     let folders: [FolderProcessingRecord]
-    if case .child(let name, let identity) = viewModel?.request.target {
-      folders = processingState.folders.filter { $0.name == name && $0.identity == identity }
+    if case .child(let name, let identity) = viewModel?.capturedTargetRequest.target {
+      folders = processingState.folders.filter { $0.folderName == name && $0.folderIdentity == identity }
       if folders.isEmpty { lines.append("No saved assessment matches this child identity. Outcome is unknown.") }
     } else { folders = processingState.folders }
     for folder in folders.sorted(by: {
-      $0.name.localizedStandardCompare($1.name) == .orderedAscending
+      $0.folderName.localizedStandardCompare($1.folderName) == .orderedAscending
     }) {
-      lines.append(folder.name)
-      lines.append("  State: \(folder.state.displayDescription)")
-      lines.append("  Reason: \(folder.reason?.displayDescription ?? "Not recorded")")
+      lines.append(folder.folderName)
+      lines.append("  State: \(folder.processingState.displayDescription)")
+      lines.append("  Reason: \(folder.processingReason?.displayDescription ?? "Not recorded")")
       lines.append("  Movie: \(movieDescription(folder))")
       lines.append("  Movie identity evidence: \(identitySourceDescription(folder.movieIdentitySource))")
       lines.append("  Poster ownership: \(folder.ownership.displayDescription)")
       lines.append(
-        "  Folder identity evidence: \(folder.identity == .none ? "Unavailable" : "Captured")")
+        "  Folder identity evidence: \(folder.folderIdentity == .none ? "Unavailable" : "Captured")")
       lines.append("  Last failure: \(failureDescription(folder.lastFailure))")
       lines.append(
-        "  Earliest eligible; runs only on later authorized invocation: \(date(folder.retryAt))")
+        "  Earliest eligible; runs only on later authorized invocation: \(date(folder.nextRetryAt))")
       lines.append("  Assessed: \(date(folder.assessedAt))")
       lines.append("")
     }
@@ -202,9 +202,9 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
 
   /// Returns the movie identity and title saved with the folder assessment.
   private func movieDescription(_ folder: FolderProcessingRecord) -> String {
-    guard let movieID = folder.movieID else { return "Not recorded" }
-    let title = folder.movieTitle ?? "Untitled"
-    let year = folder.movieYear.map { " (\($0))" } ?? ""
+    guard let movieID = folder.matchedMovieID else { return "Not recorded" }
+    let title = folder.matchedMovieTitle ?? "Untitled"
+    let year = folder.matchedMovieYear.map { " (\($0))" } ?? ""
 
     return "\(title)\(year), ID \(movieID)"
   }
@@ -220,7 +220,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   }
 
   /// Formats a safe latest-attempt code and stage without exposing raw errors.
-  private func failureDescription(_ attempt: FolderProcessingFailure?) -> String {
+  private func failureDescription(_ attempt: AutomaticFolderProcessingFailure?) -> String {
     guard let attempt else { return "Not recorded" }
 
     return "\(attempt.reason.displayDescription) during \(attempt.stage.displayDescription), "
@@ -232,7 +232,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
     guard let currentRun else { return "Not recorded" }
     let ended = currentRun.endedAt.map { date($0) } ?? "In progress or awaiting verification"
 
-    return "\(currentRun.action.displayDescription), \(currentRun.state.displayDescription), "
+    return "\(currentRun.action.displayDescription), \(currentRun.runState.displayDescription), "
       + "started \(date(currentRun.startedAt)), ended \(ended)"
   }
 
@@ -320,7 +320,7 @@ extension FolderProcessingReason {
 }
 
 /// Supplies readable ownership statements without exposing internal proof data.
-private extension PosterOwnership {
+private extension FolderPosterOwnershipRecord {
   /// User-facing description of current custom-icon ownership evidence.
   var displayDescription: String {
     switch self {

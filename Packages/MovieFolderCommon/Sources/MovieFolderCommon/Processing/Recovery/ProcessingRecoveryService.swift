@@ -104,11 +104,11 @@ nonisolated public struct ProcessingRecoveryService: Sendable {
   }
 
   /// Reads only a bounded, supported, internally consistent recovery payload.
-  func readRecord(access: PersistenceAccess) throws -> ProcessingRecoveryRecord {
+  func readRecord(access: PersistenceAccess) throws -> ProviderRecoveryRecord {
     do {
-      guard let payload = try access.read() else { return ProcessingRecoveryRecord() }
+      guard let payload = try access.read() else { return ProviderRecoveryRecord() }
       guard payload.count <= 4_096 else { throw ProcessingRecoveryError.unavailable }
-      let record = try JSONDecoder().decode(ProcessingRecoveryRecord.self, from: payload)
+      let record = try JSONDecoder().decode(ProviderRecoveryRecord.self, from: payload)
       guard record.isValid else { throw ProcessingRecoveryError.unavailable }
 
       return record
@@ -118,7 +118,7 @@ nonisolated public struct ProcessingRecoveryService: Sendable {
   }
 
   /// Atomically replaces validated state while its canonical access remains retained.
-  func writeRecord(_ record: ProcessingRecoveryRecord, access: PersistenceAccess) throws {
+  func writeRecord(_ record: ProviderRecoveryRecord, access: PersistenceAccess) throws {
     do {
       guard record.isValid else { throw ProcessingRecoveryError.unavailable }
       let payload = try JSONEncoder().encode(record)
@@ -131,7 +131,7 @@ nonisolated public struct ProcessingRecoveryService: Sendable {
 }
 
 /// Small, versioned allowlisted state; no paths, credentials, or raw errors can be encoded.
-nonisolated struct ProcessingRecoveryRecord: Codable {
+nonisolated struct ProviderRecoveryRecord: Codable {
   /// Format understood by this implementation; unsupported versions fail closed.
   var version = 2
   /// Durable global pause gate.

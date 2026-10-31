@@ -77,7 +77,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Read-only utility admission and immediate platform boundary.
   private let utilityService: any MovieFolderFinderActionServicing
   /// Immediate native effect adapter owned for the lifetime of configuration sheets.
-  private let utilityPlatform: any MovieFolderUtilityPlatform
+  private let utilityPlatform: any MovieFolderFinderUtilityPlatform
   /// Results presentation retained until explicit dismissal or parent closure.
   private(set) var resultsWindow: NSWindow?
   /// Owns selected retry lifetime independently of view rendering.
@@ -112,7 +112,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     recovery: ProcessingRecoveryService? = .none,
     retryService: any CollectionRetryServicing = UnavailableCollectionRetryService(),
     utilityService: any MovieFolderFinderActionServicing = MovieFolderFinderActionService(),
-    utilityPlatform: any MovieFolderUtilityPlatform = SystemMovieFolderUtilityPlatform()
+    utilityPlatform: any MovieFolderFinderUtilityPlatform = SystemMovieFolderUtilityPlatform()
   ) {
     self.service = service
     self.installationService = installationService
@@ -225,7 +225,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
     )
     guard let request = request ?? (try? MovieFolderContextMenuRequest(rootID: rootID,
       target: .collection, action: .inspect)) else { return }
-    let model = CollectionProcessingDetailsViewModel(request: request, summaries: summaryViewModel,
+    let model = CollectionProcessingDetailsViewModel(capturedTargetRequest: request, summaries: summaryViewModel,
       utilities: utilityService, platform: utilityPlatform)
     detailsViewModel = model
     let controller = CollectionProcessingDetailsViewController(
@@ -264,8 +264,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   private func showLoadedProcessingDetails(for request: MovieFolderContextMenuRequest) {
     guard !viewModel.isBusy, let window = mainWindow?.window else { return }
 
-    if let current = detailsViewModel, current.request.target == request.target,
-      current.request.rootID == request.rootID, !current.isBusy {
+    if let current = detailsViewModel, current.capturedTargetRequest.target == request.target,
+      current.capturedTargetRequest.rootID == request.rootID, !current.isBusy {
       detailsWindow?.makeKeyAndOrderFront(.none)
       (detailsWindow?.contentViewController as? CollectionProcessingDetailsViewController)?.focus(request.action)
       current.reload()
@@ -443,7 +443,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
 }
 
 /// Identifies one retained configuration window when AppKit reports its closure.
-private enum ConfigurationWindowRole {
+private enum ConfigurationWindowPurpose {
   case main
   case settings
   case localData
@@ -473,7 +473,7 @@ extension ConfigurationCoordinator {
   /// Resolves a closing window to its retained configuration role.
   /// - Parameter window: Window reported by AppKit.
   /// - Returns: The owning window role, or `.none` for unrelated windows.
-  private func windowRole(for window: NSWindow) -> ConfigurationWindowRole? {
+  private func windowRole(for window: NSWindow) -> ConfigurationWindowPurpose? {
     if window === mainWindow?.window { return .main }
     if window === settingsWindow?.window { return .settings }
     if window === localDataWindow?.window { return .localData }

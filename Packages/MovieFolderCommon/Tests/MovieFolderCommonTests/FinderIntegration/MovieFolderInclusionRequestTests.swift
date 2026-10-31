@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import MovieFolderCommon
+import Testing
 
 /// Covers typed Finder inclusion routes without launching the host.
 struct MovieFolderInclusionRequestTests {

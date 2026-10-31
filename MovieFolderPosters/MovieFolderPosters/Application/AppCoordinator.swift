@@ -3,7 +3,7 @@ import MovieFolderCommon
 
 /// Builds configuration independently of the root's operational and poster-action flows.
 @MainActor
-protocol ConfigurationCoordinatorBuilding {
+protocol ConfigurationFlowBuilding {
   /// Opens configuration dependencies and creates their presentation owner.
   /// - Parameters:
   ///   - activity: Recorder shared across independent host features.
@@ -18,7 +18,7 @@ protocol ConfigurationCoordinatorBuilding {
 
 /// Composes the live configuration workflow, including service-owned removal cleanup.
 @MainActor
-struct ConfigurationCoordinatorBuilder: ConfigurationCoordinatorBuilding {
+struct ConfigurationFlowBuilder: ConfigurationFlowBuilding {
   /// Opens the host flow, starts best-effort orphan cleanup, and honors explicit Debug fixture arguments.
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings,
@@ -67,7 +67,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// Records product events without depending on a Log presentation model.
   private let activity: any MovieFolderActivityServicing
   /// Creates configuration dependencies on demand.
-  private let configurationBuilder: any ConfigurationCoordinatorBuilding
+  private let configurationBuilder: any ConfigurationFlowBuilding
   /// Shared preferences applied to current and future windows through AppKit inheritance.
   private let appearance: AppAppearanceSettings
   /// Establishes launch-requested recovery before routes can admit processing.
@@ -88,11 +88,11 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   ///   - recoveryLaunch: Launch recovery preparation completed before configuration starts.
   ///   - savedDataMigrationService: Explicit migration command independent of readable configuration.
   init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
-       configurationBuilder: any ConfigurationCoordinatorBuilding = ConfigurationCoordinatorBuilder(),
+       configurationBuilder: any ConfigurationFlowBuilding = ConfigurationFlowBuilder(),
        posterService: (any MoviePosterActionServicing & CollectionRetryServicing)? = .none,
        appearance: AppAppearanceSettings = AppAppearanceSettings(),
        recoveryLaunch: ProcessingRecoveryLaunchController = ProcessingRecoveryLaunchController(),
-       savedDataMigrationService: any SavedDataMigrationServicing = SavedDataMigrationService()) {
+       savedDataMigrationService: any SavedDataMigrationServicing = SavedApplicationDataMigrationService()) {
     self.activity = activity
     self.configurationBuilder = configurationBuilder
     self.appearance = appearance

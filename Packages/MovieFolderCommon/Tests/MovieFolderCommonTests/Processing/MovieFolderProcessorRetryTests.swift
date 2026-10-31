@@ -327,7 +327,7 @@ extension MovieFolderProcessorTests {
         return
       }
 
-      let state = try JSONDecoder().decode(ProcessingState.self, from: data)
+      let state = try JSONDecoder().decode(CollectionProcessingCache.self, from: data)
       let record = state.folders["Dune (2021)"]
 
       #expect(record?.matchedMovieID == 42)
@@ -382,7 +382,7 @@ extension MovieFolderProcessorTests {
     let access = try #require(try fixture.persistence.acquireAccess(
       for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
     defer { withExtendedLifetime(access) {} }
-    let state = try JSONDecoder().decode(ProcessingState.self, from: try #require(try access.read()))
+    let state = try JSONDecoder().decode(CollectionProcessingCache.self, from: try #require(try access.read()))
 
     #expect(state.folders["Dune (2021)"]?.matchedMovieID == 42)
     #expect(state.folders["Dune (2021)"]?.posterPath == "/dune.jpg")
@@ -412,19 +412,19 @@ extension MovieFolderProcessorTests {
 
       defer { withExtendedLifetime(access) {} }
 
-      var state = try JSONDecoder().decode(ProcessingState.self, from: try #require(try access.read()))
+      var state = try JSONDecoder().decode(CollectionProcessingCache.self, from: try #require(try access.read()))
       let saved = try #require(state.folders["Dune (2021)"])
 
-      state.folders["Dune (2021)"] = FolderRecord(
+      state.folders["Dune (2021)"] = FolderProcessingCacheRecord(
         fingerprint: saved.fingerprint, status: .transientFailure, retryDate: .none,
         matchedMovieID: saved.matchedMovieID, posterPath: saved.posterPath,
         processingReason: .authentication, movieTitle: saved.movieTitle, movieYear: saved.movieYear,
-        lastFailure: FolderProcessingFailure(reason: .authentication, stage: .artwork, occurredAt: clock.now),
+        lastFailure: AutomaticFolderProcessingFailure(reason: .authentication, stage: .artwork, occurredAt: clock.now),
         movieIdentitySource: .explicitSelection)
       state.credentialRevision = UUID()
       try access.write(encoder.encode(state))
 
-      var reconciled = try JSONDecoder().decode(ProcessingState.self, from: try #require(try access.read()))
+      var reconciled = try JSONDecoder().decode(CollectionProcessingCache.self, from: try #require(try access.read()))
       reconciled.reconcileCredentialRevision(UUID())
 
       #expect(reconciled.folders["Dune (2021)"]?.lastFailure == .none)
@@ -448,7 +448,7 @@ extension MovieFolderProcessorTests {
     }
 
     defer { withExtendedLifetime(finalAccess) {} }
-    let finalState = try JSONDecoder().decode(ProcessingState.self, from: try #require(try finalAccess.read()))
+    let finalState = try JSONDecoder().decode(CollectionProcessingCache.self, from: try #require(try finalAccess.read()))
 
     #expect(finalState.folders["Dune (2021)"]?.movieIdentitySource == .explicitSelection)
   }
@@ -491,7 +491,7 @@ extension MovieFolderProcessorTests {
     let access = try #require(try fixture.persistence.acquireAccess(
       for: MovieFolderProcessor.processingStateKey(for: fixture.movies)))
     defer { withExtendedLifetime(access) {} }
-    let state = try JSONDecoder().decode(ProcessingState.self, from: try #require(try access.read()))
+    let state = try JSONDecoder().decode(CollectionProcessingCache.self, from: try #require(try access.read()))
 
     #expect(state.folders["Dune (2021)"]?.matchedMovieID == 42)
     #expect(state.folders["Dune (2021)"]?.movieIdentitySource == .conservativeMatch)

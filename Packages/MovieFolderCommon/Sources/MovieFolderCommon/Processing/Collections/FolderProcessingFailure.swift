@@ -1,7 +1,7 @@
 import Foundation
 
 /// A safely persisted failure stage or category from the most recent failure.
-nonisolated public struct FolderProcessingFailure: Codable, Sendable, Equatable {
+nonisolated public struct AutomaticFolderProcessingFailure: Codable, Sendable, Equatable {
   /// Stable error category safe for presentation.
   public let reason: FolderProcessingFailureReason
   /// Processing stage at which the attempt ended.

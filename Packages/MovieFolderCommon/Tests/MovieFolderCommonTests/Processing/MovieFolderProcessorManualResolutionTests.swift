@@ -97,18 +97,18 @@ func confirmedManualResolutionDoesNotRepeatAfterRetryExpiryAndProcessorRestart(i
   let expectedState: FolderProcessingState = isAmbiguous ? .severalMatches : .notFound
   let firstAssessment = try #require(
     try scenario.collectionStore.read(rootID: scenario.rootID)?.folders.first)
-  #expect(firstAssessment.state == expectedState)
-  #expect(firstAssessment.reason == (isAmbiguous ? .ambiguousMovie : .noSuitableMovie))
-  #expect(firstAssessment.retryAt == .none)
+  #expect(firstAssessment.processingState == expectedState)
+  #expect(firstAssessment.processingReason == (isAmbiguous ? .ambiguousMovie : .noSuitableMovie))
+  #expect(firstAssessment.nextRetryAt == .none)
   let expectedReason: FolderProcessingReason = isAmbiguous ? .ambiguousMovie : .noSuitableMovie
   try scenario.setLegacyRetryDate()
   let second = try await scenario.processor.process(
     root: fixture.movies, processingContext: scenario.processingContext)
   let secondAssessment = try #require(
     try scenario.collectionStore.read(rootID: scenario.rootID)?.folders.first)
-  #expect(secondAssessment.state == expectedState)
-  #expect(secondAssessment.reason == expectedReason)
-  #expect(secondAssessment.retryAt == .none)
+  #expect(secondAssessment.processingState == expectedState)
+  #expect(secondAssessment.processingReason == expectedReason)
+  #expect(secondAssessment.nextRetryAt == .none)
   scenario.clock.advance(by: 86_401)
   let restartedProcessor = try fixture.processor(
     provider: scenario.provider, clock: { scenario.clock.now },
@@ -117,9 +117,9 @@ func confirmedManualResolutionDoesNotRepeatAfterRetryExpiryAndProcessorRestart(i
     root: fixture.movies, processingContext: scenario.processingContext)
   let restartedAssessment = try #require(
     try scenario.collectionStore.read(rootID: scenario.rootID)?.folders.first)
-  #expect(restartedAssessment.state == expectedState)
-  #expect(restartedAssessment.reason == expectedReason)
-  #expect(restartedAssessment.retryAt == .none)
+  #expect(restartedAssessment.processingState == expectedState)
+  #expect(restartedAssessment.processingReason == expectedReason)
+  #expect(restartedAssessment.nextRetryAt == .none)
 
   #expect(first.unresolved == 1)
   #expect(second.unresolved == 1)

@@ -22,7 +22,7 @@ import OSLog
     /// - Parameter request: The metadata or image request routed to deterministic development responses.
     /// - Returns: A deterministic JSON or PNG response for the supported fixture endpoint.
     /// - Throws: Cancellation, JSON serialization failures, or a TMDb error for an unsupported fixture endpoint.
-    public func send(_ request: URLRequest) throws -> HTTPResponse {
+    public func send(_ request: URLRequest) throws -> HTTPTransportResponse {
       try Task.checkCancellation()
       guard let url = request.url else { throw TMDbError.invalidQuery }
       switch (url.host, url.path) {
@@ -31,7 +31,7 @@ import OSLog
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
           .first { $0.name == "query" }?.value
         let movies: [[String: Any]] =
-          query == "The Last Frame"
+          query == "The Last Frame" || query == "The Last Frane"
           ? [
             [
               "id": 1, "title": "The Last Frame", "original_title": "The Last Frame",
@@ -39,17 +39,17 @@ import OSLog
             ]
           ] : []
 
-        return HTTPResponse(
+        return HTTPTransportResponse(
           data: try JSONSerialization.data(withJSONObject: [
             "page": 1, "total_pages": 1, "results": movies
           ]), statusCode: 200, contentType: "application/json")
       case ("api.themoviedb.org", "/3/movie/1/alternative_titles"):
-        return HTTPResponse(data: Data("{\"id\":1,\"titles\":[]}".utf8), statusCode: 200,
+        return HTTPTransportResponse(data: Data("{\"id\":1,\"titles\":[]}".utf8), statusCode: 200,
           contentType: "application/json")
       case ("api.themoviedb.org", "/3/configuration"):
         logger.notice("Development fixture: image configuration")
 
-        return HTTPResponse(
+        return HTTPTransportResponse(
           data: try JSONSerialization.data(withJSONObject: [
             "images": [
               "secure_base_url": "https://image.tmdb.org/t/p/", "poster_sizes": ["w500"]
@@ -58,7 +58,7 @@ import OSLog
       case ("image.tmdb.org", "/t/p/w500/test-poster.png"):
         logger.notice("Development fixture: poster download")
 
-        return HTTPResponse(data: posterData, statusCode: 200, contentType: "image/png")
+        return HTTPTransportResponse(data: posterData, statusCode: 200, contentType: "image/png")
       default:
         throw TMDbError.invalidConfiguration
       }

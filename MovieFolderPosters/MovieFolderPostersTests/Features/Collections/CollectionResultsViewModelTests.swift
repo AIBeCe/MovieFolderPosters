@@ -16,32 +16,32 @@ struct CollectionResultsViewModelTests {
       FolderProcessingRecord(name: "Movie 3", identity: "c", state: .failed, reason: .authentication)
     ])
     fixture.model.selectRows(IndexSet(integersIn: 0..<3))
-    fixture.model.setFilters(state: .failed, reason: .connectivity)
-    #expect(fixture.model.rows.map(\.name) == ["Movie 10"])
+    fixture.model.setProcessingFilters(state: .failed, reason: .connectivity)
+    #expect(fixture.model.unresolvedFolderRecords.map(\.folderName) == ["Movie 10"])
     #expect(fixture.model.recordedUnresolvedFolderCount == 3)
     #expect(fixture.model.selectedRows.count == 1)
-    fixture.model.setFilters(state: .none, reason: .none)
+    fixture.model.setProcessingFilters(state: .none, reason: .none)
     #expect(fixture.model.selectedRows == IndexSet(integer: 2))
   }
 
   /// Filters never replace incomplete-evidence warnings, and retry ownership prevents filter edits.
   @Test func noMatchCountsPreserveWarningsAndBusyFiltersStayFixed() async {
     let fixture = await makeFixture(folders: [folder("Movie")])
-    fixture.model.setFilters(state: .failed, reason: .none)
-    #expect(fixture.model.rows.isEmpty)
-    #expect(fixture.model.resultCountText.contains("0 of 1"))
-    #expect(fixture.model.resultCountText.contains("No matches"))
+    fixture.model.setProcessingFilters(state: .failed, reason: .none)
+    #expect(fixture.model.unresolvedFolderRecords.isEmpty)
+    #expect(fixture.model.unresolvedFolderResultCountText.contains("0 of 1"))
+    #expect(fixture.model.unresolvedFolderResultCountText.contains("No matches"))
     #expect(fixture.model.statusMessage.contains("incomplete"))
-    fixture.model.setFilters(state: .none, reason: .none)
+    fixture.model.setProcessingFilters(state: .none, reason: .none)
     await fixture.retry.holdResponses()
     fixture.model.selectRows(IndexSet(integer: 0))
     fixture.model.retrySelected()
     await settle()
     #expect(!fixture.model.canFilter)
-    fixture.model.setFilters(state: .failed, reason: .authentication)
-    #expect(fixture.model.stateFilter == .none)
-    #expect(fixture.model.reasonFilter == .none)
-    #expect(fixture.model.rows.count == 1)
+    fixture.model.setProcessingFilters(state: .failed, reason: .authentication)
+    #expect(fixture.model.processingStateFilter == .none)
+    #expect(fixture.model.processingReasonFilter == .none)
+    #expect(fixture.model.unresolvedFolderRecords.count == 1)
     await fixture.retry.release(.notEligible)
     await settle()
     #expect(fixture.model.canFilter)
@@ -66,13 +66,13 @@ struct CollectionResultsViewModelTests {
     fixture.model.reload()
     await settle()
     #expect(await fixture.retry.requests.isEmpty)
-    #expect(fixture.model.rows.map(\.name) == ["Movie"])
+    #expect(fixture.model.unresolvedFolderRecords.map(\.folderName) == ["Movie"])
   }
 
   /// Natural ordering and identity-based selection prevent acting on replacement folders.
   @Test func selectionSurvivesReorderingButNotReplacement() async {
     let fixture = await makeFixture(folders: [folder("Movie 10"), folder("Movie 2")])
-    #expect(fixture.model.rows.map(\.name) == ["Movie 2", "Movie 10"])
+    #expect(fixture.model.unresolvedFolderRecords.map(\.folderName) == ["Movie 2", "Movie 10"])
     fixture.model.selectRows(IndexSet(integer: 1))
     await fixture.source.set(folders: [folder("Movie 1"), folder("Movie 10"), folder("Movie 2")])
     fixture.summaries.reload()
@@ -87,7 +87,7 @@ struct CollectionResultsViewModelTests {
   /// Movie selection emits one bounded change request only after explicit user action.
   @Test func explicitSelectionRoutesWithoutSearch() async {
     let fixture = await makeFixture(folders: [folder("Movie")])
-    let observer = ResultsObserver()
+    let observer = CollectionResultsViewModelChangeRecorder()
     fixture.model.delegate = observer
     fixture.model.chooseMovie()
     #expect(observer.request == .none)
@@ -270,7 +270,7 @@ struct CollectionResultsViewModelTests {
     fixture.summaries.reload()
     await settle()
     fixture.model.selectRows(IndexSet(integer: .zero))
-    #expect(fixture.model.rows.count == 1)
+    #expect(fixture.model.unresolvedFolderRecords.count == 1)
     #expect(!fixture.model.canChooseMovie)
     #expect(!fixture.model.canRetrySelected)
     #expect(fixture.model.statusMessage.contains("Choose Movie and Retry require current results"))
@@ -297,7 +297,7 @@ struct CollectionResultsViewModelTests {
   @Test func identitylessEvidenceCannotAct() async {
     let fixture = await makeFixture(folders: [FolderProcessingRecord(name: "Movie")])
     fixture.model.selectRows(IndexSet(integer: .zero))
-    #expect(fixture.model.rows.count == 1)
+    #expect(fixture.model.unresolvedFolderRecords.count == 1)
     #expect(!fixture.model.canChooseMovie)
     #expect(!fixture.model.canRetrySelected)
   }
@@ -338,7 +338,7 @@ struct CollectionResultsViewModelTests {
   }
 
   /// Connects isolated summary and retry boundaries to a real presentation model.
-  private func makeFixture(folders: [FolderProcessingRecord]) async -> ResultsFixture {
+  private func makeFixture(folders: [FolderProcessingRecord]) async -> CollectionResultsTestEnvironment {
     let rootID = UUID()
     let source = ResultsSummarySource(rootID: rootID, folders: folders)
     let summaries = CollectionSummaryViewModel(service: source)
@@ -347,13 +347,13 @@ struct CollectionResultsViewModelTests {
     await settle()
     let model = CollectionResultsViewModel(rootID: rootID, summaries: summaries, retryService: retry)
 
-    return ResultsFixture(model: model, summaries: summaries, source: source, retry: retry)
+    return CollectionResultsTestEnvironment(model: model, summaries: summaries, source: source, retry: retry)
   }
 }
 
 /// Retains each isolated test collaborator through asynchronous actions.
 @MainActor
-private struct ResultsFixture {
+private struct CollectionResultsTestEnvironment {
   /// The actual model under test.
   let model: CollectionResultsViewModel
   /// Read-only publisher shared with other collection UI.
@@ -436,7 +436,7 @@ private actor ResultsRetryService: CollectionRetryServicing {
 
 /// Captures navigation while retaining no service behavior.
 @MainActor
-private final class ResultsObserver: CollectionResultsViewModelDelegate {
+private final class CollectionResultsViewModelChangeRecorder: CollectionResultsViewModelDelegate {
   /// Last explicitly requested movie selection.
   var request: MoviePosterRequest?
 

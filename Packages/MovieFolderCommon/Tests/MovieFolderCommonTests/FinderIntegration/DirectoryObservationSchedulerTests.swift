@@ -11,8 +11,8 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/RetainedRoot")
     var probe: SchedulerProbe? = SchedulerProbe(roots: [root], events: stream.continuation)
-    weak var weakProbe = probe
-    let scheduler = DirectoryObservationScheduler(delegate: try #require(probe))
+    weak let weakProbe = probe
+    let scheduler = FinderDirectoryObservationScheduler(delegate: try #require(probe))
     probe = .none
 
     #expect(weakProbe != nil)
@@ -28,7 +28,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let first = URL(fileURLWithPath: "/First")
     let probe = SchedulerProbe(roots: [first], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -56,7 +56,7 @@ struct DirectoryObservationSchedulerTests {
     let first = URL(fileURLWithPath: "/First")
     let second = URL(fileURLWithPath: "/Second")
     let probe = SchedulerProbe(roots: [first, second], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -77,7 +77,7 @@ struct DirectoryObservationSchedulerTests {
     let directory = URL(fileURLWithPath: "/NewRoot")
     let probe = SchedulerProbe(roots: [directory], events: stream.continuation)
     await probe.pauseNextLoad()
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     var events = stream.stream.makeAsyncIterator()
     let reload = Task { await scheduler.reload() }
     #expect(await events.next() == .loading)
@@ -97,7 +97,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let directory = URL(fileURLWithPath: "/Root")
     let probe = SchedulerProbe(roots: [directory], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     var events = stream.stream.makeAsyncIterator()
     await scheduler.reload()
     #expect(await events.next() == .loaded)
@@ -122,7 +122,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/ObservedRoot")
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -146,7 +146,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/ObservedRoot")
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -168,7 +168,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/ObservedRoot")
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -190,7 +190,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/ObservedRoot")
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -212,7 +212,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/ObservedRoot")
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -237,7 +237,7 @@ struct DirectoryObservationSchedulerTests {
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let root = URL(fileURLWithPath: "/ObservedRoot")
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -262,7 +262,7 @@ struct DirectoryObservationSchedulerTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let stream = AsyncStream<SchedulerEvent>.makeStream()
     let probe = SchedulerProbe(roots: [root], events: stream.continuation)
-    let scheduler = DirectoryObservationScheduler(delegate: probe)
+    let scheduler = FinderDirectoryObservationScheduler(delegate: probe)
     await scheduler.reload()
     var events = stream.stream.makeAsyncIterator()
     #expect(await events.next() == .loaded)
@@ -284,7 +284,7 @@ struct DirectoryObservationSchedulerTests {
 }
 
 /// Waits until a completed visit has actually registered its retry before testing cancellation.
-private func waitForScheduledRetry(_ scheduler: DirectoryObservationScheduler, root: URL) async throws -> Bool {
+private func waitForScheduledRetry(_ scheduler: FinderDirectoryObservationScheduler, root: URL) async throws -> Bool {
   for _ in 0..<100 {
     if await scheduler.hasScheduledRetry(for: root) { return true }
     try await Task.sleep(for: .milliseconds(10))
@@ -316,7 +316,7 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
   /// The deadline returned by the next completed processing request.
   private var nextDeadline: Date?
   /// A weak observation of the scheduler supplied to the delegate.
-  private(set) weak var loadingScheduler: DirectoryObservationScheduler?
+  private(set) weak var loadingScheduler: FinderDirectoryObservationScheduler?
   /// The number of completed or initiated root loads observed by the probe.
   private(set) var loadCount = Int.zero
   /// Root URLs passed to the processing delegate in call order.
@@ -336,7 +336,7 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
   ///
   /// - Parameter scheduler: The scheduler requesting configuration or root processing.
   /// - Returns: The currently authorized roots.
-  func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL> {
+  func directoryObservationSchedulerLoadRoots(_ scheduler: FinderDirectoryObservationScheduler) async -> Set<URL> {
     loadingScheduler = scheduler
     loadCount += 1
     if shouldPauseLoad {
@@ -374,7 +374,7 @@ private actor SchedulerProbe: DirectoryObservationSchedulerDelegate {
   ///   - url: The deep link or observed root URL supplied by the caller.
   /// - Throws: Fixture setup, filesystem, or persistence errors needed to establish the asserted scenario.
   func directoryObservationScheduler(
-    _ scheduler: DirectoryObservationScheduler, process url: URL
+    _ scheduler: FinderDirectoryObservationScheduler, process url: URL
   ) async throws -> Date? {
     processed.append(url)
     let events = events

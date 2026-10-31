@@ -79,8 +79,8 @@ struct CollectionSummaryCoverageTests {
       for: CollectionProcessingStore.coordinationKey(for: fixture.root)) : .none
     let summary = try #require(await fixture.service().summaries()[fixture.context.rootID])
     #expect(summary.displayState == (holdsAccess ? .busy : .interrupted))
-    #expect(summary.presentation.state == summary.displayState)
-    #expect(try fixture.outcomes.read(rootID: fixture.context.rootID)?.currentRun?.state == .running)
+    #expect(summary.presentation.displayState == summary.displayState)
+    #expect(try fixture.outcomes.read(rootID: fixture.context.rootID)?.currentRun?.runState == .running)
     withExtendedLifetime(persistenceAccess) {}
   }
 
@@ -100,9 +100,9 @@ struct CollectionSummaryCoverageTests {
     #expect(summary.counts.total == .none)
     #expect(summary.processingState?.context == fixture.context)
     #expect(summary.processingState?.folders == previous.folders)
-    #expect(summary.processingState?.folders.first?.movieID == 7)
+    #expect(summary.processingState?.folders.first?.matchedMovieID == 7)
     #expect(summary.counts.done == .none)
-    #expect(summary.presentation.state == .stale)
+    #expect(summary.presentation.displayState == .stale)
     withExtendedLifetime(persistenceAccess) {}
   }
 
@@ -129,14 +129,14 @@ struct CollectionSummaryCoverageTests {
     let fixture = try SummaryStorageFixture()
     defer { fixture.cleanup() }
     let run = CollectionProcessingRun(action: .automatic, startedAt: Date(),
-      endedAt: Date(), state: .completed)
+      endedAt: Date(), runState: .completed)
     let savedState = CollectionProcessingState(context: fixture.context, currentRun: run,
       folders: [], isInventoryComplete: true, inspectedAt: Date())
     let replacementID = UUID()
     let reader = ReconfiguringSummaryReader(configuration: fixture.configuration,
       savedState: hasOutcome ? savedState : .none, replacementID: replacementID)
     let service = CollectionSummaryService(configuration: fixture.configuration,
-      processingStore: reader, coordinationStore: fixture.coordination)
+      processingStore: reader, processingLockStore: fixture.coordination)
     let summaries = await service.summaries()
     #expect(summaries[replacementID]?.displayState == .unavailable)
     #expect(summaries[replacementID]?.counts.total == .none)
@@ -184,7 +184,7 @@ private struct SummaryStorageFixture {
 
   /// Creates the production reader using the actual stores.
   func service() -> CollectionSummaryService {
-    CollectionSummaryService(configuration: configuration, processingStore: outcomes, coordinationStore: coordination)
+    CollectionSummaryService(configuration: configuration, processingStore: outcomes, processingLockStore: coordination)
   }
 
   /// Commits running or completed evidence under the same root access required of production writers.
@@ -199,7 +199,7 @@ private struct SummaryStorageFixture {
       ownership: .owned, assessedAt: Date())]
     savedState.isInventoryComplete = true
     savedState.inspectedAt = Date()
-    savedState.currentRun?.state = .completed
+    savedState.currentRun?.runState = .completed
     savedState.currentRun?.endedAt = Date()
 
     return try outcomes.commit(savedState, expectedRevision: savedState.revision)

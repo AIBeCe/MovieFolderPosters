@@ -105,7 +105,7 @@ private struct RecoveryAccessAssertingAssigner: PosterAssigner {
 
   func assignPoster(
     _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String?
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     #expect(throws: ProcessingRecoveryError.busy) { try recovery.setRecoveryModeEnabled(true) }
 
     return .assigned

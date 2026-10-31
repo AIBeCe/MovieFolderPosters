@@ -15,9 +15,9 @@ nonisolated public protocol MovieMetadataProvider: Sendable {
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   func searchMovies(title: String, year: Int?, language: TMDbLanguage) async throws -> MovieSearchResult
   /// Retrieves complete provider alternative-title evidence for exactly the requested identity.
-  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles
+  func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitlesByID
   /// Retrieves complete dated release evidence for exactly the requested identity.
-  func releaseDates(movieID: Int) async throws -> MovieReleaseDates
+  func releaseDates(movieID: Int) async throws -> MovieReleaseDatesByID
   /// Downloads the source image bytes for a provider-relative poster path.
   ///
   /// - Parameter path: The provider-relative source poster path.
@@ -44,7 +44,7 @@ nonisolated public protocol PosterAssigner: Sendable {
     toChild name: String,
     in directory: URL,
     expectedIdentity: String?
-  ) throws -> PosterAssignmentResult
+  ) throws -> FolderPosterAssignmentResult
 
   /// Assigns source image bytes while checking child identity and preserving a foreign custom icon.
   ///
@@ -62,7 +62,7 @@ nonisolated public protocol PosterAssigner: Sendable {
     in directory: URL,
     appearance: PosterAppearance,
     expectedIdentity: String?
-  ) throws -> PosterAssignmentResult
+  ) throws -> FolderPosterAssignmentResult
 }
 
 nonisolated public extension PosterAssigner {
@@ -82,7 +82,7 @@ nonisolated public extension PosterAssigner {
     in directory: URL,
     appearance: PosterAppearance,
     expectedIdentity: String?
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     try assignPoster(imageData, toChild: name, in: directory, expectedIdentity: expectedIdentity)
   }
 }
@@ -194,6 +194,6 @@ nonisolated public protocol MovieFolderProcessingVerifier: Sendable {
   ///   - root: Authorized collection root containing the child.
   /// - Returns: A access to retain through the write, or no access when validation needs no retained lock.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL)
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL)
     throws -> PersistenceAccess?
 }

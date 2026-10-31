@@ -10,7 +10,7 @@ nonisolated protocol SavedDataMigrationServicing: Sendable {
 }
 
 /// Uses the shared migration service on a utility task without opening credentials or movie folders.
-nonisolated struct SavedDataMigrationService: SavedDataMigrationServicing {
+nonisolated struct SavedApplicationDataMigrationService: SavedDataMigrationServicing {
   func migrateSavedData() async throws -> MovieFolderStorageMigrationReport {
     let migrationTask = Task.detached(priority: .utility) {
       defer { MovieFolderEnvironment.notifyConfigurationChanged() }

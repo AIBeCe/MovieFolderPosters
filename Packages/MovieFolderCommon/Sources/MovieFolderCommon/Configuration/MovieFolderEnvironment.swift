@@ -26,16 +26,18 @@ nonisolated public enum MovieFolderEnvironment {
   /// Creates a best-effort activity service without making logging a startup requirement.
   /// - Returns: A shared-container recorder, or an unavailable service when the caller cannot resolve its container.
   public static func makeActivityRecorder() -> any MovieFolderActivityServicing {
-    makeActivityRecorder(locations: SystemMovieFolderStorageLocations())
+    makeActivityRecorder(locations: MovieFolderSystemStorageLocations())
   }
 
   /// Creates best-effort history using explicitly supplied process storage locations.
-  static func makeActivityRecorder(locations: any MovieFolderStorageLocations) -> any MovieFolderActivityServicing {
+  static func makeActivityRecorder(locations: any MovieFolderApplicationStorageLocations) -> any MovieFolderActivityServicing {
     do {
+      let storeFactory = try locations.persistenceStoreFactory()
       return MovieFolderActivityRecorder(
         directory: try locations.appGroupContainerURL().appendingPathComponent("Activity"),
         notifier: SharedActivityChangeNotifier(),
-        configurationRepository: try makeConfigurationRepository(locations: locations))
+        configurationRepository: try makeConfigurationRepository(locations: locations),
+        storeFactory: storeFactory)
     } catch {
       return UnavailableActivityService()
     }
@@ -44,18 +46,19 @@ nonisolated public enum MovieFolderEnvironment {
   /// Creates optional request history without making it a startup or provider requirement.
   /// - Returns: A shared privacy-enforcing service, or an explicit unavailable fallback.
   public static func makeNetworkHistoryService() -> any MovieFolderNetworkHistoryServicing {
-    makeNetworkHistoryService(locations: SystemMovieFolderStorageLocations())
+    makeNetworkHistoryService(locations: MovieFolderSystemStorageLocations())
   }
 
   /// Resolves testable process locations while always injecting shared privacy configuration.
   static func makeNetworkHistoryService(
-    locations: any MovieFolderStorageLocations
+    locations: any MovieFolderApplicationStorageLocations
   ) -> any MovieFolderNetworkHistoryServicing {
     do {
+      let storeFactory = try locations.persistenceStoreFactory()
       return MovieFolderNetworkHistoryService(
         directory: try locations.appGroupContainerURL().appendingPathComponent("NetworkHistory"),
         configurationRepository: try makeConfigurationRepository(locations: locations),
-        notifier: SharedNetworkHistoryChangeNotifier())
+        notifier: SharedNetworkHistoryChangeNotifier(), storeFactory: storeFactory)
     } catch {
       return UnavailableNetworkHistoryService()
     }
@@ -108,45 +111,48 @@ nonisolated public enum MovieFolderEnvironment {
   /// - Returns: The shared configuration repository backed by its settings persistence store.
   /// - Throws: An unavailable App Group container or a failure creating the required persistence directory.
   public static func makeConfigurationRepository() throws -> ConfigurationRepository {
-    try makeConfigurationRepository(locations: SystemMovieFolderStorageLocations())
+    try makeConfigurationRepository(locations: MovieFolderSystemStorageLocations())
   }
 
   /// Opens only app-owned namespaces for an explicitly requested saved-data upgrade.
   /// - Returns: The shared migrator with backups isolated from normal collection-result cleanup.
   /// - Throws: Container, namespace or persistence access failures before migration begins.
   public static func makeStorageMigrator() throws -> MovieFolderStorageMigrator {
-    let container = try MovieFolderEnvironment.appGroupContainerURL()
+    let locations = MovieFolderSystemStorageLocations()
+    let container = try locations.appGroupContainerURL()
+    let storeFactory = try locations.persistenceStoreFactory()
 
     return MovieFolderStorageMigrator(
-      configurationStore: try PersistenceStore(directory: container.appendingPathComponent("Settings")),
-      collectionOutcomeStore: try CollectionProcessingStorageNamespace.open(in: container),
-      backupStore: try PersistenceStore(
+      configurationStore: try storeFactory.makeStore(directory: container.appendingPathComponent("Settings")),
+      collectionOutcomeStore: try CollectionProcessingStorageNamespace.open(in: container, using: storeFactory),
+      backupStore: try storeFactory.makeStore(
         directory: container.appendingPathComponent("MigrationBackups"), maximumRecordBytes: 8 * 1024 * 1024),
       operationalContainer: container,
-      coordinationStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")))
+      processingLockStore: try storeFactory.makeStore(directory: container.appendingPathComponent("ProcessingLocks")))
   }
 
   /// Opens settings at the supplied process container location.
   static func makeConfigurationRepository(
-    locations: any MovieFolderStorageLocations
+    locations: any MovieFolderApplicationStorageLocations
   ) throws -> ConfigurationRepository {
-    try ConfigurationRepository(
-      store: PersistenceStore(directory: locations.appGroupContainerURL().appendingPathComponent("Settings")))
+    ConfigurationRepository(
+      store: try locations.makePersistenceStore(
+        directory: locations.appGroupContainerURL().appendingPathComponent("Settings")))
   }
 
   /// Opens recovery mode and provider configuration in their dedicated bounded shared App Group namespace.
   /// - Returns: A service shared by host and Finder processes, independent of collection roots.
   /// - Throws: An unavailable container or a failure opening the recovery persistence namespace.
   public static func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
-    try makeProcessingRecoveryService(locations: SystemMovieFolderStorageLocations())
+    try makeProcessingRecoveryService(locations: MovieFolderSystemStorageLocations())
   }
 
   /// Opens recovery configuration at supplied process locations without clearing settings, results, or caches.
   static func makeProcessingRecoveryService(
-    locations: any MovieFolderStorageLocations
+    locations: any MovieFolderApplicationStorageLocations
   ) throws -> ProcessingRecoveryService {
     ProcessingRecoveryService(
-      store: try PersistenceStore(
+      store: try locations.makePersistenceStore(
         directory: locations.appGroupContainerURL().appendingPathComponent("ProcessingRecovery"),
         maximumRecordBytes: 8_192))
   }
@@ -155,19 +161,20 @@ nonisolated public enum MovieFolderEnvironment {
   /// - Returns: A state repository using the current shared directory and payload-free change notifier.
   /// - Throws: An unavailable container, required offline migration, or a persistence directory failure.
   public static func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
-    try makeCollectionProcessingStore(locations: SystemMovieFolderStorageLocations())
+    try makeCollectionProcessingStore(locations: MovieFolderSystemStorageLocations())
   }
 
   /// Opens versioned outcomes after opening settings in the same supplied container.
   static func makeCollectionProcessingStore(
-    locations: any MovieFolderStorageLocations
+    locations: any MovieFolderApplicationStorageLocations
   ) throws -> CollectionProcessingStore {
     // Opening settings first preserves initial creation of the authorized App Group directory.
     let configurationRepository = try makeConfigurationRepository(locations: locations)
     let sharedContainer = try locations.appGroupContainerURL()
 
     return CollectionProcessingStore(
-      store: try CollectionProcessingStorageNamespace.open(in: sharedContainer),
+      store: try CollectionProcessingStorageNamespace.open(
+        in: sharedContainer, using: try locations.persistenceStoreFactory()),
       configuration: configurationRepository,
       notifier: SharedCollectionProcessingStateChangeNotifier())
   }
@@ -176,14 +183,15 @@ nonisolated public enum MovieFolderEnvironment {
   /// - Returns: The private bookmark store belonging to this signed process.
   /// - Throws: A failure resolving Application Support or creating the private persistence directory.
   public static func makePrivateAuthorizationStore() throws -> PersistenceStore {
-    try makePrivateAuthorizationStore(locations: SystemMovieFolderStorageLocations())
+    try makePrivateAuthorizationStore(locations: MovieFolderSystemStorageLocations())
   }
 
   /// Opens private bookmarks beneath the supplied process Application Support directory.
-  static func makePrivateAuthorizationStore(locations: any MovieFolderStorageLocations) throws -> PersistenceStore {
+  static func makePrivateAuthorizationStore(locations: any MovieFolderApplicationStorageLocations) throws -> PersistenceStore {
     let support = try locations.applicationSupportURL()
 
-    return try PersistenceStore(directory: support.appendingPathComponent("MovieFolderPosters/Authorization"))
+    return try locations.makePersistenceStore(
+      directory: support.appendingPathComponent("MovieFolderPosters/Authorization"))
   }
 
   /// Announces a committed configuration change to other signed processes.
@@ -241,17 +249,35 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
 }
 
 /// Resolves process-specific storage locations without granting access to their contents.
-nonisolated protocol MovieFolderStorageLocations: Sendable {
+nonisolated protocol MovieFolderApplicationStorageLocations: Sendable {
   /// Resolves the signed process's shared container or throws when unavailable.
   func appGroupContainerURL() throws -> URL
   /// Resolves this process's private Application Support location.
   func applicationSupportURL() throws -> URL
+  /// Creates a store factory anchored to this process's explicit storage authorization, when one exists.
+  func persistenceStoreFactory() throws -> PersistenceStoreFactory
+}
+
+extension MovieFolderApplicationStorageLocations {
+  /// Uses ordinary persistence access when the location provider has no separate authorization root.
+  func persistenceStoreFactory() throws -> PersistenceStoreFactory { PersistenceStoreFactory() }
+
+  /// Opens a store through this location provider's path authorization.
+  func makePersistenceStore(directory: URL, maximumRecordBytes: Int? = .none) throws -> PersistenceStore {
+    try persistenceStoreFactory().makeStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
+  }
 }
 
 /// Uses the calling process's existing entitlements and user-domain storage defaults.
-nonisolated private struct SystemMovieFolderStorageLocations: MovieFolderStorageLocations {
-  func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
-  func applicationSupportURL() throws -> URL {
+nonisolated public struct MovieFolderSystemStorageLocations: MovieFolderApplicationStorageLocations {
+  /// Creates process-specific storage locations from the current app identity and test arguments.
+  public init() {}
+
+  /// Resolves the signed process's App Group container or its validated acceptance-test container.
+  public func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
+
+  /// Resolves private application storage or the isolated acceptance-test private directory.
+  public func applicationSupportURL() throws -> URL {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
         guard let root = try MovieFolderEnvironment.acceptanceTestRoot() else {
@@ -266,6 +292,26 @@ nonisolated private struct SystemMovieFolderStorageLocations: MovieFolderStorage
 
     return try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: .none, create: true)
+  }
+
+  /// Opens a store using the validated acceptance root when the Debug test launch requests it.
+  public func makePersistenceStore(directory: URL, maximumRecordBytes: Int? = .none) throws -> PersistenceStore {
+    try persistenceStoreFactory().makeStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
+  }
+
+  /// Creates the instance-scoped authorization used by every store in this process.
+  func persistenceStoreFactory() throws -> PersistenceStoreFactory {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        guard let root = try MovieFolderEnvironment.acceptanceTestRoot() else {
+          throw ConfigurationError.unavailableContainer
+        }
+
+        return PersistenceStoreFactory(trustedRoot: root)
+      }
+    #endif
+
+    return PersistenceStoreFactory()
   }
 }
 
@@ -331,7 +377,7 @@ nonisolated private struct UnavailableNetworkHistoryService: MovieFolderNetworkH
   func setNetworkHistoryRecordingEnabled(_ enabled: Bool) throws { throw Failure.unavailable }
   func prepareNetworkHistoryRecording(collectionID: UUID?) -> UUID? { .none }
   func recordCompletedNetworkRequest(
-    purpose: Network.TMDbRequestCategory, result: Network.TMDbRequestResult,
+    purpose: Network.TMDbRequestCategory, result: Network.TMDbRequestCompletionResult,
     completedAt: Date, expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) {}
 }

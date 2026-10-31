@@ -25,7 +25,7 @@ private struct OperationalMigrationFixture {
   /// Explicitly composed migration service.
   var migrator: MovieFolderStorageMigrator {
     MovieFolderStorageMigrator(configurationStore: settings, collectionOutcomeStore: outcomes, backupStore: backups,
-      operationalContainer: container, coordinationStore: locks)
+      operationalContainer: container, processingLockStore: locks)
   }
   /// Exact processing key derived from the authorized saved canonical path without filesystem resolution.
   var operationalKey: String { "movie-folder-processing:" + root.path }
@@ -69,7 +69,7 @@ private struct OperationalMigrationFixture {
     }
     let outcomePayload = try JSONSerialization.data(withJSONObject: outcomesObject)
     try write(outcomePayload, store: outcomes, key: CollectionProcessingStore.processingStateKey(for: root.id))
-    var state = ProcessingState(folders: ["Alien": FolderRecord(fingerprint: "original", status: .processed,
+    var state = CollectionProcessingCache(folders: ["Alien": FolderProcessingCacheRecord(fingerprint: "original", status: .processed,
       retryDate: Date(timeIntervalSince1970: 1234), matchedMovieID: 42, posterPath: "/alien.jpg",
       movieTitle: "Alien", movieYear: 1979, movieIdentitySource: .explicitSelection)],
       providerRetryAt: Date(timeIntervalSince1970: 5678), credentialRevision: configuration.credentialRevision)
@@ -115,7 +115,7 @@ private struct OperationalMigrationFixture {
   #expect(current.movieMatchingConfiguration.searchLanguage == .english)
   #expect(current.directories.first?.movieMatchingConfiguration == .none)
   let payload = try #require(try fixture.read(fixture.operational, key: fixture.operationalKey))
-  let state = try JSONDecoder().decode(ProcessingState.self, from: payload)
+  let state = try JSONDecoder().decode(CollectionProcessingCache.self, from: payload)
   #expect(state.folders["Alien"]?.matchedMovieID == 42)
   #expect(state.folders["Alien"]?.posterPath == "/alien.jpg")
   #expect(state.folders["Alien"]?.movieIdentitySource == .explicitSelection)
@@ -155,7 +155,7 @@ private struct OperationalMigrationFixture {
   defer { try? FileManager.default.removeItem(at: fixture.container) }
   let originals = try fixture.seed()
   let original = try #require(originals.last?.1)
-  #expect(throws: (any Error).self) { try JSONDecoder().decode(ProcessingState.self, from: original) }
+  #expect(throws: (any Error).self) { try JSONDecoder().decode(CollectionProcessingCache.self, from: original) }
   let invalid = Data("{\"requiresReleaseYearForAutomaticMatching\":false,\"comparesOriginalTitles\":true}".utf8)
   #expect(throws: (any Error).self) { try JSONDecoder().decode(MovieMatchingConfiguration.self, from: invalid) }
   var current = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.configuration))

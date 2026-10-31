@@ -114,18 +114,18 @@ struct CollectionProcessingModelTests {
   /// Checks that projections distinguish stale generations, active work, and interrupted runs.
   @Test func projectionSeparatesStaleBusyAndInterruptedStates() {
     let operation = CollectionProcessingRun(
-      action: .automatic, startedAt: Date(), endedAt: Date(), state: .interrupted)
+      action: .automatic, startedAt: Date(), endedAt: Date(), runState: .interrupted)
     let processingState = CollectionProcessingState(context: context, currentRun: operation)
 
-    #expect(CollectionProcessingPresentation(processingState: processingState).state == .interrupted)
-    #expect(CollectionProcessingPresentation(processingState: processingState, isStale: true).state == .stale)
-    #expect(CollectionProcessingPresentation(processingState: processingState, isBusy: true).state == .busy)
+    #expect(CollectionProcessingPresentation(processingState: processingState).displayState == .interrupted)
+    #expect(CollectionProcessingPresentation(processingState: processingState, isStale: true).displayState == .stale)
+    #expect(CollectionProcessingPresentation(processingState: processingState, isBusy: true).displayState == .busy)
 
     var runningProcessingState = processingState
-    runningProcessingState.currentRun?.state = .running
+    runningProcessingState.currentRun?.runState = .running
     #expect(CollectionProcessingPresentation(
       processingState: runningProcessingState, stateOverride: .interrupted
-    ).state == .interrupted)
+    ).displayState == .interrupted)
   }
 
   /// Checks that unsupported schemas and duplicate folder membership fail validation.
@@ -133,7 +133,7 @@ struct CollectionProcessingModelTests {
     var processingState = CollectionProcessingState(schemaVersion: 99, context: context)
     #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(
       record: .collectionOutcomes(context.rootID), version: 99)) { try processingState.validate() }
-    processingState.schemaVersion = 2
+    processingState.schemaVersion = 3
     processingState.folders = [FolderProcessingRecord(name: "Film"), FolderProcessingRecord(name: "Film")]
     #expect(throws: CollectionProcessingError.invalidState) { try processingState.validate() }
   }

@@ -28,8 +28,8 @@ actor LocalDataExportTemporaryFileWriterFake: LocalDataExportTemporaryFileWritin
     continuation = nil
   }
 
-  func stage(bytes: Data, destination: URL) async throws -> PreparedLocalDataExportFile {
-    let staged: PreparedLocalDataExportFile
+  func stage(bytes: Data, destination: URL) async throws -> PreparedLocalDataExport {
+    let staged: PreparedLocalDataExport
     do { staged = try await writer.stage(bytes: bytes, destination: destination) } catch {
       stageFailed = true
       throw error
@@ -66,7 +66,7 @@ struct LocalDataExportPublicationTests {
   func cancellationBeforePublicationPreservesDestinationAndRemovesStage(
     replacesExisting: Bool, cancelsTask: Bool
   ) async throws {
-    let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let destination = root.appendingPathComponent("support.json")
@@ -82,7 +82,7 @@ struct LocalDataExportPublicationTests {
     #expect(FileManager.default.fileExists(atPath: stagedDirectory.path))
     if cancelsTask { saving.cancel() } else { operation.close() }
     await stager.release()
-    await #expect(throws: LocalDataExportError.self) { try await saving.value }
+    await #expect(throws: LocalDataExportFailure.self) { try await saving.value }
     if replacesExisting {
       #expect(try Data(contentsOf: destination) == existing)
     } else {
@@ -94,7 +94,7 @@ struct LocalDataExportPublicationTests {
   /// Writes the frozen preview bytes and removes its private stage after success.
   /// - Throws: Filesystem setup, export, or assertion failures.
   @Test func successfulPublicationWritesExactlyReviewedBytesAndRemovesStage() async throws {
-    let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let destination = root.appendingPathComponent("support.json")
@@ -112,7 +112,7 @@ struct LocalDataExportPublicationTests {
   /// Rejects publication when the selected history privacy changes during staging.
   /// - Throws: Filesystem setup or assertion failures.
   @Test func changedPrivacyDuringStageRejectsPublication() async throws {
-    let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let destination = root.appendingPathComponent("support.json")
@@ -124,7 +124,7 @@ struct LocalDataExportPublicationTests {
     try #require(await stager.isHeld)
     await source.replace(.init(activity: [], network: [], privacy: Data([2])))
     await stager.release()
-    await #expect(throws: LocalDataExportError.self) { try await saving.value }
+    await #expect(throws: LocalDataExportFailure.self) { try await saving.value }
     #expect(!FileManager.default.fileExists(atPath: destination.path))
     let stagedDirectory = try #require(await stager.stagedDirectory)
     #expect(!FileManager.default.fileExists(atPath: stagedDirectory.path))
@@ -132,7 +132,7 @@ struct LocalDataExportPublicationTests {
   /// Preserves an existing destination when publication fails and removes its stage.
   /// - Throws: Filesystem setup or assertion failures.
   @Test func failedPublicationPreservesDestinationAndRemovesStage() async throws {
-    let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let destination = root.appendingPathComponent("changed-to-directory")
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -142,7 +142,7 @@ struct LocalDataExportPublicationTests {
     let (model, _) = try await preparedModel()
     let stager = LocalDataExportTemporaryFileWriterFake(holdsStage: false)
     let operation = LocalDataExportWriter(model: model, staging: stager)
-    await #expect(throws: LocalDataExportError.self) { try await operation.save(to: destination) }
+    await #expect(throws: LocalDataExportFailure.self) { try await operation.save(to: destination) }
     #expect(try Data(contentsOf: sentinel) == existing)
     let stagedDirectory = try #require(await stager.stagedDirectory)
     #expect(!FileManager.default.fileExists(atPath: stagedDirectory.path))

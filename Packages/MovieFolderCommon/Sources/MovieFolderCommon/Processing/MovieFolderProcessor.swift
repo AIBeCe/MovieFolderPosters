@@ -13,7 +13,7 @@ public actor MovieFolderProcessor {
   /// The store holding this root generation's processing records.
   let persistence: PersistenceStore
   /// Optional stable locks shared across processing-record generations.
-  let coordinationStore: PersistenceStore?
+  let processingLockStore: PersistenceStore?
   /// The metadata source used only when cached decisions or posters are insufficient.
   let provider: any MovieMetadataProvider
   /// The directory containing validated source poster bytes keyed by provider path.
@@ -56,7 +56,7 @@ public actor MovieFolderProcessor {
   ///   - cacheDirectory: The directory used for validated source image caching.
   ///   - posterAssigner: The synchronous adapter performing final automatic icon assignment.
   ///   - now: The clock used for retry and cache expiry decisions.
-  ///   - coordinationStore: Optional stable locks shared across processing generations.
+  ///   - processingLockStore: Optional stable locks shared across processing generations.
   ///   - processingVerifier: Optional retained collaborator enforcing live settings authorization.
   ///   - appearance: The rendering finish selected for the assigned poster.
   ///   - processingStore: Dedicated result storage; production supplies it with a current context for each operation.
@@ -73,7 +73,7 @@ public actor MovieFolderProcessor {
     cacheDirectory: URL,
     posterAssigner: any PosterAssigner = FileSystemService(),
     now: @escaping @Sendable () -> Date = Date.init,
-    coordinationStore: PersistenceStore? = .none,
+    processingLockStore: PersistenceStore? = .none,
     processingVerifier: (any MovieFolderProcessingVerifier)? = .none,
     appearance: PosterAppearance = .softFinish,
     processingStore: CollectionProcessingStore? = .none,
@@ -93,7 +93,7 @@ public actor MovieFolderProcessor {
     self.configuration = configuration
     self.fileSystem = fileSystem
     self.persistence = persistence
-    self.coordinationStore = coordinationStore
+    self.processingLockStore = processingLockStore
     self.provider = provider
     self.cacheDirectory = cacheDirectory
     self.posterAssigner = posterAssigner

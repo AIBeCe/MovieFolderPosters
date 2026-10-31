@@ -53,7 +53,7 @@ final class ProcessorActivityLog {
   ///   - retryAt: The earliest retry eligibility time for the folder or provider, when known.
   func append(
     _ result: MovieFolderActivityLogEvent.FolderResult, reason: FolderProcessingReason? = .none,
-    failure: FolderProcessingFailure? = .none, retryAt: Date? = .none
+    failure: AutomaticFolderProcessingFailure? = .none, retryAt: Date? = .none
   ) {
     hasTerminalResult = true
     if failure?.stage == .persist { hasRecordedPersistenceFailure = true }
@@ -76,7 +76,7 @@ final class ProcessorActivityLog {
 
   /// Retains an actual required write failure alongside any already completed icon or matching operation.
   /// - Parameter failure: The required persistence failure to retain.
-  func appendPersistenceFailure(_ failure: FolderProcessingFailure) {
+  func appendPersistenceFailure(_ failure: AutomaticFolderProcessingFailure) {
     guard !hasRecordedPersistenceFailure else { return }
 
     append(.failed, reason: failure.reason == .storage ? .storageUnavailable : .processingFailure, failure: failure)
@@ -88,19 +88,20 @@ final class ProcessorActivityLog {
   ///   - onlyWhenChanged: Whether to omit a result identical to the prior saved result.
   ///   - failure: Safe failure evidence associated with this result, when present.
   func append(
-    _ record: FolderProcessingRecord, onlyWhenChanged: Bool = false, failure: FolderProcessingFailure? = .none
+    _ record: FolderProcessingRecord, onlyWhenChanged: Bool = false, failure: AutomaticFolderProcessingFailure? = .none
   ) {
-    if onlyWhenChanged, let previous = priorFolderResults[record.name], previous.identity == record.identity,
-      previous.state == record.state, previous.reason == record.reason, previous.movieID == record.movieID {
+    if onlyWhenChanged, let previous = priorFolderResults[record.folderName], previous.folderIdentity == record.folderIdentity,
+      previous.processingState == record.processingState, previous.processingReason == record.processingReason,
+      previous.matchedMovieID == record.matchedMovieID {
       return
     }
-    child = record.name
-    movie = record.movieID.map {
-      MovieMetadata(id: $0, title: record.movieTitle ?? "", originalTitle: record.movieTitle ?? "",
-        releaseYear: record.movieYear, posterPath: .none)
+    child = record.folderName
+    movie = record.matchedMovieID.map {
+      MovieMetadata(id: $0, title: record.matchedMovieTitle ?? "", originalTitle: record.matchedMovieTitle ?? "",
+        releaseYear: record.matchedMovieYear, posterPath: .none)
     }
     let result: MovieFolderActivityLogEvent.FolderResult
-    switch record.state {
+    switch record.processingState {
     case .notFound: result = .notFound
     case .severalMatches: result = .severalMatches
     case .unresolved, .uncertain: result = .unresolved
@@ -111,7 +112,7 @@ final class ProcessorActivityLog {
     case .failed: result = .failed
     case .pending, .done: return
     }
-    append(result, reason: record.reason, failure: failure ?? record.lastFailure, retryAt: record.retryAt)
+    append(result, reason: record.processingReason, failure: failure ?? record.lastFailure, retryAt: record.nextRetryAt)
   }
 }
 
@@ -121,7 +122,7 @@ extension MovieFolderProcessor {
   ///   - record: The saved folder decision, when one exists.
   ///   - candidate: The currently inspected child whose fingerprint must match the saved decision.
   /// - Returns: The saved movie identity when it is still tied to this child.
-  func savedActivityMovie(_ record: FolderRecord?, candidate: FolderCandidate) -> MovieMetadata? {
+  func savedActivityMovie(_ record: FolderProcessingCacheRecord?, candidate: MovieFolderCandidate) -> MovieMetadata? {
     guard let record, record.fingerprint == candidate.fingerprint, let movieID = record.matchedMovieID else {
       return .none
     }
@@ -147,7 +148,7 @@ extension MovieFolderProcessor {
 
     let cancelled = error is CancellationError || Task.isCancelled
     let failure = cancelled
-      ? FolderProcessingFailure(reason: .cancelled, stage: activity.stage, occurredAt: now())
+      ? AutomaticFolderProcessingFailure(reason: .cancelled, stage: activity.stage, occurredAt: now())
       : MovieFolderActivityLogEvent.failureEvidence(for: error, stage: activity.stage, occurredAt: now())
     let reason: FolderProcessingReason = switch failure.reason {
     case .cancelled: .interrupted

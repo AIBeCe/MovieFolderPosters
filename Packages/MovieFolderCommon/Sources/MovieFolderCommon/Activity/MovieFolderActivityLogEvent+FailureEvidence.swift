@@ -11,7 +11,7 @@ public extension MovieFolderActivityLogEvent {
   /// - Returns: Safe typed evidence containing no underlying path, request, credential, or error string.
   static func failureEvidence(
     for error: any Error, stage: FolderProcessingStage = .unknown, occurredAt: Date = Date()
-  ) -> FolderProcessingFailure {
+  ) -> AutomaticFolderProcessingFailure {
     let reason: FolderProcessingFailureReason
     if error is CancellationError {
       reason = .cancelled
@@ -30,54 +30,68 @@ public extension MovieFolderActivityLogEvent {
       reason = recoveryFailureReason(recoveryError)
     } else if let providerError = error as? TMDbError {
       reason = providerFailureReason(providerError)
-    } else if error is ProcessingError {
-      reason = .unavailable
-    } else if error is MovieFolderProcessorConfigurationError {
-      reason = .invalidConfiguration
-    } else if let collectionError = error as? CollectionProcessingError {
-      reason = switch collectionError {
+    } else if let additionalReason = additionalFailureReason(error) {
+      reason = additionalReason
+    } else {
+      reason = .unknown
+    }
+
+    return AutomaticFolderProcessingFailure(reason: reason, stage: stage, occurredAt: occurredAt)
+  }
+}
+
+private extension MovieFolderActivityLogEvent {
+  /// Maps filesystem, operation, and selection errors to fixed safe failure categories.
+  /// - Parameter error: Error to classify without retaining its description.
+  /// - Returns: A known category, or `nil` when this helper does not own the error type.
+  static func additionalFailureReason(_ error: any Error) -> FolderProcessingFailureReason? {
+    if error is ProcessingError { return .unavailable }
+    if error is MovieFolderProcessorConfigurationError { return .invalidConfiguration }
+    if let collectionError = error as? CollectionProcessingError {
+      return switch collectionError {
       case .busy: .busy
       case .staleRevision, .staleRun, .configurationChanged, .rootRemoved: .configurationChanged
       case .capacityExceeded: .capacity
       case .unsupportedSchema, .invalidState, .unavailable, .revisionExhausted: .storage
       }
-    } else if let processingError = error as? ProcessingFailure {
-      reason = switch processingError {
+    }
+    if let processingError = error as? AutomaticProcessingIssue {
+      return switch processingError {
       case .changedIdentity: .ownershipChanged
       case .invalidPoster: .invalidResponse
       case .cacheWriteFailed: .storage
       }
-    } else if let posterActionError = error as? PosterActionError {
-      reason = switch posterActionError {
+    }
+    if let posterActionError = error as? PosterActionError {
+      return switch posterActionError {
       case .busy: .busy
       case .unresolved: .movieIdentityUnresolved
       case .foreignIcon: .foreignIcon
       case .changedIdentity: .ownershipChanged
       case .noPoster: .missingPoster
       }
-    } else if let directoryError = error as? DirectoryAccessError {
-      reason = switch directoryError {
+    }
+    if let directoryError = error as? DirectoryAccessError {
+      return switch directoryError {
       case .invalidDirectory: .invalidSelection
       case .staleBookmark, .accessDenied: .authorizationDenied
       case .identityChanged: .ownershipChanged
       }
-    } else if let posterError = error as? FolderPosterError {
-      reason = switch posterError {
+    }
+    if let posterError = error as? FolderPosterError {
+      return switch posterError {
       case .invalidChild: .invalidSelection
       case .invalidImage: .invalidResponse
       case .iconAssignmentFailed: .filesystem
       }
-    } else if let urlError = error as? URLError {
-      reason = urlError.code == .cancelled ? .cancelled : urlError.code == .timedOut ? .timeout : .connectivity
-    } else {
-      reason = .unknown
+    }
+    if let urlError = error as? URLError {
+      return urlError.code == .cancelled ? .cancelled : urlError.code == .timedOut ? .timeout : .connectivity
     }
 
-    return FolderProcessingFailure(reason: reason, stage: stage, occurredAt: occurredAt)
+    return .none
   }
-}
 
-private extension MovieFolderActivityLogEvent {
   /// Preserves known settings failures rather than substituting an unrelated filesystem or provider cause.
   static func configurationFailureReason(_ error: ConfigurationError) -> FolderProcessingFailureReason {
     switch error {

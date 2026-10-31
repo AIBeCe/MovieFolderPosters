@@ -3,7 +3,7 @@ import Foundation
 import Network
 
 /// Persisted completed alias evidence; failed lookups never construct this record.
-nonisolated struct CachedAlternativeTitles: Codable {
+nonisolated struct CachedMovieAlternativeTitles: Codable {
   /// Identity checked against the request before persistence and reuse.
   let movieID: Int
   /// Complete provider titles, including valid completed empty lists.
@@ -50,12 +50,12 @@ extension MovieFolderProcessor {
   }
 
   /// Loads every eligible alias sequentially and applies the fixed five-ID ceiling before cache lookup.
-  func assessMovie(title: String, year: Int?, search: MovieSearchResult,
-                   state: inout ProcessingState) async throws -> MovieMatchResult {
+  func matchMovieUsingEvidence(title: String, year: Int?, search: MovieSearchResult,
+                   state: inout CollectionProcessingCache) async throws -> MovieMatchResult {
     if let issue = matcher.candidateIssue(title: title, year: year, search: search,
       configuration: movieMatchingConfiguration) { return .unresolved(issue) }
     let identifiers = matcher.candidateIDs(year: year, search: search)
-    var evidence = MovieAlternativeTitles()
+    var evidence = MovieAlternativeTitlesByID()
     for id in identifiers {
       try Task.checkCancellation()
       let key = try MetadataCacheKey(category: .alternativeTitles, title: .none, year: .none, movieID: id,
@@ -75,14 +75,14 @@ extension MovieFolderProcessor {
       }) else { return .unresolved(.incompleteTitleEvidence) }
 
       evidence[id] = titles
-      let cached = CachedAlternativeTitles(movieID: id, titles: titles, createdAt: now())
+      let cached = CachedMovieAlternativeTitles(movieID: id, titles: titles, createdAt: now())
       if try JSONEncoder().encode([key: cached]).count <= 512 * 1_024 {
         state.alternativeTitles[key] = cached
         try state.boundAlternativeTitleCache()
       }
     }
 
-    var dates = MovieReleaseDates()
+    var dates = MovieReleaseDatesByID()
     if let year {
       for id in identifiers {
         guard let movie = search.movies.first(where: { $0.id == id }), movie.releaseYear != year,
@@ -106,7 +106,7 @@ extension MovieFolderProcessor {
   }
 }
 
-extension ProcessingState {
+extension CollectionProcessingCache {
   /// Bounds only alias evidence, evicting oldest records and then lexical keys for timestamp ties.
   mutating func boundAlternativeTitleCache() throws {
     let encoder = JSONEncoder()
@@ -126,7 +126,7 @@ extension ProcessingState {
 }
 
 /// Codable search results with their completeness evidence and creation time.
-nonisolated struct CachedSearch: Codable {
+nonisolated struct CachedMovieSearch: Codable {
   /// Movie records retained from the cached response.
   private let movies: [CachedMovie]
   /// Whether unexamined search pages prevent a unique automatic match.

@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 /// Rechecks durable shared admission before every search and artwork request, including cached compositions.
-nonisolated public struct RecoveryMovieMetadataProvider: MovieMetadataProvider {
+nonisolated public struct RecoveryAwareMovieMetadataProvider: MovieMetadataProvider {
   /// Underlying remote provider; invoked only after its admission access has been released.
   private let provider: any MovieMetadataProvider
   /// Shared mode and provider recovery service.
@@ -34,7 +34,7 @@ nonisolated public struct RecoveryMovieMetadataProvider: MovieMetadataProvider {
   }
 
   /// Admits and records each alternative-title request independently.
-  public func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitles {
+  public func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitlesByID {
     try Task.checkCancellation()
     try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
     do {
@@ -45,7 +45,7 @@ nonisolated public struct RecoveryMovieMetadataProvider: MovieMetadataProvider {
     }
   }
 
-  public func releaseDates(movieID: Int) async throws -> MovieReleaseDates {
+  public func releaseDates(movieID: Int) async throws -> MovieReleaseDatesByID {
     try Task.checkCancellation()
     try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
     do {

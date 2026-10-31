@@ -42,9 +42,10 @@ nonisolated struct CollectionProcessingSummary: Sendable, Equatable {
     guard let processingState else { return .none }
 
     return processingState.folders.filter {
-      !$0.isVerifiedDone && $0.state != .preserved && $0.state != .suppressed && $0.state != .excluded
+      !$0.isVerifiedDone && $0.processingState != .preserved && $0.processingState != .suppressed
+        && $0.processingState != .excluded
     }.sorted {
-      $0.name.localizedStandardCompare($1.name) == .orderedAscending
+      $0.folderName.localizedStandardCompare($1.folderName) == .orderedAscending
     }
   }
 }
@@ -81,16 +82,17 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
   /// Read-only access to the per-root outcome records.
   private let processingStore: any CollectionProcessingStateReading
   /// Shared with Finder and poster actions so stale-root checks do not race active work.
-  private let coordinationStore: PersistenceStore
+  private let processingLockStore: PersistenceStore
 
   /// Opens shared host read dependencies without exposing UI services to the Finder target.
   static func shared() throws -> CollectionSummaryService {
-    let sharedContainer = try MovieFolderEnvironment.appGroupContainerURL()
+    let locations = MovieFolderSystemStorageLocations()
+    let sharedContainer = try locations.appGroupContainerURL()
 
     return CollectionSummaryService(
       configuration: try MovieFolderEnvironment.makeConfigurationRepository(),
       processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore(),
-      coordinationStore: try PersistenceStore(
+      processingLockStore: try locations.makePersistenceStore(
         directory: sharedContainer.appendingPathComponent("ProcessingLocks")))
   }
 
@@ -98,11 +100,11 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
   init(
     configuration: ConfigurationRepository,
     processingStore: any CollectionProcessingStateReading,
-    coordinationStore: PersistenceStore
+    processingLockStore: PersistenceStore
   ) {
     self.configuration = configuration
     self.processingStore = processingStore
-    self.coordinationStore = coordinationStore
+    self.processingLockStore = processingLockStore
   }
 
   /// Reads each configured root without running preflight, inventory, or processing work.
@@ -185,9 +187,9 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
     }
 
     let isStale = processingState.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
-    let hasRunningRun = processingState?.currentRun?.state == .running
+    let hasRunningRun = processingState?.currentRun?.runState == .running
     if isStale || hasRunningRun,
-      let rootAccess = try? coordinationStore.acquireAccess(
+      let rootAccess = try? processingLockStore.acquireAccess(
       for: CollectionProcessingStore.coordinationKey(for: URL(fileURLWithPath: root.path))) {
       defer { withExtendedLifetime(rootAccess) {} }
       return refreshedSummary(for: root, configuration: saved, previous: processingState, isStale: isStale)
@@ -197,7 +199,7 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       } else if hasRunningRun {
         .busy
       } else {
-        CollectionProcessingPresentation(processingState: processingState).state
+        CollectionProcessingPresentation(processingState: processingState).displayState
       }
       return CollectionProcessingSummary(
         processingState: processingState,
@@ -230,13 +232,13 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
       return summaryAfterReadFailure(error, previous: processingState, isStale: isStale)
     }
     let remainsStale = refreshed.map { !Self.matches($0.context, root: root, configuration: saved) } ?? false
-    let isOrphaned = !remainsStale && refreshed?.currentRun?.state == .running
+    let isOrphaned = !remainsStale && refreshed?.currentRun?.runState == .running
     let displayState: CollectionProcessingDisplayState = if remainsStale {
       .stale
     } else if isOrphaned {
       .interrupted
     } else {
-      CollectionProcessingPresentation(processingState: refreshed).state
+      CollectionProcessingPresentation(processingState: refreshed).displayState
     }
 
     return CollectionProcessingSummary(
@@ -324,7 +326,7 @@ final class CollectionSummaryViewModel {
   /// Observers are weak so the window controller owns its normal UI lifetime.
   private struct WeakDelegate {
     /// The observer, if it is still alive.
-    weak var value: (any CollectionSummaryViewModelDelegate)?
+    weak var collectionSummaryViewModelDelegate: (any CollectionSummaryViewModelDelegate)?
   }
   /// Current projections keyed by stable collection identity.
   private(set) var summaries: [UUID: CollectionProcessingSummary] = [:]
@@ -336,9 +338,9 @@ final class CollectionSummaryViewModel {
 
   /// Registers one observer and removes stale or duplicate registrations.
   func addDelegate(_ delegate: any CollectionSummaryViewModelDelegate) {
-    delegates.removeAll { $0.value == nil }
-    guard !delegates.contains(where: { $0.value === delegate }) else { return }
-    delegates.append(WeakDelegate(value: delegate))
+    delegates.removeAll { $0.collectionSummaryViewModelDelegate == nil }
+    guard !delegates.contains(where: { $0.collectionSummaryViewModelDelegate === delegate }) else { return }
+    delegates.append(WeakDelegate(collectionSummaryViewModelDelegate: delegate))
   }
 
   /// Requests a summary read, coalescing invalidations during an active read.
@@ -369,8 +371,8 @@ final class CollectionSummaryViewModel {
 
   /// Notifies all living observers after replacing the current projection.
   private func publish() {
-    delegates.removeAll { $0.value == nil }
-    for delegate in delegates.compactMap(\.value) {
+    delegates.removeAll { $0.collectionSummaryViewModelDelegate == nil }
+    for delegate in delegates.compactMap(\.collectionSummaryViewModelDelegate) {
       delegate.collectionSummaryViewModelDidChange(self)
     }
   }

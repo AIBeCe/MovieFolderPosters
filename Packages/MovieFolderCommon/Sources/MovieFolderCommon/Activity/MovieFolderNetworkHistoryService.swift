@@ -1,6 +1,7 @@
 import Foundation
 import Log
 import Network
+import Persistence
 
 /// Optional terminal request history; storage failures never replace provider operation results.
 nonisolated public protocol MovieFolderNetworkHistoryServicing: Sendable {
@@ -31,7 +32,7 @@ nonisolated public protocol MovieFolderNetworkHistoryServicing: Sendable {
   ///   - expectedNetworkHistoryConfigurationRevision: Opaque ticket captured before this attempt was dispatched.
   ///   - collectionID: The same collection context used when preparing the ticket.
   func recordCompletedNetworkRequest(
-    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
+    purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) async
 }
@@ -62,6 +63,8 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
   private let configurationRepository: ConfigurationRepository
   /// Optional retained publisher; environment composition supplies cross-process delivery.
   private let notifier: (any MovieFolderNetworkHistoryChangeNotifying)?
+  /// Store-opening authorization retained for lazy history initialization.
+  private let storeFactory: PersistenceStoreFactory
   /// Successfully initialized storage; opened before acquiring settings access.
   private var cachedNetworkHistoryStore: ActivityLog<MovieFolderNetworkHistoryEvent>?
   /// Actual storage write failure evidence for this service lifetime.
@@ -72,13 +75,16 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
   ///   - directory: Dedicated caller-owned bounded history location.
   ///   - configurationRepository: Shared repository required for every optional network write.
   ///   - notifier: Retained payload-free publisher, or absence in controlled tests.
+  ///   - storeFactory: Path authorization used when the history store is opened lazily.
   public init(
     directory: URL, configurationRepository: ConfigurationRepository,
-    notifier: (any MovieFolderNetworkHistoryChangeNotifying)? = .none
+    notifier: (any MovieFolderNetworkHistoryChangeNotifying)? = .none,
+    storeFactory: PersistenceStoreFactory = PersistenceStoreFactory()
   ) {
     self.directory = directory
     self.configurationRepository = configurationRepository
     self.notifier = notifier
+    self.storeFactory = storeFactory
   }
 
   public var hasObservedWriteFailure: Bool { didObserveWriteFailure }
@@ -125,7 +131,7 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
   }
 
   public func recordCompletedNetworkRequest(
-    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
+    purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) async {
     // Cancellation is itself terminal evidence. Do not inherit the producer's cancelled task for the append.
@@ -139,7 +145,7 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
 
   /// Opens storage, then holds settings only for a single nonwaiting history commit.
   private func appendNetworkHistoryEvent(
-    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date,
+    purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) async -> NetworkHistoryAppendResult {
     let networkHistoryStore: ActivityLog<MovieFolderNetworkHistoryEvent>
@@ -187,7 +193,7 @@ public actor MovieFolderNetworkHistoryService: MovieFolderNetworkHistoryServicin
   private func openNetworkHistoryStore() async throws -> ActivityLog<MovieFolderNetworkHistoryEvent> {
     if let cachedNetworkHistoryStore { return cachedNetworkHistoryStore }
     let networkHistoryStore = try await ActivityLog<MovieFolderNetworkHistoryEvent>(
-      directory: directory, namespace: "movie-network", maximumEntries: 500)
+      directory: directory, namespace: "movie-network", storeFactory: storeFactory, maximumEntries: 500)
     cachedNetworkHistoryStore = networkHistoryStore
 
     return networkHistoryStore
@@ -215,7 +221,7 @@ nonisolated public struct MovieFolderNetworkRequestRecorder: TMDbClientRequestDe
   }
 
   public func tmdbClientDidCompleteRequest(
-    purpose: TMDbRequestCategory, result: TMDbRequestResult, completedAt: Date, recordingTicket: UUID
+    purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, completedAt: Date, recordingTicket: UUID
   ) async {
     await networkHistoryService.recordCompletedNetworkRequest(
       purpose: purpose, result: result, completedAt: completedAt,

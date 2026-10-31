@@ -68,9 +68,9 @@ nonisolated public struct CollectionProcessingStore: Sendable {
         processingState.inspectedAt = .none
         processingState.inventoryIssue = .inventoryPending
       } else if let child {
-        if let index = processingState.folders.firstIndex(where: { $0.name == child }) {
-          processingState.folders[index].state = .pending
-          processingState.folders[index].reason = .none
+        if let index = processingState.folders.firstIndex(where: { $0.folderName == child }) {
+          processingState.folders[index].processingState = .pending
+          processingState.folders[index].processingReason = .none
           processingState.folders[index].assessedAt = .none
         } else {
           processingState.folders.append(FolderProcessingRecord(name: child))
@@ -112,7 +112,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     if let stored, !stored.context.hasSameProcessingInputs(as: context) {
       var updated = stored
       updated.context = context
-      updated.folders = stored.folders.map { FolderProcessingRecord(name: $0.name) }
+      updated.folders = stored.folders.map { FolderProcessingRecord(name: $0.folderName) }
       updated.isInventoryComplete = false
       updated.inspectedAt = .none
       updated.inventoryIssue = .inventoryPending
@@ -157,7 +157,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
       guard current.revision < UInt64.max else { throw CollectionProcessingError.revisionExhausted }
       committed.revision = current.revision + 1
       if let run = committed.currentRun,
-        run.state == .completed, run.action == .automatic {
+        run.runState == .completed, run.action == .automatic {
         committed.lastCompletedRun = run
         committed.lastCompletedRunContext = committed.context
       }
@@ -223,19 +223,19 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     in state: inout CollectionProcessingState, configuration: CollectionProcessingConfiguration, now: Date
   ) {
     for index in state.folders.indices {
-      guard state.folders[index].state != .suppressed else { continue }
+      guard state.folders[index].processingState != .suppressed else { continue }
 
-      let isExcluded = state.folders[index].identity.map { configuration.excludesFolder(identity: $0) } ?? false
+      let isExcluded = state.folders[index].folderIdentity.map { configuration.excludesFolder(identity: $0) } ?? false
       if isExcluded {
-        state.folders[index].state = .excluded
-        state.folders[index].reason = .explicitExclusion
+        state.folders[index].processingState = .excluded
+        state.folders[index].processingReason = .explicitExclusion
         state.folders[index].assessedAt = now
-        state.folders[index].retryAt = .none
-      } else if state.folders[index].state == .excluded {
-        state.folders[index].state = .pending
-        state.folders[index].reason = .inventoryPending
+        state.folders[index].nextRetryAt = .none
+      } else if state.folders[index].processingState == .excluded {
+        state.folders[index].processingState = .pending
+        state.folders[index].processingReason = .inventoryPending
         state.folders[index].assessedAt = .none
-        state.folders[index].retryAt = .none
+        state.folders[index].nextRetryAt = .none
       }
     }
   }
@@ -293,7 +293,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
     guard let data else { return .none }
     let processingState: CollectionProcessingState
     do {
-      let version = try JSONDecoder().decode(CollectionOutcomeSchemaVersion.self, from: data).schemaVersion
+      let version = try JSONDecoder().decode(CollectionProcessingOutcomeSchemaVersion.self, from: data).schemaVersion
 
       guard version == 3 else {
         if (1...2).contains(version) {
@@ -329,7 +329,7 @@ nonisolated public struct CollectionProcessingStore: Sendable {
 }
 
 /// Reads the outer outcome version before inspecting potentially renamed nested context fields.
-private struct CollectionOutcomeSchemaVersion: Decodable {
+private struct CollectionProcessingOutcomeSchemaVersion: Decodable {
   /// Saved record format, independent of processing revision.
   let schemaVersion: Int
 }

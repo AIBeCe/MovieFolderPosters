@@ -66,7 +66,9 @@ private struct SelectedRetryConfigurationVerifier: MovieFolderProcessingVerifier
     try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
     try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
   }
 }
@@ -92,7 +94,7 @@ private struct SelectedRetryScenario {
     processor = try source.fixture.processor(
       provider: provider, clock: { source.clock.now }, posterAssigner: FileSystemService(),
       processingStore: source.collectionStore)
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: source.fixture.movies)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: source.fixture.movies)
     identity = candidate.identity
     unrelated = [
       FolderProcessingRecord(name: "Pending (2020)", identity: "pending-identity", state: .pending,
@@ -106,7 +108,7 @@ private struct SelectedRetryScenario {
       reason: reason, assessedAt: source.clock.now, fingerprint: candidate.fingerprint)] + unrelated
     state.isInventoryComplete = true
     state.inspectedAt = source.clock.now
-    state.currentRun?.state = .completed
+    state.currentRun?.runState = .completed
     _ = try source.collectionStore.commit(state, expectedRevision: state.revision)
   }
 
@@ -124,12 +126,12 @@ private struct SelectedRetryScenario {
 
   /// Persists operational retry evidence alongside an unrelated decision that must survive the attempt.
   func seedCache(reason: FolderProcessingReason?, retryDate: Date? = .none, rootDeadline: Date? = .none) throws {
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: source.fixture.movies)
-    let state = ProcessingState(folders: [
-      "Dune (2021)": FolderRecord(
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: source.fixture.movies)
+    let state = CollectionProcessingCache(folders: [
+      "Dune (2021)": FolderProcessingCacheRecord(
         fingerprint: candidate.fingerprint, status: reason == .none ? .unresolved : .transientFailure,
         retryDate: retryDate, matchedMovieID: .none, posterPath: .none, processingReason: reason),
-      "Deleted (2010)": FolderRecord(
+      "Deleted (2010)": FolderProcessingCacheRecord(
         fingerprint: "unrelated-cache", status: .unresolved, retryDate: .none,
         matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)
     ], providerRetryAt: rootDeadline)
@@ -139,12 +141,12 @@ private struct SelectedRetryScenario {
   }
 
   /// Returns operational evidence for checking deadlines and decisions independent of display recording.
-  func cache() throws -> ProcessingState {
+  func cache() throws -> CollectionProcessingCache {
     let access = try #require(try source.fixture.persistence.acquireAccess(
       for: MovieFolderProcessor.processingStateKey(for: source.fixture.movies)))
     let bytes = try #require(try access.read())
 
-    return try JSONDecoder().decode(ProcessingState.self, from: bytes)
+    return try JSONDecoder().decode(CollectionProcessingCache.self, from: bytes)
   }
 }
 
@@ -162,7 +164,7 @@ private struct SelectedRetryScenario {
   #expect(summary.assigned == 1)
   #expect(!stopSelection)
   let saved = try scenario.snapshot()
-  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
+  #expect(saved.folders.filter { $0.folderName != "Dune (2021)" } == scenario.unrelated)
   #expect(saved.currentRun?.action == .manual)
   #expect(saved.folders.first?.isVerifiedDone == true)
   #expect(await scenario.provider.searchCount == 1)
@@ -192,8 +194,8 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
   }
   #expect(stopSelection)
   let saved = try scenario.snapshot()
-  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
-  #expect(saved.currentRun?.state == .partial)
+  #expect(saved.folders.filter { $0.folderName != "Dune (2021)" } == scenario.unrelated)
+  #expect(saved.currentRun?.runState == .partial)
   if case .authentication = error { #expect(summary.providerRetryAt == .none) }
 }
 
@@ -207,9 +209,9 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
   task.cancel()
   await #expect(throws: CancellationError.self) { try await task.value }
   let saved = try scenario.snapshot()
-  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
-  #expect(saved.folders.first?.reason == .interrupted)
-  #expect(try !FileSystemService().readCurrentState(
+  #expect(saved.folders.filter { $0.folderName != "Dune (2021)" } == scenario.unrelated)
+  #expect(saved.folders.first?.processingReason == .interrupted)
+  #expect(try !FileSystemService().readCurrentFolderCandidate(
     ofChild: "Dune (2021)", in: scenario.source.fixture.movies).hasCustomIcon)
   #expect(await provider.posterCount == 0)
   #expect(try scenario.snapshot() == saved)
@@ -231,8 +233,8 @@ func selectedRetryStopsSelectionWithoutChangingOtherMembers(error: TMDbError) as
   await provider.allowSearch()
   await #expect(throws: PosterActionError.changedIdentity) { try await task.value }
   let saved = try scenario.snapshot()
-  #expect(saved.folders.first?.reason == .interrupted)
-  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
+  #expect(saved.folders.first?.processingReason == .interrupted)
+  #expect(saved.folders.filter { $0.folderName != "Dune (2021)" } == scenario.unrelated)
   let access = try #require(try scenario.source.fixture.persistence.acquireAccess(
     for: MovieFolderProcessor.processingStateKey(for: scenario.source.fixture.movies)))
   #expect(try access.read() == .none)
@@ -324,10 +326,10 @@ func selectedRetryPreservesProtectionAddedDuringSearch(addSuppression: Bool) asy
   }
   #expect(summary.examined == 1)
   let saved = try scenario.snapshot()
-  #expect(saved.folders.first?.state == (addSuppression ? .suppressed : .preserved))
-  #expect(saved.folders.first?.reason == (addSuppression ? .policySuppressed : .existingPosterPreserved))
-  #expect(saved.currentRun?.state == .completed)
-  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
+  #expect(saved.folders.first?.processingState == (addSuppression ? .suppressed : .preserved))
+  #expect(saved.folders.first?.processingReason == (addSuppression ? .policySuppressed : .existingPosterPreserved))
+  #expect(saved.currentRun?.runState == .completed)
+  #expect(saved.folders.filter { $0.folderName != "Dune (2021)" } == scenario.unrelated)
   #expect(await provider.searchCount == 1)
   let access = try #require(try scenario.source.fixture.persistence.acquireAccess(
     for: MovieFolderProcessor.processingStateKey(for: scenario.source.fixture.movies)))
@@ -349,11 +351,11 @@ func selectedRetryPreservesProtectionAddedDuringSearch(addSuppression: Bool) asy
     return
   }
   let saved = try scenario.snapshot()
-  #expect(saved.folders.first?.state == .preserved)
-  #expect(saved.folders.first?.reason == .existingPosterPreserved)
-  #expect(saved.folders.filter { $0.name != "Dune (2021)" } == scenario.unrelated)
+  #expect(saved.folders.first?.processingState == .preserved)
+  #expect(saved.folders.first?.processingReason == .existingPosterPreserved)
+  #expect(saved.folders.filter { $0.folderName != "Dune (2021)" } == scenario.unrelated)
   #expect(try !scenario.cache().folders.keys.contains("Dune (2021)"))
-  #expect(try FileSystemService().readCurrentState(
+  #expect(try FileSystemService().readCurrentFolderCandidate(
     ofChild: "Dune (2021)", in: scenario.source.fixture.movies).hasCustomIcon)
 }
 
@@ -362,8 +364,8 @@ func selectedRetryPreservesProtectionAddedDuringSearch(addSuppression: Bool) asy
   let scenario = try SelectedRetryScenario()
   defer { try? FileManager.default.removeItem(at: scenario.source.fixture.base) }
   var current = try scenario.snapshot()
-  current.folders[0].state = .notFound
-  current.folders[0].reason = .noSuitableMovie
+  current.folders[0].processingState = .notFound
+  current.folders[0].processingReason = .noSuitableMovie
   _ = try scenario.source.collectionStore.commit(current, expectedRevision: current.revision)
   let before = try scenario.snapshot()
 
@@ -378,9 +380,9 @@ func selectedRetryPreservesProtectedOutcomes(state: FolderProcessingState) async
   let scenario = try SelectedRetryScenario()
   defer { try? FileManager.default.removeItem(at: scenario.source.fixture.base) }
   var current = try scenario.snapshot()
-  current.folders[0].state = state
+  current.folders[0].processingState = state
   if state == .done {
-    current.folders[0].movieID = 42
+    current.folders[0].matchedMovieID = 42
     current.folders[0].ownership = .owned
   }
   _ = try scenario.source.collectionStore.commit(current, expectedRevision: current.revision)
@@ -396,7 +398,7 @@ func selectedRetryPreservesProtectedOutcomes(state: FolderProcessingState) async
   let scenario = try SelectedRetryScenario()
   defer { try? FileManager.default.removeItem(at: scenario.source.fixture.base) }
   var current = try scenario.snapshot()
-  current.folders[0].identity = "obsolete-selection"
+  current.folders[0].folderIdentity = "obsolete-selection"
   _ = try scenario.source.collectionStore.commit(current, expectedRevision: current.revision)
   let before = try scenario.snapshot()
 

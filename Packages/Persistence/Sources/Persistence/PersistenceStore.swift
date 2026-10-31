@@ -1,11 +1,12 @@
 import CryptoKit
 import Darwin
 import Foundation
+import OSLog
 
 /// A filesystem-backed store that grants exclusive per-key access to persisted data.
 public struct PersistenceStore: Sendable {
   /// The pinned directory descriptor used for every store operation.
-  private let directory: DirectoryDescriptor
+  private let directory: OpenedDirectoryDescriptor
   /// Maximum encoded JSON envelope size accepted by the store.
   private let maximumRecordBytes: Int?
 
@@ -20,7 +21,26 @@ public struct PersistenceStore: Sendable {
     if let maximumRecordBytes, maximumRecordBytes <= 0 {
       throw PersistenceError.invalidRecordLimit
     }
-    self.directory = try DirectoryDescriptor.open(directory.standardizedFileURL.path)
+    self.directory = try OpenedDirectoryDescriptor.open(directory.standardizedFileURL.path)
+    self.maximumRecordBytes = maximumRecordBytes
+  }
+
+  /// Opens a store beneath an existing caller-validated directory using its access grant as the traversal anchor.
+  ///
+  /// The trusted root is opened by its absolute path. Every remaining path component is opened relative to its
+  /// pinned descriptor with symlink following disabled.
+  /// - Parameters:
+  ///   - directory: The store directory, which must be the trusted root or one of its descendants.
+  ///   - trustedRoot: An existing directory whose path and access authorization the caller has validated.
+  ///   - maximumRecordBytes: An optional encoded envelope limit; omitted for unlimited behavior.
+  /// - Throws: An I/O error, an invalid directory or root, or an invalid-size error.
+  public init(directory: URL, trustedRoot: URL, maximumRecordBytes: Int? = .none) throws {
+    guard directory.isFileURL, trustedRoot.isFileURL else { throw PersistenceError.invalidDirectory }
+    if let maximumRecordBytes, maximumRecordBytes <= 0 {
+      throw PersistenceError.invalidRecordLimit
+    }
+    self.directory = try OpenedDirectoryDescriptor.open(
+      directory.standardizedFileURL.path, trustedRoot: trustedRoot.standardizedFileURL.path)
     self.maximumRecordBytes = maximumRecordBytes
   }
 
@@ -144,7 +164,7 @@ public struct PersistenceStore: Sendable {
 /// Holds the exclusive lock for one key and reads or atomically updates its payload.
 public final class PersistenceAccess: Sendable {
   /// The pinned directory used for all reads and writes through this access.
-  private let directory: DirectoryDescriptor
+  private let directory: OpenedDirectoryDescriptor
   /// The digest binding this access to its record and lock filenames.
   private let keyDigest: String
   /// The open lock file whose advisory lock represents this access.
@@ -161,7 +181,7 @@ public final class PersistenceAccess: Sendable {
   ///   - lockDescriptor: An exclusively locked descriptor unlocked and closed when this access is released.
   ///   - maximumRecordBytes: The encoded envelope size limit, or `.none` for no configured limit.
   fileprivate init(
-    directory: DirectoryDescriptor,
+    directory: OpenedDirectoryDescriptor,
     keyDigest: String,
     lockDescriptor: Int32,
     maximumRecordBytes: Int?
@@ -220,7 +240,7 @@ public final class PersistenceAccess: Sendable {
     try validateExistingRecord()
     try validatePayloadSize(data)
 
-    let envelope = Envelope(version: 1, keyDigest: keyDigest, payload: data)
+    let envelope = VersionedKeyBoundRecord(version: 1, keyDigest: keyDigest, payload: data)
     let encoded: Data
     do {
       let encoder = JSONEncoder()
@@ -274,7 +294,7 @@ public final class PersistenceAccess: Sendable {
   /// - Throws: Invalid envelope or capacity errors.
   private func validatePayloadSize(_ data: Data) throws {
     if let maximumRecordBytes {
-      let emptyEnvelope = Envelope(version: 1, keyDigest: keyDigest, payload: Data())
+      let emptyEnvelope = VersionedKeyBoundRecord(version: 1, keyDigest: keyDigest, payload: Data())
       let emptyEncoding: Data
       do {
         let encoder = JSONEncoder()
@@ -378,10 +398,10 @@ public final class PersistenceAccess: Sendable {
   }
 
   /// Decodes a record and verifies its format version and key binding.
-  private func decode(_ data: Data) throws -> Envelope {
-    let envelope: Envelope
+  private func decode(_ data: Data) throws -> VersionedKeyBoundRecord {
+    let envelope: VersionedKeyBoundRecord
     do {
-      envelope = try JSONDecoder().decode(Envelope.self, from: data)
+      envelope = try JSONDecoder().decode(VersionedKeyBoundRecord.self, from: data)
     } catch {
       throw PersistenceError.corruptRecord
     }
@@ -393,7 +413,7 @@ public final class PersistenceAccess: Sendable {
 }
 
 /// Owns a directory descriptor so path replacement cannot redirect later store operations.
-private final class DirectoryDescriptor: Sendable {
+private final class OpenedDirectoryDescriptor: Sendable {
   /// The open descriptor pinned to the validated directory object.
   let fileDescriptor: Int32
 
@@ -407,12 +427,36 @@ private final class DirectoryDescriptor: Sendable {
   deinit { close(fileDescriptor) }
 
   /// Opens or creates every path component while rejecting symlinks.
-  static func open(_ path: String) throws -> DirectoryDescriptor {
-    let canonicalPath = path.hasPrefix("/var/") ? "/private" + path : path
-    let components = canonicalPath.split(separator: "/")
+  static func open(_ path: String, trustedRoot: String? = .none) throws -> OpenedDirectoryDescriptor {
+    let canonicalPath = normalizedPath(path)
+    let canonicalTrustedRoot = trustedRoot.map { normalizedPath($0) }
+    let components: [Substring]
+    if let canonicalTrustedRoot {
+      let rootPrefix = canonicalTrustedRoot.hasSuffix("/") ? canonicalTrustedRoot : canonicalTrustedRoot + "/"
+      guard canonicalTrustedRoot != "/",
+        canonicalPath == canonicalTrustedRoot || canonicalPath.hasPrefix(rootPrefix)
+      else { throw PersistenceError.invalidDirectory }
+      let relativePath = canonicalPath == canonicalTrustedRoot
+        ? ""
+        : String(canonicalPath.dropFirst(rootPrefix.count))
+      components = relativePath.split(separator: "/")
+    } else {
+      components = canonicalPath.split(separator: "/")
+    }
+
     let rootAccess = components.isEmpty ? O_RDONLY : O_SEARCH
-    let root = Darwin.open("/", rootAccess | O_DIRECTORY | O_CLOEXEC)
-    guard root >= 0 else { throw PersistenceError.io(errno) }
+    let rootPath = canonicalTrustedRoot ?? "/"
+    let root = Darwin.open(rootPath, rootAccess | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard root >= 0 else {
+      let code = errno
+      #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+          Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Persistence")
+            .error("Acceptance persistence root open failed, errno=\(code)")
+        }
+      #endif
+      throw PersistenceError.io(code)
+    }
     var current = root
 
     for (index, component) in components.enumerated() {
@@ -420,16 +464,31 @@ private final class DirectoryDescriptor: Sendable {
       let access = index == components.count - 1 ? O_RDONLY : O_SEARCH
       let flags = access | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
       var next = openat(current, name, flags)
+      var openedAfterCreation = false
       if next < 0, errno == ENOENT {
         guard mkdirat(current, name, S_IRWXU) == 0 || errno == EEXIST else {
           let code = errno
+          #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+              Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Persistence")
+                .error("Acceptance persistence mkdirat failed at component index \(index), errno=\(code)")
+            }
+          #endif
           close(current)
           throw PersistenceError.io(code)
         }
+        openedAfterCreation = true
         next = openat(current, name, flags)
       }
       guard next >= 0 else {
         let code = errno
+        #if DEBUG
+          if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+            let operation = openedAfterCreation ? "openat after mkdir" : "openat"
+            Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "Persistence")
+              .error("Acceptance persistence \(operation) failed at component index \(index), errno=\(code)")
+          }
+        #endif
         close(current)
         throw PersistenceError.io(code)
       }
@@ -437,12 +496,17 @@ private final class DirectoryDescriptor: Sendable {
       current = next
     }
 
-    return DirectoryDescriptor(fileDescriptor: current)
+    return OpenedDirectoryDescriptor(fileDescriptor: current)
+  }
+
+  /// Rewrites the standard `/var` alias while preserving the path spelling used by the caller.
+  private static func normalizedPath(_ path: String) -> String {
+    path.hasPrefix("/var/") ? "/private" + path : path
   }
 }
 
 /// The versioned on-disk record envelope that binds a payload to its key digest.
-private struct Envelope: Codable {
+private struct VersionedKeyBoundRecord: Codable {
   /// The record schema version.
   let version: Int
   /// The digest of the key whose access owns this record.

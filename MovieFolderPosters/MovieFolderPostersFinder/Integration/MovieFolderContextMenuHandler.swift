@@ -209,7 +209,7 @@ final class MovieFolderContextMenuHandler: NSObject {
       }
 
       guard root == parent,
-        let candidate = try? FileSystemService().readCurrentState(ofChild: url.lastPathComponent, in: root)
+        let candidate = try? FileSystemService().readCurrentFolderCandidate(ofChild: url.lastPathComponent, in: root)
       else {
         continue
       }

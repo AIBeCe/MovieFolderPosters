@@ -3,7 +3,7 @@ import MovieFolderCommon
 import Persistence
 
 /// Read-only local data export sources captured independently of UI lifetime.
-nonisolated struct LocalDataExportSources: Sendable {
+nonisolated struct LocalDataExportInputs: Sendable {
   /// Retained source entries; absence means unavailable rather than empty.
   let activity: [MovieFolderActivityLogEntry]?
   /// Retained terminal HTTP entries in source commit order; absence means unavailable.
@@ -15,9 +15,9 @@ nonisolated struct LocalDataExportSources: Sendable {
 /// Narrow read boundary retained by the finite local data export flow.
 nonisolated protocol LocalDataExportServicing: Sendable {
   /// Loads retained evidence and the relevant current configuration.
-  func load() async -> LocalDataExportSources
+  func load() async -> LocalDataExportInputs
   /// Captures known app storage without creating any namespace.
-  func storage() async -> LocalStorageReport
+  func storage() async -> ApplicationLocalStorageReport
 }
 
 /// Reads histories and configuration away from UI callbacks; never records new events.
@@ -41,12 +41,12 @@ actor LocalDataExportService: LocalDataExportServicing {
 
   /// Loads current retained histories and memory-only privacy evidence.
   /// - Returns: Available histories and the current privacy fingerprint.
-  func load() async -> LocalDataExportSources {
+  func load() async -> LocalDataExportInputs {
     let activityEntries = try? await activity.entries()
     let networkEntries = try? await network.entries()
     let privacy = try? Self.historyPrivacyFingerprint(in: MovieFolderEnvironment.makeConfigurationRepository())
 
-    return LocalDataExportSources(activity: activityEntries, network: networkEntries, privacy: privacy)
+    return LocalDataExportInputs(activity: activityEntries, network: networkEntries, privacy: privacy)
   }
 
   /// Projects only relevant history choices; exported documents never include this memory-only fingerprint.
@@ -70,8 +70,8 @@ actor LocalDataExportService: LocalDataExportServicing {
 
   /// Captures app-owned storage estimates without creating a namespace.
   /// - Returns: Bounded metadata estimates and completeness for each category.
-  func storage() -> LocalStorageReport {
-    LocalStorageReport.capture(
+  func storage() -> ApplicationLocalStorageReport {
+    ApplicationLocalStorageReport.capture(
       sharedContainer: try? MovieFolderEnvironment.appGroupContainerURL(),
       hostApplicationSupport: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
   }

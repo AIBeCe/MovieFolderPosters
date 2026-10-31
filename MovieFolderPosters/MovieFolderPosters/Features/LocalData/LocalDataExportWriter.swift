@@ -8,7 +8,7 @@ final class LocalDataExportWriter {
   /// Performs temporary byte writes away from the main actor.
   private let staging: any LocalDataExportTemporaryFileWriting
   /// Cancels pending staging when the owning sheet or parent closes.
-  private var stagingTask: Task<PreparedLocalDataExportFile, Error>?
+  private var stagingTask: Task<PreparedLocalDataExport, Error>?
   /// Generation captured before asynchronous checks; closure invalidates it synchronously.
   private var generation = UInt64.zero
   /// Whether this finite flow has ended permanently.
@@ -32,7 +32,7 @@ final class LocalDataExportWriter {
   /// - Parameter destination: Exact destination selected by the native save panel.
   /// - Throws: Stale selection, cancellation, unavailable storage, or a bounded export failure.
   func save(to destination: URL) async throws {
-    guard !isClosed, !isSaving else { throw LocalDataExportError.stale }
+    guard !isClosed, !isSaving else { throw LocalDataExportFailure.stale }
 
     isSaving = true
     generation &+= 1
@@ -40,11 +40,11 @@ final class LocalDataExportWriter {
     defer { isSaving = false }
     let bytes = try await model.bytesForSaving()
 
-    guard !isClosed, current == generation, !Task.isCancelled else { throw LocalDataExportError.stale }
+    guard !isClosed, current == generation, !Task.isCancelled else { throw LocalDataExportFailure.stale }
 
     let task = Task { [staging] in try await staging.stage(bytes: bytes, destination: destination) }
     stagingTask = task
-    let staged: PreparedLocalDataExportFile
+    let staged: PreparedLocalDataExport
     do {
       staged = try await withTaskCancellationHandler {
         try await task.value
@@ -54,7 +54,7 @@ final class LocalDataExportWriter {
       stagingTask = nil
     } catch {
       stagingTask = nil
-      if isClosed || current != generation || Task.isCancelled { throw LocalDataExportError.stale }
+      if isClosed || current != generation || Task.isCancelled { throw LocalDataExportFailure.stale }
       throw error
     }
 
@@ -63,7 +63,7 @@ final class LocalDataExportWriter {
       let revalidated = try await model.bytesForSaving()
 
       guard !isClosed, current == generation, !Task.isCancelled, revalidated == bytes else {
-        throw LocalDataExportError.stale
+        throw LocalDataExportFailure.stale
       }
 
       // close() and this gate/publication execute on the same actor, with no await allowing closure in between.

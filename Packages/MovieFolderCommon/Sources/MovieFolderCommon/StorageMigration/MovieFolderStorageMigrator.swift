@@ -18,7 +18,7 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
   /// Trusted app-owned container for current operational namespaces; absent only for isolated callers.
   private let operationalContainer: URL?
   /// Stable root coordination namespace shared by all production processing generations.
-  private let coordinationStore: PersistenceStore?
+  private let processingLockStore: PersistenceStore?
 
   /// Retains already opened stores; it does not inspect or rewrite their records.
   /// - Parameters:
@@ -27,12 +27,12 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
   ///   - backupStore: Protected recovery-copy namespace excluded from normal result cleanup.
   public init(configurationStore: PersistenceStore, collectionOutcomeStore: PersistenceStore,
               backupStore: PersistenceStore, operationalContainer: URL? = .none,
-              coordinationStore: PersistenceStore? = .none) {
+              processingLockStore: PersistenceStore? = .none) {
     self.configurationStore = configurationStore
     self.collectionOutcomeStore = collectionOutcomeStore
     self.backupStore = backupStore
     self.operationalContainer = operationalContainer
-    self.coordinationStore = coordinationStore
+    self.processingLockStore = processingLockStore
   }
 
   /// Inspects configured settings and outcomes without writing either source or backup records.
@@ -139,7 +139,7 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
       try Task.checkCancellation()
       let record = MovieFolderStorageRecordKind.operationalProcessing(directory.id)
       let path = try persistedOperationalPath(directory.path, record: record)
-      let coordination = try coordinationStore.map {
+      let coordination = try processingLockStore.map {
         try acquire($0, key: "movie-folder-coordination:\(path)", record: record)
       }
       let key = "movie-folder-processing:\(path)"
@@ -168,7 +168,7 @@ nonisolated public struct MovieFolderStorageMigrator: Sendable {
 
       let record = MovieFolderStorageRecordKind.operationalProcessing(rootID)
       let path = try persistedOperationalPath(directory.path, record: record)
-      let coordination = try coordinationStore.map {
+      let coordination = try processingLockStore.map {
         try acquire($0, key: "movie-folder-coordination:\(path)", record: record)
       }
       let store = try PersistenceStore(directory: operationalContainer.appendingPathComponent(

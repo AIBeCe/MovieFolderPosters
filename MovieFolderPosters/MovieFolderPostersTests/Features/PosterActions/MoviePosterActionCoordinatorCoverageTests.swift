@@ -10,7 +10,7 @@ import Testing
 @Suite(.serialized) @MainActor
 struct MoviePosterActionCoordinatorCoverageTests {
   /// Results reuse the real Choose Movie controls as a child sheet without starting a search.
-  @Test func chooseMovieAttachesToResultsAndDismissesWithItsParent() throws {
+  @Test func chooseMovieAttachesToResultsAndDismissesWithItsParent() async throws {
     let coordinator = MoviePosterActionCoordinator(service: WindowPosterService())
     let parent = NSWindow(contentViewController: NSViewController())
     parent.makeKeyAndOrderFront(.none)
@@ -19,6 +19,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     let child = try #require(coordinator.windowController?.window)
     #expect(child.sheetParent === parent)
     let model = try #require(coordinator.viewModel)
+    await waitForSearchLanguage(model)
     #expect(model.searchResult == .none)
     #expect(!model.isBusy)
     coordinator.dismissActions(attachedTo: parent)
@@ -35,6 +36,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     coordinator.start(request(.change), attachedTo: parent)
     let child = try #require(coordinator.windowController?.window)
     let model = try #require(coordinator.viewModel)
+    await waitForSearchLanguage(model)
     let controls = descendants(of: try #require(child.contentView))
     try button("Search TMDb", in: controls).performClick(.none)
     await waitForIdle(model)
@@ -56,6 +58,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     defer { coordinator.windowController?.close() }
     let window = try #require(coordinator.windowController?.window)
     let model = try #require(coordinator.viewModel)
+    await waitForSearchLanguage(model)
     let controls = descendants(of: try #require(window.contentView))
     let fields = controls.compactMap { $0 as? NSTextField }
     let query = try #require(fields.first { $0.placeholderString == "Movie title" })
@@ -139,6 +142,17 @@ struct MoviePosterActionCoordinatorCoverageTests {
     let deadline = clock.now.advanced(by: .seconds(3))
     while model.isBusy, clock.now < deadline { await Task.yield() }
     #expect(!model.isBusy)
+  }
+
+  /// Waits for the authorized search language before exercising controls that require it.
+  private func waitForSearchLanguage(_ model: MoviePosterActionViewModel) async {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(3))
+    while model.searchLanguage == .none, clock.now < deadline {
+      try? await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(model.searchLanguage != .none)
+    await waitForIdle(model)
   }
 }
 

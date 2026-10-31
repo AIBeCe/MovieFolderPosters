@@ -27,7 +27,7 @@ struct InstallationDiagnosticsExportTests {
       event: MovieFolderActivityLogEvent(
         action: .posterRefresh, status: .failed, activityGroupID: activityGroupID, collectionID: collectionID))
 
-    let text = InstallationDiagnosticsExport.format(report: report, entries: [entry])
+    let text = InstallationDiagnosticsExporter.format(report: report, entries: [entry])
 
     #expect(text.contains("Embedded Finder extension: Present; versions match."))
     #expect(text.contains("Host app code signature: Valid."))
@@ -50,9 +50,9 @@ struct InstallationDiagnosticsExportTests {
       authorizationVersion: UUID(), displayName: "Secret collection")
     let event = MovieFolderActivityLogContext(directory: directory).event(action: .posterRefresh, status: .failed,
       childFolderName: "Private folder", movieID: 987654, movieTitle: "Private movie", movieYear: 2024,
-      failure: FolderProcessingFailure(reason: .timeout, stage: .artwork, occurredAt: Date()))
+      failure: AutomaticFolderProcessingFailure(reason: .timeout, stage: .artwork, occurredAt: Date()))
     let entry = MovieFolderActivityLogEntry(id: UUID(), sequence: 1, occurredAt: Date(), event: event)
-    let text = InstallationDiagnosticsExport.format(report: InstallationReadinessReport(text: ""), entries: [entry])
+    let text = InstallationDiagnosticsExporter.format(report: InstallationReadinessReport(text: ""), entries: [entry])
 
     #expect(text.contains("Refresh poster: failed."))
     #expect(text.contains("timed out"))
@@ -70,7 +70,7 @@ struct InstallationDiagnosticsExportTests {
         event: MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
     }
 
-    let text = InstallationDiagnosticsExport.format(report: InstallationReadinessReport(text: ""), entries: entries)
+    let text = InstallationDiagnosticsExporter.format(report: InstallationReadinessReport(text: ""), entries: entries)
 
     #expect(text.components(separatedBy: "Application startup: completed.").count - 1 == 50)
     #expect(!text.contains("1970-01-01T00:01:00Z"))
@@ -81,8 +81,8 @@ struct InstallationDiagnosticsExportTests {
   /// Distinguishes unavailable history from a successfully loaded empty history.
   @Test func unknownReadinessAndUnavailableActivityStayExplicit() {
     let report = InstallationReadinessReport(text: "Host app code signature: /private/secret")
-    let unavailable = InstallationDiagnosticsExport.format(report: report, entries: .none)
-    let empty = InstallationDiagnosticsExport.format(report: report, entries: [])
+    let unavailable = InstallationDiagnosticsExporter.format(report: report, entries: .none)
+    let empty = InstallationDiagnosticsExporter.format(report: report, entries: [])
 
     #expect(unavailable.contains("Host app code signature: Unknown."))
     #expect(unavailable.contains("Activity unavailable; error details excluded."))

@@ -74,7 +74,7 @@ struct FileSystemTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let movie = root.appendingPathComponent("Movie", isDirectory: true)
     try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
-    let identity = try FileSystemService().readCurrentState(ofChild: "Movie", in: root).identity
+    let identity = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie", in: root).identity
     try FileManager.default.removeItem(at: movie)
     try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
 
@@ -90,9 +90,9 @@ struct FileSystemTests {
     let movie = root.appendingPathComponent("Movie", isDirectory: true)
     try FileManager.default.createDirectory(at: movie, withIntermediateDirectories: false)
     let service = FileSystemService()
-    let before = try service.readCurrentState(ofChild: "Movie", in: root)
+    let before = try service.readCurrentFolderCandidate(ofChild: "Movie", in: root)
     try Data("new content".utf8).write(to: movie.appendingPathComponent("new-file"))
-    let after = try service.readCurrentState(ofChild: "Movie", in: root)
+    let after = try service.readCurrentFolderCandidate(ofChild: "Movie", in: root)
 
     #expect(after.identity == before.identity)
     #expect(after.fingerprint == before.fingerprint)
@@ -108,9 +108,9 @@ struct FileSystemTests {
       at: root.appendingPathComponent("Link"), withDestinationURL: real
     )
     let service = FileSystemService()
-    #expect(throws: DirectoryAccessError.self) { try service.readCurrentState(ofChild: "Missing", in: root) }
-    #expect(throws: DirectoryAccessError.self) { try service.readCurrentState(ofChild: "Link", in: root) }
-    #expect(throws: DirectoryAccessError.self) { try service.readCurrentState(ofChild: "../Real", in: root) }
+    #expect(throws: DirectoryAccessError.self) { try service.readCurrentFolderCandidate(ofChild: "Missing", in: root) }
+    #expect(throws: DirectoryAccessError.self) { try service.readCurrentFolderCandidate(ofChild: "Link", in: root) }
+    #expect(throws: DirectoryAccessError.self) { try service.readCurrentFolderCandidate(ofChild: "../Real", in: root) }
   }
 
   /// Scenario: cached data round trips and missing read returns nil.

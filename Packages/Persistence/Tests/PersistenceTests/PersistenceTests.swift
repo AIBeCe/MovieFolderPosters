@@ -260,3 +260,34 @@ private func recordURL(_ directory: URL, _ key: String) -> URL {
     SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".lock"
   ).path))
 }
+
+/// Scenario: trusted roots permit nested stores while rejecting escapes and descendant symlinks.
+@Test func trustedRootAllowsNestedStoresAndRejectsEscapesAndSymlinks() throws {
+  let root = temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: root) }
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+  let directory = root.appendingPathComponent("Shared/Settings", isDirectory: true)
+  let store = try PersistenceStore(directory: directory, trustedRoot: root)
+  do {
+    let access = try #require(try store.acquireAccess(for: "trusted-root"))
+    try access.write(Data("inside trusted root".utf8))
+  }
+  let storeFactory = PersistenceStoreFactory(trustedRoot: root)
+  let reopened = try storeFactory.makeStore(directory: directory)
+  let reopenedAccess = try #require(try reopened.acquireAccess(for: "trusted-root"))
+  #expect(try reopenedAccess.read() == Data("inside trusted root".utf8))
+
+  let outside = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+  #expect(throws: (any Error).self) {
+    try storeFactory.makeStore(directory: outside)
+  }
+
+  let target = root.appendingPathComponent("Actual", isDirectory: true)
+  try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+  let alias = root.appendingPathComponent("Alias", isDirectory: true)
+  try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: target)
+  #expect(throws: (any Error).self) {
+    try storeFactory.makeStore(directory: alias.appendingPathComponent("Settings", isDirectory: true))
+  }
+}

@@ -91,6 +91,15 @@ final class LogViewModel {
   private(set) var isClearing = false
   /// Whether any persisted history has been loaded.
   private var hasLoaded = false
+  /// Rows loaded from one history namespace and its observed write status.
+  private struct LoadedHistory {
+    /// Activity entries from the selected namespace.
+    let activityEntries: [MovieFolderActivityLogEntry]
+    /// Network rows from the selected namespace.
+    let networkRows: [HistoryEntryRow]
+    /// Whether the source has observed a failed write.
+    let observedWriteFailure: Bool
+  }
   /// Retains each source's independent failures through source switches.
   private struct HistoryOperationFailures {
     /// A failed retained-history read.
@@ -181,7 +190,7 @@ final class LogViewModel {
   }
 
   /// Applies local criteria together and permanently prunes hidden identities.
-  func setFilters(searchText: String, category: String?, severity: String?) {
+  func setProcessingFilters(searchText: String, category: String?, severity: String?) {
     self.searchText = searchText
     categoryFilter = category
     severityFilter = severity
@@ -204,8 +213,11 @@ final class LogViewModel {
     isSavingNetworkRecordingPreference = true
     hasNetworkRecordingPreferenceSaveFailure = false
     publish()
-    do { try await networkHistoryService.setNetworkHistoryRecordingEnabled(enabled) }
-    catch { hasNetworkRecordingPreferenceSaveFailure = true }
+    do {
+      try await networkHistoryService.setNetworkHistoryRecordingEnabled(enabled)
+    } catch {
+      hasNetworkRecordingPreferenceSaveFailure = true
+    }
     do {
       isNetworkHistoryRecordingEnabled = try await networkHistoryService.isNetworkHistoryRecordingEnabled
       hasNetworkRecordingPreferenceReadFailure = false
@@ -230,47 +242,12 @@ final class LogViewModel {
       let expectedHistoryReadGeneration = historyReadGeneration
       let expectedHistorySource = historySource
       do {
-        if let networkHistoryService, !isSavingNetworkRecordingPreference {
-          let expectedNetworkRecordingPreferenceGeneration = networkRecordingPreferenceGeneration
-          do {
-            let enabled = try await networkHistoryService.isNetworkHistoryRecordingEnabled
-            if networkRecordingPreferenceGeneration == expectedNetworkRecordingPreferenceGeneration {
-              isNetworkHistoryRecordingEnabled = enabled
-              hasNetworkRecordingPreferenceReadFailure = false
-            }
-          } catch {
-            if networkRecordingPreferenceGeneration == expectedNetworkRecordingPreferenceGeneration {
-              hasNetworkRecordingPreferenceReadFailure = true
-            }
-          }
-        }
-        let loadedActivityEntries: [MovieFolderActivityLogEntry]
-        let loadedNetworkHistoryRows: [HistoryEntryRow]
-        let observedWriteFailure: Bool
-        if expectedHistorySource == .activity {
-          observedWriteFailure = await activityHistoryService.hasObservedWriteFailure
-          historyOperationFailures[expectedHistorySource, default: HistoryOperationFailures()].hasWriteFailure =
-            (historyOperationFailures[expectedHistorySource]?.hasWriteFailure ?? false) || observedWriteFailure
-          loadedActivityEntries = try await activityHistoryService.entries()
-          loadedNetworkHistoryRows = []
-        } else if let networkHistoryService {
-          observedWriteFailure = await networkHistoryService.hasObservedWriteFailure
-          historyOperationFailures[expectedHistorySource, default: HistoryOperationFailures()].hasWriteFailure =
-            (historyOperationFailures[expectedHistorySource]?.hasWriteFailure ?? false) || observedWriteFailure
-          loadedActivityEntries = []
-          loadedNetworkHistoryRows = try await networkHistoryService.entries().map {
-            HistoryEntryRow(id: $0.id, occurredAt: $0.occurredAt, message: $0.event.text,
-              category: $0.event.category, severity: $0.event.severity)
-          }
-        } else {
-          observedWriteFailure = false
-          loadedActivityEntries = []
-          loadedNetworkHistoryRows = []
-        }
+        await refreshNetworkRecordingPreference()
+        let loaded = try await loadHistory(for: expectedHistorySource)
         if historyReadGeneration == expectedHistoryReadGeneration && !isClearing {
-          if expectedHistorySource == .activity { activityEntries = loadedActivityEntries }
-          else { networkHistoryRows = loadedNetworkHistoryRows }
-          hasObservedWriteFailure = hasObservedWriteFailure || observedWriteFailure
+          activityEntries = loaded.activityEntries
+          networkHistoryRows = loaded.networkRows
+          hasObservedWriteFailure = hasObservedWriteFailure || loaded.observedWriteFailure
           hasLoaded = true
           hasLoadFailure = false
           pruneSelection()
@@ -284,6 +261,58 @@ final class LogViewModel {
     } while reloadRequested && !isClearing
     isLoading = false
     publish()
+  }
+
+  /// Refreshes the saved optional network-recording choice unless a newer save is pending.
+  private func refreshNetworkRecordingPreference() async {
+    guard let networkHistoryService, !isSavingNetworkRecordingPreference else { return }
+
+    let expectedGeneration = networkRecordingPreferenceGeneration
+    do {
+      let enabled = try await networkHistoryService.isNetworkHistoryRecordingEnabled
+      guard networkRecordingPreferenceGeneration == expectedGeneration else { return }
+      isNetworkHistoryRecordingEnabled = enabled
+      hasNetworkRecordingPreferenceReadFailure = false
+    } catch {
+      if networkRecordingPreferenceGeneration == expectedGeneration {
+        hasNetworkRecordingPreferenceReadFailure = true
+      }
+    }
+  }
+
+  /// Reads one history namespace and records its independent write-failure evidence.
+  /// - Parameter source: Namespace selected when this read began.
+  /// - Returns: Rows and write state for that namespace.
+  /// - Throws: A source-specific history read error.
+  private func loadHistory(for source: HistorySource) async throws -> LoadedHistory {
+    if source == .activity {
+      let observedWriteFailure = await activityHistoryService.hasObservedWriteFailure
+      recordObservedWriteFailure(observedWriteFailure, for: source)
+      return LoadedHistory(
+        activityEntries: try await activityHistoryService.entries(), networkRows: [],
+        observedWriteFailure: observedWriteFailure)
+    }
+
+    guard let networkHistoryService else {
+      return LoadedHistory(activityEntries: [], networkRows: [], observedWriteFailure: false)
+    }
+    let observedWriteFailure = await networkHistoryService.hasObservedWriteFailure
+    recordObservedWriteFailure(observedWriteFailure, for: source)
+    let rows = try await networkHistoryService.entries().map {
+      HistoryEntryRow(id: $0.id, occurredAt: $0.occurredAt, message: $0.event.text,
+        category: $0.event.category, severity: $0.event.severity)
+    }
+
+    return LoadedHistory(activityEntries: [], networkRows: rows, observedWriteFailure: observedWriteFailure)
+  }
+
+  /// Preserves a previously observed source write failure across later successful reads.
+  /// - Parameters:
+  ///   - failed: Whether the service has recorded a write failure.
+  ///   - source: History namespace that reported the failure.
+  private func recordObservedWriteFailure(_ failed: Bool, for source: HistorySource) {
+    historyOperationFailures[source, default: HistoryOperationFailures()].hasWriteFailure =
+      (historyOperationFailures[source]?.hasWriteFailure ?? false) || failed
   }
 
   /// Records typed activity without altering the product operation's outcome on failure.
@@ -309,8 +338,13 @@ final class LogViewModel {
     hasClearFailure = false
     publish()
     do {
-      if historySource == .activity { try await activityHistoryService.clear(); activityEntries = [] }
-      else { try await networkHistoryService?.clear(); networkHistoryRows = [] }
+      if historySource == .activity {
+        try await activityHistoryService.clear()
+        activityEntries = []
+      } else {
+        try await networkHistoryService?.clear()
+        networkHistoryRows = []
+      }
       selectedEntryIDs = []
       hasLoaded = true
       hasLoadFailure = false

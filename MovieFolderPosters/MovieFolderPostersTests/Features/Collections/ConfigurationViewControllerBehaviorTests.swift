@@ -103,7 +103,7 @@ import Testing
 @Test func logIsBoundedAndClearDoesNotChangeConfiguration() async {
   let model = ConfigurationViewModel(service: ConfigurationServiceFake())
   await model.saveCredential("fake-secret")
-  let log = LogViewModel(activityHistoryService: ActivityServiceFake())
+  let log = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
   for _ in 0..<510 { await log.record(MovieFolderActivityLogEvent(action: .configurationLoaded, status: .succeeded)) }
   #expect(log.activityEntries.count == 500)
   #expect(log.activityEntries.first?.sequence == 11)
@@ -166,7 +166,7 @@ import Testing
     let table = try #require(scroll.documentView as? NSTableView)
     #expect(table.rect(ofColumn: 5).maxX <= scroll.contentView.bounds.width + 0.5)
   }
-  let controller = LogViewController(viewModel: LogViewModel(activityHistoryService: ActivityServiceFake()))
+  let controller = LogViewController(viewModel: LogViewModel(activityHistoryService: MovieFolderActivityServiceFake()))
   let window = NSWindow(contentViewController: controller)
   window.setContentSize(NSSize(width: 650, height: 280))
   let scroll = try #require(

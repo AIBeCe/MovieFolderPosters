@@ -34,7 +34,7 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   func processingRecoveryService() throws -> ProcessingRecoveryService
   /// Resolves and retains authorization for a transferred or extension-owned bookmark.
   func acquireDirectoryAccess(bookmark: Data, securityScoped: Bool, expectedIdentity: String?) throws
-    -> DirectoryAccess
+    -> AuthorizedDirectoryAccess
   /// Creates the extension's persistent grant after transferred access succeeds.
   func makeDirectoryBookmark(for url: URL) throws -> Data
   /// Publishes the currently authorized roots to Finder.
@@ -119,7 +119,7 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
   }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?
-  ) throws -> DirectoryAccess {
+  ) throws -> AuthorizedDirectoryAccess {
     try FileSystemService().acquireDirectoryAccess(
       bookmark: bookmark, securityScoped: securityScoped, expectedIdentity: expectedIdentity)
   }

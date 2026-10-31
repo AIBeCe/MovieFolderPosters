@@ -38,7 +38,7 @@ public enum LocalStorageCategory: String, CaseIterable, Encodable, Sendable {
 }
 
 /// One ownership category's metadata estimates and completeness.
-public struct LocalStorageCategorySummary: Encodable, Sendable {
+public struct LocalStorageCategoryReport: Encodable, Sendable {
   /// Category whose fixed namespaces were inspected.
   public let category: LocalStorageCategory
   /// Individual namespace estimates, preserving incomplete or unavailable evidence.
@@ -78,20 +78,20 @@ public struct LocalStorageCategorySummary: Encodable, Sendable {
 }
 
 /// Finite read-only report, excluding movie content, icons, Keychain and extension-private authorization.
-public struct LocalStorageReport: Encodable, Sendable {
+public struct ApplicationLocalStorageReport: Encodable, Sendable {
   /// Beginning of the report's measurement interval.
   public let startedAt: Date
   /// End of the report's measurement interval.
   public let finishedAt: Date
   /// All known ownership categories, including missing and unavailable storage.
-  public let categories: [LocalStorageCategorySummary]
+  public let categories: [LocalStorageCategoryReport]
 
   /// Measures only fixed known storage locations without initializing application storage.
   /// - Parameters:
   ///   - sharedContainer: Existing app-group location, or absence when resolution failed.
   ///   - hostApplicationSupport: Existing host support location, excluding extension-private storage.
   /// - Returns: A bounded report suitable for local display and allowlisted local data export.
-  public static func capture(sharedContainer: URL?, hostApplicationSupport: URL?) -> LocalStorageReport {
+  public static func capture(sharedContainer: URL?, hostApplicationSupport: URL?) -> ApplicationLocalStorageReport {
     let start = Date()
     let categories = LocalStorageCategory.allCases.map { category in
       let root = category == .hostAuthorization ? hostApplicationSupport : sharedContainer
@@ -103,9 +103,9 @@ public struct LocalStorageReport: Encodable, Sendable {
         return usage
       }
 
-      return LocalStorageCategorySummary(category: category, namespaces: usages)
+      return LocalStorageCategoryReport(category: category, namespaces: usages)
     }
 
-    return LocalStorageReport(startedAt: start, finishedAt: Date(), categories: categories)
+    return ApplicationLocalStorageReport(startedAt: start, finishedAt: Date(), categories: categories)
   }
 }

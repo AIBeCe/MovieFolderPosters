@@ -134,7 +134,7 @@ struct MovieFolderProcessorActivityTests {
     try fixture.addFolder("Dune (2021)")
     let history = ProcessingActivityProbe()
     let processor = processor(fixture, provider: CountingProvider(posterError: .malformedResponse), history: history)
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies)
     let selectedMovie = MovieMetadata(id: 123, title: "Chosen Movie", originalTitle: "Chosen Movie",
       releaseYear: 2020, posterPath: "/chosen.jpg")
     await #expect(throws: TMDbError.malformedResponse) {
@@ -178,7 +178,7 @@ struct MovieFolderProcessorActivityTests {
     try fixture.addFolder("Dune (2021)")
     let history = ProcessingActivityProbe()
     let processor = processor(fixture, history: history)
-    let candidate = try FileSystemService().readCurrentState(ofChild: "Dune (2021)", in: fixture.movies)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies)
     #expect(try await !processor.removePoster(
       root: fixture.movies, child: candidate.name, expectedIdentity: candidate.identity))
     #expect(await history.events.first?.folderResult == .noPosterToRemove)

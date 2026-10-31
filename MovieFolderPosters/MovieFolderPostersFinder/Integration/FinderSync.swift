@@ -8,17 +8,17 @@ import Persistence
 /// Retains extension-owned authorizations and creates a processor for the loaded configuration.
 actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// A configured root together with the access and identity retained for its processing lifetime.
-  struct AuthorizedRoot: Sendable {
+  struct AuthorizedCollectionRoot: Sendable {
     /// The saved root and authorization generation associated with this grant.
     let directory: MonitoredDirectory
     /// Security-scoped access retained for the configured processing lifetime.
-    let access: DirectoryAccess
+    let access: AuthorizedDirectoryAccess
     /// Identity checked again before processing and icon changes.
     let identity: String
   }
 
   /// The currently authorized roots, used for scheduling.
-  private var roots: [URL: AuthorizedRoot] = [:]
+  private var roots: [URL: AuthorizedCollectionRoot] = [:]
   /// The processing instance built for the currently authorized configuration.
   private var processors: [URL: MovieFolderProcessor] = [:]
   /// Settings captured alongside the metadata provider, never refreshed independently of that provider.
@@ -47,7 +47,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   ///
   /// - Parameter scheduler: The scheduler requesting configuration or root processing.
   /// - Returns: The currently authorized roots.
-  func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL> {
+  func directoryObservationSchedulerLoadRoots(_ scheduler: FinderDirectoryObservationScheduler) async -> Set<URL> {
     recordActivation()
     do {
       let configuration = try await environment.configurationRepository().readWhenAvailable()
@@ -55,7 +55,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       let updated = loadAuthorizedRoots(configuration, store: authorizations)
       roots = updated
       processors = [:]
-      var configurationFailure: FolderProcessingFailure?
+      var configurationFailure: AutomaticFolderProcessingFailure?
       do {
         if let token = try environment.credential() {
           try configureProcessors(token: token, configuration: configuration, roots: updated)
@@ -92,7 +92,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   ///   - roots: Authorized roots retaining security-scoped directory access.
   /// - Throws: Provider, recovery, container, or persistence setup errors.
   private func configureProcessors(
-    token: String, configuration: DirectoryConfiguration, roots: [URL: AuthorizedRoot]
+    token: String, configuration: DirectoryConfiguration, roots: [URL: AuthorizedCollectionRoot]
   ) throws {
     let recovery = try environment.processingRecoveryService()
     let container = try environment.containerURL()
@@ -110,9 +110,9 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         token: token, configuration: configuration, collectionID: root.directory.id)
       processors[url] = MovieFolderProcessor(
         persistence: try PersistenceStore(directory: records),
-        provider: RecoveryMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token),
+        provider: RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token),
         cacheDirectory: container.appendingPathComponent("Posters"),
-        coordinationStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
+        processingLockStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
         processingVerifier: processingVerifier, appearance: configuration.posterAppearance,
         processingStore: try environment.processingStore(), recovery: recovery,
         credentialRevision: configuration.credentialRevision,
@@ -132,8 +132,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// - Returns: Roots retaining access for the processing lifetime.
   private func loadAuthorizedRoots(
     _ configuration: DirectoryConfiguration, store: PersistenceStore
-  ) -> [URL: AuthorizedRoot] {
-    var updated: [URL: AuthorizedRoot] = [:]
+  ) -> [URL: AuthorizedCollectionRoot] {
+    var updated: [URL: AuthorizedCollectionRoot] = [:]
     let overlapping = configuration.findOverlappingDirectoryIDs()
     for directory in configuration.directories where !overlapping.contains(directory.id) {
       do {
@@ -142,7 +142,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
           throw DirectoryAccessError.staleBookmark
         }
         let identity = try fileSystem.persistentDirectoryIdentity(at: access.url)
-        updated[access.url.standardizedFileURL] = AuthorizedRoot(
+        updated[access.url.standardizedFileURL] = AuthorizedCollectionRoot(
           directory: directory, access: access,
           identity: identity)
       } catch {
@@ -179,7 +179,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// - Throws: Configuration contention or changes, bookmark access failures, persistence failures, or a root identity
   /// mismatch.
   func directoryObservationScheduler(
-    _ scheduler: DirectoryObservationScheduler, process url: URL
+    _ scheduler: FinderDirectoryObservationScheduler, process url: URL
   ) async throws -> Date? {
     guard let root = roots[url], let processor = processors[url],
       let configuration = processingConfiguration else { return .none }
@@ -222,7 +222,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// Refreshes capture-time history choices for each invocation without weakening processing authorization.
   /// - Parameter root: The loaded authorized root whose identity must still match saved configuration.
   /// - Returns: Fresh naming/privacy for the same grant, or private context when current choices cannot be verified.
-  private func currentActivityLogContext(for root: AuthorizedRoot) -> MovieFolderActivityLogContext {
+  private func currentActivityLogContext(for root: AuthorizedCollectionRoot) -> MovieFolderActivityLogContext {
     guard let configuration = try? environment.configurationRepository().read(),
       let directory = configuration.directories.first(where: { $0.id == root.directory.id }),
       directory.identity == root.directory.identity,
@@ -243,7 +243,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   ///   - status: Current configuration and processing availability.
   ///   - failure: Safe cause and recovery guidance when configuration or composition failed.
   private func recordConfigurationStatus(
-    _ status: MovieFolderActivityLogEvent.Status, failure: FolderProcessingFailure? = .none
+    _ status: MovieFolderActivityLogEvent.Status, failure: AutomaticFolderProcessingFailure? = .none
   ) async {
     guard status != lastConfigurationStatus || failure?.reason != lastConfigurationFailureReason else { return }
 
@@ -260,7 +260,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// - Returns: Access retained for the processing visit after validating or establishing the extension bookmark.
   /// - Throws: Configuration contention or changes, bookmark access failures, persistence failures, or a root identity
   /// mismatch.
-  private func authorize(_ directory: MonitoredDirectory, store: PersistenceStore) throws -> DirectoryAccess {
+  private func authorize(_ directory: MonitoredDirectory, store: PersistenceStore) throws -> AuthorizedDirectoryAccess {
     let key = "extension-\(directory.id)-\(directory.authorizationVersion)"
     guard let persistenceAccess = try store.acquireAccess(for: key) else { throw ConfigurationError.busy }
     if let bookmark = try persistenceAccess.read(),
@@ -287,7 +287,7 @@ nonisolated struct FinderCollectionConfigurationVerifier: MovieFolderProcessingV
   /// The settings generation captured when the operation was authorized.
   let configuration: DirectoryConfiguration
   /// The currently authorized roots, used for scheduling.
-  let roots: [URL: FinderConfigurationRuntime.AuthorizedRoot]
+  let roots: [URL: FinderConfigurationRuntime.AuthorizedCollectionRoot]
 
   /// Revalidates authorization immediately before an automatic change.
   ///
@@ -312,7 +312,7 @@ nonisolated struct FinderCollectionConfigurationVerifier: MovieFolderProcessingV
   /// Revalidates authorization immediately before a manual change.
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL)
+  func checkIconChange(_ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL)
     throws -> PersistenceAccess? {
     guard let expected = roots[root.standardizedFileURL] else { throw DirectoryAccessError.identityChanged }
 
@@ -334,13 +334,13 @@ final class FinderSync: FIFinderSync {
   /// Privacy-preserving diagnostic events for this component.
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "FinderLifecycle")
   /// Serializes observation and configuration work for the extension lifetime.
-  private let scheduler: DirectoryObservationScheduler
+  private let scheduler: FinderDirectoryObservationScheduler
   /// Retains captured, validated menu requests until an action is selected.
   private let contextMenuHandler = MovieFolderContextMenuHandler(environment: LiveMovieFolderContextMenuEnvironment())
 
   /// Creates Finder scheduling and observes configuration changes for this extension process.
   override init() {
-    scheduler = DirectoryObservationScheduler(delegate: FinderConfigurationRuntime())
+    scheduler = FinderDirectoryObservationScheduler(delegate: FinderConfigurationRuntime())
     super.init()
     DistributedNotificationCenter.default().addObserver(
       self, selector: #selector(configurationChanged), name: .movieFolderConfigurationChanged, object: .none)

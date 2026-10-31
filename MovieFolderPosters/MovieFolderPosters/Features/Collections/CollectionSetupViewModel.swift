@@ -37,7 +37,9 @@ import MovieFolderCommon
   /// Whether cancellation has permanently discarded this draft.
   private var isCancelled = false
   /// Effective choices shown by the matching controls.
-  var effectiveConfiguration: MovieMatchingConfiguration { inheritsApplicationConfiguration ? applicationConfiguration : overrideConfiguration }
+  var effectiveConfiguration: MovieMatchingConfiguration {
+    inheritsApplicationConfiguration ? applicationConfiguration : overrideConfiguration
+  }
   /// Whether final Add may submit a prepared candidate.
   var canAdd: Bool { candidate != .none && !isBusy && !isCancelled }
 
@@ -88,8 +90,10 @@ import MovieFolderCommon
     errorMessage = .none
     delegate?.collectionSetupViewModelDidChange(self)
     do {
-      try await service.commitCollection(candidate, displayName: displayName,
-        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration, usesPrivateHistory: usesPrivateHistory)
+      try await service.commitCollection(
+        candidate, displayName: displayName,
+        movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration,
+        usesPrivateHistory: usesPrivateHistory)
       self.candidate = .none
       isBusy = false
       isCommitting = false

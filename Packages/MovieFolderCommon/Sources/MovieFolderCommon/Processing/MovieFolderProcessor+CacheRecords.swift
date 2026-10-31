@@ -4,25 +4,25 @@ import Network
 import Persistence
 
 /// Internal processing failures recorded or propagated by the automatic pipeline.
-nonisolated enum ProcessingFailure: Error {
+nonisolated enum AutomaticProcessingIssue: Error {
   case changedIdentity
   case invalidPoster
   case cacheWriteFailed
 }
 
 /// The last persisted outcome used to decide whether and when a folder should be retried.
-nonisolated enum FolderRecordStatus: String, Codable {
+nonisolated enum FolderProcessingRecordStatus: String, Codable {
   case processed
   case unresolved
   case transientFailure
 }
 
 /// Persisted movie decision associated with one folder fingerprint.
-nonisolated struct FolderRecord: Codable {
+nonisolated struct FolderProcessingCacheRecord: Codable {
   /// The folder identity and name associated with a persisted decision.
   let fingerprint: String
   /// The persisted outcome determining reuse and retry behavior.
-  let status: FolderRecordStatus
+  let status: FolderProcessingRecordStatus
   /// The earliest automatic retry time for an unresolved or failed folder.
   var retryDate: Date?
   /// The explicit or confidently matched TMDb identity, when recorded.
@@ -36,7 +36,7 @@ nonisolated struct FolderRecord: Codable {
   /// Saved provider release year, when available.
   var movieYear: Int?
   /// Safe latest failure evidence retained through retry deferral.
-  var lastFailure: FolderProcessingFailure?
+  var lastFailure: AutomaticFolderProcessingFailure?
   /// Preserves the cache record field names used by existing saved state.
   private enum CodingKeys: String, CodingKey {
     case fingerprint, status, retryDate, matchedMovieID, posterPath, processingReason, movieTitle, movieYear
@@ -44,7 +44,7 @@ nonisolated struct FolderRecord: Codable {
     case movieIdentitySource
     case nameParserRevision
     case requiresAutomaticReview = "requiresAutomaticReassessment"
-    case acceptedReleaseDates, savedMatchingRulesVersion
+    case acceptedMovieReleaseDates, savedMatchingRulesVersion
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
@@ -54,15 +54,15 @@ nonisolated struct FolderRecord: Codable {
   var requiresAutomaticReview: Bool? = .none
 
   /// Raw dated events supporting an automatic identity, absent in older records and explicit selections.
-  var acceptedReleaseDates: [MovieReleaseDate]? = .none
+  var acceptedMovieReleaseDates: [MovieReleaseDate]? = .none
   /// Matching revision that completed a matching run; absent older unresolved decisions can be reviewed once.
   var savedMatchingRulesVersion: Int? = .none
 
   /// Derives all source-classified years without duplicating writable year evidence.
-  func movieYears() -> [MovieYear] {
+  func sourceClassifiedMovieYears() -> [MovieYear] {
     let primary = movieYear.map { [MovieYear(year: $0, type: .primaryRelease)] } ?? []
 
-    return primary + (acceptedReleaseDates ?? []).compactMap(\.movieYear)
+    return primary + (acceptedMovieReleaseDates ?? []).compactMap(\.movieYear)
   }
 
   /// Whether older unresolved evidence needs fresh matching rather than a cooldown retry.
@@ -82,15 +82,15 @@ nonisolated struct FolderRecord: Codable {
 }
 
 /// Per-root folder decisions, cached searches, and provider backoff persisted together.
-nonisolated struct ProcessingState: Codable {
+nonisolated struct CollectionProcessingCache: Codable {
   /// Current operational format; absent versions require explicit migration.
   var schemaVersion = 1
   /// Provider-verified title responses, independent of folder decisions.
-  var alternativeTitles: [String: CachedAlternativeTitles] = [:]
+  var alternativeTitles: [String: CachedMovieAlternativeTitles] = [:]
   /// Processing decisions keyed by immediate child folder name.
-  var folders: [String: FolderRecord] = [:]
+  var folders: [String: FolderProcessingCacheRecord] = [:]
   /// Cached provider responses keyed by normalized query digest.
-  var queries: [String: CachedSearch] = [:]
+  var queries: [String: CachedMovieSearch] = [:]
   /// The provider-wide retry boundary saved for this root, when present.
   var providerRetryAt: Date?
   /// Credential generation captured by the processor that last saved this operational state.
@@ -99,7 +99,7 @@ nonisolated struct ProcessingState: Codable {
   var movieMatchingConfiguration: MovieMatchingConfiguration? = MovieMatchingConfiguration()
 
   /// Creates a current empty state for a previously unseen root.
-  init(folders: [String: FolderRecord] = [:], queries: [String: CachedSearch] = [:],
+  init(folders: [String: FolderProcessingCacheRecord] = [:], queries: [String: CachedMovieSearch] = [:],
        providerRetryAt: Date? = .none, credentialRevision: UUID? = .none,
        movieMatchingConfiguration: MovieMatchingConfiguration? = MovieMatchingConfiguration()) {
     self.folders = folders
@@ -119,9 +119,9 @@ nonisolated struct ProcessingState: Codable {
         debugDescription: "Operational state requires explicit storage migration")
     }
 
-    folders = try values.decode([String: FolderRecord].self, forKey: .folders)
-    queries = try values.decode([String: CachedSearch].self, forKey: .queries)
-    alternativeTitles = try values.decode([String: CachedAlternativeTitles].self, forKey: .alternativeTitles)
+    folders = try values.decode([String: FolderProcessingCacheRecord].self, forKey: .folders)
+    queries = try values.decode([String: CachedMovieSearch].self, forKey: .queries)
+    alternativeTitles = try values.decode([String: CachedMovieAlternativeTitles].self, forKey: .alternativeTitles)
     providerRetryAt = try values.decodeIfPresent(Date.self, forKey: .providerRetryAt)
     credentialRevision = try values.decodeIfPresent(UUID.self, forKey: .credentialRevision)
     movieMatchingConfiguration = try values.decode(MovieMatchingConfiguration.self, forKey: .movieMatchingConfiguration)

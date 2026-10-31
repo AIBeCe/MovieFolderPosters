@@ -39,7 +39,7 @@ import Testing
 /// Verifies that log controller refreshes for append and clear.
 @MainActor
 @Test func logControllerRefreshesForAppendAndClear() async throws {
-  let log = LogViewModel(activityHistoryService: ActivityServiceFake())
+  let log = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
   let controller = LogViewController(viewModel: log)
   let views = nativeViews(in: controller.view)
   let table = try #require(views.compactMap { $0 as? NSTableView }.first)

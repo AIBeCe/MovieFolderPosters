@@ -37,7 +37,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
   /// Stable assessment explaining the result, without an arbitrary error message.
   public let reason: FolderProcessingReason?
   /// Safe typed failure stage and category.
-  public let failure: FolderProcessingFailure?
+  public let failure: AutomaticFolderProcessingFailure?
   /// Earliest eligible retry time, without claiming scheduled work.
   public let retryAt: Date?
   /// Actual counters produced by one completed collection visit.
@@ -70,7 +70,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
   public init(
     action: Action, status: Status, activityGroupID: UUID? = .none, collectionID: UUID? = .none,
     target: MovieFolderActivityLogTarget? = .none, folderResult: FolderResult? = .none,
-    reason: FolderProcessingReason? = .none, failure: FolderProcessingFailure? = .none,
+    reason: FolderProcessingReason? = .none, failure: AutomaticFolderProcessingFailure? = .none,
     retryAt: Date? = .none, processingSummary: ProcessingSummary? = .none,
     activityLogContext: MovieFolderActivityLogContext? = .none
   ) {
@@ -105,7 +105,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
   /// Creates only the fixed oversized-details fallback; no caller-written message is accepted.
   private init(
     action: Action, status: Status, activityGroupID: UUID?, collectionID: UUID?, folderResult: FolderResult?,
-    reason: FolderProcessingReason?, failure: FolderProcessingFailure?, retryAt: Date?,
+    reason: FolderProcessingReason?, failure: AutomaticFolderProcessingFailure?, retryAt: Date?,
     processingSummary: ProcessingSummary?, detailsOmitted: Bool
   ) {
     self.action = action

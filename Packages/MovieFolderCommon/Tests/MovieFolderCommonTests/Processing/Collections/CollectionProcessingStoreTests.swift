@@ -30,24 +30,24 @@ struct CollectionProcessingStoreTests {
     try fixture.configuration.update { $0.directories[0].processingConfiguration = configuration }
 
     let excluded = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .manual)
-    #expect(excluded.folders.first { $0.name == "Selected" }?.state == .excluded)
-    #expect(excluded.folders.first { $0.name == "Selected" }?.reason == .explicitExclusion)
-    #expect(excluded.folders.first { $0.name == "Selected" }?.assessedAt != .none)
-    #expect(excluded.folders.first { $0.name == "Foreign" }?.ownership == .unowned)
-    #expect(excluded.folders.first { $0.name == "Other" } == unaffected)
-    #expect(excluded.folders.first { $0.name == "Suppressed" } == suppressed)
+    #expect(excluded.folders.first { $0.folderName == "Selected" }?.processingState == .excluded)
+    #expect(excluded.folders.first { $0.folderName == "Selected" }?.processingReason == .explicitExclusion)
+    #expect(excluded.folders.first { $0.folderName == "Selected" }?.assessedAt != .none)
+    #expect(excluded.folders.first { $0.folderName == "Foreign" }?.ownership == .unowned)
+    #expect(excluded.folders.first { $0.folderName == "Other" } == unaffected)
+    #expect(excluded.folders.first { $0.folderName == "Suppressed" } == suppressed)
     _ = configuration.includeFolder(identity: "selected")
     _ = configuration.includeFolder(identity: "foreign")
     _ = configuration.includeFolder(identity: "suppressed")
     try fixture.configuration.update { $0.directories[0].processingConfiguration = configuration }
 
     let included = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .manual)
-    #expect(included.folders.first { $0.name == "Selected" }?.state == .pending)
-    #expect(included.folders.first { $0.name == "Selected" }?.reason == .inventoryPending)
-    #expect(included.folders.first { $0.name == "Selected" }?.assessedAt == .none)
-    #expect(included.folders.first { $0.name == "Foreign" }?.ownership == .unowned)
-    #expect(included.folders.first { $0.name == "Other" } == unaffected)
-    #expect(included.folders.first { $0.name == "Suppressed" } == suppressed)
+    #expect(included.folders.first { $0.folderName == "Selected" }?.processingState == .pending)
+    #expect(included.folders.first { $0.folderName == "Selected" }?.processingReason == .inventoryPending)
+    #expect(included.folders.first { $0.folderName == "Selected" }?.assessedAt == .none)
+    #expect(included.folders.first { $0.folderName == "Foreign" }?.ownership == .unowned)
+    #expect(included.folders.first { $0.folderName == "Other" } == unaffected)
+    #expect(included.folders.first { $0.folderName == "Suppressed" } == suppressed)
   }
 
   /// Inclusion edits fence stale writers without clearing unrelated saved folder outcomes.
@@ -68,7 +68,7 @@ struct CollectionProcessingStoreTests {
     }
     let refreshed = try fixture.processingStore.recordProcessingStart(
       context: fixture.context, action: .manual, child: "Selected")
-    #expect(refreshed.folders.first { $0.name == "Other" } == preserved)
+    #expect(refreshed.folders.first { $0.folderName == "Other" } == preserved)
   }
 
   /// Checks that operation start and completion persist with monotonically increasing revisions.
@@ -78,10 +78,10 @@ struct CollectionProcessingStoreTests {
     let started = try fixture.processingStore.recordProcessingStart(
       context: context, action: .automatic, now: Date(timeIntervalSince1970: 1))
     #expect(started.revision == 1)
-    #expect(started.currentRun?.state == .running)
+    #expect(started.currentRun?.runState == .running)
 
     var completed = started
-    completed.currentRun?.state = .completed
+    completed.currentRun?.runState = .completed
     completed.currentRun?.endedAt = Date(timeIntervalSince1970: 2)
     completed.folders = [FolderProcessingRecord(
       name: "Film", identity: "child", state: .done, movieID: 7,
@@ -111,7 +111,7 @@ struct CollectionProcessingStoreTests {
     #expect(notifier.accessesAvailableDuringCallback)
 
     var completed = started
-    completed.currentRun?.state = .partial
+    completed.currentRun?.runState = .partial
     let saved = try processingStore.commit(completed, expectedRevision: started.revision)
     #expect(notifier.revisions == [started.revision, saved.revision])
     #expect(notifier.accessesAvailableDuringCallback)
@@ -129,7 +129,7 @@ struct CollectionProcessingStoreTests {
     let started = try processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     notifier.reset()
     var stale = started
-    stale.currentRun?.state = .partial
+    stale.currentRun?.runState = .partial
 
     #expect(throws: CollectionProcessingError.staleRevision) {
       try processingStore.commit(stale, expectedRevision: started.revision - 1)
@@ -142,7 +142,7 @@ struct CollectionProcessingStoreTests {
     let fixture = try Fixture()
     let started = try fixture.processingStore.recordProcessingStart(context: fixture.context, action: .automatic)
     var first = started
-    first.currentRun?.state = .partial
+    first.currentRun?.runState = .partial
     _ = try fixture.processingStore.commit(first, expectedRevision: started.revision)
 
     #expect(throws: CollectionProcessingError.staleRevision) {
@@ -181,7 +181,7 @@ struct CollectionProcessingStoreTests {
     #expect(newOperation.currentRun?.id != oldOperation.currentRun?.id)
 
     var staleWriter = oldOperation
-    staleWriter.currentRun?.state = .partial
+    staleWriter.currentRun?.runState = .partial
     #expect(throws: CollectionProcessingError.configurationChanged) {
       try fixture.processingStore.commit(staleWriter, expectedRevision: oldOperation.revision)
     }
@@ -196,18 +196,21 @@ struct CollectionProcessingStoreTests {
 
     var forged = started
     forged.context = fixture.makeContext(credentialRevision: newCredentialRevision)
-    forged.currentRun?.state = .partial
+    forged.currentRun?.runState = .partial
     #expect(throws: CollectionProcessingError.configurationChanged) {
       try fixture.processingStore.commit(forged, expectedRevision: started.revision)
     }
   }
 
   /// Checks that manual work in a new generation preserves history without promoting old assessments.
+}
+
+extension CollectionProcessingStoreTests {
   @Test func manualStartInNewGenerationDoesNotPromoteOldNegativeAssessment() throws {
     let fixture = try Fixture()
     let oldContext = fixture.context
     var previousRun = try fixture.processingStore.recordProcessingStart(context: oldContext, action: .automatic)
-    previousRun.currentRun?.state = .completed
+    previousRun.currentRun?.runState = .completed
     previousRun.currentRun?.endedAt = Date(timeIntervalSince1970: 10)
     previousRun.folders = [FolderProcessingRecord(
       name: "Film", identity: "child-old", state: .notFound,
@@ -228,10 +231,10 @@ struct CollectionProcessingStoreTests {
     #expect(manual.lastCompletedRun == savedPreviousRun.currentRun)
     #expect(manual.lastCompletedRunContext == oldContext)
 
-    manual.currentRun?.state = .completed
+    manual.currentRun?.runState = .completed
     manual.currentRun?.endedAt = Date(timeIntervalSince1970: 20)
     let savedManual = try fixture.processingStore.commit(manual, expectedRevision: manual.revision)
-    #expect(savedManual.folders.first?.state == .pending)
+    #expect(savedManual.folders.first?.processingState == .pending)
     #expect(savedManual.calculateCounts().notFound == .none)
     #expect(CollectionProcessingPresentation(processingState: savedManual).lastCompletedRunIsCurrentContext == false)
   }
@@ -262,7 +265,7 @@ struct CollectionProcessingStoreTests {
     let fixture = try Fixture()
     let current = CollectionProcessingState(context: fixture.context)
     var unsupported = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
-    unsupported["schemaVersion"] = 3
+    unsupported["schemaVersion"] = 4
     do {
       let access = try #require(try fixture.processingStorePersistence.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)
@@ -271,7 +274,7 @@ struct CollectionProcessingStoreTests {
     }
 
     #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(
-      record: .collectionOutcomes(fixture.context.rootID), version: 3)) {
+      record: .collectionOutcomes(fixture.context.rootID), version: 4)) {
       try fixture.processingStore.read(rootID: fixture.context.rootID)
     }
     let access = try #require(try fixture.processingStorePersistence.acquireAccess(
@@ -439,7 +442,6 @@ struct CollectionProcessingStoreTests {
   }
 }
 
-/// Explicitly enabled process and scale probes, separate from ordinary store regressions.
 extension CollectionProcessingStoreTests {
   /// Checks that an independent process reads only complete committed processing snapshots.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["COLLECTION_PROCESSING_PROBE_PATH"] != .none))
@@ -520,12 +522,12 @@ extension CollectionProcessingStoreTests {
       let upperBound = min(lowerBound + 32, processingState.folders.count)
       var checkpoint = processingState
       for index in lowerBound..<upperBound {
-        checkpoint.folders[index].state = .notFound
-        checkpoint.folders[index].reason = .noSuitableMovie
+        checkpoint.folders[index].processingState = .notFound
+        checkpoint.folders[index].processingReason = .noSuitableMovie
         checkpoint.folders[index].assessedAt = now
       }
       if upperBound == checkpoint.folders.count {
-        checkpoint.currentRun?.state = .completed
+        checkpoint.currentRun?.runState = .completed
         checkpoint.currentRun?.endedAt = now
       }
       encodeStart = clock.now
@@ -545,7 +547,7 @@ extension CollectionProcessingStoreTests {
       elapsedSeconds, encodeSeconds, peakEnvelopeBytes
     ))
     #expect(processingState.folders.count == 10_000)
-    #expect(processingState.folders.allSatisfy { $0.state == .notFound })
+    #expect(processingState.folders.allSatisfy { $0.processingState == .notFound })
     #expect(peakEnvelopeBytes < 8 * 1024 * 1024)
   }
 

@@ -52,19 +52,19 @@ nonisolated public struct CollectionProcessingWorkSummary: Sendable, Equatable {
   /// Classifies one saved outcome while preserving terminal icon ownership evidence.
   private mutating func classify(_ folder: FolderProcessingRecord, now: Date) {
     if folder.isVerifiedDone { done += 1; return }
-    if folder.state == .preserved { preserved += 1; return }
-    if folder.state == .suppressed { suppressed += 1; return }
-    if folder.state == .excluded { excluded += 1; return }
-    if folder.state == .pending { needsProcessing += 1; return }
-    if folder.state == .uncertain || folder.state == .done { needsReview += 1; return }
-    guard let reason = folder.reason, reason != .unknown else { needsReview += 1; return }
+    if folder.processingState == .preserved { preserved += 1; return }
+    if folder.processingState == .suppressed { suppressed += 1; return }
+    if folder.processingState == .excluded { excluded += 1; return }
+    if folder.processingState == .pending { needsProcessing += 1; return }
+    if folder.processingState == .uncertain || folder.processingState == .done { needsReview += 1; return }
+    guard let reason = folder.processingReason, reason != .unknown else { needsReview += 1; return }
     switch reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .manualMatchingRequired:
       needsManualResolution += 1
     case .authentication, .recoveryMode:
       waitingToRetry += 1
     default:
-      if let retryAt = folder.retryAt, retryAt > now { waitingToRetry += 1 } else { needsProcessing += 1 }
+      if let retryAt = folder.nextRetryAt, retryAt > now { waitingToRetry += 1 } else { needsProcessing += 1 }
     }
   }
 }

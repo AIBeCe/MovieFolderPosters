@@ -21,7 +21,7 @@ struct CredentialRevisionTests {
       transferBookmark: Data([1]), authorizationVersion: UUID())
     try repository.update { $0.directories = [configured] }
     let original = try repository.read()
-    let candidate = try FileSystemService().readCurrentState(ofChild: child, in: root)
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: child, in: root)
     let store = try PersistenceStore(directory:
       directory.appendingPathComponent("Processing/\(original.processingCacheRevision)"))
     let provider = CountingProvider()
@@ -30,9 +30,9 @@ struct CredentialRevisionTests {
     do {
       let persistenceAccess = try #require(
         try store.acquireAccess(for: MovieFolderProcessor.processingStateKey(for: root)))
-      let explicit = FolderRecord(fingerprint: candidate.fingerprint, status: .processed,
+      let explicit = FolderProcessingCacheRecord(fingerprint: candidate.fingerprint, status: .processed,
         matchedMovieID: 4242, posterPath: "/explicit.jpg", movieIdentitySource: .explicitSelection)
-      try await initial.saveState(ProcessingState(folders: [child: explicit]), to: persistenceAccess)
+      try await initial.saveState(CollectionProcessingCache(folders: [child: explicit]), to: persistenceAccess)
     }
     for _ in 0..<3 {
       let before = try repository.read()
@@ -90,16 +90,16 @@ struct CredentialRevisionTests {
   /// Epoch reconciliation preserves explicit identity, unresolved decisions, and provider throttling.
   @Test func cacheReconciliationPreservesDecisionsAndDropsOnlyAuthenticationEvidence() throws {
     let deadline = Date().addingTimeInterval(600)
-    let explicit = FolderRecord(
+    let explicit = FolderProcessingCacheRecord(
       fingerprint: "identity", status: .transientFailure, retryDate: deadline,
       matchedMovieID: 42, posterPath: "/saved.jpg", processingReason: .authentication,
       movieTitle: "Saved", movieYear: 2021,
-      lastFailure: FolderProcessingFailure(reason: .authentication, stage: .artwork, occurredAt: Date()),
+      lastFailure: AutomaticFolderProcessingFailure(reason: .authentication, stage: .artwork, occurredAt: Date()),
       movieIdentitySource: .explicitSelection)
     var manual = explicit
     manual.processingReason = .ambiguousMovie
-    var state = ProcessingState(folders: ["explicit": explicit, "manual": manual],
-      queries: ["query": CachedSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: Date())],
+    var state = CollectionProcessingCache(folders: ["explicit": explicit, "manual": manual],
+      queries: ["query": CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: Date())],
       providerRetryAt: deadline, credentialRevision: UUID())
     let current = UUID()
     state.reconcileCredentialRevision(current)
@@ -114,7 +114,7 @@ struct CredentialRevisionTests {
     #expect(state.folders["manual"]?.processingReason == .ambiguousMovie)
     #expect(state.providerRetryAt == deadline)
     state.credentialRevision = current
-    state.queries["query"] = CachedSearch(
+    state.queries["query"] = CachedMovieSearch(
       result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: Date())
     state.reconcileCredentialRevision(current)
     #expect(!state.queries.isEmpty)
@@ -154,18 +154,18 @@ struct CredentialRevisionTests {
     let current = MovieFolderProcessor(persistence: store, provider: CountingProvider(),
       cacheDirectory: directory, credentialRevision: currentRevision)
     let persistenceAccess = try #require(try store.acquireAccess(for: "state"))
-    let record = FolderRecord(fingerprint: "identity", status: .transientFailure,
+    let record = FolderProcessingCacheRecord(fingerprint: "identity", status: .transientFailure,
       matchedMovieID: 42, posterPath: "/saved.jpg", processingReason: .authentication,
       movieIdentitySource: .explicitSelection)
-    try await old.saveState(ProcessingState(folders: ["Movie": record]), to: persistenceAccess)
+    try await old.saveState(CollectionProcessingCache(folders: ["Movie": record]), to: persistenceAccess)
     let persisted = try #require(try persistenceAccess.read())
-    #expect(try JSONDecoder().decode(ProcessingState.self, from: persisted).credentialRevision == oldRevision)
+    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from: persisted).credentialRevision == oldRevision)
     let reconciled = try await current.loadState(from: persistenceAccess)
     #expect(reconciled.folders["Movie"]?.processingReason == .none)
     #expect(reconciled.folders["Movie"]?.matchedMovieID == 42)
     try await current.saveState(reconciled, to: persistenceAccess)
     let updated = try #require(try persistenceAccess.read())
-    #expect(try JSONDecoder().decode(ProcessingState.self, from: updated).credentialRevision == currentRevision)
+    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from: updated).credentialRevision == currentRevision)
   }
 
   /// Cancellation before the commit leaves persisted generation and Keychain callback untouched.

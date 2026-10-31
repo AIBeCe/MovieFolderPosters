@@ -5,7 +5,7 @@ import ImageIO
 import Synchronization
 
 /// Describes whether a poster was installed or an existing custom icon was left intact.
-public enum PosterAssignmentResult: Sendable {
+public enum FolderPosterAssignmentResult: Sendable {
   case assigned
   case existingIconPreserved
 }
@@ -23,7 +23,7 @@ public enum PosterOwnershipStatus: Equatable, Sendable {
 }
 
 /// A strict, read-only observation of a folder's icon and suppression state.
-public struct PosterInspection: Sendable {
+public struct FolderPosterInspectionResult: Sendable {
   /// The classified ownership state for the current icon.
   public let ownership: PosterOwnershipStatus
   /// The saved appearance when the current icon is verified as app-owned.
@@ -58,7 +58,7 @@ private let iconFileName = "Icon\r"
 private let maximumIconBytes = 4 * 1024 * 1024
 
 /// Encodes the directory identity, rendered icon digest, and selected appearance.
-private struct PosterOwnership: Codable {
+private struct FolderPosterOwnershipRecord: Codable {
   /// The folder identity to which the icon belongs.
   let identity: String
   /// Digest of the icon file and resource fork at assignment time.
@@ -118,7 +118,7 @@ extension FileSystemService {
   /// - Throws: ``FolderPosterError`` for invalid children, images, or Finder icon assignment failures.
   public func assignPoster(
     _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = .none
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     try assignPoster(
       imageData, toChild: name, in: directory, appearance: .raw,
       expectedIdentity: expectedIdentity)
@@ -137,7 +137,7 @@ extension FileSystemService {
   public func assignPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
     appearance: PosterAppearance, expectedIdentity: String? = .none
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     try Task.checkCancellation()
     try validatePosterTarget(name, in: directory)
     let child = directory.appendingPathComponent(name, isDirectory: true)
@@ -190,7 +190,7 @@ extension FileSystemService {
   /// - Throws: ``DirectoryAccessError/identityChanged`` or an I/O error when inspection fails.
   public func inspectPoster(
     toChild name: String, in directory: URL, expectedIdentity: String? = .none
-  ) throws -> PosterInspection {
+  ) throws -> FolderPosterInspectionResult {
     try validateDirectory(directory)
     guard isValidChildName(name) else { throw FolderPosterError.invalidChild }
     let child = directory.appendingPathComponent(name, isDirectory: true)
@@ -206,27 +206,27 @@ extension FileSystemService {
         throw DirectoryAccessError.identityChanged
       }
       guard hasIcon else {
-        return PosterInspection(ownership: .none, appearance: .none, isSuppressed: suppressed)
+        return FolderPosterInspectionResult(ownership: .none, appearance: .none, isSuppressed: suppressed)
       }
       guard let descriptor = try strictIconDescriptor(in: child, identity: identity) else {
-        return PosterInspection(ownership: .unowned, appearance: .none, isSuppressed: suppressed)
+        return FolderPosterInspectionResult(ownership: .unowned, appearance: .none, isSuppressed: suppressed)
       }
       defer { _ = close(descriptor) }
 
       guard let marker = try strictAttribute(ownershipAttribute, from: descriptor),
-        let ownership = try? JSONDecoder().decode(PosterOwnership.self, from: marker)
+        let ownership = try? JSONDecoder().decode(FolderPosterOwnershipRecord.self, from: marker)
       else {
-        return PosterInspection(ownership: .unowned, appearance: .none, isSuppressed: suppressed)
+        return FolderPosterInspectionResult(ownership: .unowned, appearance: .none, isSuppressed: suppressed)
       }
       guard ownership.identity == identity else {
-        return PosterInspection(ownership: .changed, appearance: .none, isSuppressed: suppressed)
+        return FolderPosterInspectionResult(ownership: .changed, appearance: .none, isSuppressed: suppressed)
       }
       let digest = try strictIconDigest(descriptor: descriptor)
       guard ownership.digest == digest else {
-        return PosterInspection(ownership: .changed, appearance: .none, isSuppressed: suppressed)
+        return FolderPosterInspectionResult(ownership: .changed, appearance: .none, isSuppressed: suppressed)
       }
 
-      return PosterInspection(
+      return FolderPosterInspectionResult(
         ownership: .owned, appearance: ownership.appearance, isSuppressed: suppressed)
     }
   }
@@ -263,7 +263,7 @@ extension FileSystemService {
   /// - Throws: ``FolderPosterError`` when validation or icon assignment fails.
   public func replaceAssignedPoster(
     _ imageData: Data, toChild name: String, in directory: URL, expectedIdentity: String? = .none
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     try replaceAssignedPoster(
       imageData, toChild: name, in: directory, appearance: .raw,
       expectedIdentity: expectedIdentity)
@@ -282,7 +282,7 @@ extension FileSystemService {
   public func replaceAssignedPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
     appearance: PosterAppearance, expectedIdentity: String? = .none
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     try validatePosterTarget(name, in: directory)
     let image = try makePosterImage(from: imageData, appearance: appearance)
     let child = directory.appendingPathComponent(name, isDirectory: true)
@@ -315,7 +315,7 @@ extension FileSystemService {
   public func restyleAssignedPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
     appearance: PosterAppearance, expectedIdentity: String? = .none
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     try validatePosterTarget(name, in: directory)
     let image = try makePosterImage(from: imageData, appearance: appearance)
     let child = directory.appendingPathComponent(name, isDirectory: true)
@@ -555,7 +555,7 @@ extension FileSystemService {
     guard let descriptor = iconDescriptor(in: folder, identity: identity) else { return .none }
     defer { _ = close(descriptor) }
     guard let marker = readAttribute(ownershipAttribute, from: descriptor),
-      let ownership = try? JSONDecoder().decode(PosterOwnership.self, from: marker),
+      let ownership = try? JSONDecoder().decode(FolderPosterOwnershipRecord.self, from: marker),
       ownership.identity == identity, let digest = iconDigest(descriptor: descriptor)
     else { return .none }
 
@@ -569,7 +569,7 @@ extension FileSystemService {
     guard let digest = iconDigest(descriptor: descriptor) else { return }
     guard
       let marker = try? JSONEncoder().encode(
-        PosterOwnership(identity: identity, digest: digest, appearance: appearance)
+        FolderPosterOwnershipRecord(identity: identity, digest: digest, appearance: appearance)
       )
     else { return }
     _ = marker.withUnsafeBytes { fsetxattr(descriptor, ownershipAttribute, $0.baseAddress, $0.count, 0, 0) }

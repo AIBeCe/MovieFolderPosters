@@ -15,7 +15,7 @@ func automaticRecoveryAcceptsChangedCredentialWithoutObsoleteFolderDelay() async
   let recovery = ProcessingRecoveryService(
     store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
   let rejected = CountingProvider(searchError: .authentication)
-  let oldProvider = RecoveryMovieMetadataProvider(provider: rejected, recovery: recovery, credential: "old")
+  let oldProvider = RecoveryAwareMovieMetadataProvider(provider: rejected, recovery: recovery, credential: "old")
   let initial = MovieFolderProcessor(
     persistence: fixture.persistence, provider: oldProvider, cacheDirectory: fixture.cache,
     posterAssigner: fixture.assigner, recovery: recovery)
@@ -25,7 +25,7 @@ func automaticRecoveryAcceptsChangedCredentialWithoutObsoleteFolderDelay() async
   let accepted = CountingProvider()
   let replacement = MovieFolderProcessor(
     persistence: fixture.persistence,
-    provider: RecoveryMovieMetadataProvider(provider: accepted, recovery: recovery, credential: "new"),
+    provider: RecoveryAwareMovieMetadataProvider(provider: accepted, recovery: recovery, credential: "new"),
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner, recovery: recovery)
 
   let result = try await replacement.process(root: fixture.movies)
@@ -45,14 +45,14 @@ func automaticTemporaryRecoveryRequiresLaterEligibleInvocation(error: TMDbError)
     store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")), now: { clock.now })
   let initial = MovieFolderProcessor(
     persistence: fixture.persistence,
-    provider: RecoveryMovieMetadataProvider(
+    provider: RecoveryAwareMovieMetadataProvider(
       provider: CountingProvider(searchError: error), recovery: recovery, credential: "token"),
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner, now: { clock.now }, recovery: recovery)
   _ = try await initial.process(root: fixture.movies)
   let accepted = CountingProvider()
   let resumed = MovieFolderProcessor(
     persistence: fixture.persistence,
-    provider: RecoveryMovieMetadataProvider(provider: accepted, recovery: recovery, credential: "token"),
+    provider: RecoveryAwareMovieMetadataProvider(provider: accepted, recovery: recovery, credential: "token"),
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner, now: { clock.now }, recovery: recovery)
   clock.advance(by: 100)
   let waiting = try await resumed.process(root: fixture.movies)
@@ -106,8 +106,8 @@ private struct RecoveryCheckpointProvider: MovieMetadataProvider {
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     try await (title == "Beta" ? pending : completed).searchMovies(title: title, year: year)

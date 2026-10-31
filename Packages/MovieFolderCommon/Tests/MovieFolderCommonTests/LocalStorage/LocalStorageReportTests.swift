@@ -9,7 +9,7 @@ struct LocalStorageReportTests {
   /// - Throws: Filesystem setup or encoding failures.
   @Test func missingNamespacesAreNotCreatedAndOwnershipDoesNotOverlap() throws {
     let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
-    let report = LocalStorageReport.capture(sharedContainer: root, hostApplicationSupport: root)
+    let report = ApplicationLocalStorageReport.capture(sharedContainer: root, hostApplicationSupport: root)
     #expect(report.categories.count == 9)
     #expect(report.categories.allSatisfy { $0.status == .notCreated })
     #expect(!FileManager.default.fileExists(atPath: root.path))
@@ -20,7 +20,7 @@ struct LocalStorageReportTests {
   /// Encodes unavailable categories without exposing storage locations.
   /// - Throws: Encoding failures.
   @Test func unavailableRootNeverClaimsCompleteAndExportsNoLocations() throws {
-    let report = LocalStorageReport.capture(sharedContainer: nil, hostApplicationSupport: nil)
+    let report = ApplicationLocalStorageReport.capture(sharedContainer: nil, hostApplicationSupport: nil)
     #expect(report.categories.allSatisfy { $0.status == .unavailable })
     let bytes = try JSONEncoder().encode(report)
     let text = try #require(String(bytes: bytes, encoding: .utf8))

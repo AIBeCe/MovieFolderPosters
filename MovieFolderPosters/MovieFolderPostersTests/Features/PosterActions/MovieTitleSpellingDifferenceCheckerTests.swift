@@ -56,7 +56,8 @@ struct MovieTitleSpellingDifferenceCheckerTests {
   @Test func rejectsOversizedTitlesAndWords() {
     #expect(checker.possibleSpellingDifference(from: String(repeating: "a", count: 257),
       movie: movie(title: "Matrix")) == .none)
-    #expect(checker.possibleSpellingDifference(from: "Matrix", movie: movie(title: String(repeating: "a", count: 65))) == .none)
+    #expect(checker.possibleSpellingDifference(
+      from: "Matrix", movie: movie(title: String(repeating: "a", count: 65))) == .none)
   }
 
   /// Accepts the inclusive raw-title and per-word boundaries.

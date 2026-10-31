@@ -27,16 +27,16 @@ struct ReleaseNameParserTests {
 
   /// Database codes in a suffix do not become part of the search title or establish movie identity.
   @Test(arguments: [
-    ReleaseFixture("Come and See (1985) [tt0091251]", "Come and See", 1985),
-    ReleaseFixture("Stealth (2005) [imdb-tt0382992]", "Stealth", 2005),
-    ReleaseFixture("Dune (2021) [tmdb-438631]", "Dune", 2021),
-    ReleaseFixture("Dune (2021) [tvdb-12345]", "Dune", 2021),
-    ReleaseFixture("Dune (2021) [wikidata-Q25188]", "Dune", 2021),
-    ReleaseFixture("Dune (2021) [tt1160419] 2160p WEB-DL", "Dune", 2021),
-    ReleaseFixture("Dune (2021) 2160p WEB-DL [tt1160419]", "Dune", 2021),
-    ReleaseFixture("Dune (2021) [tt1160419] [tmdb-438631]", "Dune", 2021)
+    ReleaseNameParserFixture("Come and See (1985) [tt0091251]", "Come and See", 1985),
+    ReleaseNameParserFixture("Stealth (2005) [imdb-tt0382992]", "Stealth", 2005),
+    ReleaseNameParserFixture("Dune (2021) [tmdb-438631]", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) [tvdb-12345]", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) [wikidata-Q25188]", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) [tt1160419] 2160p WEB-DL", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) 2160p WEB-DL [tt1160419]", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) [tt1160419] [tmdb-438631]", "Dune", 2021)
   ])
-  func discardsDatabaseIdentifierSuffixes(_ fixture: ReleaseFixture) {
+  func discardsDatabaseIdentifierSuffixes(_ fixture: ReleaseNameParserFixture) {
     let parser = ReleaseNameParser()
 
     #expect(parser.hasRecognizedDatabaseIdentifierSuffix(fixture.name))
@@ -45,18 +45,18 @@ struct ReleaseNameParserTests {
 
   /// Complete edition phrases after a year are discarded while their title and year remain intact.
   @Test(arguments: [
-    ReleaseFixture("Dune (2021) Director's Cut", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Director’s Cut 2160p WEB-DL", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Directors Cut 1080p BluRay", "Dune", 2021),
-    ReleaseFixture("Dune (2021) dIrEcToR's cUt", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Collector's Edition", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Collector’s Edition HDR", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Collectors Edition", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Special Edition", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Final Cut", "Dune", 2021),
-    ReleaseFixture("Dune (2021) Theatrical Cut", "Dune", 2021)
+    ReleaseNameParserFixture("Dune (2021) Director's Cut", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Director’s Cut 2160p WEB-DL", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Directors Cut 1080p BluRay", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) dIrEcToR's cUt", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Collector's Edition", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Collector’s Edition HDR", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Collectors Edition", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Special Edition", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Final Cut", "Dune", 2021),
+    ReleaseNameParserFixture("Dune (2021) Theatrical Cut", "Dune", 2021)
   ])
-  func discardsCompleteEditionSuffixes(_ fixture: ReleaseFixture) {
+  func discardsCompleteEditionSuffixes(_ fixture: ReleaseNameParserFixture) {
     let parser = ReleaseNameParser()
 
     #expect(parser.hasRecognizedEditionSuffix(fixture.name))
@@ -65,12 +65,12 @@ struct ReleaseNameParserTests {
 
   /// Incomplete edition phrases and conflicting years remain unresolved rather than being discarded.
   @Test(arguments: [
-    UnresolvedFixture("Dune (2021) Director's 2160p", .ambiguousMetadata),
-    UnresolvedFixture("Dune (2021) Special Cut 1080p", .ambiguousMetadata),
-    UnresolvedFixture("Dune (2021) Final Cut Extra 2160p", .ambiguousMetadata),
-    UnresolvedFixture("Dune (2021) Final Cut 2022", .ambiguousYear)
+    UnresolvedReleaseNameFixture("Dune (2021) Director's 2160p", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("Dune (2021) Special Cut 1080p", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("Dune (2021) Final Cut Extra 2160p", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("Dune (2021) Final Cut 2022", .ambiguousYear)
   ])
-  func rejectsIncompleteEditionSuffixes(_ fixture: UnresolvedFixture) {
+  func rejectsIncompleteEditionSuffixes(_ fixture: UnresolvedReleaseNameFixture) {
     let parser = ReleaseNameParser()
 
     #expect(!parser.hasRecognizedEditionSuffix(fixture.name))
@@ -79,11 +79,11 @@ struct ReleaseNameParserTests {
 
   /// Numeric titles and edition-like title words separated from a year remain part of the title.
   @Test(arguments: [
-    ReleaseFixture("1984.Final.Cut", "1984 Final Cut", .none),
-    ReleaseFixture("1917.Special.Edition", "1917 Special Edition", .none),
-    ReleaseFixture("Summer.of.1984.The.Final.Cut", "Summer of 1984 The Final Cut", .none)
+    ReleaseNameParserFixture("1984.Final.Cut", "1984 Final Cut", .none),
+    ReleaseNameParserFixture("1917.Special.Edition", "1917 Special Edition", .none),
+    ReleaseNameParserFixture("Summer.of.1984.The.Final.Cut", "Summer of 1984 The Final Cut", .none)
   ])
-  func preservesEditionLikeTitleTokens(_ fixture: ReleaseFixture) {
+  func preservesEditionLikeTitleTokens(_ fixture: ReleaseNameParserFixture) {
     let parser = ReleaseNameParser()
 
     #expect(!parser.hasRecognizedEditionSuffix(fixture.name))
@@ -92,10 +92,10 @@ struct ReleaseNameParserTests {
 
   /// Unknown bracketed text and identifiers embedded in titles remain available to conservative parsing.
   @Test(arguments: [
-    UnresolvedFixture("Dune (2021) [unknown-12345]", .ambiguousMetadata),
-    UnresolvedFixture("Dune (2021) [tt12]", .ambiguousMetadata)
+    UnresolvedReleaseNameFixture("Dune (2021) [unknown-12345]", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("Dune (2021) [tt12]", .ambiguousMetadata)
   ])
-  func doesNotDiscardUnsupportedOrEmbeddedTokens(_ fixture: UnresolvedFixture) {
+  func doesNotDiscardUnsupportedOrEmbeddedTokens(_ fixture: UnresolvedReleaseNameFixture) {
     let parser = ReleaseNameParser()
 
     #expect(!parser.hasRecognizedDatabaseIdentifierSuffix(fixture.name))
@@ -115,26 +115,26 @@ struct ReleaseNameParserTests {
   ///
   /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   @Test(arguments: [
-    ReleaseFixture("The.Drama.2026.2160p.WEB-DL.DDP5.1.Atmos.H265-GROUP", "The Drama", 2026),
-    ReleaseFixture("North.Star.2023.1080p.BluRay.x264-GROUP", "North Star", 2023),
-    ReleaseFixture("Ride.The.Eagle.2021.1080p.WEB-DL-GROUP", "Ride The Eagle", 2021),
-    ReleaseFixture("Spider-Man.No.Way.Home.2021.2160p.BluRay.x265-GROUP", "Spider-Man No Way Home", 2021),
-    ReleaseFixture(
+    ReleaseNameParserFixture("The.Drama.2026.2160p.WEB-DL.DDP5.1.Atmos.H265-GROUP", "The Drama", 2026),
+    ReleaseNameParserFixture("North.Star.2023.1080p.BluRay.x264-GROUP", "North Star", 2023),
+    ReleaseNameParserFixture("Ride.The.Eagle.2021.1080p.WEB-DL-GROUP", "Ride The Eagle", 2021),
+    ReleaseNameParserFixture("Spider-Man.No.Way.Home.2021.2160p.BluRay.x265-GROUP", "Spider-Man No Way Home", 2021),
+    ReleaseNameParserFixture(
       "Whisper.Of.The.Heart.1995.NORDiC.1080p.WEB-DL.H.264.DDP5.1-NoTrace",
       "Whisper Of The Heart", 1995),
-    ReleaseFixture("The.Drama.2026.REMASTERED.2160p.WEB-DL", "The Drama", 2026),
-    ReleaseFixture("North.Star.WEB-DL.x264-GROUP", "North Star", .none),
-    ReleaseFixture("Ride.The.Eagle.1080p.WEB-DL-GROUP", "Ride The Eagle", .none),
-    ReleaseFixture("Movie.2020.x265-GROUP", "Movie", 2020),
-    ReleaseFixture("Movie.[2020].HDR10+.HEVC.DDP5.1-GROUP", "Movie", 2020),
-    ReleaseFixture(
+    ReleaseNameParserFixture("The.Drama.2026.REMASTERED.2160p.WEB-DL", "The Drama", 2026),
+    ReleaseNameParserFixture("North.Star.WEB-DL.x264-GROUP", "North Star", .none),
+    ReleaseNameParserFixture("Ride.The.Eagle.1080p.WEB-DL-GROUP", "Ride The Eagle", .none),
+    ReleaseNameParserFixture("Movie.2020.x265-GROUP", "Movie", 2020),
+    ReleaseNameParserFixture("Movie.[2020].HDR10+.HEVC.DDP5.1-GROUP", "Movie", 2020),
+    ReleaseNameParserFixture(
       "When Marnie Was There [2014] 1080p BDRip x265 DTS-HD MA 5.0 Kira [SEV]",
       "When Marnie Was There", 2014),
-    ReleaseFixture(
+    ReleaseNameParserFixture(
       "Batman Knightfall Part 1 2026 2160p UHD BluRay REMUX DV HDR HEVC DTS-HD MA 5.1-d3g",
       "Batman Knightfall Part 1", 2026)
   ])
-  func extractsFullReleaseNames(_ fixture: ReleaseFixture) {
+  func extractsFullReleaseNames(_ fixture: ReleaseNameParserFixture) {
     #expect(
       ReleaseNameParser().parse(fixture.name)
         == .parsed(
@@ -147,25 +147,25 @@ struct ReleaseNameParserTests {
   ///
   /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   @Test(arguments: [
-    ReleaseFixture("1917.2019.1080p.BluRay", "1917", 2019),
-    ReleaseFixture("2001.A.Space.Odyssey.1968.1080p.BluRay", "2001 A Space Odyssey", 1968),
-    ReleaseFixture("Blade.Runner.2049.[2017].2160p.WEB-DL", "Blade Runner 2049", 2017),
-    ReleaseFixture("Summer.of.1984.(2000).1080p.WEB-DL", "Summer of 1984", 2000),
-    ReleaseFixture("Remux.2023", "Remux", 2023),
-    ReleaseFixture("The.Remux.Movie.2020.1080p.BluRay", "The Remux Movie", 2020),
-    ReleaseFixture("The.Web.of.Life.2018", "The Web of Life", 2018),
-    ReleaseFixture("The.Dolby.Vision.2020", "The Dolby Vision", 2020),
-    ReleaseFixture("The.H265.Movie.2020", "The H265 Movie", 2020),
-    ReleaseFixture("The.4K.Movie.2020", "The 4K Movie", 2020),
-    ReleaseFixture("The.1080p.Movie", "The 1080p Movie", .none),
-    ReleaseFixture("The.1984.Experiment", "The 1984 Experiment", .none),
-    ReleaseFixture("1984", "1984", .none),
-    ReleaseFixture("Movie.BluRay", "Movie BluRay", .none),
-    ReleaseFixture("Amélie.(2001).1080p.BluRay", "Amélie", 2001),
-    ReleaseFixture("Schindler's.List.1993.1080p.BluRay", "Schindler's List", 1993),
-    ReleaseFixture("Dune.Final.Cut.(2021)", "Dune Final Cut", 2021)
+    ReleaseNameParserFixture("1917.2019.1080p.BluRay", "1917", 2019),
+    ReleaseNameParserFixture("2001.A.Space.Odyssey.1968.1080p.BluRay", "2001 A Space Odyssey", 1968),
+    ReleaseNameParserFixture("Blade.Runner.2049.[2017].2160p.WEB-DL", "Blade Runner 2049", 2017),
+    ReleaseNameParserFixture("Summer.of.1984.(2000).1080p.WEB-DL", "Summer of 1984", 2000),
+    ReleaseNameParserFixture("Remux.2023", "Remux", 2023),
+    ReleaseNameParserFixture("The.Remux.Movie.2020.1080p.BluRay", "The Remux Movie", 2020),
+    ReleaseNameParserFixture("The.Web.of.Life.2018", "The Web of Life", 2018),
+    ReleaseNameParserFixture("The.Dolby.Vision.2020", "The Dolby Vision", 2020),
+    ReleaseNameParserFixture("The.H265.Movie.2020", "The H265 Movie", 2020),
+    ReleaseNameParserFixture("The.4K.Movie.2020", "The 4K Movie", 2020),
+    ReleaseNameParserFixture("The.1080p.Movie", "The 1080p Movie", .none),
+    ReleaseNameParserFixture("The.1984.Experiment", "The 1984 Experiment", .none),
+    ReleaseNameParserFixture("1984", "1984", .none),
+    ReleaseNameParserFixture("Movie.BluRay", "Movie BluRay", .none),
+    ReleaseNameParserFixture("Amélie.(2001).1080p.BluRay", "Amélie", 2001),
+    ReleaseNameParserFixture("Schindler's.List.1993.1080p.BluRay", "Schindler's List", 1993),
+    ReleaseNameParserFixture("Dune.Final.Cut.(2021)", "Dune Final Cut", 2021)
   ])
-  func preservesLegitimateTitleTokens(_ fixture: ReleaseFixture) {
+  func preservesLegitimateTitleTokens(_ fixture: ReleaseNameParserFixture) {
     #expect(
       ReleaseNameParser().parse(fixture.name)
         == .parsed(
@@ -178,29 +178,29 @@ struct ReleaseNameParserTests {
   ///
   /// - Parameter fixture: The input and expected outcome for this parameterized regression.
   @Test(arguments: [
-    UnresolvedFixture("Movie.1999.2000", .ambiguousYear),
-    UnresolvedFixture("Movie.1999.2000.1080p.WEB-DL", .ambiguousYear),
-    UnresolvedFixture("Blade.Runner.2049.2017.2160p.WEB-DL", .ambiguousYear),
-    UnresolvedFixture("Movie.[1999].(2000).1080p.WEB-DL", .ambiguousYear),
-    UnresolvedFixture("Movie.2020.Special.Edit.1080p", .ambiguousMetadata),
-    UnresolvedFixture("1080p.WEB-DL.x265-GROUP", .missingTitle),
-    UnresolvedFixture("[2020].1080p.WEB-DL", .missingTitle),
-    UnresolvedFixture("(2020).1080p.BluRay", .missingTitle),
-    UnresolvedFixture("Movie.[1999].1080p.(2000).WEB-DL", .ambiguousYear),
-    UnresolvedFixture("Summer.of.1984.Remastered.[2000].1080p.WEB-DL", .ambiguousMetadata),
-    UnresolvedFixture("The.BluRay.Remux.Movie.2020.1080p.WEB-DL", .ambiguousMetadata),
-    UnresolvedFixture("The.4K.Vision.2020.1080p.WEB-DL", .ambiguousMetadata),
-    UnresolvedFixture("The.Drama.2026...GROUP", .truncatedName),
-    UnresolvedFixture("The.Drama…GROUP", .truncatedName),
-    UnresolvedFixture("/Users/me/Movies", .invalidName)
+    UnresolvedReleaseNameFixture("Movie.1999.2000", .ambiguousYear),
+    UnresolvedReleaseNameFixture("Movie.1999.2000.1080p.WEB-DL", .ambiguousYear),
+    UnresolvedReleaseNameFixture("Blade.Runner.2049.2017.2160p.WEB-DL", .ambiguousYear),
+    UnresolvedReleaseNameFixture("Movie.[1999].(2000).1080p.WEB-DL", .ambiguousYear),
+    UnresolvedReleaseNameFixture("Movie.2020.Special.Edit.1080p", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("1080p.WEB-DL.x265-GROUP", .missingTitle),
+    UnresolvedReleaseNameFixture("[2020].1080p.WEB-DL", .missingTitle),
+    UnresolvedReleaseNameFixture("(2020).1080p.BluRay", .missingTitle),
+    UnresolvedReleaseNameFixture("Movie.[1999].1080p.(2000).WEB-DL", .ambiguousYear),
+    UnresolvedReleaseNameFixture("Summer.of.1984.Remastered.[2000].1080p.WEB-DL", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("The.BluRay.Remux.Movie.2020.1080p.WEB-DL", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("The.4K.Vision.2020.1080p.WEB-DL", .ambiguousMetadata),
+    UnresolvedReleaseNameFixture("The.Drama.2026...GROUP", .truncatedName),
+    UnresolvedReleaseNameFixture("The.Drama…GROUP", .truncatedName),
+    UnresolvedReleaseNameFixture("/Users/me/Movies", .invalidName)
   ])
-  func reportsUncertainNames(_ fixture: UnresolvedFixture) {
+  func reportsUncertainNames(_ fixture: UnresolvedReleaseNameFixture) {
     #expect(ReleaseNameParser().parse(fixture.name) == .unresolved(fixture.issue))
   }
 }
 
 /// A release folder name and the title/year interpretation expected by a parameterized test.
-struct ReleaseFixture: Sendable {
+struct ReleaseNameParserFixture: Sendable {
   /// The release folder name used as input to the parser fixture.
   let name: String
   /// The display or parsed movie title used by the matching workflow.
@@ -222,7 +222,7 @@ struct ReleaseFixture: Sendable {
 }
 
 /// A release folder name and the specific uncertainty expected by a parameterized test.
-struct UnresolvedFixture: Sendable {
+struct UnresolvedReleaseNameFixture: Sendable {
   /// The release folder name used as input to the parser fixture.
   let name: String
   /// The unresolved parsing reason expected for this fixture.

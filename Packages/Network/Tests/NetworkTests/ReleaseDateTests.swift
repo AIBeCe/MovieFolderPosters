@@ -10,8 +10,8 @@ import Testing
       {"release_date":"1980-01-01T00:00:00.000Z","type":3},
       {"release_date":"1981-01-01T00:00:00.000Z","type":99}]}]}
     """
-  let transport = ScriptedTransport([.success(response(json))])
-  let delegate = RecordingRequestDelegate()
+  let transport = ScriptedHTTPTransport([.success(response(json))])
+  let delegate = TMDbRequestObservationRecorderDelegate()
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
   let dates = try #require(try await client.releaseDates(movieID: 42)[42])
   #expect(dates.map(\.movieYear) == [MovieYear(year: 1979, type: .premiere),
@@ -30,7 +30,7 @@ import Testing
 @Test(arguments: ["{\"id\":43,\"results\":[]}", "{\"id\":42}",
   "{\"id\":42,\"results\":[{\"iso_3166_1\":\"US\"}]}"])
 func releaseDatesRejectIncompleteResponse(json: String) async throws {
-  let transport = ScriptedTransport([.success(response(json))])
+  let transport = ScriptedHTTPTransport([.success(response(json))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.malformedResponse) { try await client.releaseDates(movieID: 42) }
 }
@@ -46,7 +46,7 @@ func releaseDatesRejectInvalidTimestamp(timestamp: String) throws {
 
 /// Valid completed empty evidence does not become a missing response.
 @Test func releaseDatesEmptyResponse() async throws {
-  let transport = ScriptedTransport([.success(response("{\"id\":42,\"results\":[]}"))])
+  let transport = ScriptedHTTPTransport([.success(response("{\"id\":42,\"results\":[]}"))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   #expect(try await client.releaseDates(movieID: 42) == [42: []])
 }
@@ -68,7 +68,7 @@ func releaseDatesRejectInvalidProvenance(country: String, type: Int) throws {
 /// Incorrect media types cannot turn a plausible body into completed release evidence.
 @Test(arguments: [nil, "text/plain", "application/jsonp"] as [String?])
 func releaseDatesRequireJSON(contentType: String?) async throws {
-  let transport = ScriptedTransport([.success(HTTPResponse(data: Data("{\"id\":42,\"results\":[]}".utf8),
+  let transport = ScriptedHTTPTransport([.success(HTTPTransportResponse(data: Data("{\"id\":42,\"results\":[]}".utf8),
     statusCode: 200, contentType: contentType))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.malformedResponse) { try await client.releaseDates(movieID: 42) }
@@ -77,7 +77,7 @@ func releaseDatesRequireJSON(contentType: String?) async throws {
 /// The date endpoint uses the existing typed authentication and throttling contract.
 @Test(arguments: [401, 403, 429])
 func releaseDatesRetainProviderFailure(status: Int) async throws {
-  let transport = ScriptedTransport([.success(HTTPResponse(data: Data(), statusCode: status,
+  let transport = ScriptedHTTPTransport([.success(HTTPTransportResponse(data: Data(), statusCode: status,
     contentType: "text/plain", retryAfter: "30"))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   let expected: TMDbError = status == 429 ? .rateLimited(retryAfter: "30") : .authentication
@@ -87,7 +87,7 @@ func releaseDatesRetainProviderFailure(status: Int) async throws {
 /// Invalid identities never dispatch authenticated requests.
 @Test(arguments: [0, -42])
 func releaseDatesRejectInvalidMovieID(id: Int) async throws {
-  let transport = ScriptedTransport([])
+  let transport = ScriptedHTTPTransport([])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.invalidQuery) { try await client.releaseDates(movieID: id) }
   #expect(await transport.capturedRequests().isEmpty)
@@ -95,8 +95,8 @@ func releaseDatesRejectInvalidMovieID(id: Int) async throws {
 
 /// Cancellation after dispatch cannot publish otherwise valid release events.
 @Test func releaseDatesCancellationAfterDispatch() async throws {
-  let transport = BlockingTransport()
-  let delegate = RecordingRequestDelegate()
+  let transport = SuspendedHTTPTransport()
+  let delegate = TMDbRequestObservationRecorderDelegate()
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
   let task = Task { try await client.releaseDates(movieID: 42) }
   await transport.waitUntilStarted()

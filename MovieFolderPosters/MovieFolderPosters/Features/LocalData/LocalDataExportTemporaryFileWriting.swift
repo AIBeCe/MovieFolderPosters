@@ -9,13 +9,13 @@ nonisolated protocol LocalDataExportTemporaryFileWriting: Sendable {
   ///   - destination: User-selected local file whose existing contents must remain untouched during staging.
   /// - Returns: An unpublished payload whose lifetime includes destination access and temporary cleanup.
   /// - Throws: Cancellation, size, or filesystem failures; no destination is created or replaced.
-  func stage(bytes: Data, destination: URL) async throws -> PreparedLocalDataExportFile
+  func stage(bytes: Data, destination: URL) async throws -> PreparedLocalDataExport
 }
 
 /// Performs potentially slow temporary-file writes on an independent service actor.
 actor SystemLocalDataExportTemporaryFileWriter: LocalDataExportTemporaryFileWriting {
-  func stage(bytes: Data, destination: URL) throws -> PreparedLocalDataExportFile {
-    guard bytes.count <= 2 * 1024 * 1024 else { throw LocalDataExportError.tooLarge }
+  func stage(bytes: Data, destination: URL) throws -> PreparedLocalDataExport {
+    guard bytes.count <= 2 * 1024 * 1024 else { throw LocalDataExportFailure.tooLarge }
 
     try Task.checkCancellation()
     let access = LocalDataExportDestinationAccess(destination: destination)
@@ -32,7 +32,7 @@ actor SystemLocalDataExportTemporaryFileWriter: LocalDataExportTemporaryFileWrit
         try bytes.write(to: payload, options: .withoutOverwriting)
         try Task.checkCancellation()
 
-        return PreparedLocalDataExportFile(
+        return PreparedLocalDataExport(
           directory: directory, payload: payload, destination: destination, access: access)
       } catch {
         try? FileManager.default.removeItem(at: directory)
@@ -62,7 +62,7 @@ nonisolated private final class LocalDataExportDestinationAccess: Sendable {
 }
 
 /// Private same-volume payload; only a serialized publication gate may make it the destination.
-nonisolated final class PreparedLocalDataExportFile: Sendable {
+nonisolated final class PreparedLocalDataExport: Sendable {
   /// Owned temporary directory exposed internally for cleanup verification.
   let directory: URL
   /// Complete staged bytes, written before this artifact is returned.
@@ -98,7 +98,7 @@ nonisolated final class PreparedLocalDataExportFile: Sendable {
   /// - Throws: A sanitized failure if atomic publication is unavailable; the original destination remains intact.
   @MainActor
   func publish() throws {
-    guard rename(payload.path, destination.path) == .zero else { throw LocalDataExportError.unavailable }
+    guard rename(payload.path, destination.path) == .zero else { throw LocalDataExportFailure.unavailable }
   }
 
   /// Attempts temporary-directory cleanup on a utility task, retaining destination access through the attempt.

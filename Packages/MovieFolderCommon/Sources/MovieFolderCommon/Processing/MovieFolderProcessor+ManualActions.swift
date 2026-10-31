@@ -78,7 +78,7 @@ extension MovieFolderProcessor {
     var refreshedRecord = processedRecord(for: candidate, movieID: movieID, posterPath: posterPath)
     refreshedRecord.movieTitle = selection.movieTitle
     refreshedRecord.movieYear = selection.movieYear
-    refreshedRecord.acceptedReleaseDates = selection.releaseDates
+    refreshedRecord.acceptedMovieReleaseDates = selection.releaseDates
     refreshedRecord.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
     refreshedRecord.movieIdentitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
     refreshedRecord.requiresAutomaticReview = state.folders[child]?.requiresAutomaticReview
@@ -309,8 +309,8 @@ extension MovieFolderProcessor {
   /// - Returns: The held access when coordination is configured.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func acquireCoordinationAccess(for root: URL) throws -> PersistenceAccess? {
-    guard let coordinationStore else { return .none }
-    guard let access = try coordinationStore.acquireAccess(for: Self.rootCoordinationKey(for: root)) else {
+    guard let processingLockStore else { return .none }
+    guard let access = try processingLockStore.acquireAccess(for: Self.rootCoordinationKey(for: root)) else {
       throw PosterActionError.busy
     }
 
@@ -325,10 +325,10 @@ extension MovieFolderProcessor {
   ///   - expectedIdentity: The filesystem identity captured when the operation was authorized.
   /// - Returns: The current child evidence after identity validation.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func actionCandidate(root: URL, child: String, expectedIdentity: String) throws -> FolderCandidate {
-    let candidate: FolderCandidate
+  func actionCandidate(root: URL, child: String, expectedIdentity: String) throws -> MovieFolderCandidate {
+    let candidate: MovieFolderCandidate
     do {
-      candidate = try fileSystem.readCurrentState(ofChild: child, in: root)
+      candidate = try fileSystem.readCurrentFolderCandidate(ofChild: child, in: root)
     } catch {
       throw PosterActionError.changedIdentity
     }
@@ -343,7 +343,7 @@ extension MovieFolderProcessor {
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - root: The authorized collection directory containing the immediate child.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  private func ensureReplaceableIcon(for candidate: FolderCandidate, in root: URL) throws {
+  private func ensureReplaceableIcon(for candidate: MovieFolderCandidate, in root: URL) throws {
     let owned: Bool
     do {
       owned = try fileSystem.hasAssignedPoster(
@@ -363,11 +363,11 @@ extension MovieFolderProcessor {
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - root: The authorized collection directory containing the immediate child.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  private func replacePoster(_ data: Data, candidate: FolderCandidate, root: URL) throws {
+  private func replacePoster(_ data: Data, candidate: MovieFolderCandidate, root: URL) throws {
     try Task.checkCancellation()
     let recoveryAccess = try recovery?.acquireProcessingAccess()
     defer { withExtendedLifetime(recoveryAccess) {} }
-    let result: PosterAssignmentResult
+    let result: FolderPosterAssignmentResult
     do {
       result = try fileSystem.replaceAssignedPoster(
         data, toChild: candidate.name, in: root, appearance: appearance,
@@ -387,8 +387,8 @@ extension MovieFolderProcessor {
   ///   - movieID: The TMDb movie identifier retained with the processing record.
   ///   - posterPath: The provider-relative source poster path.
   /// - Returns: A completed decision recording this folder fingerprint and selected movie/poster.
-  private func processedRecord(for candidate: FolderCandidate, movieID: Int, posterPath: String) -> FolderRecord {
-    FolderRecord(
+  private func processedRecord(for candidate: MovieFolderCandidate, movieID: Int, posterPath: String) -> FolderProcessingCacheRecord {
+    FolderProcessingCacheRecord(
       fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
       matchedMovieID: movieID, posterPath: posterPath)
   }
@@ -413,14 +413,14 @@ extension MovieFolderProcessor {
 
   /// Resolves the saved refresh identity or searches and rechecks the manual target after suspension.
   private func refreshSelection(
-    root: URL, candidate: inout FolderCandidate, state: inout ProcessingState, activity: ProcessorActivityLog
+    root: URL, candidate: inout MovieFolderCandidate, state: inout CollectionProcessingCache, activity: ProcessorActivityLog
   ) async throws -> RefreshMovieSelection {
     let child = candidate.name
     let movieID: Int
     let posterPath: String
     var movieTitle = state.folders[child]?.movieTitle
     var movieYear = state.folders[child]?.movieYear
-    var releaseDates = state.folders[child]?.acceptedReleaseDates ?? []
+    var releaseDates = state.folders[child]?.acceptedMovieReleaseDates ?? []
     if let record = state.folders[child], record.fingerprint == candidate.fingerprint,
       record.status == .processed, let savedMovieID = record.matchedMovieID,
       let savedPosterPath = record.posterPath,
@@ -435,7 +435,7 @@ extension MovieFolderProcessor {
       releaseDates = savedReleaseDates(result.releaseDates, movie: result.movie, candidate: candidate,
         saved: state.folders[child]) ?? []
       posterPath = result.posterPath
-      state.queries[result.queryKey] = CachedSearch(result: result.search, createdAt: now())
+      state.queries[result.queryKey] = CachedMovieSearch(result: result.search, createdAt: now())
     }
 
     return RefreshMovieSelection(
@@ -445,7 +445,7 @@ extension MovieFolderProcessor {
 
   /// Searches and conservatively validates a fresh refresh choice before caching its result.
   private func searchForRefresh(
-    root: URL, candidate: inout FolderCandidate, state: inout ProcessingState,
+    root: URL, candidate: inout MovieFolderCandidate, state: inout CollectionProcessingCache,
     activity: ProcessorActivityLog
   ) async throws -> RefreshSearchResult {
     guard case .parsed(let parsed) = parser.parse(candidate.name) else {
@@ -468,7 +468,7 @@ extension MovieFolderProcessor {
     try Task.checkCancellation()
     candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
     try ensureReplaceableIcon(for: candidate, in: root)
-    let match = try await assessMovie(title: parsed.title, year: parsed.year, search: search, state: &state)
+    let match = try await matchMovieUsingEvidence(title: parsed.title, year: parsed.year, search: search, state: &state)
     try Task.checkCancellation()
     candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
     try ensureReplaceableIcon(for: candidate, in: root)
@@ -506,7 +506,7 @@ extension MovieFolderProcessor {
 
   /// Saves an explicit manual-resolution requirement when a fresh search cannot replace confirmed evidence.
   private func persistManualResolutionIfNeeded(
-    candidate: FolderCandidate, access: PersistenceAccess, state: inout ProcessingState,
+    candidate: MovieFolderCandidate, access: PersistenceAccess, state: inout CollectionProcessingCache,
     processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog
   ) throws {
     guard let saved = state.folders[candidate.name], saved.fingerprint == candidate.fingerprint,
@@ -521,7 +521,7 @@ extension MovieFolderProcessor {
   /// Downloads usable artwork and rechecks the authorized target before any icon write.
   private func downloadRefreshArtwork(
     for selection: RefreshMovieSelection, root: URL,
-    candidate: inout FolderCandidate, activity: ProcessorActivityLog
+    candidate: inout MovieFolderCandidate, activity: ProcessorActivityLog
   ) async throws -> Data {
     let child = candidate.name
     let expectedIdentity = candidate.identity
@@ -556,7 +556,7 @@ extension MovieFolderProcessor {
   ///   - root: Authorized collection root.
   /// - Returns: Whether explicit/current decisions or verified installed-poster evidence permit identity reuse.
   /// - Throws: Filesystem inspection or identity errors.
-  private func mayReuseSavedIdentity(_ record: FolderRecord, candidate: FolderCandidate, root: URL) throws -> Bool {
+  private func mayReuseSavedIdentity(_ record: FolderProcessingCacheRecord, candidate: MovieFolderCandidate, root: URL) throws -> Bool {
     if record.requiresAutomaticReview != true { return true }
 
     return try fileSystem.hasAssignedPoster(toChild: candidate.name, in: root, expectedIdentity: candidate.identity)
@@ -581,7 +581,7 @@ private struct RefreshMovieSelection {
 private struct RefreshSearchResult {
   /// Cache identity containing the captured request context.
   let queryKey: String
-  /// Complete provider search result used for future bounded reassessment.
+  /// Complete provider search result used for future bounded review.
   let search: MovieSearchResult
   /// Conservatively selected provider identity.
   let movie: MovieMetadata

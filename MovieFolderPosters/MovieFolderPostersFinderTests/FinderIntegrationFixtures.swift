@@ -62,8 +62,8 @@ struct QuietActivityNotifier: MovieFolderActivityChangeNotifying {
 struct NoMatchesProvider: MovieMetadataProvider {
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try Task.checkCancellation()
@@ -80,8 +80,8 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searchCount += 1
@@ -103,8 +103,8 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     hasStarted = true
@@ -150,8 +150,8 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try repository.update { $0.directories[0].usesPrivateHistory = false }
@@ -223,7 +223,7 @@ struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?
-  ) throws -> DirectoryAccess {
+  ) throws -> AuthorizedDirectoryAccess {
     // Tests cannot establish extension security scope; real bookmark/descriptor/identity validation remains.
     try FileSystemService().acquireDirectoryAccess(
       bookmark: bookmark, securityScoped: false, expectedIdentity: expectedIdentity)

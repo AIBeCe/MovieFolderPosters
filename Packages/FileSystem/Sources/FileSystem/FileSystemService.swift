@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// A direct child directory and the identity information used to detect replacement.
-public struct FolderCandidate: Equatable, Sendable {
+public struct MovieFolderCandidate: Equatable, Sendable {
   /// The child's file-system name.
   public let name: String
   /// The current device, inode, and creation-time identity.
@@ -22,7 +22,7 @@ public struct FolderCandidate: Equatable, Sendable {
 }
 
 /// Explains why a known directory could not produce a complete candidate snapshot.
-public enum DirectoryInventoryIssue: Equatable, Sendable {
+public enum DirectoryInventoryInspectionIssue: Equatable, Sendable {
   /// The directory's current identity could not be confirmed after classification.
   case identityInspectionFailed
   /// The directory's Finder icon state could not be read.
@@ -30,19 +30,19 @@ public enum DirectoryInventoryIssue: Equatable, Sendable {
 }
 
 /// One visible immediate directory and any successfully inspected candidate state.
-public struct DirectoryInventoryEntry: Equatable, Sendable {
+public struct ConfiguredDirectoryInventoryEntry: Equatable, Sendable {
   /// The direct child's filesystem name.
   public let name: String
   /// The identity captured while confirming that the child is a real directory.
   public let identity: String?
   /// Complete identity and icon state, when both were inspected successfully.
-  public let candidate: FolderCandidate?
+  public let candidate: MovieFolderCandidate?
   /// The inspection failure for a known directory, if any.
-  public let issue: DirectoryInventoryIssue?
+  public let issue: DirectoryInventoryInspectionIssue?
 
   /// Creates one inventory entry.
   public init(
-    name: String, identity: String?, candidate: FolderCandidate?, issue: DirectoryInventoryIssue?
+    name: String, identity: String?, candidate: MovieFolderCandidate?, issue: DirectoryInventoryInspectionIssue?
   ) {
     self.name = name
     self.identity = identity
@@ -52,14 +52,14 @@ public struct DirectoryInventoryEntry: Equatable, Sendable {
 }
 
 /// A caller-owned snapshot of visible immediate directory membership.
-public struct DirectoryInventory: Equatable, Sendable {
+public struct CollectionConfiguredDirectoryInventory: Equatable, Sendable {
   /// Known visible immediate directories, sorted by localized standard name order.
-  public let members: [DirectoryInventoryEntry]
+  public let members: [ConfiguredDirectoryInventoryEntry]
   /// Whether every visible immediate entry could be classified safely.
   public let isComplete: Bool
 
   /// Creates an inventory snapshot.
-  public init(members: [DirectoryInventoryEntry], isComplete: Bool) {
+  public init(members: [ConfiguredDirectoryInventoryEntry], isComplete: Bool) {
     self.members = members
     self.isComplete = isComplete
   }
@@ -156,7 +156,7 @@ public struct FileSystemService: Sendable {
   /// - Parameter directory: The directory whose immediate children are inspected.
   /// - Returns: Candidates sorted by localized standard name order.
   /// - Throws: ``DirectoryAccessError`` or a filesystem error if listing or inspection fails.
-  public func candidates(in directory: URL) throws -> [FolderCandidate] {
+  public func candidates(in directory: URL) throws -> [MovieFolderCandidate] {
     try validateDirectory(directory)
     let children = try FileManager.default.contentsOfDirectory(
       at: directory, includingPropertiesForKeys: .none, options: [.skipsHiddenFiles]
@@ -165,7 +165,7 @@ public struct FileSystemService: Sendable {
     return try children.compactMap { child in
       guard let identity = try? fileIdentity(at: child) else { return .none }
 
-      return FolderCandidate(
+      return MovieFolderCandidate(
         name: child.lastPathComponent, identity: identity,
         fingerprint: "\(identity):\(child.lastPathComponent)",
         hasCustomIcon: try hasCustomIcon(at: child))
@@ -177,12 +177,12 @@ public struct FileSystemService: Sendable {
   /// - Parameter directory: The authorized parent directory.
   /// - Returns: Known directory members and whether all visible entries were classified.
   /// - Throws: ``DirectoryAccessError`` or a filesystem error if the parent cannot be listed.
-  public func inventory(in directory: URL) throws -> DirectoryInventory {
+  public func inventory(in directory: URL) throws -> CollectionConfiguredDirectoryInventory {
     try validateDirectory(directory)
     let children = try FileManager.default.contentsOfDirectory(
       at: directory, includingPropertiesForKeys: .none, options: [.skipsHiddenFiles]
     )
-    var members = [DirectoryInventoryEntry]()
+    var members = [ConfiguredDirectoryInventoryEntry]()
     var isComplete = true
 
     for child in children {
@@ -203,7 +203,7 @@ public struct FileSystemService: Sendable {
       }
       do {
         let hasCustomIcon = try self.hasCustomIcon(at: child)
-        let candidate = FolderCandidate(
+        let candidate = MovieFolderCandidate(
           name: name, identity: identity, fingerprint: "\(identity):\(name)",
           hasCustomIcon: hasCustomIcon)
         members.append(.init(name: name, identity: identity, candidate: candidate, issue: .none))
@@ -214,7 +214,7 @@ public struct FileSystemService: Sendable {
 
     members.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 
-    return DirectoryInventory(members: members, isComplete: isComplete)
+    return CollectionConfiguredDirectoryInventory(members: members, isComplete: isComplete)
   }
 
   /// Reads the current identity and icon state for one named child.
@@ -224,13 +224,13 @@ public struct FileSystemService: Sendable {
   ///   - directory: The parent directory.
   /// - Returns: A current candidate snapshot for the child.
   /// - Throws: ``DirectoryAccessError`` or a filesystem error when the child cannot be inspected.
-  public func readCurrentState(ofChild name: String, in directory: URL) throws -> FolderCandidate {
+  public func readCurrentFolderCandidate(ofChild name: String, in directory: URL) throws -> MovieFolderCandidate {
     try validateDirectory(directory)
     guard isValidChildName(name) else { throw DirectoryAccessError.invalidDirectory }
     let child = directory.appendingPathComponent(name, isDirectory: true)
     let identity = try fileIdentity(at: child)
 
-    return FolderCandidate(
+    return MovieFolderCandidate(
       name: name, identity: identity, fingerprint: "\(identity):\(name)",
       hasCustomIcon: try hasCustomIcon(at: child))
   }

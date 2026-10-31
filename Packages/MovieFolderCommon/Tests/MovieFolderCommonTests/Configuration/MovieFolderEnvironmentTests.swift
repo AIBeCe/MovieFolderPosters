@@ -60,7 +60,7 @@ struct MovieFolderEnvironmentTests {
 }
 
 /// Test-owned paths replace entitlement-dependent platform resolution only.
-private struct TestStorageLocations: MovieFolderStorageLocations {
+private struct TestStorageLocations: MovieFolderApplicationStorageLocations {
   /// The temporary root, or absence to simulate platform resolution failure.
   let root: URL?
   func appGroupContainerURL() throws -> URL {

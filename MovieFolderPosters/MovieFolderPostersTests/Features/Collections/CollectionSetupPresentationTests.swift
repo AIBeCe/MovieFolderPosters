@@ -61,6 +61,10 @@ import Testing
   #expect(nativeViews(in: content).compactMap { $0 as? NSButton }.isEmpty)
   try #require(help.last).performClick(.none)
   #expect(probe.popovers.count == 2)
+  let closeDeadline = Date().addingTimeInterval(1)
+  while firstPopover.isShown && Date() < closeDeadline {
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+  }
   #expect(!firstPopover.isShown)
   let second = try #require(probe.popovers.last)
   #expect(second !== firstPopover)
@@ -69,6 +73,10 @@ import Testing
     windowNumber: helpWindow.windowNumber, context: .none, characters: "\u{1b}",
     charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
   helpWindow.sendEvent(escape)
+  let dismissDeadline = Date().addingTimeInterval(1)
+  while second.isShown && Date() < dismissDeadline {
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+  }
   #expect(!second.isShown)
 }
 

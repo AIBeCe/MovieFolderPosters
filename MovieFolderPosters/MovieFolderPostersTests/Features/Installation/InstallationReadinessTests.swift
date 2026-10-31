@@ -32,7 +32,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that old receipt is reported as stale.
   @Test func oldReceiptIsReportedAsStale() {
-    let receipt = ExtensionReceiptEvidence.observed(
+    let receipt = FinderExtensionReceiptEvidence.observed(
       version: "1.0", build: "7", date: now.addingTimeInterval(-25 * 60 * 60)
     )
     let report = makeReport(receipt: receipt)
@@ -41,7 +41,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that receipt from different embedded build is reported.
   @Test func receiptFromDifferentEmbeddedBuildIsReported() {
-    let receipt = ExtensionReceiptEvidence.observed(version: "1.0", build: "6", date: now)
+    let receipt = FinderExtensionReceiptEvidence.observed(version: "1.0", build: "6", date: now)
     let report = makeReport(receipt: receipt)
     #expect(report.text.contains("Observed on a different extension build"))
     #expect(report.text.contains("Observed extension 1.0 (6)"))
@@ -49,7 +49,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that stale receipt still reports embedded build mismatch.
   @Test func staleReceiptStillReportsEmbeddedBuildMismatch() {
-    let receipt = ExtensionReceiptEvidence.observed(
+    let receipt = FinderExtensionReceiptEvidence.observed(
       version: "1.0", build: "7", date: now.addingTimeInterval(-25 * 60 * 60)
     )
     let report = makeReport(extensionBundle: bundle(version: "2.0", build: "8"), receipt: receipt)
@@ -60,7 +60,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that future dated receipt is never reported as current activation.
   @Test func futureDatedReceiptIsNeverReportedAsCurrentActivation() {
-    let receipt = ExtensionReceiptEvidence.observed(
+    let receipt = FinderExtensionReceiptEvidence.observed(
       version: "1.0", build: "7", date: now.addingTimeInterval(60)
     )
     let report = makeReport(receipt: receipt)
@@ -76,7 +76,7 @@ struct InstallationReadinessTests {
       build: .none,
       extensionPoint: "com.apple.FinderSync"
     )
-    let receipt = ExtensionReceiptEvidence.observed(version: "1.0", build: "7", date: now)
+    let receipt = FinderExtensionReceiptEvidence.observed(version: "1.0", build: "7", date: now)
     let report = makeReport(extensionBundle: incompleteBundle, receipt: receipt)
     #expect(report.text.contains("embedded build is unknown"))
     #expect(!report.text.contains("different extension build"))
@@ -84,7 +84,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that code signature results are reported independently and do not imply notarization.
   @Test func codeSignatureResultsAreReportedIndependentlyAndDoNotImplyNotarization() {
-    let cases: [(CodeSignatureEvidence, CodeSignatureEvidence, String, String)] = [
+    let cases: [(InstallationCodeSignatureEvidence, InstallationCodeSignatureEvidence, String, String)] = [
       (.valid, .invalid, "Valid", "Invalid"),
       (.invalid, .unknown, "Invalid", "Unknown"),
       (.unknown, .valid, "Unknown", "Valid")
@@ -115,7 +115,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that service reads each evidence source once per explicit check.
   @Test @MainActor func serviceReadsEachEvidenceSourceOncePerExplicitCheck() async {
-    let counts = ReadinessCallCounts()
+    let counts = InstallationReadinessCallRecorder()
     let service = InstallationReadinessService(environment: counts)
 
     let report = await service.check()
@@ -128,7 +128,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that service retains its evidence provider.
   @Test @MainActor func serviceRetainsItsEvidenceProvider() async throws {
-    var provider: ReadinessCallCounts? = ReadinessCallCounts()
+    var provider: InstallationReadinessCallRecorder? = InstallationReadinessCallRecorder()
     weak var retainedProvider = provider
     let retained = try #require(provider)
     let service = InstallationReadinessService(environment: retained)
@@ -150,14 +150,14 @@ struct InstallationReadinessTests {
 
   /// Verifies that shared storage check round trips through persistence store.
   @Test func sharedStorageCheckRoundTripsThroughPersistenceStore() throws {
-    let fixture = try PersistenceFixture()
+    let fixture = try InstallationReadinessPersistenceFixture()
     defer { fixture.cleanup() }
     #expect(InstallationReadinessService.checkSharedStorage(in: fixture.store) == .healthy)
   }
 
   /// Verifies that shared storage check reports access contention.
   @Test func sharedStorageCheckReportsAccessContention() throws {
-    let fixture = try PersistenceFixture()
+    let fixture = try InstallationReadinessPersistenceFixture()
     defer { fixture.cleanup() }
     let heldAccess = try #require(try fixture.store.acquireAccess(for: "readiness-check"))
     #expect(InstallationReadinessService.checkSharedStorage(in: fixture.store) == .busy)
@@ -166,7 +166,7 @@ struct InstallationReadinessTests {
 
   /// Verifies that shared storage check fails when existing record cannot be read.
   @Test func sharedStorageCheckFailsWhenExistingRecordCannotBeRead() throws {
-    let fixture = try PersistenceFixture()
+    let fixture = try InstallationReadinessPersistenceFixture()
     defer { fixture.cleanup() }
     do {
       let access = try #require(try fixture.store.acquireAccess(for: "readiness-check"))
@@ -187,12 +187,12 @@ struct InstallationReadinessTests {
     extensionBundle: BundleMetadata? = .none,
     includeExtension: Bool = true,
     enabled: Bool? = false,
-    receipt: ExtensionReceiptEvidence = .missing,
-    storage: SharedStorageEvidence = .healthy,
-    hostSignature: CodeSignatureEvidence = .unknown,
-    embeddedExtensionSignature: CodeSignatureEvidence = .unknown
+    receipt: FinderExtensionReceiptEvidence = .missing,
+    storage: AppGroupStorageEvidence = .healthy,
+    hostSignature: InstallationCodeSignatureEvidence = .unknown,
+    embeddedExtensionSignature: InstallationCodeSignatureEvidence = .unknown
   ) -> InstallationReadinessReport {
-    InstallationReadinessReportBuilder.build(
+    InstallationReadinessEvidenceReportBuilder.build(
       installation: InstallationMetadata(
         host: bundle(version: "1.0", build: "7"),
         embeddedExtension: includeExtension
@@ -216,7 +216,7 @@ struct InstallationReadinessTests {
 }
 
 /// Owns an isolated temporary persistence store for readiness checks.
-private struct PersistenceFixture {
+private struct InstallationReadinessPersistenceFixture {
   /// Temporary directory containing the store's records.
   let directory: URL
   /// Store used by the shared-storage readiness probe.
@@ -234,7 +234,7 @@ private struct PersistenceFixture {
 }
 
 /// Thread-safe fake that counts calls to each readiness evidence source.
-private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unchecked Sendable {
+private final class InstallationReadinessCallRecorder: InstallationReadinessEnvironment, @unchecked Sendable {
   /// Protects counters that may be read from multiple executors.
   private let lock = NSLock()
   /// Number of installation metadata reads.
@@ -256,12 +256,12 @@ private final class ReadinessCallCounts: InstallationReadinessEnvironment, @unch
 
     return true
   }
-  func readReceipt() -> ExtensionReceiptEvidence {
+  func readReceipt() -> FinderExtensionReceiptEvidence {
     lock.withLock { receipt += 1 }
 
     return .missing
   }
-  func checkSharedStorage() throws -> SharedStorageEvidence {
+  func checkSharedStorage() throws -> AppGroupStorageEvidence {
     lock.withLock { storage += 1 }
 
     return .healthy
@@ -292,8 +292,8 @@ extension InstallationMetadata {
 private struct FailingReadinessEnvironment: InstallationReadinessEnvironment {
   func readInstallationMetadata() -> InstallationMetadata { .valid }
   func extensionEnabled() -> Bool? { .none }
-  func readReceipt() -> ExtensionReceiptEvidence { .unavailable(.failed) }
-  func checkSharedStorage() throws -> SharedStorageEvidence {
+  func readReceipt() -> FinderExtensionReceiptEvidence { .unavailable(.failed) }
+  func checkSharedStorage() throws -> AppGroupStorageEvidence {
     throw NSError(
       domain: "private container path", code: 17,
       userInfo: [NSLocalizedDescriptionKey: "token-value at /Users/private"])

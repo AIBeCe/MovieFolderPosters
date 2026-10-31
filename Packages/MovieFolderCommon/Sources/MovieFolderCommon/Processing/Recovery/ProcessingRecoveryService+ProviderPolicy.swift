@@ -46,7 +46,7 @@ nonisolated extension ProcessingRecoveryService {
     var record = try readRecord(access: access)
     if failure.reason == .authentication {
       if !record.rejectedCredentialDigests.contains(credentialDigest) {
-        if record.rejectedCredentialDigests.count == ProcessingRecoveryRecord.maximumRejectedCredentials {
+        if record.rejectedCredentialDigests.count == ProviderRecoveryRecord.maximumRejectedCredentials {
           record.isCredentialHistoryExhausted = true
         } else {
           record.rejectedCredentialDigests.append(credentialDigest)

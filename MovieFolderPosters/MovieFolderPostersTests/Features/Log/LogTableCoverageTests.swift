@@ -10,7 +10,7 @@ struct LogTableCoverageTests {
   /// AppKit measures wrapped rows and recomputes their actual geometry after a narrow column resize.
   @Test func historyRowsWrapAndRecalculateHeightWithoutLosingSelection() async throws {
     _ = NSApplication.shared
-    let model = LogViewModel(activityHistoryService: ActivityServiceFake())
+    let model = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
     await model.record(MovieFolderActivityLogEvent(action: .automaticProcessing, status: .partial))
     let controller = LogViewController(viewModel: model)
     let window = NSWindow(contentViewController: controller)
@@ -91,7 +91,7 @@ struct LogTableCoverageTests {
       movieTitle: movieTitle, movieYear: 2020, folderResult: .posterApplied)
     let expectedText = event.text
     #expect(expectedText.contains(movieTitle))
-    let model = LogViewModel(activityHistoryService: ActivityServiceFake())
+    let model = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
     await model.record(event)
     let controller = LogViewController(viewModel: model)
     let window = NSWindow(contentViewController: controller)
@@ -102,7 +102,7 @@ struct LogTableCoverageTests {
     let table = try #require(scroll.documentView as? NSTableView)
     table.layoutSubtreeIfNeeded()
     model.selectRows(IndexSet(integer: .zero))
-    model.setFilters(searchText: "最終行", category: .none, severity: .none)
+    model.setProcessingFilters(searchText: "最終行", category: .none, severity: .none)
     table.layoutSubtreeIfNeeded()
     #expect(model.filteredHistoryRows().count == 1)
     let cell = try #require(table.view(atColumn: 1, row: 0, makeIfNecessary: true) as? LogHistoryTextCellView)
@@ -131,7 +131,7 @@ struct LogTableCoverageTests {
 
   /// The table distinguishes failure category from safe message text and keeps complete content visible.
   @Test func activityColumnsRenderSafeTextAndFailureCategory() async throws {
-    let model = LogViewModel(activityHistoryService: ActivityServiceFake())
+    let model = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
     await model.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .failed))
     let controller = LogViewController(viewModel: model)
     let scroll = try #require(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)

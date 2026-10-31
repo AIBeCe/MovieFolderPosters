@@ -3,7 +3,7 @@ import MovieFolderCommon
 import Network
 
 /// Allowlisted product evidence; rich events are never serialized.
-nonisolated struct LocalDataExportActivityEntry: Encodable {
+nonisolated struct LocalDataExportActivityRecord: Encodable {
   /// Finite occurrence time and fixed product vocabulary.
   let occurredAt: Date
   /// Closed product action vocabulary.
@@ -45,17 +45,17 @@ nonisolated struct LocalDataExportActivityEntry: Encodable {
 }
 
 /// Allowlisted terminal HTTP evidence without linkage or request details.
-nonisolated struct LocalDataExportNetworkEntry: Encodable {
+nonisolated struct LocalDataExportNetworkRecord: Encodable {
   /// Finite terminal timestamp.
   let occurredAt: Date
   /// Closed request-purpose vocabulary.
   let purpose: TMDbRequestCategory
   /// Typed terminal HTTP evidence, distinct from product success.
-  let result: TMDbRequestResult
+  let result: TMDbRequestCompletionResult
 }
 
 /// Versioned bounded JSON document; encoded bytes are frozen for exact preview and save.
-nonisolated struct LocalDataExportDocument: Encodable {
+nonisolated struct LocalDataExportContents: Encodable {
   /// Current format version.
   let version = 1
   /// Time this document was constructed for preview.
@@ -71,11 +71,11 @@ nonisolated struct LocalDataExportDocument: Encodable {
   /// Independent fixed readiness statuses and metadata-only category report.
   let readiness: String?
   /// Optional metadata-only app storage evidence.
-  let storage: LocalStorageReport?
+  let storage: ApplicationLocalStorageReport?
   /// Selected evidence in each source's retained commit order.
-  let activity: [LocalDataExportActivityEntry]
+  let activity: [LocalDataExportActivityRecord]
   /// Selected terminal HTTP entries in their retained commit order.
-  let network: [LocalDataExportNetworkEntry]
+  let network: [LocalDataExportNetworkRecord]
 
   /// Projects source entries immediately, retaining no original records in the document.
   /// - Parameters:
@@ -89,18 +89,18 @@ nonisolated struct LocalDataExportDocument: Encodable {
   ///   - networkAvailable: Whether HTTP history was readable.
   init(
     activity: [MovieFolderActivityLogEntry], network: [MovieFolderNetworkHistoryEntry],
-    readiness: InstallationReadinessReport?, storage: LocalStorageReport?, start: Date, end: Date,
+    readiness: InstallationReadinessReport?, storage: ApplicationLocalStorageReport?, start: Date, end: Date,
     activityAvailable: Bool, networkAvailable: Bool
   ) {
     self.start = start
     self.end = end
     self.activityAvailable = activityAvailable
     self.networkAvailable = networkAvailable
-    self.readiness = readiness.map { InstallationDiagnosticsExport.installationCheckSummary(report: $0) }
+    self.readiness = readiness.map { InstallationDiagnosticsExporter.installationCheckSummary(report: $0) }
     self.storage = storage
-    self.activity = activity.map(LocalDataExportActivityEntry.init)
+    self.activity = activity.map(LocalDataExportActivityRecord.init)
     self.network = network.map {
-      LocalDataExportNetworkEntry(
+      LocalDataExportNetworkRecord(
         occurredAt: $0.occurredAt,
         purpose: $0.event.purpose, result: $0.event.result)
     }
@@ -115,11 +115,11 @@ nonisolated struct LocalDataExportDocument: Encodable {
     encoder.dateEncodingStrategy = .iso8601
     let bytes = try encoder.encode(self)
 
-    guard bytes.count <= 2 * 1024 * 1024 else { throw LocalDataExportError.tooLarge }
+    guard bytes.count <= 2 * 1024 * 1024 else { throw LocalDataExportFailure.tooLarge }
 
     return bytes
   }
 }
 
 /// Safe failure vocabulary presented without underlying errors.
-nonisolated enum LocalDataExportError: Error { case tooLarge, stale, unavailable, invalidRange }
+nonisolated enum LocalDataExportFailure: Error { case tooLarge, stale, unavailable, invalidRange }

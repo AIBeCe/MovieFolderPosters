@@ -94,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidat
       subsystem: "dag.fikios.MovieFolderPosters", category: "ConfigurationStartup")
     logger.error(
       "Storage startup failed: \(failure.domain, privacy: .public), code=\(failure.code)")
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        logger.error("Acceptance startup failure detail: \(String(reflecting: error), privacy: .public)")
+      }
+    #endif
     alert.informativeText =
       "The app could not read its saved settings or collection results. "
       + "Your movie folders were not changed. Open Log for details."
@@ -177,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidat
       return
     }
 
-    let window = NSWindow(contentViewController: AboutViewController())
+    let window = NSWindow(contentViewController: AboutWindowViewController())
     window.title = "About Movie Folder Posters"
     window.styleMask = [.titled, .closable]
     window.setContentSize(NSSize(width: 640, height: 400))
@@ -268,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidat
 
 /// Presents product identity prominently with compact required TMDb attribution.
 @MainActor
-final class AboutViewController: NSViewController {
+final class AboutWindowViewController: NSViewController {
   /// The notice TMDb requires applications to display prominently.
   static let requiredNotice = "This product uses the TMDB API but is not endorsed or certified by TMDB."
 

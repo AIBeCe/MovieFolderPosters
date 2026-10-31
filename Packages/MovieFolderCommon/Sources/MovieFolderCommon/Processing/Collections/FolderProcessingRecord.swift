@@ -15,7 +15,7 @@ nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseI
   case manualMatchingRequired, explicitExclusion
 }
 /// Ownership evidence for the icon currently installed on a folder.
-nonisolated public enum PosterOwnership: String, Codable, Sendable {
+nonisolated public enum FolderPosterOwnershipRecord: String, Codable, Sendable {
   case unknown, none, owned, unowned, changed
 }
 /// Evidence source used to associate a folder with a provider movie identity.
@@ -25,40 +25,40 @@ nonisolated public enum MovieIdentitySource: String, Codable, Sendable {
 /// The authoritative current result and supporting evidence for one visible child directory.
 nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, Identifiable {
   /// Stable record identifier derived from the child directory name.
-  public var id: String { name }
-  /// Directory name within the configured root.
-  public let name: String
+  public var id: String { folderName }
+  /// Directory folderName within the configured root.
+  public let folderName: String
   /// Filesystem identity used to detect replacement.
-  public var identity: String?
+  public var folderIdentity: String?
   /// Current mutually exclusive processing result.
-  public var state: FolderProcessingState
+  public var processingState: FolderProcessingState
   /// Optional stable explanation for the processing result.
-  public var reason: FolderProcessingReason?
+  public var processingReason: FolderProcessingReason?
   /// Verified provider movie identifier, when available.
-  public var movieID: Int?
+  public var matchedMovieID: Int?
   /// Display title associated with the verified movie identifier.
-  public var movieTitle: String?
+  public var matchedMovieTitle: String?
   /// Release year associated with the verified movie identifier.
-  public var movieYear: Int?
+  public var matchedMovieYear: Int?
   /// Source establishing the saved movie identity, when known.
   public var movieIdentitySource: MovieIdentitySource?
   /// Ownership evidence for the current installed icon.
-  public var ownership: PosterOwnership
+  public var ownership: FolderPosterOwnershipRecord
   /// Time the folder result was recorded.
   public var assessedAt: Date?
   /// Earliest time an automatic retry is eligible.
-  public var retryAt: Date?
+  public var nextRetryAt: Date?
   /// Most recent failure evidence.
-  public var lastFailure: FolderProcessingFailure?
+  public var lastFailure: AutomaticFolderProcessingFailure?
   /// Optional stable change fingerprint for deduplicating work.
-  public var fingerprint: String?
+  public var folderFingerprint: String?
 
   /// Preserves the persisted field names independently of Swift property naming.
   private enum CodingKeys: String, CodingKey {
-    case name, identity, state, reason, movieID, movieTitle, movieYear, movieIdentitySource
-    case ownership, assessedAt, retryAt
-    case lastFailure = "latestAttempt"
-    case fingerprint
+    case folderName = "name", folderIdentity = "identity", processingState = "state"
+    case processingReason = "reason", matchedMovieID = "movieID", matchedMovieTitle = "movieTitle"
+    case matchedMovieYear = "movieYear", movieIdentitySource, ownership, assessedAt
+    case nextRetryAt = "retryAt", lastFailure = "latestAttempt", folderFingerprint = "fingerprint"
   }
 
   /// Creates a current folder result and its supporting evidence.
@@ -80,41 +80,41 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
   public init(name: String, identity: String? = .none, state: FolderProcessingState = .pending,
               reason: FolderProcessingReason? = .none, movieID: Int? = .none, movieTitle: String? = .none,
               movieYear: Int? = .none, movieIdentitySource: MovieIdentitySource? = .none,
-              ownership: PosterOwnership = .unknown, assessedAt: Date? = .none,
-              retryAt: Date? = .none, lastFailure: FolderProcessingFailure? = .none,
+              ownership: FolderPosterOwnershipRecord = .unknown, assessedAt: Date? = .none,
+              retryAt: Date? = .none, lastFailure: AutomaticFolderProcessingFailure? = .none,
               fingerprint: String? = .none) {
-    self.name = name
-    self.identity = identity
-    self.state = state
-    self.reason = reason
-    self.movieID = movieID
-    self.movieTitle = movieTitle
-    self.movieYear = movieYear
+    folderName = name
+    folderIdentity = identity
+    processingState = state
+    processingReason = reason
+    matchedMovieID = movieID
+    matchedMovieTitle = movieTitle
+    matchedMovieYear = movieYear
     self.movieIdentitySource = movieIdentitySource
     self.ownership = ownership
     self.assessedAt = assessedAt
-    self.retryAt = retryAt
+    nextRetryAt = retryAt
     self.lastFailure = lastFailure
-    self.fingerprint = fingerprint
+    folderFingerprint = fingerprint
   }
 
   /// Whether the record contains the complete evidence required to count as Done.
   public var isVerifiedDone: Bool {
-    state == .done && ownership == .owned && (movieID ?? .zero) > .zero &&
-      identity?.isEmpty == false && assessedAt != .none
+    processingState == .done && ownership == .owned && (matchedMovieID ?? .zero) > .zero &&
+      folderIdentity?.isEmpty == false && assessedAt != .none
   }
 
   /// Retry deadline for an automatically recoverable outcome, excluding conclusive and admission-blocked reasons.
   var automaticRetryAt: Date? {
-    guard state != .done, state != .notFound, state != .severalMatches,
-      state != .preserved, state != .suppressed, state != .excluded,
-      let reason, let retryAt else { return .none }
-    switch reason {
+    guard processingState != .done, processingState != .notFound, processingState != .severalMatches,
+      processingState != .preserved, processingState != .suppressed, processingState != .excluded,
+      let processingReason, let nextRetryAt else { return .none }
+    switch processingReason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
          .authentication, .recoveryMode, .unknown, .manualMatchingRequired:
       return .none
     default:
-      return retryAt
+      return nextRetryAt
     }
   }
 }

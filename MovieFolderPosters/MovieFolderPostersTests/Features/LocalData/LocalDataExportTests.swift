@@ -9,7 +9,7 @@ import Testing
 struct LocalDataExportTests {
   /// Verifies deliberate selection defaults for a new export.
   @Test func defaultsRequireDeliberateSelection() {
-    let model = LocalDataExportSelection(now: Date(timeIntervalSince1970: 100000))
+    let model = LocalDataExportOptions(now: Date(timeIntervalSince1970: 100000))
     #expect(model.activityEnabled)
     #expect(!model.networkEnabled)
     #expect(model.selectedActivity.isEmpty)
@@ -23,7 +23,7 @@ struct LocalDataExportTests {
     let entry = MovieFolderActivityLogEntry(
       id: id, sequence: 1, occurredAt: Date(),
       event: .init(action: .collectionAdded, status: .succeeded, activityGroupID: id, collectionID: id))
-    let document = LocalDataExportDocument(
+    let document = LocalDataExportContents(
       activity: [entry], network: [], readiness: .none, storage: .none,
       start: Date(), end: Date(), activityAvailable: true, networkAvailable: false)
     let bytes = try document.encode()
@@ -46,7 +46,7 @@ struct LocalDataExportTests {
     let event = try JSONDecoder().decode(MovieFolderActivityLogEvent.self, from: rawEvent)
     let entry = MovieFolderActivityLogEntry(id: UUID(), sequence: 99, occurredAt: Date(), event: event)
     let report = InstallationReadinessReport(text: "Host app code signature: Valid. PRIVATE ERROR /private/secret")
-    let document = LocalDataExportDocument(activity: [entry], network: [], readiness: report,
+    let document = LocalDataExportContents(activity: [entry], network: [], readiness: report,
       storage: nil, start: Date(), end: Date(), activityAvailable: true, networkAvailable: true)
     let bytes = try document.encode()
     let text = try #require(String(bytes: bytes, encoding: .utf8))
@@ -64,7 +64,7 @@ struct LocalDataExportTests {
         id: UUID(), sequence: UInt64(index),
         occurredAt: now, event: .init(action: .applicationOpened, status: .succeeded))
     }
-    var selection = LocalDataExportSelection(now: now)
+    var selection = LocalDataExportOptions(now: now)
     selection.selectedActivity = Set(entries.map(\.id))
     #expect(selection.shownActivity(entries).map(\.sequence) == [2, 1])
     selection.activityEnabled = false
@@ -79,7 +79,7 @@ struct LocalDataExportTests {
         id: UUID(), sequence: 1, occurredAt: $0,
         event: .init(action: .applicationOpened, status: .succeeded))
     }
-    var selection = LocalDataExportSelection(now: now)
+    var selection = LocalDataExportOptions(now: now)
     #expect(selection.shownActivity(entries).count == 1)
     selection.start = now.addingTimeInterval(1)
     #expect(!selection.hasValidRange)
@@ -92,10 +92,10 @@ struct LocalDataExportTests {
     let entry = MovieFolderActivityLogEntry(
       id: UUID(), sequence: 1, occurredAt: Date(),
       event: .init(action: .applicationOpened, status: .succeeded))
-    let document = LocalDataExportDocument(
+    let document = LocalDataExportContents(
       activity: Array(repeating: entry, count: 30000), network: [],
       readiness: nil, storage: nil, start: Date(), end: Date(), activityAvailable: true, networkAvailable: true)
-    #expect(throws: LocalDataExportError.self) { try document.encode() }
+    #expect(throws: LocalDataExportFailure.self) { try document.encode() }
   }
 
 }
@@ -105,7 +105,7 @@ final class LocalDataExportSourcesFake: LocalDataExportServicing, @unchecked Sen
   /// Serializes the replaceable source and suspended storage capture.
   private let lock = NSLock()
   /// Current retained sources and privacy fingerprint.
-  private var evidence: LocalDataExportSources
+  private var evidence: LocalDataExportInputs
   /// Suspended metadata capture used to test late completion fences.
   private var storageContinuation: CheckedContinuation<Void, Never>?
   /// Whether the next storage capture must wait for the test.
@@ -125,15 +125,19 @@ final class LocalDataExportSourcesFake: LocalDataExportServicing, @unchecked Sen
   }
   /// Creates a controlled source without production storage.
   /// - Parameter evidence: Initial retained history and privacy evidence.
-  init(_ evidence: LocalDataExportSources) { self.evidence = evidence }
+  init(_ evidence: LocalDataExportInputs) { self.evidence = evidence }
   /// Replaces committed evidence between preview and save.
   /// - Parameter evidence: New retained history and privacy evidence.
-  func replace(_ evidence: LocalDataExportSources) { lock.withLock { self.evidence = evidence } }
+  func replace(_ evidence: LocalDataExportInputs) { lock.withLock { self.evidence = evidence } }
+  // The async service protocol applies even though this in-memory fixture responds immediately.
   /// Returns the currently committed source evidence.
-  func load() async -> LocalDataExportSources { lock.withLock { evidence } }
+  /// - Returns: Latest committed export sources.
+  func load() async -> LocalDataExportInputs { // swiftlint:disable:this async_without_await
+    lock.withLock { evidence }
+  }
   /// Captures fixed local-storage evidence, suspending when the test requested a hold.
   /// - Returns: A bounded report with unavailable app-owned locations.
-  func storage() async -> LocalStorageReport {
+  func storage() async -> ApplicationLocalStorageReport {
     let shouldHold = lock.withLock {
       guard holdsStorage else { return false }
       holdsStorage = false
@@ -197,7 +201,7 @@ struct LocalDataExportViewModelTests {
         .init(
           activity: changesPrivacy ? [original] : [], network: [],
           privacy: Data([changesPrivacy ? 2 : 1])))
-      await #expect(throws: LocalDataExportError.self) { try await model.bytesForSaving() }
+      await #expect(throws: LocalDataExportFailure.self) { try await model.bytesForSaving() }
       #expect(model.preview == nil)
     }
   }
@@ -217,7 +221,7 @@ struct LocalDataExportViewModelTests {
     model.selection.includesReadiness = false
     #expect(model.preview == nil)
     model.close()
-    await #expect(throws: LocalDataExportError.self) { try await model.preparePreview() }
+    await #expect(throws: LocalDataExportFailure.self) { try await model.preparePreview() }
   }
   /// Prevents late metadata capture from restoring a preview after edits or closure.
   /// - Throws: Preview preparation or late-completion errors.
@@ -231,7 +235,7 @@ struct LocalDataExportViewModelTests {
       while !(await source.isStorageHeld) { await Task.yield() }
       if closes { model.close() } else { model.selection.networkEnabled = true }
       await source.releaseStorage()
-      await #expect(throws: LocalDataExportError.self) { try await preview.value }
+      await #expect(throws: LocalDataExportFailure.self) { try await preview.value }
       #expect(model.preview == nil)
     }
   }

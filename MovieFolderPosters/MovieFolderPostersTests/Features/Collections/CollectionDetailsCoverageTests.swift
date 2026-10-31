@@ -13,15 +13,15 @@ struct CollectionDetailsCoverageTests {
   @Test func interruptedManualReportKeepsUnknownEvidenceExplicit() throws {
     let context = CollectionProcessingContext(rootID: UUID(), rootIdentity: "private-root-identity",
       authorizationVersion: UUID(), credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish)
-    let run = CollectionProcessingRun(action: .removal, startedAt: Date(), state: .running)
+    let run = CollectionProcessingRun(action: .removal, startedAt: Date(), runState: .running)
     let records = [
       FolderProcessingRecord(name: "Folder 10", state: .uncertain, reason: .ownershipChanged,
         movieID: 7, movieIdentitySource: .savedDecision, ownership: .changed,
-        lastFailure: FolderProcessingFailure(reason: .ownershipChanged, stage: .validateIdentity, occurredAt: Date())),
+        lastFailure: AutomaticFolderProcessingFailure(reason: .ownershipChanged, stage: .validateIdentity, occurredAt: Date())),
       FolderProcessingRecord(name: "Folder 2", state: .suppressed, reason: .policySuppressed,
         movieIdentitySource: .explicitSelection, ownership: .unowned),
       FolderProcessingRecord(name: "Folder 1", state: .deferred, reason: .rateLimited, ownership: .none,
-        lastFailure: FolderProcessingFailure(reason: .rateLimited, stage: .artwork, occurredAt: Date()))
+        lastFailure: AutomaticFolderProcessingFailure(reason: .rateLimited, stage: .artwork, occurredAt: Date()))
     ]
     let savedState = CollectionProcessingState(context: context, currentRun: run, folders: records,
       isInventoryComplete: false, inventoryIssue: .inspectionFailure)
@@ -65,7 +65,7 @@ struct CollectionDetailsCoverageTests {
       authorizationVersion: UUID(), credentialRevision: UUID(), usesStubTMDbResponses: false, appearance: .softFinish)
     let savedState = CollectionProcessingState(context: context, folders: [
       FolderProcessingRecord(name: "Failed Movie", state: .failed, reason: .processingFailure,
-        lastFailure: FolderProcessingFailure(reason: scenario.reason, stage: scenario.stage, occurredAt: Date()))
+        lastFailure: AutomaticFolderProcessingFailure(reason: scenario.reason, stage: scenario.stage, occurredAt: Date()))
     ])
     let text = try report(savedState, displayState: .failed)
     #expect(text.contains("State: Failed"))

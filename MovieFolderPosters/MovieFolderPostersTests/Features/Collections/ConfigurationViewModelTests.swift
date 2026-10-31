@@ -287,10 +287,10 @@ func processingStateForTesting(rootID: UUID) -> CollectionProcessingState {
     movieID: 4242, movieTitle: "Verified Movie", movieYear: 2024,
     movieIdentitySource: .conservativeMatch,
     ownership: .owned, assessedAt: Date(), retryAt: Date().addingTimeInterval(600),
-    lastFailure: FolderProcessingFailure(reason: .timeout, stage: .search, occurredAt: Date()))
+    lastFailure: AutomaticFolderProcessingFailure(reason: .timeout, stage: .search, occurredAt: Date()))
   let completed = CollectionProcessingRun(
     action: .automatic, startedAt: Date().addingTimeInterval(-120),
-    endedAt: Date(), state: .completed)
+    endedAt: Date(), runState: .completed)
 
   return CollectionProcessingState(
     context: context, currentRun: completed, folders: [folder], isInventoryComplete: true,

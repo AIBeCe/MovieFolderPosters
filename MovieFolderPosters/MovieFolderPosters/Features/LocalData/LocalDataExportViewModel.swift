@@ -7,14 +7,14 @@ final class LocalDataExportViewModel {
   /// Narrow source boundary retained through dismissal.
   private let service: any LocalDataExportServicing
   /// Current user choices; replacing choices invalidates the exact preview.
-  var selection = LocalDataExportSelection() {
+  var selection = LocalDataExportOptions() {
     didSet {
       generation &+= 1
       preview = .none
     }
   }
   /// Most recently captured retained evidence, independent of filters.
-  private(set) var evidence: LocalDataExportSources?
+  private(set) var evidence: LocalDataExportInputs?
   /// Exact encoded bytes displayed and later saved.
   private(set) var preview: Data?
   /// Readiness captured by the route that opened this flow.
@@ -47,21 +47,21 @@ final class LocalDataExportViewModel {
   }
 
   /// Captures an exact allowlisted preview after checking selection and privacy availability.
-  /// - Throws: `LocalDataExportError.invalidRange` when the flow, range, or loaded privacy evidence is unavailable;
+  /// - Throws: `LocalDataExportFailure.invalidRange` when the flow, range, or loaded privacy evidence is unavailable;
   ///   `.stale` after cancellation or intervening changes; encoding or size-limit errors from the document.
   func preparePreview() async throws {
     guard !isClosed, selection.hasValidRange, let evidence, evidence.privacy != .none else {
-      throw LocalDataExportError.invalidRange
+      throw LocalDataExportFailure.invalidRange
     }
 
     generation &+= 1
     let current = generation
     let choices = selection
-    let report: LocalStorageReport? = choices.includesStorage ? await service.storage() : .none
+    let report: ApplicationLocalStorageReport? = choices.includesStorage ? await service.storage() : .none
 
-    guard !Task.isCancelled, !isClosed, current == generation else { throw LocalDataExportError.stale }
+    guard !Task.isCancelled, !isClosed, current == generation else { throw LocalDataExportFailure.stale }
 
-    preview = try LocalDataExportDocument(
+    preview = try LocalDataExportContents(
       activity: choices.shownActivity(evidence.activity ?? []).filter { choices.selectedActivity.contains($0.id) },
       network: choices.shownNetwork(evidence.network ?? []).filter { choices.selectedNetwork.contains($0.id) },
       readiness: choices.includesReadiness ? readiness : .none, storage: report, start: choices.start, end: choices.end,
@@ -71,10 +71,10 @@ final class LocalDataExportViewModel {
 
   /// Rechecks after destination selection; new entries are never silently included.
   /// - Returns: The exact previously displayed preview bytes.
-  /// - Throws: `LocalDataExportError.stale` if no current preview exists, the flow closes or changes, or selected
+  /// - Throws: `LocalDataExportFailure.stale` if no current preview exists, the flow closes or changes, or selected
   ///   evidence, source availability, or privacy no longer agrees.
   func bytesForSaving() async throws -> Data {
-    guard !isClosed, let frozen = preview, let original = evidence else { throw LocalDataExportError.stale }
+    guard !isClosed, let frozen = preview, let original = evidence else { throw LocalDataExportFailure.stale }
 
     let currentGeneration = generation
     let latest = await service.load()
@@ -85,7 +85,7 @@ final class LocalDataExportViewModel {
       retainedNetworkUnchanged(original.network, latest.network)
     else {
       preview = .none
-      throw LocalDataExportError.stale
+      throw LocalDataExportFailure.stale
     }
 
     return frozen

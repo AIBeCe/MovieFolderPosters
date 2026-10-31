@@ -10,11 +10,11 @@ nonisolated struct VerifiedMovieDetails: Sendable, Equatable {
 
   /// Projects verified metadata without requiring a successful icon outcome.
   init?(record: FolderProcessingRecord) {
-    guard let movieID = record.movieID, movieID > .zero,
+    guard let movieID = record.matchedMovieID, movieID > .zero,
       record.movieIdentitySource != .none, record.assessedAt != .none else { return nil }
 
     self.movieID = movieID
-    let trimmed = record.movieTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = record.matchedMovieTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
     title = trimmed.flatMap { $0.isEmpty ? .none : $0 }
   }
 }

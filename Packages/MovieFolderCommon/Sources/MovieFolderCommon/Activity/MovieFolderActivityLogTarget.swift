@@ -88,7 +88,7 @@ nonisolated public struct MovieFolderActivityLogContext: Sendable {
     activityGroupID: UUID? = .none, childFolderName: String? = .none, movieID: Int? = .none,
     movieTitle: String? = .none, movieYear: Int? = .none,
     folderResult: MovieFolderActivityLogEvent.FolderResult? = .none, reason: FolderProcessingReason? = .none,
-    failure: FolderProcessingFailure? = .none, retryAt: Date? = .none, processingSummary: ProcessingSummary? = .none
+    failure: AutomaticFolderProcessingFailure? = .none, retryAt: Date? = .none, processingSummary: ProcessingSummary? = .none
   ) -> MovieFolderActivityLogEvent {
     MovieFolderActivityLogEvent(action: action, status: status, activityGroupID: activityGroupID,
       collectionID: collectionID, target: target(childFolderName: childFolderName, movieID: movieID,

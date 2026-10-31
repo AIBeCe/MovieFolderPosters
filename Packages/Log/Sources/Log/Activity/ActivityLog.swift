@@ -2,7 +2,7 @@ import Foundation
 import Persistence
 
 /// Controls whether an append retries another writer's cross-process history access.
-public enum ActivityLogAppendAccessMode: Sendable {
+public enum ActivityHistoryAppendAccessMode: Sendable {
   /// Retry contention within the existing bounded window.
   case boundedWait
   /// Attempt access once, without waiting while another service access is held.
@@ -36,13 +36,15 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   /// - Parameters:
   ///   - directory: A dedicated history directory opened by Persistence without following symlinks.
   ///   - namespace: A nonempty stable identifier; callers must use the same event schema for this identifier.
+  ///   - storeFactory: The caller's persistence path authorization.
   ///   - maximumEntries: Retained entry limit, from 1 through 500; defaults to 500.
   ///   - maximumEventBytes: Encoded event byte limit; defaults to 2 KiB.
   ///   - maximumHistoryPayloadBytes: Optional complete payload limit up to 1 MiB, before base64 envelope expansion.
   ///   - writerRecordVersion: Version one by default; version two reads both versions and writes version two.
   /// - Throws: A configuration, cancellation, or persistence error.
   public init(
-    directory: URL, namespace: String, maximumEntries: Int = 500, maximumEventBytes: Int = 2048,
+    directory: URL, namespace: String, storeFactory: PersistenceStoreFactory = PersistenceStoreFactory(),
+    maximumEntries: Int = 500, maximumEventBytes: Int = 2048,
     maximumHistoryPayloadBytes: Int? = .none, writerRecordVersion: Int = 1
   ) async throws {
     guard !namespace.isEmpty else { throw ActivityLogError.invalidNamespace }
@@ -56,7 +58,9 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
 
     guard (1...2).contains(writerRecordVersion) else { throw ActivityLogError.unsupportedVersion }
 
-    store = try await Self.offActor { try PersistenceStore(directory: directory, maximumRecordBytes: 2 * 1024 * 1024) }
+    store = try await Self.offActor {
+      try storeFactory.makeStore(directory: directory, maximumRecordBytes: 2 * 1024 * 1024)
+    }
     key = "Log.Activity.v1." + namespace
     self.maximumEntries = maximumEntries
     self.maximumEventBytes = maximumEventBytes
@@ -76,15 +80,15 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   /// - Throws: Validation, corruption, unsupported-version, contention, cancellation, or persistence errors.
   @discardableResult
   public func append(
-    event: Event, occurredAt: Date = Date(), accessMode: ActivityLogAppendAccessMode = .boundedWait
-  ) async throws -> ActivityEntry<Event> {
+    event: Event, occurredAt: Date = Date(), accessMode: ActivityHistoryAppendAccessMode = .boundedWait
+  ) async throws -> CommittedActivityEntry<Event> {
     try await Self.offActor {
       try validate(event)
       guard occurredAt.timeIntervalSinceReferenceDate.isFinite else { throw ActivityLogError.invalidOccurrenceTime }
       let persistenceAccess = try await acquireAccess(mode: accessMode)
       var activityHistoryRecord = try readActivityHistory(using: persistenceAccess)
       guard activityHistoryRecord.lastSequence < UInt64.max else { throw ActivityLogError.sequenceExhausted }
-      let entry = ActivityEntry(
+      let entry = CommittedActivityEntry(
         id: UUID(), sequence: activityHistoryRecord.lastSequence + 1, occurredAt: occurredAt, event: event)
       activityHistoryRecord.version = writerRecordVersion
       activityHistoryRecord.lastSequence = entry.sequence
@@ -103,7 +107,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   /// Corrupt, unsupported, oversized, and unavailable records fail explicitly and remain unchanged.
   /// - Returns: Retained entries ordered by sequence, independent of their occurrence timestamps.
   /// - Throws: Validation, corruption, unsupported-version, contention, cancellation, or persistence errors.
-  public func entries() async throws -> [ActivityEntry<Event>] {
+  public func entries() async throws -> [CommittedActivityEntry<Event>] {
     try await Self.offActor {
       let persistenceAccess = try await acquireAccess()
 
@@ -130,7 +134,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   }
 
   /// Acquires one cross-process access, retrying for at most approximately one second.
-  private func acquireAccess(mode: ActivityLogAppendAccessMode = .boundedWait) async throws -> PersistenceAccess {
+  private func acquireAccess(mode: ActivityHistoryAppendAccessMode = .boundedWait) async throws -> PersistenceAccess {
     let maximumAttempt = mode == .immediate ? 0 : 100
     for attempt in 0...maximumAttempt {
       try Task.checkCancellation()
@@ -142,11 +146,11 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   }
 
   /// Decodes and validates the complete activity history record before any operation uses or replaces it.
-  private func readActivityHistory(using persistenceAccess: PersistenceAccess) throws -> ActivityHistoryRecord<Event> {
-    guard let data = try persistenceAccess.read() else { return ActivityHistoryRecord() }
-    let activityHistoryRecord: ActivityHistoryRecord<Event>
+  private func readActivityHistory(using persistenceAccess: PersistenceAccess) throws -> PersistedActivityHistory<Event> {
+    guard let data = try persistenceAccess.read() else { return PersistedActivityHistory() }
+    let activityHistoryRecord: PersistedActivityHistory<Event>
     do {
-      activityHistoryRecord = try JSONDecoder().decode(ActivityHistoryRecord<Event>.self, from: data)
+      activityHistoryRecord = try JSONDecoder().decode(PersistedActivityHistory<Event>.self, from: data)
     } catch {
       throw ActivityLogError.corruptActivityHistory
     }
@@ -176,7 +180,7 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
   }
 
   /// Trims a prefix with logarithmically many encodings, preserving the newest event and durable sequence.
-  private func encodeRetainedHistory(_ activityHistoryRecord: inout ActivityHistoryRecord<Event>) throws -> Data {
+  private func encodeRetainedHistory(_ activityHistoryRecord: inout PersistedActivityHistory<Event>) throws -> Data {
     let encoder = JSONEncoder()
     let encoded = try encoder.encode(activityHistoryRecord)
 
@@ -222,11 +226,11 @@ public struct ActivityLog<Event: Codable & Sendable>: Sendable {
 }
 
 /// The private versioned payload within Persistence's bounded record envelope.
-private struct ActivityHistoryRecord<Event: Codable & Sendable>: Codable, Sendable {
+private struct PersistedActivityHistory<Event: Codable & Sendable>: Codable, Sendable {
   /// The activity payload schema version.
   var version = 1
   /// The latest committed sequence, retained even when history is cleared.
   var lastSequence = UInt64.zero
   /// Retained events in increasing commit order.
-  var entries = [ActivityEntry<Event>]()
+  var entries = [CommittedActivityEntry<Event>]()
 }

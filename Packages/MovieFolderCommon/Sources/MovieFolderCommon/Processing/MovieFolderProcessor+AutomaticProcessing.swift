@@ -46,65 +46,65 @@ extension MovieFolderProcessor {
     let access = retainedAccess.access
 
     if let processingContext, let previous = try? processingStore?.read(rootID: processingContext.rootID) {
-      activity.priorFolderResults = previous.folders.reduce(into: [:]) { $0[$1.name] = $1 }
+      activity.priorFolderResults = previous.folders.reduce(into: [:]) { $0[$1.folderName] = $1 }
     }
 
-    var visit = AutomaticProcessingVisit(
-      recording: try recordProcessingStart(context: processingContext, action: .automatic), activity: activity)
-    defer { interruptUnfinishedProcessing(&visit.recording) }
-    let inventory = try processingCandidates(in: root, recording: &visit.recording)
+    var visit = AutomaticProcessingPass(
+      collectionProcessingRecord: try recordProcessingStart(context: processingContext, action: .automatic), activityLog: activity)
+    defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord) }
+    let inventory = try processingCandidates(in: root, recording: &visit.collectionProcessingRecord)
     let candidates = inventory.filter { !processingConfiguration.excludesFolder(identity: $0.identity) }
-    visit.summary.excluded = inventory.count - candidates.count
+    visit.processingSummary.excluded = inventory.count - candidates.count
     for candidate in inventory where processingConfiguration.excludesFolder(identity: candidate.identity) {
       let record = FolderProcessingRecord(
         name: candidate.name, identity: candidate.identity, state: .excluded, reason: .explicitExclusion,
         assessedAt: now(), fingerprint: candidate.fingerprint)
-      visit.activity?.append(record, onlyWhenChanged: true)
-      try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
+      visit.activityLog?.append(record, onlyWhenChanged: true)
+      try recordFolderProcessing(record, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
     }
     if try await prepareExistingProcessing(
       inventory: inventory, candidates: candidates, root: root, access: access, visit: &visit) {
-      return visit.summary
+      return visit.processingSummary
     }
 
     for candidate in candidates {
-      if visit.didStopEarly { break }
-      visit.activity?.begin(candidate.name,
-        movie: savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate))
+      if visit.providerAdmissionStoppedPass { break }
+      visit.activityLog?.begin(candidate.name,
+        movie: savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate))
       try Task.checkCancellation()
       try recovery?.validateProcessingAllowed()
       if try shouldSkipCandidate(candidate, root: root, visit: &visit) { continue }
       if try await reuseCachedDecision(candidate, root: root, access: access, visit: &visit) { continue }
       if try await processCandidate(candidate, root: root, access: access, visit: &visit) {
-        visit.didStopEarly = true
+        visit.providerAdmissionStoppedPass = true
         break
       }
     }
 
     try finishProcessingRun(
-      &visit.recording, state: visit.didStopEarly ? .partial : .completed, activity: visit.activity)
-    visit.summary.nextAutomaticRetryAt = visit.recording?.folders.compactMap(\.automaticRetryAt).min()
+      &visit.collectionProcessingRecord, state: visit.providerAdmissionStoppedPass ? .partial : .completed, activity: visit.activityLog)
+    visit.processingSummary.nextAutomaticRetryAt = visit.collectionProcessingRecord?.folders.compactMap(\.automaticRetryAt).min()
 
-    return visit.summary
+    return visit.processingSummary
   }
 
   /// Loads current decisions, applies retry admission, and repairs owned artwork before matching new folders.
   private func prepareExistingProcessing(
-    inventory: [FolderCandidate], candidates: [FolderCandidate], root: URL,
-    access: PersistenceAccess, visit: inout AutomaticProcessingVisit
+    inventory: [MovieFolderCandidate], candidates: [MovieFolderCandidate], root: URL,
+    access: PersistenceAccess, visit: inout AutomaticProcessingPass
   ) async throws -> Bool {
-    visit.cache = try loadState(from: access)
+    visit.processingCache = try loadState(from: access)
     let currentTime = now()
-    var stateChanged = pruneCache(&visit.cache, candidates: inventory, currentTime: currentTime)
+    var stateChanged = pruneCache(&visit.processingCache, candidates: inventory, currentTime: currentTime)
     try assessExistingIcons(candidates, root: root, visit: &visit)
 
     if try deferForProviderBackoff(
       candidates, currentTime: currentTime, stateChanged: stateChanged, access: access, visit: &visit
     ) { return true }
 
-    if visit.cache.providerRetryAt != .none { stateChanged = true }
-    visit.cache.providerRetryAt = .none
-    if stateChanged { try saveState(visit.cache, to: access, activity: visit.activity) }
+    if visit.processingCache.providerRetryAt != .none { stateChanged = true }
+    visit.processingCache.providerRetryAt = .none
+    if stateChanged { try saveState(visit.processingCache, to: access, activity: visit.activityLog) }
     try await repairExistingIconArtwork(candidates, root: root, access: access, visit: &visit)
 
     return false
@@ -141,29 +141,29 @@ extension MovieFolderProcessor {
   /// - Returns: Whether the visit was deferred.
   /// - Throws: Persistence or recording errors.
   private func deferForProviderBackoff(
-    _ candidates: [FolderCandidate], currentTime: Date, stateChanged: Bool,
-    access: PersistenceAccess, visit: inout AutomaticProcessingVisit
+    _ candidates: [MovieFolderCandidate], currentTime: Date, stateChanged: Bool,
+    access: PersistenceAccess, visit: inout AutomaticProcessingPass
   ) throws -> Bool {
-    guard recovery == nil, !hasLegacyUnresolvedResult(candidates, cache: visit.cache),
-      let backoff = visit.cache.providerRetryAt, backoff > currentTime
+    guard recovery == nil, !hasLegacyUnresolvedResult(candidates, cache: visit.processingCache),
+      let backoff = visit.processingCache.providerRetryAt, backoff > currentTime
     else { return false }
 
-    if stateChanged { try saveState(visit.cache, to: access, activity: visit.activity) }
+    if stateChanged { try saveState(visit.processingCache, to: access, activity: visit.activityLog) }
 
-    visit.summary.providerRetryAt = backoff
+    visit.processingSummary.providerRetryAt = backoff
     for candidate in candidates where !candidate.hasCustomIcon {
-      visit.activity?.begin(candidate.name,
-        movie: savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate))
-      visit.activity?.append(.deferred, reason: .retryDeferred, retryAt: backoff)
+      visit.activityLog?.begin(candidate.name,
+        movie: savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate))
+      visit.activityLog?.append(.deferred, reason: .retryDeferred, retryAt: backoff)
     }
-    deferPendingFolderResults(&visit.recording, until: backoff)
-    try finishProcessingRun(&visit.recording, state: .partial, activity: visit.activity)
+    deferPendingFolderResults(&visit.collectionProcessingRecord, until: backoff)
+    try finishProcessingRun(&visit.collectionProcessingRecord, state: .partial, activity: visit.activityLog)
 
     return true
   }
 
   /// Detects unchanged reasonless decisions whose obsolete root delay cannot block their fresh classification.
-  private func hasLegacyUnresolvedResult(_ candidates: [FolderCandidate], cache: ProcessingState) -> Bool {
+  private func hasLegacyUnresolvedResult(_ candidates: [MovieFolderCandidate], cache: CollectionProcessingCache) -> Bool {
     candidates.contains {
       let saved = cache.folders[$0.name]
 
@@ -174,7 +174,7 @@ extension MovieFolderProcessor {
   /// Inventories and checkpoints all immediate members before authorizing writes.
   private func processingCandidates(
     in root: URL, recording: inout CollectionProcessingState?
-  ) throws -> [FolderCandidate] {
+  ) throws -> [MovieFolderCandidate] {
     do {
       if recording != .none {
         let inventory = try fileSystem.inventory(in: root)
@@ -212,7 +212,7 @@ extension MovieFolderProcessor {
   }
 
   /// Prunes disappeared folder decisions and expired query responses.
-  private func pruneCache(_ state: inout ProcessingState, candidates: [FolderCandidate], currentTime: Date) -> Bool {
+  private func pruneCache(_ state: inout CollectionProcessingCache, candidates: [MovieFolderCandidate], currentTime: Date) -> Bool {
     var stateChanged = false
     let currentNames = Set(candidates.map(\.name))
     for name in Array(state.folders.keys) where !currentNames.contains(name) {
@@ -234,23 +234,23 @@ extension MovieFolderProcessor {
 
   /// Assesses and optionally restyles existing icons before provider backoff.
   private func assessExistingIcons(
-    _ candidates: [FolderCandidate], root: URL, visit: inout AutomaticProcessingVisit
+    _ candidates: [MovieFolderCandidate], root: URL, visit: inout AutomaticProcessingPass
   ) throws {
     for candidate in candidates where candidate.hasCustomIcon {
-      visit.activity?.begin(candidate.name,
-        movie: savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate), stage: .assignPoster)
+      visit.activityLog?.begin(candidate.name,
+        movie: savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate), stage: .assignPoster)
       try Task.checkCancellation()
       do {
-        if try restyleOwnedPosterIfPossible(candidate, in: root, state: visit.cache) {
-          visit.summary.restyled += 1
-          visit.activity?.movie = savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate)
-          visit.activity?.append(.posterRestyled)
+        if try restyleOwnedPosterIfPossible(candidate, in: root, state: visit.processingCache) {
+          visit.processingSummary.restyled += 1
+          visit.activityLog?.movie = savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate)
+          visit.activityLog?.append(.posterRestyled)
         } else {
-          visit.summary.skippedExistingIcons += 1
+          visit.processingSummary.skippedExistingIcons += 1
         }
-        let folderResult = try folderProcessingResult(candidate, root: root, saved: visit.cache.folders[candidate.name])
-        visit.activity?.append(folderResult, onlyWhenChanged: true)
-        try recordFolderProcessing(folderResult, in: &visit.recording, activity: visit.activity)
+        let folderResult = try folderProcessingResult(candidate, root: root, saved: visit.processingCache.folders[candidate.name])
+        visit.activityLog?.append(folderResult, onlyWhenChanged: true)
+        try recordFolderProcessing(folderResult, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
       } catch let error as CollectionProcessingError {
         throw error
       } catch is CancellationError {
@@ -259,15 +259,15 @@ extension MovieFolderProcessor {
         throw error
       } catch {
         if Task.isCancelled { throw CancellationError() }
-        visit.summary.transientFailures += 1
-        visit.activity?.append(.failed, reason: .filesystemFailure,
+        visit.processingSummary.transientFailures += 1
+        visit.activityLog?.append(.failed, reason: .filesystemFailure,
           failure: MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .assignPoster, occurredAt: now()))
-        if visit.recording != .none {
-          var record = (try? folderProcessingResult(candidate, root: root, saved: visit.cache.folders[candidate.name]))
+        if visit.collectionProcessingRecord != .none {
+          var record = (try? folderProcessingResult(candidate, root: root, saved: visit.processingCache.folders[candidate.name]))
             ?? failedFolderResult(candidate, stage: .validateIdentity)
-          record.lastFailure = FolderProcessingFailure(reason: .filesystem, stage: .assignPoster, occurredAt: now())
-          if record.state != .done { record.reason = .filesystemFailure }
-          try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
+          record.lastFailure = AutomaticFolderProcessingFailure(reason: .filesystem, stage: .assignPoster, occurredAt: now())
+          if record.processingState != .done { record.processingReason = .filesystemFailure }
+          try recordFolderProcessing(record, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
         }
       }
     }
@@ -275,28 +275,28 @@ extension MovieFolderProcessor {
 
   /// Records suppression or inspection failures before considering a cached decision.
   func shouldSkipCandidate(
-    _ candidate: FolderCandidate, root: URL, visit: inout AutomaticProcessingVisit
+    _ candidate: MovieFolderCandidate, root: URL, visit: inout AutomaticProcessingPass
   ) throws -> Bool {
-    visit.activity?.begin(candidate.name,
-      movie: savedActivityMovie(visit.cache.folders[candidate.name], candidate: candidate))
+    visit.activityLog?.begin(candidate.name,
+      movie: savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate))
     do {
       if try fileSystem.isPosterSuppressed(toChild: candidate.name, in: root) {
         if !candidate.hasCustomIcon {
           let record = FolderProcessingRecord(
             name: candidate.name, identity: candidate.identity, state: .suppressed,
             reason: .policySuppressed, ownership: .none, assessedAt: now(), fingerprint: candidate.fingerprint)
-          visit.activity?.append(record, onlyWhenChanged: true)
-          try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
+          visit.activityLog?.append(record, onlyWhenChanged: true)
+          try recordFolderProcessing(record, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
         }
         return true
       }
     } catch let error as CollectionProcessingError {
       throw error
     } catch {
-      visit.summary.transientFailures += 1
+      visit.processingSummary.transientFailures += 1
       let record = failedFolderResult(candidate, stage: .validateIdentity)
-      visit.activity?.append(record)
-      try recordFolderProcessing(record, in: &visit.recording, activity: visit.activity)
+      visit.activityLog?.append(record)
+      try recordFolderProcessing(record, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
       return true
     }
     if candidate.hasCustomIcon {

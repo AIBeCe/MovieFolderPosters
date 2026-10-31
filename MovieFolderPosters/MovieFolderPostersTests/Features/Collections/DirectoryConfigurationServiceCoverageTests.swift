@@ -139,7 +139,7 @@ private struct DirectoryServiceCoverageFixture {
     service = DirectoryConfigurationService(repository: repository,
       authorizations: authorizations,
       credentials: CoverageCredentials(), notifier: CoverageConfigurationNotifier(),
-      authorization: CoverageAuthorization(mode: mode), activity: ActivityServiceFake())
+      authorization: CoverageAuthorization(mode: mode), activity: MovieFolderActivityServiceFake())
   }
 
   /// Creates one real movie root for a user selection.
@@ -161,7 +161,7 @@ struct CoverageAuthorization: DirectoryAuthorizationProviding {
   /// Requested external authorization outcome.
   let mode: Mode
 
-  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> DirectoryAccess {
+  func acquireAccess(bookmark: Data, expectedIdentity: String?) throws -> AuthorizedDirectoryAccess {
     switch mode {
     case .accessible:
       try FileSystemService().acquireDirectoryAccess(bookmark: bookmark, securityScoped: false,

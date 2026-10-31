@@ -155,7 +155,7 @@ extension MovieFolderStorageMigrator {
       }
     }
     let converted = legacy ? try encodeObject(object, record: record) : payload
-    do { _ = try JSONDecoder().decode(ProcessingState.self, from: converted) } catch {
+    do { _ = try JSONDecoder().decode(CollectionProcessingCache.self, from: converted) } catch {
       throw MovieFolderStorageMigrationError.invalidRecord(record: record)
     }
 

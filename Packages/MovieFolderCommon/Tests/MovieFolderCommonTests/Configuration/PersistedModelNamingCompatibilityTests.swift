@@ -21,7 +21,7 @@ struct PersistedModelNamingCompatibilityTests {
     encoder.outputFormatting = [.sortedKeys]
     let migrated = try encoder.encode(decoded)
     let migratedObject = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
-    #expect(migratedObject["version"] as? Int == 5)
+    #expect(migratedObject["version"] as? Int == 6)
     #expect(migratedObject["developmentFixtures"] as? Bool == true)
     #expect(migratedObject["processingCacheRevision"] as? String == "11111111-1111-1111-1111-111111111111")
   }
@@ -35,7 +35,12 @@ struct PersistedModelNamingCompatibilityTests {
       "authorizationVersion": "22222222-2222-2222-2222-222222222222",
       "credentialRevision": "33333333-3333-3333-3333-333333333333",
       "developmentFixtures": true,
-      "appearance": "softFinish"
+      "appearance": "softFinish",
+      "identificationPolicy": [
+        "requiresReleaseYearForAutomaticMatching": false,
+        "comparesOriginalTitles": true,
+        "searchLanguage": "en-US"
+      ]
     ], options: [.sortedKeys])
     let decoded = try JSONDecoder().decode(CollectionProcessingContext.self, from: legacy)
     #expect(decoded.usesStubTMDbResponses)
@@ -87,7 +92,7 @@ struct PersistedModelNamingCompatibilityTests {
   /// - Throws: Configuration or fixture JSON encoding/decoding failures.
   @Test func privacyNamesRetainCurrentWireKeysAndBytes() throws {
     let persisted = try JSONSerialization.data(withJSONObject: [
-      "version": 5,
+      "version": 6,
       "directories": [[
         "id": "11111111-1111-1111-1111-111111111111",
         "path": "/Movies",
@@ -108,7 +113,8 @@ struct PersistedModelNamingCompatibilityTests {
       "posterAppearance": "softFinish",
       "movieMatchingConfiguration": [
         "requiresReleaseYearForAutomaticMatching": false,
-        "comparesOriginalTitles": true
+        "comparesOriginalTitles": true,
+        "searchLanguage": "en-US"
       ]
     ], options: [.sortedKeys])
     let configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: persisted)

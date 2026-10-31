@@ -111,7 +111,7 @@ public struct MovieReleaseDate: Codable, Equatable, Sendable {
 }
 
 /// Complete release events keyed by the requested provider movie identity, including completed empty lists.
-public typealias MovieReleaseDates = [Int: [MovieReleaseDate]]
+public typealias MovieReleaseDatesByID = [Int: [MovieReleaseDate]]
 
 extension MovieMetadata {
   /// Primary provider year projected without altering immutable search metadata or equality.

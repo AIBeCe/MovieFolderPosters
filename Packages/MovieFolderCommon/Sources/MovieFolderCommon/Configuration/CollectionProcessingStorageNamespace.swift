@@ -27,12 +27,17 @@ public enum CollectionProcessingStorageNamespace {
   ///
   /// An existing legacy directory is never migrated implicitly. Initialization and inspection hold a shared
   /// container-wide exclusive access, released after the persistence store has pinned its directory descriptor.
-  /// - Parameter containerURL: An existing trusted App Group directory, never a movie collection directory.
+  /// - Parameters:
+  ///   - containerURL: An existing trusted App Group directory, never a movie collection directory.
+  ///   - storeFactory: The persistence path authorization used for the current namespace store.
   /// - Returns: The current store with the existing eight-mebibyte record-envelope limit.
   /// - Throws: ``CollectionProcessingStorageNamespaceError/legacyMigrationRequired`` for old storage,
   ///   namespace validation or access errors, or a persistence error when the current store cannot open.
-  public static func open(in containerURL: URL) throws -> PersistenceStore {
-    let container = try ContainerAccess(containerURL)
+  public static func open(
+    in containerURL: URL,
+    using storeFactory: PersistenceStoreFactory = PersistenceStoreFactory()
+  ) throws -> PersistenceStore {
+    let container = try StorageContainerAccess(containerURL)
     let legacy = try container.entry(named: Constants.legacyName)
     let current = try container.entry(named: Constants.currentName)
     try validate(legacy: legacy, current: current)
@@ -40,7 +45,7 @@ public enum CollectionProcessingStorageNamespace {
     try initializeIfNeeded(container, legacy: legacy, current: current)
 
     return try withExtendedLifetime(container) {
-      try PersistenceStore(
+      try storeFactory.makeStore(
         directory: containerURL.appendingPathComponent(Constants.currentName, isDirectory: true),
         maximumRecordBytes: Constants.maximumRecordBytes)
     }
@@ -57,7 +62,7 @@ public enum CollectionProcessingStorageNamespace {
   /// - Throws: ``CollectionProcessingStorageNamespaceError`` on conflicts, unsafe entries, a busy migration access,
   ///   unsupported atomic exchange, or filesystem failures. Existing records are never merged or removed.
   public static func migrateStoppedInstallation(in containerURL: URL) throws {
-    let container = try ContainerAccess(containerURL)
+    let container = try StorageContainerAccess(containerURL)
     let legacy = try container.entry(named: Constants.legacyName)
     let current = try container.entry(named: Constants.currentName)
     try validate(legacy: legacy, current: current)
@@ -91,7 +96,7 @@ public enum CollectionProcessingStorageNamespace {
   }
 
   /// Creates the old-path blocker before the new writable directory, resuming marker-only initialization.
-  private static func initializeIfNeeded(_ container: ContainerAccess, legacy: Entry, current: Entry) throws {
+  private static func initializeIfNeeded(_ container: StorageContainerAccess, legacy: Entry, current: Entry) throws {
     if legacy == .missing { try container.createMarker(named: Constants.legacyName) }
     if current == .missing {
       guard mkdirat(container.descriptor, Constants.currentName, S_IRWXU) == 0 else {
@@ -112,7 +117,7 @@ public enum CollectionProcessingStorageNamespace {
   }
 
   /// Pins the trusted parent and holds a nonblocking, process-shared initialization/migration access.
-  private final class ContainerAccess {
+  private final class StorageContainerAccess {
     /// Parent descriptor anchoring every namespace inspection and change.
     let descriptor: Int32
     /// Permanent regular-file descriptor whose flock serializes new namespace entrypoints.

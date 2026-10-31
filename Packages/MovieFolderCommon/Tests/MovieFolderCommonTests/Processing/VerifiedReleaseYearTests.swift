@@ -21,15 +21,15 @@ private actor ReleaseYearProvider: MovieMetadataProvider {
   /// Whether unseen search pages remain.
   let hasMorePages: Bool
   /// Raw release evidence keyed by requested identity.
-  let dates: MovieReleaseDates
+  let dates: MovieReleaseDatesByID
   /// Optional provider aliases.
-  let aliases: MovieAlternativeTitles
+  let aliases: MovieAlternativeTitlesByID
   /// Returns intentionally malformed map shapes without fixture sanitization.
   let returnsRawDates: Bool
   /// Whether date evidence waits for the test to cancel the processing task.
   let delaysDates: Bool
   /// Continuation for one suspended release endpoint.
-  private var dateContinuation: CheckedContinuation<MovieReleaseDates, Error>?
+  private var dateContinuation: CheckedContinuation<MovieReleaseDatesByID, Error>?
   /// Signals that release evidence has been requested.
   private var dateStarted: CheckedContinuation<Void, Never>?
   /// Controlled date endpoint failure.
@@ -42,7 +42,7 @@ private actor ReleaseYearProvider: MovieMetadataProvider {
   private(set) var searchYears = [Int?]()
 
   /// Creates isolated evidence without external services or credentials.
-  init(movies: [MovieMetadata], dates: MovieReleaseDates = [:], aliases: MovieAlternativeTitles = [:],
+  init(movies: [MovieMetadata], dates: MovieReleaseDatesByID = [:], aliases: MovieAlternativeTitlesByID = [:],
        hasMorePages: Bool = false, returnsRawDates: Bool = false, delaysDates: Bool = false,
        dateError: TMDbError? = .none, posterError: TMDbError? = .none) {
     self.movies = movies
@@ -62,13 +62,13 @@ private actor ReleaseYearProvider: MovieMetadataProvider {
     return MovieSearchResult(movies: movies, hasMorePages: hasMorePages)
   }
 
-  func alternativeTitles(movieID: Int) -> MovieAlternativeTitles {
+  func alternativeTitles(movieID: Int) -> MovieAlternativeTitlesByID {
     requests.append("aliases:\(movieID)")
 
     return [movieID: aliases[movieID] ?? []]
   }
 
-  func releaseDates(movieID: Int) async throws -> MovieReleaseDates {
+  func releaseDates(movieID: Int) async throws -> MovieReleaseDatesByID {
     requests.append("dates:\(movieID)")
     if delaysDates {
       return try await withTaskCancellationHandler {
@@ -120,7 +120,7 @@ private func releaseYearEvents(_ years: [Int], type: Int = 3) throws -> [MovieRe
 }
 
 /// Completed same-ID theatrical events authorize an alternative year after all aliases complete.
-@Test func releaseYearAssessmentUsesAliasesThenDatedEvidence() async throws {
+@Test func releaseYearMatchingUsesAliasesThenDatedEvidence() async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   let movie = releaseYearMovie(42)
@@ -129,12 +129,12 @@ private func releaseYearEvents(_ years: [Int], type: Int = 3) throws -> [MovieRe
     dates: [42: events])
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
     cacheDirectory: fixture.cache)
-  var state = ProcessingState()
+  var state = CollectionProcessingCache()
   let search = MovieSearchResult(movies: [movie, releaseYearMovie(43, year: 1980, title: "Other")], hasMorePages: false)
-  #expect(try await processor.assessMovie(title: "Alien", year: 1980, search: search, state: &state)
+  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980, search: search, state: &state)
     == .matched(movie, releaseDates: events))
   #expect(await provider.requests == ["aliases:42", "aliases:43", "dates:42"])
-  _ = try await processor.assessMovie(title: "Alien", year: 1980, search: search, state: &state)
+  _ = try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980, search: search, state: &state)
   #expect(await provider.requests == ["aliases:42", "aliases:43", "dates:42", "dates:42"])
 }
 
@@ -143,7 +143,7 @@ private func releaseYearEvents(_ years: [Int], type: Int = 3) throws -> [MovieRe
   let exact = releaseYearMovie(1, year: 1980)
   let nearby = releaseYearMovie(2)
   let search = MovieSearchResult(movies: [exact, nearby], hasMorePages: false)
-  let aliases: MovieAlternativeTitles = [1: [], 2: []]
+  let aliases: MovieAlternativeTitlesByID = [1: [], 2: []]
   let matcher = MovieMatcher()
   #expect(matcher.matchMovie(title: "Alien", year: 1980, search: search,
     alternativeTitles: aliases, releaseDates: [2: try releaseYearEvents([1979, 1980])]) == .unresolved(.ambiguous))
@@ -173,16 +173,16 @@ func releaseYearRequiresBothEligibleEventYears(type: Int) throws {
 }
 
 /// Missing or wrong-ID evidence blocks instead of silently excluding a competing nearby movie.
-@Test(arguments: [MovieReleaseDates(), [43: []], [42: [], 43: []]])
-func releaseYearAssessmentRejectsIncompleteEvents(dates: MovieReleaseDates) async throws {
+@Test(arguments: [MovieReleaseDatesByID(), [43: []], [42: [], 43: []]])
+func releaseYearMatchingRejectsIncompleteEvents(dates: MovieReleaseDatesByID) async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   let movie = releaseYearMovie(42)
   let provider = ReleaseYearProvider(movies: [movie], dates: dates, returnsRawDates: true)
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
     cacheDirectory: fixture.cache)
-  var state = ProcessingState()
-  #expect(try await processor.assessMovie(title: "Alien", year: 1980,
+  var state = CollectionProcessingCache()
+  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: [movie], hasMorePages: false), state: &state)
     == .unresolved(.incompleteYearEvidence))
 }
@@ -197,15 +197,15 @@ func releaseYearAssessmentRejectsIncompleteEvents(dates: MovieReleaseDates) asyn
   let provider = ReleaseYearProvider(movies: [movie], dates: [42: events], aliases: [42: [alias]])
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
     cacheDirectory: fixture.cache)
-  var state = ProcessingState()
-  #expect(try await processor.assessMovie(title: "Alien", year: 1980,
+  var state = CollectionProcessingCache()
+  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: [movie], hasMorePages: false), state: &state)
     == .matched(movie, releaseDates: events))
   let six = (1...6).map { releaseYearMovie($0) }
-  #expect(try await processor.assessMovie(title: "Alien", year: 1980,
+  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: six, hasMorePages: false), state: &state)
     == .unresolved(.incompleteTitleEvidence))
-  #expect(try await processor.assessMovie(title: "Alien", year: 1980,
+  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: [movie], hasMorePages: true), state: &state)
     == .unresolved(.incompleteSearch))
   #expect(await provider.requests == ["aliases:42", "dates:42"])
@@ -227,21 +227,21 @@ func releaseYearAssessmentRejectsIncompleteEvents(dates: MovieReleaseDates) asyn
   var state = try releaseYearSavedState(fixture)
   let record = try #require(state.folders["Alien (1980)"])
   #expect(record.movieYear == 1979)
-  #expect(record.acceptedReleaseDates == events)
-  #expect(record.movieYears() == [MovieYear(year: 1979, type: .primaryRelease),
+  #expect(record.acceptedMovieReleaseDates == events)
+  #expect(record.sourceClassifiedMovieYears() == [MovieYear(year: 1979, type: .primaryRelease),
     MovieYear(year: 1979, type: .theatrical), MovieYear(year: 1980, type: .theatrical)])
-  let candidate = try FileSystemService().readCurrentState(ofChild: "Alien (1980)", in: fixture.movies)
+  let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Alien (1980)", in: fixture.movies)
   // The recording adapter leaves the icon absent, so the next run exercises saved-artwork reassignment.
   #expect(try await processor.process(root: fixture.movies).assigned == 1)
   state = try releaseYearSavedState(fixture)
-  #expect(state.folders[candidate.name]?.acceptedReleaseDates == events)
+  #expect(state.folders[candidate.name]?.acceptedMovieReleaseDates == events)
   let source = fixture.cache.appendingPathComponent(MovieFolderProcessor.posterCacheName("/alien.jpg"))
   try FileManager.default.removeItem(at: source)
   #expect(try await processor.process(root: fixture.movies).assigned == 1)
-  #expect(try releaseYearSavedState(fixture).folders[candidate.name]?.acceptedReleaseDates == events)
+  #expect(try releaseYearSavedState(fixture).folders[candidate.name]?.acceptedMovieReleaseDates == events)
 }
 
-/// Successful year assessment survives missing artwork and post-match provider failure.
+/// Successful year matching retains dated provenance through artwork and provider failures.
 @Test(arguments: [true, false])
 func releaseYearProcessingRetainsProvenanceWithoutArtwork(missingPoster: Bool) async throws {
   let fixture = try Fixture()
@@ -255,21 +255,21 @@ func releaseYearProcessingRetainsProvenanceWithoutArtwork(missingPoster: Bool) a
   _ = try await processor.process(root: fixture.movies)
   let record = try #require(try releaseYearSavedState(fixture).folders["Alien (1980)"])
   #expect(record.matchedMovieID == 42)
-  #expect(record.acceptedReleaseDates == events)
+  #expect(record.acceptedMovieReleaseDates == events)
   #expect(record.movieYear == 1979)
   #expect(fixture.assigner.assignmentCount == 0)
 }
 
-/// Historic year-based unresolved outcomes receive one fresh assessment and then become stable.
+/// Older year-based unresolved outcomes receive one fresh matching run and then become stable.
 @Test(arguments: [FolderProcessingReason.noSuitableMovie, .ambiguousMovie])
-func releaseYearHistoricAssessmentRunsOnce(reason: FolderProcessingReason) async throws {
+func releaseYearHistoricUnresolvedResultIsReviewedOnce(reason: FolderProcessingReason) async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Alien (1980)")
-  let candidate = try FileSystemService().readCurrentState(ofChild: "Alien (1980)", in: fixture.movies)
-  let stale = CachedSearch(result: MovieSearchResult(movies: [releaseYearMovie(42)], hasMorePages: false),
+  let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Alien (1980)", in: fixture.movies)
+  let stale = CachedMovieSearch(result: MovieSearchResult(movies: [releaseYearMovie(42)], hasMorePages: false),
     createdAt: Date())
-  var state = ProcessingState(folders: [candidate.name: FolderRecord(fingerprint: candidate.fingerprint,
+  var state = CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(fingerprint: candidate.fingerprint,
     status: .unresolved, retryDate: .distantFuture, matchedMovieID: .none, posterPath: .none,
     processingReason: reason)],
     queries: [try MovieFolderProcessor.queryKey(title: "Alien", year: .none): stale, "keep": stale])
@@ -290,7 +290,7 @@ func releaseYearHistoricAssessmentRunsOnce(reason: FolderProcessingReason) async
 }
 
 /// Five candidates use eleven metadata requests including search; cached aliases cannot bypass the six-ID refusal.
-@Test func releaseYearAssessmentEnforcesElevenRequestCeiling() async throws {
+@Test func releaseYearMatchingEnforcesElevenRequestCeiling() async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Alien (1980)")
@@ -306,7 +306,7 @@ func releaseYearHistoricAssessmentRunsOnce(reason: FolderProcessingReason) async
   #expect(fixture.assigner.assignmentCount == 0)
   var state = try releaseYearSavedState(fixture)
   #expect(state.alternativeTitles.count == 5)
-  #expect(try await processor.assessMovie(title: "Alien", year: 1980,
+  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: movies + [releaseYearMovie(6)], hasMorePages: false), state: &state)
     == .unresolved(.incompleteTitleEvidence))
   #expect(await provider.requests.count == 11)
@@ -322,7 +322,7 @@ func releaseYearProviderFailurePreservesRecoveryAndSafety(error: TMDbError) asyn
   let recovery = ProcessingRecoveryService(
     store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
   let processor = MovieFolderProcessor(persistence: fixture.persistence,
-    provider: RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: "fixture"),
+    provider: RecoveryAwareMovieMetadataProvider(provider: provider, recovery: recovery, credential: "fixture"),
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner, recovery: recovery)
   _ = try await processor.process(root: fixture.movies)
   let record = try #require(try releaseYearSavedState(fixture).folders["Alien (1980)"])
@@ -349,19 +349,19 @@ func releaseYearProviderFailurePreservesRecoveryAndSafety(error: TMDbError) asyn
   let provider = ReleaseYearProvider(movies: [movie], dates: [42: events])
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
     cacheDirectory: fixture.cache)
-  let candidate = try FileSystemService().readCurrentState(ofChild: "Alien (1980)", in: fixture.movies)
+  let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Alien (1980)", in: fixture.movies)
   #expect(try await processor.refreshPoster(root: fixture.movies, child: candidate.name,
     expectedIdentity: candidate.identity) == 42)
-  #expect(try releaseYearSavedState(fixture).folders[candidate.name]?.acceptedReleaseDates == events)
+  #expect(try releaseYearSavedState(fixture).folders[candidate.name]?.acceptedMovieReleaseDates == events)
   #expect(try await processor.refreshPoster(root: fixture.movies, child: candidate.name,
     expectedIdentity: candidate.identity) == 42)
   #expect(await provider.searchYears.count == 1)
   #expect(await provider.searchYears.first == .some(.none))
-  #expect(try releaseYearSavedState(fixture).folders[candidate.name]?.acceptedReleaseDates == events)
+  #expect(try releaseYearSavedState(fixture).folders[candidate.name]?.acceptedMovieReleaseDates == events)
   #expect(try await processor.applyMoviePoster(movie, root: fixture.movies, child: candidate.name,
     expectedIdentity: candidate.identity) == 42)
   let record = try #require(try releaseYearSavedState(fixture).folders[candidate.name])
-  #expect(record.acceptedReleaseDates == .none)
+  #expect(record.acceptedMovieReleaseDates == .none)
   #expect(record.movieYear == 1979)
   #expect(record.movieIdentitySource == .explicitSelection)
 }
@@ -370,11 +370,11 @@ func releaseYearProviderFailurePreservesRecoveryAndSafety(error: TMDbError) asyn
 @Test func releaseYearCompatibilityPreservesOldPrimaryMetadata() throws {
   let movie = releaseYearMovie(42)
   let result = MovieSearchResult(movies: [movie], hasMorePages: false)
-  let cached = CachedSearch(result: result, createdAt: Date())
-  #expect(try JSONDecoder().decode(CachedSearch.self, from: JSONEncoder().encode(cached)).searchResult() == result)
+  let cached = CachedMovieSearch(result: result, createdAt: Date())
+  #expect(try JSONDecoder().decode(CachedMovieSearch.self, from: JSONEncoder().encode(cached)).searchResult() == result)
   let raw = Data("{\"fingerprint\":\"same\",\"status\":\"unresolved\",\"processingReason\":\"noSuitableMovie\"}".utf8)
-  let old = try JSONDecoder().decode(FolderRecord.self, from: raw)
-  #expect(old.acceptedReleaseDates == .none)
+  let old = try JSONDecoder().decode(FolderProcessingCacheRecord.self, from: raw)
+  #expect(old.acceptedMovieReleaseDates == .none)
   #expect(old.savedMatchingRulesVersion == .none)
   #expect(movie.movieYear == MovieYear(year: 1979, type: .primaryRelease))
 }
@@ -396,25 +396,25 @@ func releaseYearProviderFailurePreservesRecoveryAndSafety(error: TMDbError) asyn
   let repair = MovieFolderProcessor(persistence: fixture.persistence, provider: failing,
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner)
   #expect(try await repair.process(root: fixture.movies).transientFailures == 1)
-  #expect(try releaseYearSavedState(fixture).folders["Alien (1980)"]?.acceptedReleaseDates == events)
+  #expect(try releaseYearSavedState(fixture).folders["Alien (1980)"]?.acceptedMovieReleaseDates == events)
   #expect(await failing.requests == ["poster"])
 }
 
-/// Fresh exact-year reassessment retains current-identity provenance without importing another fingerprint's events.
+/// Fresh exact-year matching retains current-identity provenance without importing another fingerprint's events.
 @Test(arguments: [true, false], [true, false])
-func releaseYearFreshExactAssessmentRetainsOnlyCurrentIdentity(refresh: Bool, sameFingerprint: Bool) async throws {
+func releaseYearFreshExactMatchRetainsOnlyCurrentIdentity(refresh: Bool, sameFingerprint: Bool) async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Alien (1980)")
-  let candidate = try FileSystemService().readCurrentState(ofChild: "Alien (1980)", in: fixture.movies)
+  let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Alien (1980)", in: fixture.movies)
   let events = try releaseYearEvents([1979, 1980])
-  let saved = FolderRecord(fingerprint: sameFingerprint ? candidate.fingerprint : "obsolete", status: .processed,
+  let saved = FolderProcessingCacheRecord(fingerprint: sameFingerprint ? candidate.fingerprint : "obsolete", status: .processed,
     matchedMovieID: 42, posterPath: "/alien.jpg", movieTitle: "Alien", movieYear: 1979,
-    movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true, acceptedReleaseDates: events)
+    movieIdentitySource: .conservativeMatch, requiresAutomaticReview: true, acceptedMovieReleaseDates: events)
   do {
     let access = try #require(try fixture.persistence.acquireAccess(for:
       MovieFolderProcessor.processingStateKey(for: fixture.movies)))
-    try access.write(JSONEncoder().encode(ProcessingState(folders: [candidate.name: saved])))
+    try access.write(JSONEncoder().encode(CollectionProcessingCache(folders: [candidate.name: saved])))
   }
   let provider = ReleaseYearProvider(movies: [releaseYearMovie(42, year: 1980)])
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
@@ -426,13 +426,13 @@ func releaseYearFreshExactAssessmentRetainsOnlyCurrentIdentity(refresh: Bool, sa
     #expect(try await processor.process(root: fixture.movies).assigned == 1)
   }
   let record = try #require(try releaseYearSavedState(fixture).folders[candidate.name])
-  #expect(record.acceptedReleaseDates == (sameFingerprint ? events : []))
+  #expect(record.acceptedMovieReleaseDates == (sameFingerprint ? events : []))
   #expect(record.movieYear == 1980)
   #expect(await provider.requests == ["search", "aliases:42", "poster"])
 }
 
 /// Cancelling during dated evidence never completes a matching revision or begins artwork.
-@Test func releaseYearCancellationLeavesAssessmentIncomplete() async throws {
+@Test func releaseYearCancellationDoesNotSaveMatchingRulesVersion() async throws {
   let fixture = try Fixture()
   defer { try? FileManager.default.removeItem(at: fixture.base) }
   try fixture.addFolder("Alien (1980)")
@@ -440,7 +440,7 @@ func releaseYearFreshExactAssessmentRetainsOnlyCurrentIdentity(refresh: Bool, sa
   let recovery = ProcessingRecoveryService(
     store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
   let processor = MovieFolderProcessor(persistence: fixture.persistence,
-    provider: RecoveryMovieMetadataProvider(provider: provider, recovery: recovery, credential: "fixture"),
+    provider: RecoveryAwareMovieMetadataProvider(provider: provider, recovery: recovery, credential: "fixture"),
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner, recovery: recovery)
   let task = Task { try await processor.process(root: fixture.movies) }
   await provider.waitForDateRequest()
@@ -453,10 +453,10 @@ func releaseYearFreshExactAssessmentRetainsOnlyCurrentIdentity(refresh: Bool, sa
 }
 
 /// Reads actual persisted operational records after a processing attempt releases its lease.
-private func releaseYearSavedState(_ fixture: Fixture) throws -> ProcessingState {
+private func releaseYearSavedState(_ fixture: Fixture) throws -> CollectionProcessingCache {
   let access = try #require(try fixture.persistence.acquireAccess(for:
     MovieFolderProcessor.processingStateKey(for: fixture.movies)))
   let bytes = try #require(try access.read())
 
-  return try JSONDecoder().decode(ProcessingState.self, from: bytes)
+  return try JSONDecoder().decode(CollectionProcessingCache.self, from: bytes)
 }

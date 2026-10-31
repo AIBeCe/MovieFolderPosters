@@ -28,7 +28,7 @@ struct MoviePosterActionServiceTests {
   @Test func activityIdentifiesTheCollectionFolderAndMovie() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let activityHistoryService = ActivityServiceFake()
+    let activityHistoryService = MovieFolderActivityServiceFake()
     let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/chosen.png")
     _ = try await fixture.service(activity: activityHistoryService).applyPoster(movie, for: fixture.request)
@@ -43,7 +43,7 @@ struct MoviePosterActionServiceTests {
   @Test func missingCollectionContextRecordsOnlyUnlinkedActivity() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let activityHistoryService = ActivityServiceFake()
+    let activityHistoryService = MovieFolderActivityServiceFake()
     let request = MoviePosterRequest(rootID: UUID(), childName: fixture.request.childName,
       identity: fixture.request.identity, action: .refresh)
     await #expect(throws: MoviePosterActionServiceError.directoryNotConfigured) {
@@ -69,7 +69,7 @@ struct MoviePosterActionServiceTests {
 
     #expect(try await service.removePoster(for: fixture.request))
     #expect(try FileSystemService().isPosterSuppressed(toChild: fixture.request.childName, in: fixture.movies))
-    #expect(try !FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
+    #expect(try !FileSystemService().readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon)
   }
 
@@ -113,7 +113,7 @@ struct MoviePosterActionServiceTests {
     ]
     initial.isInventoryComplete = true
     initial.inspectedAt = Date()
-    initial.currentRun?.state = .partial
+    initial.currentRun?.runState = .partial
     _ = try fixture.processing.commit(initial, expectedRevision: initial.revision)
     let movieMetadataProvider = ActionProvider()
     let service = fixture.service(movieMetadataProvider: movieMetadataProvider)
@@ -132,8 +132,8 @@ struct MoviePosterActionServiceTests {
       #expect(!stopSelection)
     }
     let saved = try #require(try fixture.processing.read(rootID: root.id))
-    #expect(saved.folders.first { $0.name == fixture.request.childName }?.isVerifiedDone == true)
-    #expect(saved.folders.first { $0.name == unrelated.name } == unrelated)
+    #expect(saved.folders.first { $0.folderName == fixture.request.childName }?.isVerifiedDone == true)
+    #expect(saved.folders.first { $0.folderName == unrelated.folderName } == unrelated)
     #expect(saved.calculateCounts().done == 1)
     #expect(saved.calculateCounts().notFound == 1)
     #expect(saved.calculateCounts().total == 2)
@@ -180,7 +180,7 @@ struct MoviePosterActionServiceTests {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let service = MoviePosterActionService(
-      credentials: ActionCredentials(token: .none), activity: ActivityServiceFake(), environment: fixture)
+      credentials: ActionCredentials(token: .none), activity: MovieFolderActivityServiceFake(), environment: fixture)
     #expect(try await service.matchedMovieID(for: fixture.request) == .none)
   }
 
@@ -280,7 +280,7 @@ struct MoviePosterActionServiceTests {
   func invalidSelectionRecordsFailure(_ identifier: Int) async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let movie = MovieMetadata(id: identifier, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: identifier == 7 ? "  " : "/poster.png")
     let service = fixture.service(activity: activity)
@@ -292,7 +292,7 @@ struct MoviePosterActionServiceTests {
     #expect(events.first?.activityGroupID == events.last?.activityGroupID)
     #expect(events.last?.failure?.reason == .invalidSelection)
     #expect(events.last?.text.contains("Dune (2021)") == true)
-    #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
+    #expect(try FileSystemService().readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
   }
 
@@ -301,7 +301,7 @@ struct MoviePosterActionServiceTests {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let movieMetadataProvider = ActionProvider()
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let service = fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
     let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/chosen.png")
@@ -338,7 +338,7 @@ struct MoviePosterActionServiceTests {
   @Test func cancelledRefreshRecordsCancellation() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let movieMetadataProvider = ActionProvider(cancels: true)
     await #expect(throws: CancellationError.self) {
       try await fixture.service(movieMetadataProvider: movieMetadataProvider, activity: activity)
@@ -346,7 +346,7 @@ struct MoviePosterActionServiceTests {
     }
     #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
       == [.started, .cancelled])
-    #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
+    #expect(try FileSystemService().readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
   }
 
@@ -385,7 +385,7 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
       identity: try fileSystem.persistentDirectoryIdentity(at: movies))
     try repository.update { $0.directories = [directory] }
     request = MoviePosterRequest(rootID: directory.id, childName: "Dune (2021)",
-      identity: try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: movies).identity, action: .change)
+      identity: try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: movies).identity, action: .change)
   }
 
   func makeDirectoryBookmark(for directory: URL) throws -> Data {
@@ -398,7 +398,7 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   /// Composes the real action service without external storage, credentials, or networking.
   func service(token: String? = "fixture-token", movieMetadataProvider: (any MovieMetadataProvider)? = .none,
                activity: (any MovieFolderActivityServicing)? = .none) -> MoviePosterActionService {
-    MoviePosterActionService(credentials: ActionCredentials(token: token), activity: activity ?? ActivityServiceFake(),
+    MoviePosterActionService(credentials: ActionCredentials(token: token), activity: activity ?? MovieFolderActivityServiceFake(),
       environment: self, movieMetadataProvider: movieMetadataProvider ?? ActionProvider())
   }
 
@@ -439,8 +439,8 @@ private actor ActionProvider: MovieMetadataProvider {
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searches.append("\(title):\(year.map(String.init) ?? "none")")
@@ -485,8 +485,8 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
 
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { [movieID: []] }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async -> MovieSearchResult {
     hasStarted = true
@@ -521,7 +521,7 @@ struct MoviePosterActionServiceConfigurationTests {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let movieMetadataProvider = ActionProvider(repository: fixture.repository, changesDuringDownload: true)
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/chosen.png")
     do {
@@ -529,7 +529,7 @@ struct MoviePosterActionServiceConfigurationTests {
         .applyPoster(movie, for: fixture.request)
       Issue.record("Artwork from an obsolete configuration must not mutate the folder")
     } catch ConfigurationError.configurationChanged {}
-    #expect(try FileSystemService().readCurrentState(ofChild: fixture.request.childName, in: fixture.movies)
+    #expect(try FileSystemService().readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
     #expect(try await activity.entries().map(\.event).filter { $0.folderResult == .none }.map(\.status)
       == [.started, .failed])

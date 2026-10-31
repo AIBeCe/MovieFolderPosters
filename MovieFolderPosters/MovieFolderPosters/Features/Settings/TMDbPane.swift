@@ -24,7 +24,7 @@ protocol CredentialSettingsDelegate: AnyObject {
 
 /// Presents secure credential actions and a local matching-data preview.
 @MainActor
-final class TMDbPane: SettingsPaneController, CredentialSettingsSubmitting, NSTextFieldDelegate {
+final class TMDbPane: SettingsTabViewController, CredentialSettingsSubmitting, NSTextFieldDelegate {
   /// Model retaining finite credential operations and non-secret presentation state.
   private let viewModel: ConfigurationViewModel
   /// Coordinator owning confirmation sheets and external navigation.

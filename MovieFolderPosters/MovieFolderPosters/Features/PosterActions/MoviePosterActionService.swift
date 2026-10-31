@@ -89,6 +89,8 @@ nonisolated protocol MoviePosterActionEnvironment: Sendable {
   func appGroupContainerURL() throws -> URL
   /// Opens configuration used for every current-context check.
   func makeConfigurationRepository() throws -> ConfigurationRepository
+  /// Opens a persistence store using this environment's storage authorization.
+  func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore
   /// Opens the host's private bookmark store.
   func makePrivateAuthorizationStore() throws -> PersistenceStore
   /// Opens authoritative operation outcomes.
@@ -99,20 +101,31 @@ nonisolated protocol MoviePosterActionEnvironment: Sendable {
 
 /// Derives an isolated durable gate from injected storage instead of reaching the real App Group.
 extension MoviePosterActionEnvironment {
+  /// Uses ordinary persistence access for environments without a separate path authorization root.
+  func makePersistenceStore(directory: URL, maximumRecordBytes: Int? = .none) throws -> PersistenceStore {
+    try PersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
+  }
+
   func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
-    ProcessingRecoveryService(store: try PersistenceStore(
+    ProcessingRecoveryService(store: try makePersistenceStore(
       directory: appGroupContainerURL().appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
   }
 }
 
 /// Uses signed application storage for normal host actions.
 nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironment {
+  /// Resolves the same process-specific store authorization as configuration and history services.
+  private let storageLocations = MovieFolderSystemStorageLocations()
+
   func makeDirectoryBookmark(for directory: URL) throws -> Data {
     try FileSystemService().makeDirectoryBookmark(for: directory)
   }
   func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
   func makeConfigurationRepository() throws -> ConfigurationRepository {
     try MovieFolderEnvironment.makeConfigurationRepository()
+  }
+  func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore {
+    try storageLocations.makePersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
   }
   func makePrivateAuthorizationStore() throws -> PersistenceStore {
     try MovieFolderEnvironment.makePrivateAuthorizationStore()
@@ -295,7 +308,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// Preserves host action failure categories without retaining arbitrary error descriptions.
   /// - Parameter error: The error raised by the host poster action.
   /// - Returns: A safe failure category and stage for activity history.
-  private func actionFailureEvidence(for error: any Error) -> FolderProcessingFailure {
+  private func actionFailureEvidence(for error: any Error) -> AutomaticFolderProcessingFailure {
     guard let actionError = error as? MoviePosterActionServiceError else {
       return MovieFolderActivityLogEvent.failureEvidence(for: error)
     }
@@ -309,7 +322,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     case .invalidQuery: .invalidQuery
     }
 
-    return FolderProcessingFailure(reason: reason, stage: .validateIdentity, occurredAt: Date())
+    return AutomaticFolderProcessingFailure(reason: reason, stage: .validateIdentity, occurredAt: Date())
   }
 
   /// Validates the query and searches TMDb under the folder's current authorization.
@@ -353,7 +366,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
           language: effectiveLanguage)
         try Task.checkCancellation()
         try checkConfigurationHasNotChanged(context)
-        guard let current = try? fileSystem.readCurrentState(ofChild: request.childName, in: context.root),
+        guard let current = try? fileSystem.readCurrentFolderCandidate(ofChild: request.childName, in: context.root),
           current.identity == request.identity
         else { throw MoviePosterActionServiceError.childChanged }
 
@@ -420,7 +433,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   private func performRemovePoster(for request: MoviePosterRequest) async throws -> Bool {
     try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
-      let processor = try makeProcessor(for: context, movieMetadataProvider: MissingTokenProvider())
+      let processor = try makeProcessor(for: context, movieMetadataProvider: MissingTMDbTokenProvider())
       try checkConfigurationHasNotChanged(context, requiresActiveCollection: false)
 
       return try await processor.removePoster(
@@ -438,7 +451,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     try await withExclusiveAction {
       try await withAuthorizedRoot(request) { context in
         try Task.checkCancellation()
-        let processor = try makeProcessor(for: context, movieMetadataProvider: MissingTokenProvider())
+        let processor = try makeProcessor(for: context, movieMetadataProvider: MissingTMDbTokenProvider())
 
         return try await processor.matchedMovieID(
           root: context.root, child: request.childName,
@@ -456,13 +469,13 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// - Throws: Folder validation, provider, persistence, cancellation, or action errors.
   private func withAuthorizedRoot<Value: Sendable>(
     _ request: MoviePosterRequest,
-    operation: (AuthorizedRoot) async throws -> Value
+    operation: (AuthorizedCollectionRoot) async throws -> Value
   ) async throws -> Value {
     let authorized = try await MovieFolderAuthorization(environment: environment).acquire(rootID: request.rootID)
     let rootAccess = authorized.rootAccess
-    let child: FolderCandidate
+    let child: MovieFolderCandidate
     do {
-      child = try fileSystem.readCurrentState(ofChild: request.childName, in: rootAccess.url)
+      child = try fileSystem.readCurrentFolderCandidate(ofChild: request.childName, in: rootAccess.url)
     } catch {
       throw MoviePosterActionServiceError.childChanged
     }
@@ -470,7 +483,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       throw MoviePosterActionServiceError.childChanged
     }
 
-    let context = AuthorizedRoot(
+    let context = AuthorizedCollectionRoot(
       configuration: authorized.configuration, directory: authorized.directory, root: authorized.root,
       child: child, authorizationAccess: authorized.authorizationAccess,
       rootAccess: rootAccess, rootIdentity: authorized.rootIdentity)
@@ -490,7 +503,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - requiresActiveCollection: Whether the collection must currently be included in processing.
   /// - Throws: An action error if the root identity has changed.
   private func checkConfigurationHasNotChanged(
-    _ context: AuthorizedRoot,
+    _ context: AuthorizedCollectionRoot,
     requiresActiveCollection: Bool = true
   ) throws {
     let persistenceAccess = try environment.makeConfigurationRepository().configurationAccessForIconChange(
@@ -520,7 +533,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     let accessToken = try TMDbAccessToken(token)
     let recovery = try environment.makeProcessingRecoveryService()
     if let movieMetadataProvider {
-      return RecoveryMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token)
+      return RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token)
     }
 
     #if DEBUG
@@ -531,7 +544,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         }
         let transport = StubTMDbTransport(posterData: try Data(contentsOf: posterURL))
 
-        return RecoveryMovieMetadataProvider(
+        return RecoveryAwareMovieMetadataProvider(
           provider: TMDbClient(token: accessToken, transport: transport), recovery: recovery, credential: token)
       }
     #endif
@@ -540,12 +553,12 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
       networkHistoryService: networkHistory ?? MovieFolderEnvironment.makeNetworkHistoryService(),
       collectionID: collectionID)
 
-    return RecoveryMovieMetadataProvider(
+    return RecoveryAwareMovieMetadataProvider(
       provider: TMDbClient(token: accessToken, requestDelegate: requestRecorder), recovery: recovery, credential: token)
   }
 
   /// Captures the already authorized collection generation for authoritative action results.
-  private func processingContext(for context: AuthorizedRoot) -> CollectionProcessingContext {
+  private func processingContext(for context: AuthorizedCollectionRoot) -> CollectionProcessingContext {
     CollectionProcessingContext(
       rootID: context.directory.id, rootIdentity: context.rootIdentity,
       authorizationVersion: context.directory.authorizationVersion,
@@ -566,7 +579,7 @@ private extension MoviePosterActionService {
   /// - Returns: A processor configured for the current poster appearance.
   /// - Throws: A storage or configuration error when processor dependencies are unavailable.
   func makeProcessor(
-    for context: AuthorizedRoot,
+    for context: AuthorizedCollectionRoot,
     movieMetadataProvider: any MovieMetadataProvider
   ) throws -> MovieFolderProcessor {
     let container = try environment.appGroupContainerURL()
@@ -586,10 +599,11 @@ private extension MoviePosterActionService {
     #endif
 
     return MovieFolderProcessor(
-      persistence: try PersistenceStore(directory: recordDirectory),
+      persistence: try environment.makePersistenceStore(directory: recordDirectory, maximumRecordBytes: .none),
       provider: movieMetadataProvider,
       cacheDirectory: container.appendingPathComponent("Posters"),
-      coordinationStore: try PersistenceStore(directory: coordinationDirectory),
+      processingLockStore: try environment.makePersistenceStore(
+        directory: coordinationDirectory, maximumRecordBytes: .none),
       processingVerifier: processingVerifier,
       appearance: context.configuration.posterAppearance,
       processingStore: try environment.makeCollectionProcessingStore(),
@@ -627,7 +641,7 @@ nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFol
   /// - Returns: The configuration access retained through change.
   /// - Throws: Configuration access failures or an action error if the root identity changed.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     let persistenceAccess = try repository.configurationAccessForIconChange(
       for: directory, childIdentity: candidate.identity, requiresActiveCollection: change != .posterRemoval,
@@ -642,7 +656,7 @@ nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFol
 }
 
 /// Retains validated folder authorization and identity for one poster operation.
-private struct AuthorizedRoot: Sendable {
+private struct AuthorizedCollectionRoot: Sendable {
   /// The configuration processing state under which access was authorized.
   let configuration: DirectoryConfiguration
   /// The configured collection corresponding to the request.
@@ -650,17 +664,17 @@ private struct AuthorizedRoot: Sendable {
   /// The currently authorized collection URL.
   let root: URL
   /// The validated child folder processing state.
-  let child: FolderCandidate
+  let child: MovieFolderCandidate
   /// Cross-process access protecting the stored folder authorization.
   let authorizationAccess: PersistenceAccess
   /// Security-scoped access retained while processing runs.
-  let rootAccess: DirectoryAccess
+  let rootAccess: AuthorizedDirectoryAccess
   /// Filesystem identity used to detect root replacement.
   let rootIdentity: String
 }
 
 /// Provider used by operations that inspect local assignments without TMDb access.
-private struct MissingTokenProvider: MovieMetadataProvider {
+private struct MissingTMDbTokenProvider: MovieMetadataProvider {
   /// Rejects search calls because this provider intentionally has no token.
   ///
   /// - Parameters:
@@ -668,8 +682,8 @@ private struct MissingTokenProvider: MovieMetadataProvider {
   ///   - year: The optional release year.
   /// - Throws: `TMDbError.missingToken` for every search request.
   /// Refuses release evidence when no credential is configured.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { throw TMDbError.missingToken }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles { throw TMDbError.missingToken }
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { throw TMDbError.missingToken }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { throw TMDbError.missingToken }
 
   func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     throw TMDbError.missingToken

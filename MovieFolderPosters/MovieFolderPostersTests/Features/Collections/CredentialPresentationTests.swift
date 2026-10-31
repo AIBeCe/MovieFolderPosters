@@ -13,7 +13,7 @@ struct CredentialPresentationTests {
   /// Catches using a general configuration refresh for a read-only credential test.
   @Test func savedTokenTestDoesNotRefreshCollections() async {
     let service = CredentialPresentationService()
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     await model.testSavedCredential()
     #expect(model.credentialMessage == "TMDb accepted the saved token.")
@@ -25,7 +25,7 @@ struct CredentialPresentationTests {
   @Test func cancellationRetainsAdmissionUntilTheServiceReturns() async {
     let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate)
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     let task = Task { await model.testSavedCredential() }
     await gate.waitUntilEntered()
@@ -42,7 +42,7 @@ struct CredentialPresentationTests {
   @Test func invalidatedTestDiscardsLateSuccessEvenWhenTheServiceIgnoresCancellation() async {
     let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate, observesCancellation: false)
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     let task = Task { await model.testSavedCredential() }
     await gate.waitUntilEntered()
@@ -56,7 +56,7 @@ struct CredentialPresentationTests {
   @Test func paneCancelControlDrainsTheSavedTokenRequest() async throws {
     let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate)
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     let settings = SettingsViewController(viewModel: model, appearanceSettings: AppAppearanceSettings())
     settings.selectedTabViewItemIndex = 2
@@ -82,7 +82,7 @@ struct CredentialPresentationTests {
   /// Catches unsafe provider text being presented or recorded after a credential failure.
   @Test func credentialFailureUsesFixedSafeCopy() async throws {
     let service = CredentialPresentationService(failure: TestServiceError(message: "private-token-and-path"))
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let model = ConfigurationViewModel(service: service, activity: activity)
     await model.reloadCredentialState()
     await model.testSavedCredential()
@@ -94,7 +94,7 @@ struct CredentialPresentationTests {
   @Test(arguments: CredentialFailureCase.allCases)
   func credentialFailuresUseSpecificSafeCopy(_ failure: CredentialFailureCase) async {
     let service = CredentialPresentationService(failure: failure.error)
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     await model.testSavedCredential()
     #expect(model.credentialMessage == failure.message)
@@ -104,7 +104,7 @@ struct CredentialPresentationTests {
   /// A credential-state read failure produces fixed status without retaining stale availability.
   @Test func credentialStateReadFailureUsesSafeCopy() async {
     let service = CredentialPresentationService(credentialStateFailure: TestServiceError(message: "private details"))
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     #expect(model.credentialState == .none)
     #expect(model.credentialMessage == "Could not read credential state. Reopen Settings to try again.")
@@ -116,7 +116,7 @@ struct CredentialPresentationTests {
     let gate = AsyncTaskGate()
     let newestRevision = UUID()
     let service = CredentialPresentationService(firstStateGate: gate, revision: newestRevision)
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     let earlierRead = Task { await model.reloadCredentialState() }
     await gate.waitUntilEntered()
     await model.reloadCredentialState()
@@ -129,7 +129,7 @@ struct CredentialPresentationTests {
   @Test func changedConfigurationInvalidatesAnOutstandingTest() async {
     let gate = AsyncTaskGate()
     let service = CredentialPresentationService(gate: gate)
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     let task = Task { await model.testSavedCredential() }
     await gate.waitUntilEntered()
@@ -143,7 +143,7 @@ struct CredentialPresentationTests {
   /// Delayed notifications from this host must not erase the outcome of its committed change.
   @Test func delayedChangeNotificationPreservesTheCurrentOutcome() async {
     let service = CredentialPresentationService()
-    let model = ConfigurationViewModel(service: service, activity: ActivityServiceFake())
+    let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await model.reloadCredentialState()
     await model.saveCredential("synthetic-candidate")
     model.invalidateCredentialState()

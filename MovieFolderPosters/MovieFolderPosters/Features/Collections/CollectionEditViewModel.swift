@@ -78,9 +78,11 @@ import MovieFolderCommon
     delegate?.collectionEditViewModelDidChange(self)
     defer { isBusy = false; delegate?.collectionEditViewModelDidChange(self) }
     do {
-      try await service.updateCollection(identifier, displayName: displayName,
+      try await service.updateCollection(identifier, update: CollectionConfigurationUpdate(
+        displayName: displayName,
         movieMatchingConfiguration: inheritsApplicationConfiguration ? .none : overrideConfiguration,
-        processingConfiguration: processingConfiguration, usesPrivateHistory: usesPrivateHistory, expected: savedCollectionState)
+        processingConfiguration: processingConfiguration, usesPrivateHistory: usesPrivateHistory),
+        expected: savedCollectionState)
 
       return true
     } catch {

@@ -9,7 +9,7 @@ public protocol DirectoryObservationSchedulerDelegate: AnyObject, Sendable {
   ///
   /// - Parameter scheduler: The scheduler requesting configuration or root processing.
   /// - Returns: The currently authorized roots.
-  func directoryObservationSchedulerLoadRoots(_ scheduler: DirectoryObservationScheduler) async -> Set<URL>
+  func directoryObservationSchedulerLoadRoots(_ scheduler: FinderDirectoryObservationScheduler) async -> Set<URL>
   /// Processes one observed root using the currently loaded configuration.
   ///
   /// - Parameters:
@@ -17,11 +17,11 @@ public protocol DirectoryObservationSchedulerDelegate: AnyObject, Sendable {
   ///   - url: The observed collection root URL.
   /// - Returns: The next eligible retry deadline while this root remains observed.
   /// - Throws: Cancellation or a failure reported by the configured processing collaborator.
-  func directoryObservationScheduler(_ scheduler: DirectoryObservationScheduler, process url: URL) async throws -> Date?
+  func directoryObservationScheduler(_ scheduler: FinderDirectoryObservationScheduler, process url: URL) async throws -> Date?
 }
 
 /// Serializes observed-root work and drains cancelled work before loading new configuration.
-public actor DirectoryObservationScheduler {
+public actor FinderDirectoryObservationScheduler {
   /// The strongly retained work collaborator, which can safely cross actor boundaries.
   private let delegate: any DirectoryObservationSchedulerDelegate
   /// The currently authorized roots, used for scheduling.

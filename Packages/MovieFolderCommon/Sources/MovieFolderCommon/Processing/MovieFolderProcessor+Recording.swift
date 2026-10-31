@@ -27,7 +27,7 @@ extension MovieFolderProcessor {
         MovieFolderActivityLogEvent.failureEvidence(for: error, stage: .persist, occurredAt: now()))
       throw error
     } catch {
-      activity?.appendPersistenceFailure(FolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
+      activity?.appendPersistenceFailure(AutomaticFolderProcessingFailure(reason: .storage, stage: .persist, occurredAt: now()))
       // Storage errors must escape folder recovery before any subsequent icon change.
       throw CollectionProcessingError.unavailable
     }
@@ -35,13 +35,13 @@ extension MovieFolderProcessor {
 
   /// Marks unfinished work conservatively when cancellation or an error exits the operation.
   func interruptUnfinishedProcessing(_ processingState: inout CollectionProcessingState?, child: String? = .none) {
-    guard processingState?.currentRun?.state == .running else { return }
+    guard processingState?.currentRun?.runState == .running else { return }
     if let folders = processingState?.folders {
       processingState?.folders = folders.map { record in
-        guard record.state == .pending, child == .none || record.name == child else { return record }
+        guard record.processingState == .pending, child == .none || record.folderName == child else { return record }
         var uncertain = record
-        uncertain.state = .uncertain
-        uncertain.reason = .interrupted
+        uncertain.processingState = .uncertain
+        uncertain.processingReason = .interrupted
 
         return uncertain
       }
@@ -51,16 +51,16 @@ extension MovieFolderProcessor {
 
   /// Rechecks installed evidence after a failed action while keeping its failed attempt separate.
   func recoverManualProcessing(
-    _ processingState: inout CollectionProcessingState?, root: URL, child: String, saved: FolderRecord?
+    _ processingState: inout CollectionProcessingState?, root: URL, child: String, saved: FolderProcessingCacheRecord?
   ) {
-    guard processingState?.currentRun?.state == .running else { return }
-    if let candidate = try? fileSystem.readCurrentState(ofChild: child, in: root),
+    guard processingState?.currentRun?.runState == .running else { return }
+    if let candidate = try? fileSystem.readCurrentFolderCandidate(ofChild: child, in: root),
       var record = try? folderProcessingResult(candidate, root: root, saved: saved) {
-      record.lastFailure = FolderProcessingFailure(
+      record.lastFailure = AutomaticFolderProcessingFailure(
         reason: Task.isCancelled ? .cancelled : .unknown, stage: .unknown, occurredAt: now())
-      if record.state != .done && record.state != .preserved && record.state != .suppressed {
-        record.state = .uncertain
-        record.reason = .interrupted
+      if record.processingState != .done && record.processingState != .preserved && record.processingState != .suppressed {
+        record.processingState = .uncertain
+        record.processingReason = .interrupted
       }
       try? recordFolderProcessing(record, in: &processingState)
     }
@@ -73,7 +73,7 @@ extension MovieFolderProcessor {
     activity: ProcessorActivityLog? = .none
   ) throws {
     guard processingState != .none else { return }
-    processingState?.currentRun?.state = state
+    processingState?.currentRun?.runState = state
     processingState?.currentRun?.endedAt = now()
     if state == .completed,
       processingState?.currentRun?.action == .automatic,
@@ -90,11 +90,11 @@ extension MovieFolderProcessor {
     in processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog? = .none
   ) throws {
     guard processingState != .none else { return }
-    guard let index = processingState?.folders.firstIndex(where: { $0.name == record.name }) else {
+    guard let index = processingState?.folders.firstIndex(where: { $0.folderName == record.folderName }) else {
       throw CollectionProcessingError.invalidState
     }
     processingState?.folders[index] = record
-    let assessed = processingState?.folders.lazy.filter { $0.state != .pending }.count ?? .zero
+    let assessed = processingState?.folders.lazy.filter { $0.processingState != .pending }.count ?? .zero
     if assessed.isMultiple(of: 32) { try commitProcessingState(&processingState, activity: activity) }
   }
 
@@ -105,11 +105,11 @@ extension MovieFolderProcessor {
   ) {
     guard let current = processingState else { return }
     processingState?.folders = current.folders.map { record in
-      guard record.state == .pending, child == .none || record.name == child else { return record }
+      guard record.processingState == .pending, child == .none || record.folderName == child else { return record }
       var deferred = record
-      deferred.state = .deferred
-      deferred.reason = .retryDeferred
-      deferred.retryAt = date
+      deferred.processingState = .deferred
+      deferred.processingReason = .retryDeferred
+      deferred.nextRetryAt = date
       deferred.assessedAt = now()
       activity?.append(deferred)
 
@@ -119,7 +119,7 @@ extension MovieFolderProcessor {
 
   /// Converts conservative matching evidence to its exclusive persisted state.
   func unresolvedFolderResult(
-    _ candidate: FolderCandidate, reason: FolderProcessingReason, movie: MovieMetadata? = .none
+    _ candidate: MovieFolderCandidate, reason: FolderProcessingReason, movie: MovieMetadata? = .none
   ) -> FolderProcessingRecord {
     let state: FolderProcessingState
     switch reason {
@@ -139,20 +139,20 @@ extension MovieFolderProcessor {
   }
 
   /// Preserves the original unresolved reason while existing retry configuration defers another provider request.
-  func cachedFolderResult(_ candidate: FolderCandidate, saved: FolderRecord) -> FolderProcessingRecord {
+  func cachedFolderResult(_ candidate: MovieFolderCandidate, saved: FolderProcessingCacheRecord) -> FolderProcessingRecord {
     var record = unresolvedFolderResult(candidate, reason: saved.processingReason ?? .retryDeferred)
     if saved.status == .transientFailure {
-      record.state = .failed
-      record.reason = saved.processingReason ?? .processingFailure
+      record.processingState = .failed
+      record.processingReason = saved.processingReason ?? .processingFailure
       record.lastFailure = saved.lastFailure
     } else if saved.processingReason == .none {
-      record.state = .deferred
+      record.processingState = .deferred
     }
-    record.retryAt = saved.blocksAutomaticRecovery || saved.processingReason == .authentication
+    record.nextRetryAt = saved.blocksAutomaticRecovery || saved.processingReason == .authentication
       ? .none : saved.retryDate
-    record.movieID = saved.matchedMovieID
-    record.movieTitle = saved.movieTitle
-    record.movieYear = saved.movieYear
+    record.matchedMovieID = saved.matchedMovieID
+    record.matchedMovieTitle = saved.movieTitle
+    record.matchedMovieYear = saved.movieYear
     record.movieIdentitySource = saved.movieIdentitySource ?? (saved.matchedMovieID == .none ? .none : .savedDecision)
 
     return record
@@ -160,7 +160,7 @@ extension MovieFolderProcessor {
 
   /// Records a failure without embedding provider messages or private paths.
   func failedFolderResult(
-    _ candidate: FolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = .none,
+    _ candidate: MovieFolderCandidate, stage: FolderProcessingStage, movie: MovieMetadata? = .none,
     reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable
   ) -> FolderProcessingRecord {
     FolderProcessingRecord(
@@ -172,7 +172,7 @@ extension MovieFolderProcessor {
       assessedAt: now(),
       retryAt: reason == .authentication
         ? .none : now().addingTimeInterval(configuration.transientFailureRetryInterval),
-      lastFailure: FolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
+      lastFailure: AutomaticFolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       fingerprint: candidate.fingerprint)
   }
 
@@ -198,7 +198,7 @@ extension MovieFolderProcessor {
 
   /// Verifies current ownership instead of treating an assignment attempt or cached decision as success.
   func folderProcessingResult(
-    _ candidate: FolderCandidate, root: URL, saved: FolderRecord?
+    _ candidate: MovieFolderCandidate, root: URL, saved: FolderProcessingCacheRecord?
   ) throws -> FolderProcessingRecord {
     let inspection = try fileSystem.inspectPoster(
       toChild: candidate.name, in: root, expectedIdentity: candidate.identity)
@@ -212,22 +212,22 @@ extension MovieFolderProcessor {
     case .changed: record.ownership = .changed
     }
     if let saved, saved.fingerprint == candidate.fingerprint {
-      record.movieID = saved.matchedMovieID
-      record.movieTitle = saved.movieTitle
-      record.movieYear = saved.movieYear
+      record.matchedMovieID = saved.matchedMovieID
+      record.matchedMovieTitle = saved.movieTitle
+      record.matchedMovieYear = saved.movieYear
       record.movieIdentitySource = saved.movieIdentitySource ?? (saved.matchedMovieID == .none ? .none : .savedDecision)
     }
     if inspection.isSuppressed {
-      record.state = .suppressed
-      record.reason = .policySuppressed
-    } else if record.ownership == .owned, (record.movieID ?? .zero) > .zero {
-      record.state = .done
+      record.processingState = .suppressed
+      record.processingReason = .policySuppressed
+    } else if record.ownership == .owned, (record.matchedMovieID ?? .zero) > .zero {
+      record.processingState = .done
     } else if record.ownership == .unowned || record.ownership == .changed {
-      record.state = .preserved
-      record.reason = record.ownership == .changed ? .ownershipChanged : .existingPosterPreserved
+      record.processingState = .preserved
+      record.processingReason = record.ownership == .changed ? .ownershipChanged : .existingPosterPreserved
     } else {
-      record.state = .unresolved
-      record.reason = .savedIdentityUnavailable
+      record.processingState = .unresolved
+      record.processingReason = .savedIdentityUnavailable
     }
 
     return record

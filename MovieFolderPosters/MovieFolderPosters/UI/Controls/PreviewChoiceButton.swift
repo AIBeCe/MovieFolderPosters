@@ -50,7 +50,7 @@ final class PreviewChoiceButton: NSButton {
 
 /// Loads and renders the artwork used by Settings preview choices.
 @MainActor
-enum SettingsPreviewArtwork {
+enum SettingsChoicePreviewArtwork {
   /// Loads the bundled sample poster and renders it with the selected finish.
   /// - Parameter appearance: The poster finish to preview.
   /// - Returns: Rendered preview artwork, or `nil` if the bundled image is unavailable.

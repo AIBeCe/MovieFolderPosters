@@ -1,6 +1,6 @@
 # R120-02 — Year, edition, and spelling evidence
 
-Status: Three approved points implemented; independent review PASS; awaiting completed Implementation Phase approval.
+Status: Implementation committed as `46df21c`; issue-scoped Validation completed; awaiting Validation Phase approval.
 Branch: `feature/year-edition-spelling`, based on `develop` at `53a3908`.
 Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/16
 
@@ -14,8 +14,8 @@ The approved proposal in this chat is the specification; this document preserves
 ## Binding constraints and approvals
 
 - All three points were individually approved; the complete proposal was approved before implementation.
-- Implement points sequentially. No commit until completed Implementation Phase approval.
-- Formal Validation and Acceptance Testing require separate explicit authorization. No SwiftLint in implementation.
+- Implement points sequentially; the completed Implementation Phase was approved and committed as `46df21c`.
+- Validation was separately authorized; Acceptance Testing still requires explicit authorization.
 - Preserve Swift 6, programmatic AppKit, configured deployment floor, existing modules and movie contents.
 - Preserve unrelated Xcode user data and MovieFolderParsing `.swiftpm` files.
 - No live credentials, TMDb requests, Finder registration, real movie folders, or live icon changes for checks.
@@ -58,7 +58,8 @@ Files: `Packages/MovieFolderParsing/Sources/MovieFolderParsing/ReleaseNameParser
 
 Files: Network models/client/observation/tests; Common matcher, metadata enrichment, contracts, recovery,
 automatic/manual processing, cache records and rewrites, network-history label and focused tests; host missing-token
-provider and directly affected test providers. Use cohesive source extensions when needed, without changing ownership.
+provider and directly affected test providers. `TMDbClient` now owns client and transport-envelope declarations in
+`TMDbClient.swift`; behavior and visibility remain unchanged.
 
 ## Point 3 — Explicit spelling suggestions
 
@@ -184,9 +185,53 @@ Inspect an unsigned native build for compilation coherence; it does not establis
 - Xcode also reordered one unchanged package-product entry in `project.pbxproj`; that generated-only reorder was
   reverted precisely. The project file has no resulting change.
 
+## Validation Phase
+
+- Verification: focused parser, provider, matcher, processor, recovery, cache-compatibility, and host-action checks
+  passed; `git diff --check` passed. Only deterministic local fixtures were used. No live TMDb, real movie folders,
+  app launch, Finder registration, or icon assignment was exercised.
+- Unit/integration results: Common passed 160 tests in 9 suites (`/private/tmp/R120-02-validation-common-final4.log`);
+  Network release-date coverage passed 10 tests (`/private/tmp/R120-02-validation-network-final2.log`); parser coverage
+  passed 13 tests (`/private/tmp/R120-02-validation-parser-final.log`); host action and spelling coverage passed 22 tests
+  in 3 suites (`/private/tmp/R120-02-validation-host-final.log`). Total: 205 executed tests, no failures.
+- The unchanged `legacyCacheFailureSurvivesSkippedRetry` test was excluded from the Common run because it fails on
+  immutable baseline `53a3908` with the same missing-`schemaVersion` decode error; baseline evidence is
+  `/private/tmp/R120-02-baseline-legacy.log`.
+- SwiftLint 0.65.1 with `.swiftlint.yml`: the full repository run is clean with no warnings or errors
+  (`/private/tmp/R120-02-swiftlint-final-confirmation.log`). Complex matching, artwork repair, retry, history loading,
+  and failure classification were split into focused helpers. Oversized service/test files were split by responsibility,
+  and the collection update arguments now travel as `CollectionConfigurationUpdate`. Two line-scoped exceptions retain
+  `async` on in-memory implementations because their protocols require it; no lint rule or configuration was changed.
+- Apple DocC and comments: reviewed the new public collection-update type and its properties and initializer, plus
+  new directory-inspection, matching, retry, and history-loading helpers. Added useful summaries and parameter,
+  return, and error details where applicable. Kept rationale comments for the unchanged folder-icon and async protocol
+  contracts. Apple documents source symbol comments as DocC reference material and recommends a summary for each
+  documented symbol ([Writing symbol documentation in your source files](https://developer.apple.com/documentation/xcode/writing-symbol-documentation-in-your-source-files)).
+- Swift Style Guide: applied the installed guide's two-space indentation, 120-column preference, declaration grouping,
+  DocC coverage, optional-safety, and concurrency-contract requirements. No force unwraps were added, no unrelated
+  TODO/FIXME comments were removed, and the only async lint exceptions preserve required protocol signatures.
+  `git diff --check` is clean.
+- The initial full Common run reported 11 failures. Re-running the same 352 tests against implementation commit
+  `46df21c` reproduced all 11, confirming they predated validation cleanup. The stale fixtures and expectations were
+  corrected to use current settings version 6, outcome schema 3, required matching-language fields, and the explicit
+  legacy settings converter. The final full Common run passed all 352 tests in 33 suites
+  (`/private/tmp/R120-02-common-fixed.log`).
+- Focused post-refactor Common tests also passed: 20 `MovieMatcherTests`, 16 `VerifiedReleaseYearTests`, 16
+  `MovieFolderProcessorSelectedRetryTests`, and 4 `MatchingAcceptanceIntegrationTests` (56 total).
+- The host app/XCTest target was not rebuilt after the collection-update API cleanup because the earlier Xcode build
+  registered its temporary app bundle with LaunchServices despite the disable setting. The new host source/test call
+  sites were reviewed, but host-target compilation, rendered UI, accessibility, Finder runtime, and release
+  qualification remain unverified.
+- A first host harness attempt exposed two stale method declarations after the approved renames; those declarations
+  were corrected and the final 22-test host run passed. Default SwiftPM cache attempts failed before compilation due
+  sandbox permissions; package-local writable caches were used for completed runs.
+- The unsigned native app/Finder build passed during Implementation, but was not repeated during Validation because
+  Xcode had registered its temporary build bundle with LaunchServices despite the disable setting. The temporary
+  entry was removed and absence verified. No rendered UI, accessibility, Finder runtime, or release qualification
+  was performed.
+
 ## Phase boundary
 
-Implementation changes remain uncommitted on the feature branch. Approval of the completed Implementation Phase
-is required before its commit. Formal issue-scoped Validation (including SwiftLint and Swift Style Guide review)
-and Acceptance Testing require their own authorization. Live TMDb, rendered UI/accessibility and Finder runtime
-qualification remain unperformed. The known baseline legacy-cache fixture failure remains separately recorded above.
+Implementation commit `46df21c` is complete. Validation results are presented for user review; its validation changes
+remain uncommitted pending Validation Phase approval. Acceptance Testing remains a separate required phase and has not
+started. The known baseline legacy-cache fixture failure and native runtime limitations are recorded above.

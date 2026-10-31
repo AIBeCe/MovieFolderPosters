@@ -26,7 +26,7 @@ struct InstallationReadinessPlatformCoverageTests {
       #expect(embedded.build == "43")
       #expect(embedded.extensionPoint == "com.apple.FinderSync")
       #expect(evidence.embeddedExtensionSignature != .valid)
-      let report = InstallationReadinessReportBuilder.build(installation: evidence, extensionEnabled: .none,
+      let report = InstallationReadinessEvidenceReportBuilder.build(installation: evidence, extensionEnabled: .none,
         receipt: .missing, storage: .failed, now: Date(timeIntervalSince1970: 1_000))
       #expect(report.text.contains("Version mismatch"))
       #expect(report.text.contains("Finder activation: Not yet observed."))
@@ -43,7 +43,7 @@ struct InstallationReadinessPlatformCoverageTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let date = Date(timeIntervalSince1970: 1_234)
-    let expected: ExtensionReceiptEvidence
+    let expected: FinderExtensionReceiptEvidence
     switch scenario {
     case "missing": expected = .missing
     case "busy":

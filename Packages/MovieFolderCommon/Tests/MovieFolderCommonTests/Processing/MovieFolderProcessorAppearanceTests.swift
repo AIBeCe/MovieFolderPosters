@@ -89,7 +89,7 @@ extension MovieFolderProcessorTests {
     let rawProcessor = try fixture.processor(
       provider: CountingProvider(), appearance: .raw,
       posterAssigner: fileSystem)
-    let identity = try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).identity
+    let identity = try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).identity
     let selected = MovieMetadata(
       id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/selected.jpg")
@@ -123,7 +123,7 @@ extension MovieFolderProcessorTests {
     let summary = try await processor.process(root: fixture.movies)
 
     #expect(summary.restyled == 0)
-    #expect(try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
+    #expect(try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).hasCustomIcon)
     #expect(try fileSystem.assignedPosterAppearance(toChild: "Dune (2021)", in: fixture.movies) == nil)
   }
 
@@ -136,7 +136,7 @@ extension MovieFolderProcessorTests {
     let rawProcessor = try fixture.processor(
       provider: CountingProvider(), appearance: .raw,
       posterAssigner: fileSystem)
-    let identity = try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).identity
+    let identity = try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).identity
     let selected = MovieMetadata(
       id: 713, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
       posterPath: "/selected.jpg")
@@ -225,7 +225,7 @@ extension MovieFolderProcessorTests {
     let fixture = try Fixture()
     try fixture.addFolder("Dune (2021)")
     let fileSystem = FileSystemService()
-    let identity = try fileSystem.readCurrentState(ofChild: "Dune (2021)", in: fixture.movies).identity
+    let identity = try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: fixture.movies).identity
     let rawProcessor = try fixture.processor(
       provider: CountingProvider(), appearance: .raw,
       posterAssigner: fileSystem)

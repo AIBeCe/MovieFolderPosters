@@ -1,6 +1,7 @@
 import Foundation
 import Log
 import OSLog
+import Persistence
 
 /// Required retained collaborator announcing committed changes without event payloads.
 nonisolated public protocol MovieFolderActivityChangeNotifying: Sendable {
@@ -50,6 +51,8 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   private let notifier: any MovieFolderActivityChangeNotifying
   /// Required in production; explicit legacy test construction may omit privacy configuration.
   private let configurationRepository: ConfigurationRepository?
+  /// Store-opening authorization retained for this recorder's lazy history initialization.
+  private let storeFactory: PersistenceStoreFactory
   /// Successfully opened generic history store, shared by operations in this process.
   private var cachedActivityHistoryStore: ActivityLog<MovieFolderActivityLogEvent>?
   /// Sticky safe failure evidence, independent of product operation success or error.
@@ -62,13 +65,16 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   ///   - directory: Dedicated caller-owned activity directory.
   ///   - notifier: Payload-free invalidation publisher retained for the recorder lifetime.
   ///   - configurationRepository: Shared privacy repository required in production; absence supports controlled tests.
+  ///   - storeFactory: Path authorization used when the history store is opened lazily.
   public init(
     directory: URL, notifier: any MovieFolderActivityChangeNotifying,
-    configurationRepository: ConfigurationRepository? = .none
+    configurationRepository: ConfigurationRepository? = .none,
+    storeFactory: PersistenceStoreFactory = PersistenceStoreFactory()
   ) {
     self.directory = directory
     self.notifier = notifier
     self.configurationRepository = configurationRepository
+    self.storeFactory = storeFactory
   }
 
   /// Awaits a best-effort bounded write independently of the producer's cancellation.
@@ -152,7 +158,7 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   /// Falls back to fixed omission evidence if complete historical names exceed the activity event limit.
   private func appendBoundedActivityEvent(
     _ event: MovieFolderActivityLogEvent, to activityHistoryStore: ActivityLog<MovieFolderActivityLogEvent>,
-    accessMode: ActivityLogAppendAccessMode
+    accessMode: ActivityHistoryAppendAccessMode
   ) async throws {
     do {
       try await activityHistoryStore.append(event: event, accessMode: accessMode)
@@ -181,7 +187,7 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
   private func openActivityHistoryStore() async throws -> ActivityLog<MovieFolderActivityLogEvent> {
     if let cachedActivityHistoryStore { return cachedActivityHistoryStore }
     let activityHistoryStore = try await ActivityLog<MovieFolderActivityLogEvent>(
-      directory: directory, namespace: "movie-activity", maximumEntries: 500,
+      directory: directory, namespace: "movie-activity", storeFactory: storeFactory, maximumEntries: 500,
       maximumEventBytes: 8192, maximumHistoryPayloadBytes: 1024 * 1024, writerRecordVersion: 2)
     cachedActivityHistoryStore = activityHistoryStore
 

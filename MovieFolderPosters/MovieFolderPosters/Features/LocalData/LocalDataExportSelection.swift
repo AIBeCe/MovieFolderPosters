@@ -2,7 +2,7 @@ import Foundation
 import MovieFolderCommon
 
 /// Explicit finite selection; retained order is never replaced with occurrence-time sorting.
-nonisolated struct LocalDataExportSelection {
+nonisolated struct LocalDataExportOptions {
   /// Beginning of the inclusive occurrence interval.
   var start: Date
   /// End of the selected occurrence interval.

@@ -48,19 +48,20 @@ extension MovieFolderProcessor {
 
     guard let snapshot = try processingStore?.read(rootID: processingContext.rootID),
       snapshot.context == processingContext,
-      let record = snapshot.folders.first(where: { $0.name == child })
+      let record = snapshot.folders.first(where: { $0.folderName == child })
     else { throw CollectionProcessingError.configurationChanged }
 
-    guard record.identity == expectedIdentity else { throw PosterActionError.changedIdentity }
+    guard record.folderIdentity == expectedIdentity else { throw PosterActionError.changedIdentity }
 
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
 
-    guard !record.isVerifiedDone, record.state != .preserved, record.state != .suppressed, record.state != .excluded,
+    guard !record.isVerifiedDone, record.processingState != .preserved, record.processingState != .suppressed,
+      record.processingState != .excluded,
       !processingConfiguration.excludesFolder(identity: candidate.identity),
       !candidate.hasCustomIcon,
       try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
 
-    if requiresManualReview(record.reason) { return .notEligible }
+    if requiresManualReview(record.processingReason) { return .notEligible }
 
     let cache = try loadState(from: access)
     let prior = cache.folders[child]
@@ -68,39 +69,53 @@ extension MovieFolderProcessor {
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
     if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
     let isLegacyUnresolvedResult = sameFingerprint && prior?.isLegacyUnresolvedResult == true
-    if !isLegacyUnresolvedResult, let deadline = cache.providerRetryAt, deadline > now() {
-      activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
-
-      return .waiting(until: deadline)
-    }
-    if !isLegacyUnresolvedResult, prior?.processingReason != .interrupted, record.reason != .interrupted {
-      let cacheDeadline = sameFingerprint ? prior?.retryDate : .none
-      if let deadline = [cacheDeadline, record.retryAt].compactMap({ $0 }).max(), deadline > now() {
-        activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
-
-        return .waiting(until: deadline)
-      }
-    }
+    let retryContext = SelectedFolderRetryDelayContext(
+      saved: record, prior: prior, cache: cache, sameFingerprint: sameFingerprint,
+      isLegacyUnresolvedResult: isLegacyUnresolvedResult, activity: activity)
+    if let waiting = retryWait(retryContext) { return waiting }
 
     do {
       let settingsAccess = try checkIconChange(.automaticPosterAssignment, to: candidate, in: root)
       withExtendedLifetime(settingsAccess) {}
     }
 
-    var visit = AutomaticProcessingVisit(
-      cache: cache, recording: try recordProcessingStart(context: processingContext, action: .manual, child: child),
-      activity: activity, selectedChild: child)
-    defer { interruptUnfinishedProcessing(&visit.recording, child: child) }
+    var visit = AutomaticProcessingPass(
+      processingCache: cache, collectionProcessingRecord: try recordProcessingStart(context: processingContext, action: .manual, child: child),
+      activityLog: activity, selectedRetryChildName: child)
+    defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord, child: child) }
 
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
       try await !reuseCachedDecision(candidate, root: root, access: access, visit: &visit) {
-      visit.didStopEarly = try await processCandidate(candidate, root: root, access: access, visit: &visit)
+      visit.providerAdmissionStoppedPass = try await processCandidate(candidate, root: root, access: access, visit: &visit)
     }
 
     try finishProcessingRun(
-      &visit.recording, state: visit.didStopEarly ? .partial : .completed, activity: visit.activity)
+      &visit.collectionProcessingRecord, state: visit.providerAdmissionStoppedPass ? .partial : .completed, activity: visit.activityLog)
 
-    return .attempted(visit.summary, stopSelection: visit.didStopEarly)
+    return .attempted(visit.processingSummary, stopSelection: visit.providerAdmissionStoppedPass)
+  }
+
+  /// Returns a saved provider or folder retry deadline unless the selected result is legacy or interrupted.
+  /// - Parameter context: Saved retry evidence and the activity log for this attempt.
+  /// - Returns: The retry deadline when the selection must remain waiting.
+  private func retryWait(_ context: SelectedFolderRetryDelayContext) -> FolderRetryResult? {
+    guard !context.isLegacyUnresolvedResult else { return .none }
+
+    if let deadline = context.cache.providerRetryAt, deadline > now() {
+      context.activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
+
+      return .waiting(until: deadline)
+    }
+
+    guard context.prior?.processingReason != .interrupted,
+      context.saved.processingReason != .interrupted else { return .none }
+    let cacheDeadline = context.sameFingerprint ? context.prior?.retryDate : .none
+    guard let deadline = [cacheDeadline, context.saved.nextRetryAt].compactMap({ $0 }).max(), deadline > now() else {
+      return .none
+    }
+    context.activity.append(.deferred, reason: .retryDeferred, retryAt: deadline)
+
+    return .waiting(until: deadline)
   }
 
   /// Identifies conclusive outcomes that selected automatic retry must leave for explicit manual resolution.
@@ -113,4 +128,20 @@ extension MovieFolderProcessor {
     default: false
     }
   }
+}
+
+/// Saved evidence used to decide whether one selected folder may retry now.
+private struct SelectedFolderRetryDelayContext {
+  /// Current user-visible outcome for the selected child.
+  let saved: FolderProcessingRecord
+  /// Operational cache evidence for the same child, if present.
+  let prior: FolderProcessingCacheRecord?
+  /// Root-local provider retry state.
+  let cache: CollectionProcessingCache
+  /// Whether operational evidence belongs to the current child fingerprint.
+  let sameFingerprint: Bool
+  /// Whether legacy unresolved state permits a user-requested immediate retry.
+  let isLegacyUnresolvedResult: Bool
+  /// Activity log receiving a deferred event.
+  let activity: ProcessorActivityLog
 }

@@ -5,7 +5,7 @@ import Testing
 @testable import MovieFolderCommon
 
 /// Isolated real Persistence namespaces exercise migration and backup ordering.
-private struct MigrationFixture {
+private struct MovieFolderStorageMigrationFixture {
   /// Parent removed after each test.
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   /// Configured root retained across conversion.
@@ -93,7 +93,7 @@ private struct MigrationFixture {
 
 /// Legacy data requires an explicit action, preserves facts and generations, and is independently backed up.
 @Test func migrationConvertsSettingsAndBothOutcomeContextsWithoutLosingEvidence() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (settingsPayload, outcomePayload) = try fixture.seed()
   #expect(try fixture.migrator.preflight().requiresMigration)
@@ -111,7 +111,7 @@ private struct MigrationFixture {
   let state = try JSONDecoder().decode(CollectionProcessingState.self, from: statePayload)
   #expect(state.schemaVersion == 3)
   #expect(state.revision == 17)
-  #expect(state.folders.first?.movieTitle == "Saved title")
+  #expect(state.folders.first?.matchedMovieTitle == "Saved title")
   #expect(state.folders.first?.ownership == .unowned)
   #expect(state.context.movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching)
   #expect(state.lastCompletedRunContext?.movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching == true)
@@ -126,7 +126,7 @@ private struct MigrationFixture {
 
 /// Current settings must not hide a remaining old outcome after a partial migration.
 @Test func currentSettingsWithLegacyOutcomeAreDetectedAndResumed() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   _ = try fixture.seed()
   do {
@@ -148,7 +148,7 @@ private struct MigrationFixture {
 
 /// A settings writer already holding the shared lease finishes before migration can establish the schema fence.
 @Test func migrationWaitsForOlderSettingsWriterLease() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (original, _) = try fixture.seed()
   do {
@@ -164,7 +164,7 @@ private struct MigrationFixture {
 
 /// Cancellation before the manual operation leaves all saved records byte-for-byte unchanged.
 @Test func cancelledMigrationDoesNotWriteRecords() async throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (settings, outcomes) = try fixture.seed()
   let migration = Task {
@@ -181,7 +181,7 @@ private struct MigrationFixture {
 
 /// Legacy defaults are applied only when the historical schema omitted those fields.
 @Test func omittedLegacyFieldsReceiveHistoricalDefaults() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (payload, _) = try fixture.seed(settingsVersion: 1)
   var object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
@@ -212,7 +212,7 @@ private struct MigrationFixture {
 /// - Throws: Fixture setup, persistence, conversion, or assertion errors.
 @Test(arguments: [1, 2, 3, 4])
 func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: Int) throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (payload, _) = try fixture.seed(settingsVersion: version)
   var object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
@@ -241,7 +241,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 
 /// A conflict does not select a favorite alias or change the source payload.
 @Test func conflictingMatchingAliasesPreserveOriginalSettings() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (payload, _) = try fixture.seed()
   var object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
@@ -256,7 +256,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 
 /// Backup contention and an existing conflicting backup prevent any corresponding source replacement.
 @Test func backupFailurePreventsSettingsReplacementAndNeverOverwritesBackup() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (original, _) = try fixture.seed()
   let key = MovieFolderStorageMigrator.backupRecordKey(for: .settings, originalPayload: original)
@@ -277,7 +277,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 
 /// Future versions are never guessed at or rewritten by preflight, migration, or normal readers.
 @Test func futureSettingsSchemaIsRejectedWithoutChangingBytes() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (original, _) = try fixture.seed(settingsVersion: 7)
   #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
@@ -294,7 +294,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 
 /// Normal readers preserve old outcomes and report the migration action before decoding renamed context fields.
 @Test func normalOutcomeReaderRequiresMigrationWithoutWritingLegacyData() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (_, original) = try fixture.seed()
   let store = CollectionProcessingStore(store: fixture.outcomes,
@@ -307,7 +307,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 
 /// Each outcome replacement depends on its own verified backup, independently of the earlier settings fence.
 @Test func outcomeBackupFailureLeavesFenceAndResumesWithoutReplacingSource() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let (_, original) = try fixture.seed()
   let record = MovieFolderStorageRecordKind.collectionOutcomes(fixture.root.id)
@@ -327,7 +327,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 
 /// Invalid current payloads receive repair-oriented errors instead of being confused with unavailable volumes.
 @Test func malformedCurrentRecordErrorsRemainSpecificAndReadOnly() throws {
-  let fixture = try MigrationFixture()
+  let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
   let invalidSettings = Data("{\"version\":6}".utf8)
   try fixture.write(invalidSettings, to: fixture.settings, key: ConfigurationRepository.recordKey)

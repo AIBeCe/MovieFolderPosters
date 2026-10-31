@@ -310,7 +310,9 @@ extension ConfigurationViewController {
   /// Returns the explanation shown for a directory availability state.
   /// - Parameter availability: The latest directory readiness state.
   /// - Returns: User-facing text describing that state.
-  private func availabilityDescription(_ availability: DirectoryAvailability) -> String { availability.explanation }
+  private func availabilityDescription(_ availability: MovieFolderCommon.DirectoryAvailability) -> String {
+    availability.explanation
+  }
 
   /// Keeps result freshness and inspection evidence distinct from folder access evidence.
   private func collectionProcessingDescription(_ summary: CollectionProcessingSummary?) -> String {

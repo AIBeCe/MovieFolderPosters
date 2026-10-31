@@ -13,7 +13,7 @@ import Testing
 struct CoordinatorLifecycleTests {
   /// Early composition errors remain visible in Activity even when no configuration ViewModel exists.
   @Test func migrationRequiredStartupRecordsTheRecoveryAction() async throws {
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let root = AppCoordinator(activity: activity, configurationBuilder: MigrationRequiredConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     #expect(throws: MovieFolderStorageMigrationError.self) { try root.start() }
@@ -35,7 +35,7 @@ struct CoordinatorLifecycleTests {
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let builder = RecoveryCheckingConfigurationBuilder(recovery: recovery)
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
       appearance: try isolatedAppearance(),
       recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
     let request = MoviePosterRequest(rootID: UUID(), childName: "Dune (2021)", identity: "fixture", action: .change)
@@ -57,7 +57,7 @@ struct CoordinatorLifecycleTests {
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let builder = RecoveryCheckingConfigurationBuilder(recovery: recovery)
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder, posterService: CoordinatorPosterService(),
       appearance: try isolatedAppearance(),
       recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
 
@@ -74,7 +74,7 @@ struct CoordinatorLifecycleTests {
     let recovery = ProcessingRecoveryService(store: try PersistenceStore(directory: directory))
     let change = try recovery.acquireProcessingAccess()
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance(),
       recoveryLaunch: ProcessingRecoveryLaunchController(arguments: ["--recovery-mode"], recovery: recovery))
     #expect(throws: ProcessingRecoveryError.busy) { try root.start() }
@@ -94,7 +94,7 @@ struct CoordinatorLifecycleTests {
     let previousAppearance = application.appearance
     defer { application.appearance = previousAppearance }
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: UnavailableConfigurationBuilder(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: UnavailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     #expect(throws: CocoaError.self) { try root.start() }
     root.showLog()
@@ -111,7 +111,7 @@ struct CoordinatorLifecycleTests {
   /// A cold Settings route starts configuration once, and activation never creates another feature window.
   @Test func settingsCanStartBeforeMainAndActivationPreservesIndependentFlows() throws {
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     root.applicationDidBecomeActive()
     #expect(root.configurationCoordinator == .none)
@@ -136,7 +136,7 @@ struct CoordinatorLifecycleTests {
   @Test func retriesConfigurationAndRoutesProducerFailures() async throws {
     let builder = RetryingConfigurationBuilder()
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: builder,
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: builder,
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     #expect(throws: CocoaError.self) { try root.showSettings() }
     #expect(root.configurationCoordinator == .none)
@@ -165,7 +165,7 @@ struct CoordinatorLifecycleTests {
     let settings = try isolatedAppearance()
     settings.select(.dark)
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: AvailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: settings)
     try root.start()
     let configuration = try #require(root.configurationCoordinator)
@@ -210,7 +210,7 @@ struct CoordinatorLifecycleTests {
   /// Local Data has its own reusable window, separate from Settings, and clears ownership on close.
   @Test func localDataWindowIsDedicatedReusableAndClosable() throws {
     let root = AppCoordinator(
-      activity: ActivityServiceFake(), configurationBuilder: LocalDataConfigurationBuilder(),
+      activity: MovieFolderActivityServiceFake(), configurationBuilder: LocalDataConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: try isolatedAppearance())
     try root.showConfiguration()
     let configuration = try #require(root.configurationCoordinator)
@@ -259,7 +259,7 @@ struct CoordinatorLifecycleTests {
     let previousAppearance = application.appearance
     defer { application.appearance = previousAppearance }
     let settings = try isolatedAppearance()
-    let activity = ActivityServiceFake()
+    let activity = MovieFolderActivityServiceFake()
     let root = AppCoordinator(
       activity: activity, configurationBuilder: UnavailableConfigurationBuilder(),
       posterService: CoordinatorPosterService(), appearance: settings)
@@ -319,14 +319,14 @@ struct CoordinatorLifecycleTests {
 
   /// Feature delegates and notification subscriptions must not keep abandoned flows alive.
   @Test func featureOwnersAreReleasedAfterTheirWindowsClose() async throws {
-    var log: LogCoordinator? = LogCoordinator(activityHistoryService: ActivityServiceFake())
+    var log: LogCoordinator? = LogCoordinator(activityHistoryService: MovieFolderActivityServiceFake())
     let logIsReleased = { [weak log] in log == .none }
     log?.show()
     log?.windowController?.close()
     log = .none
     #expect(logIsReleased())
     var configuration: ConfigurationCoordinator? = ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: ActivityServiceFake(), appearance: try isolatedAppearance())
+      service: CoordinatorConfigurationService(), activity: MovieFolderActivityServiceFake(), appearance: try isolatedAppearance())
     let configurationIsReleased = { [weak configuration] in configuration == .none }
     configuration?.start()
     configuration?.mainWindow?.close()
@@ -349,7 +349,7 @@ struct CoordinatorLifecycleTests {
 
 /// Fails the first construction without poisoning subsequent explicit configuration requests.
 @MainActor
-private final class RetryingConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private final class RetryingConfigurationBuilder: ConfigurationFlowBuilding {
   /// Number of actual construction attempts rather than window presentations.
   private(set) var attemptCount = Int.zero
 
@@ -367,7 +367,7 @@ private final class RetryingConfigurationBuilder: ConfigurationCoordinatorBuildi
 
 /// Rejects configuration construction while other app services remain available.
 @MainActor
-private struct UnavailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private struct UnavailableConfigurationBuilder: ConfigurationFlowBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
@@ -377,7 +377,7 @@ private struct UnavailableConfigurationBuilder: ConfigurationCoordinatorBuilding
 
 /// Constructs a configuration flow without reading live stores or credentials.
 @MainActor
-private struct AvailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private struct AvailableConfigurationBuilder: ConfigurationFlowBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
@@ -389,7 +389,7 @@ private struct AvailableConfigurationBuilder: ConfigurationCoordinatorBuilding {
 
 /// Supplies immediate readiness evidence for Local Data window lifetime coverage.
 @MainActor
-private struct LocalDataConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private struct LocalDataConfigurationBuilder: ConfigurationFlowBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
@@ -409,7 +409,7 @@ private struct LocalDataInstallationServiceFake: InstallationReadinessServicing 
 
 /// Confirms launch recovery is durable before the host composes configuration services.
 @MainActor
-private final class RecoveryCheckingConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private final class RecoveryCheckingConfigurationBuilder: ConfigurationFlowBuilding {
   /// Gate read at the precise composition boundary.
   private(set) var observedRecoveryMode: Bool?
   /// Isolated shared gate supplied by the lifecycle test.
@@ -508,7 +508,7 @@ private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRe
 }
 
 /// Simulates an old settings record without opening application data.
-private struct MigrationRequiredConfigurationBuilder: ConfigurationCoordinatorBuilding {
+private struct MigrationRequiredConfigurationBuilder: ConfigurationFlowBuilding {
   func makeCoordinator(activity: any MovieFolderActivityServicing, appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: 3)

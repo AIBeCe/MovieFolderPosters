@@ -89,7 +89,7 @@ struct Fixture {
 
 /// Controllable metadata provider that records requests and can suspend or fail searches.
 actor CountingProvider {
-  /// Independent alias calls used to enforce per-assessment request budgets.
+  /// Independent alias calls used to enforce per-matching-run request budgets.
   private(set) var alternativeTitleCount = Int.zero
 
   /// The number of search requests observed by the test provider.
@@ -165,8 +165,8 @@ actor CountingProvider {
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   /// Supplies completed empty alternative-title evidence for this focused fixture.
   /// Supplies completed release events for this provider.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDates { [movieID: []] }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitles {
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID {
     alternativeTitleCount += 1
 
     return [movieID: []]
@@ -312,7 +312,7 @@ final class RecordingAssigner: PosterAssigner, @unchecked Sendable {
   func assignPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
     expectedIdentity: String?
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     lock.lock()
     defer { lock.unlock() }
     count += 1
@@ -385,7 +385,7 @@ struct RootIdentityIconChangeVerifier: MovieFolderProcessingVerifier {
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     try checkAutomaticProcessing(in: root)
   }
@@ -412,7 +412,7 @@ struct SuppressingIconChangeVerifier: MovieFolderProcessingVerifier {
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     _ = try FileSystemService().removeAssignedPoster(
       toChild: "Dune (2021)", in: root,
@@ -459,7 +459,7 @@ final class AccessIconChangeVerifier: MovieFolderProcessingVerifier, @unchecked 
   ///
   /// - Parameter processor: The processor requesting authorization for its next change.
   func checkIconChange(
-    _ change: MovieFolderIconChange, to candidate: FolderCandidate, in root: URL
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     try checkAutomaticProcessing(in: root)
   }
@@ -482,7 +482,7 @@ struct AccessCheckingAssigner: PosterAssigner {
   func assignPoster(
     _ imageData: Data, toChild name: String, in directory: URL,
     expectedIdentity: String?
-  ) throws -> PosterAssignmentResult {
+  ) throws -> FolderPosterAssignmentResult {
     #expect(try store.acquireAccess(for: "change") == nil)
 
     return .assigned

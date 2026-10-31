@@ -23,9 +23,9 @@ protocol InstallationReadinessEnvironment: Sendable {
   /// Reads Finder's current extension-enabled state when it is available.
   nonisolated func extensionEnabled() async -> Bool?
   /// Reads the latest shared receipt of Finder extension activation.
-  nonisolated func readReceipt() -> ExtensionReceiptEvidence
+  nonisolated func readReceipt() -> FinderExtensionReceiptEvidence
   /// Checks that shared storage supports reading and writing.
-  nonisolated func checkSharedStorage() throws -> SharedStorageEvidence
+  nonisolated func checkSharedStorage() throws -> AppGroupStorageEvidence
   /// Supplies the clock used to determine whether activation evidence is stale.
   nonisolated func currentDate() -> Date
 }
@@ -39,9 +39,9 @@ nonisolated struct SystemInstallationReadinessEnvironment: InstallationReadiness
     await MainActor.run { FIFinderSyncController.isExtensionEnabled }
   }
   /// Reads the persisted activation receipt without exposing storage errors.
-  func readReceipt() -> ExtensionReceiptEvidence { InstallationReadinessService.readExtensionReceipt() }
+  func readReceipt() -> FinderExtensionReceiptEvidence { InstallationReadinessService.readExtensionReceipt() }
   /// Runs a read/write probe in the shared App Group storage.
-  func checkSharedStorage() throws -> SharedStorageEvidence { InstallationReadinessService.performSharedStorageCheck() }
+  func checkSharedStorage() throws -> AppGroupStorageEvidence { InstallationReadinessService.performSharedStorageCheck() }
   /// Returns the current system date for receipt-age calculations.
   func currentDate() -> Date { Date() }
 }
@@ -65,14 +65,14 @@ actor InstallationReadinessService: InstallationReadinessServicing {
     let installation = environment.readInstallationMetadata()
     let enabled = await environment.extensionEnabled()
     let receipt = environment.readReceipt()
-    let storage: SharedStorageEvidence
+    let storage: AppGroupStorageEvidence
     do {
       storage = try environment.checkSharedStorage()
     } catch {
       storage = .failed
     }
 
-    return InstallationReadinessReportBuilder.build(
+    return InstallationReadinessEvidenceReportBuilder.build(
       installation: installation,
       extensionEnabled: enabled,
       receipt: receipt,
@@ -127,7 +127,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   ///
   /// - Parameter url: The bundle path to validate.
   /// - Returns: `.valid`, `.invalid`, or `.unknown` when validation cannot run.
-  nonisolated private static func codeSignatureStatus(at url: URL) -> CodeSignatureEvidence {
+  nonisolated private static func codeSignatureStatus(at url: URL) -> InstallationCodeSignatureEvidence {
     var code: SecStaticCode?
     let creationStatus = SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &code)
     guard creationStatus == errSecSuccess, let code else { return .unknown }
@@ -143,7 +143,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   /// Reads the activation receipt from shared storage.
   ///
   /// - Returns: Receipt evidence, including `.missing` or a sanitized unavailable state.
-  nonisolated fileprivate static func readExtensionReceipt() -> ExtensionReceiptEvidence {
+  nonisolated fileprivate static func readExtensionReceipt() -> FinderExtensionReceiptEvidence {
     do {
       let store = try PersistenceStore(
         directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent(
@@ -159,7 +159,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   /// Reads activation evidence under the supplied persistence store's cross-process access.
   /// - Parameter store: Store holding the extension's dated activation receipt.
   /// - Returns: Observed, missing, busy, or sanitized failed evidence.
-  nonisolated static func readExtensionReceipt(in store: PersistenceStore) -> ExtensionReceiptEvidence {
+  nonisolated static func readExtensionReceipt(in store: PersistenceStore) -> FinderExtensionReceiptEvidence {
     do {
       guard let access = try store.acquireAccess(for: ExtensionReadinessReceipt.recordKey) else {
         return .unavailable(.busy)
@@ -177,7 +177,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   /// Runs the system shared-storage check and converts failures to evidence.
   ///
   /// - Returns: The storage check result without exposing underlying errors.
-  nonisolated fileprivate static func performSharedStorageCheck() -> SharedStorageEvidence {
+  nonisolated fileprivate static func performSharedStorageCheck() -> AppGroupStorageEvidence {
     do {
       let store = try PersistenceStore(
         directory: MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent(
@@ -194,7 +194,7 @@ actor InstallationReadinessService: InstallationReadinessServicing {
   ///
   /// - Parameter store: The persistence store used for the probe.
   /// - Returns: Whether storage is healthy, busy, or failed.
-  nonisolated static func checkSharedStorage(in store: PersistenceStore) -> SharedStorageEvidence {
+  nonisolated static func checkSharedStorage(in store: PersistenceStore) -> AppGroupStorageEvidence {
     do {
       guard let access = try store.acquireAccess(for: "readiness-check") else { return .busy }
       defer { withExtendedLifetime(access) {} }
@@ -229,13 +229,13 @@ nonisolated struct InstallationMetadata: Sendable, Equatable {
   /// Metadata for the embedded Finder extension, or `nil` when absent.
   let embeddedExtension: BundleMetadata?
   /// Signature evidence for the host application.
-  var hostSignature: CodeSignatureEvidence = .unknown
+  var hostSignature: InstallationCodeSignatureEvidence = .unknown
   /// Signature evidence for the embedded extension.
-  var embeddedExtensionSignature: CodeSignatureEvidence = .unknown
+  var embeddedExtensionSignature: InstallationCodeSignatureEvidence = .unknown
 }
 
 /// The result of static code-signature validation.
-nonisolated enum CodeSignatureEvidence: Sendable, Equatable {
+nonisolated enum InstallationCodeSignatureEvidence: Sendable, Equatable {
   /// Validation succeeded.
   case valid
   /// Validation ran and rejected the signature.
@@ -245,7 +245,7 @@ nonisolated enum CodeSignatureEvidence: Sendable, Equatable {
 }
 
 /// Why a shared activation receipt could not be read.
-nonisolated enum ReceiptUnavailableReason: Sendable, Equatable {
+nonisolated enum InstallationReceiptUnavailableReason: Sendable, Equatable {
   /// Another process currently owns the receipt access.
   case busy
   /// Storage access or receipt decoding failed.
@@ -253,17 +253,17 @@ nonisolated enum ReceiptUnavailableReason: Sendable, Equatable {
 }
 
 /// Evidence about whether Finder has activated the extension.
-nonisolated enum ExtensionReceiptEvidence: Sendable, Equatable {
+nonisolated enum FinderExtensionReceiptEvidence: Sendable, Equatable {
   /// No activation receipt has been recorded.
   case missing
   /// A dated observation recorded the activated extension build.
   case observed(version: String, build: String, date: Date)
   /// The receipt could not be read for the given reason.
-  case unavailable(ReceiptUnavailableReason)
+  case unavailable(InstallationReceiptUnavailableReason)
 }
 
 /// Evidence from the shared-storage read/write probe.
-nonisolated enum SharedStorageEvidence: Sendable, Equatable {
+nonisolated enum AppGroupStorageEvidence: Sendable, Equatable {
   /// A read/write round trip completed successfully.
   case healthy
   /// The probe could not acquire its cross-process access.
@@ -273,7 +273,7 @@ nonisolated enum SharedStorageEvidence: Sendable, Equatable {
 }
 
 /// Converts installation evidence into a report with explicit uncertainty labels.
-nonisolated enum InstallationReadinessReportBuilder {
+nonisolated enum InstallationReadinessEvidenceReportBuilder {
   /// The maximum age at which a receipt is described as recent.
   private static let staleAfter: TimeInterval = 24 * 60 * 60
 
@@ -289,8 +289,8 @@ nonisolated enum InstallationReadinessReportBuilder {
   static func build(
     installation: InstallationMetadata,
     extensionEnabled: Bool?,
-    receipt: ExtensionReceiptEvidence,
-    storage: SharedStorageEvidence,
+    receipt: FinderExtensionReceiptEvidence,
+    storage: AppGroupStorageEvidence,
     now: Date
   ) -> InstallationReadinessReport {
     var lines = ["Installation readiness"]
@@ -325,7 +325,7 @@ nonisolated enum InstallationReadinessReportBuilder {
   ///
   /// - Parameter evidence: The signature result to describe.
   /// - Returns: `Valid`, `Invalid`, or `Unknown`.
-  private static func signatureLabel(_ evidence: CodeSignatureEvidence) -> String {
+  private static func signatureLabel(_ evidence: InstallationCodeSignatureEvidence) -> String {
     switch evidence {
     case .valid: "Valid"
     case .invalid: "Invalid"
@@ -374,7 +374,7 @@ nonisolated enum InstallationReadinessReportBuilder {
 
   /// Adds activation receipt age and embedded-build comparison details.
   private static func appendReceipt(
-    _ receipt: ExtensionReceiptEvidence,
+    _ receipt: FinderExtensionReceiptEvidence,
     installation: InstallationMetadata,
     now: Date,
     to lines: inout [String]
@@ -421,7 +421,7 @@ nonisolated enum InstallationReadinessReportBuilder {
   }
 
   /// Adds the shared-storage probe result without exposing error details.
-  private static func appendStorage(_ storage: SharedStorageEvidence, to lines: inout [String]) {
+  private static func appendStorage(_ storage: AppGroupStorageEvidence, to lines: inout [String]) {
     switch storage {
     case .healthy: lines.append("Shared App Group storage: Read/write check passed.")
     case .busy: lines.append("Shared App Group storage: Unknown (check is busy).")

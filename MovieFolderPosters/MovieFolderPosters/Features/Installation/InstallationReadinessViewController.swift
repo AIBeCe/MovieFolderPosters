@@ -42,7 +42,7 @@ final class InstallationReadinessViewController: NSViewController {
 }
 
 /// Produces a bounded export using only fixed readiness statuses and typed activity fields.
-nonisolated enum InstallationDiagnosticsExport {
+nonisolated enum InstallationDiagnosticsExporter {
   /// Projects only the established fixed readiness vocabulary, excluding arbitrary report strings.
   /// - Parameter report: Source readiness report; arbitrary text is never copied.
   /// - Returns: One allowlisted status line per supported field, using Unknown for missing or unrecognized statuses.

@@ -218,11 +218,11 @@ final class CollectionResultsViewController: NSViewController {
     processingStateFilterPopUpButton.isEnabled = viewModel.canFilter
     processingReasonFilterPopUpButton.isEnabled = viewModel.canFilter
     processingStateFilterPopUpButton.selectItem(at:
-      viewModel.stateFilter.flatMap { FolderProcessingState.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
+      viewModel.processingStateFilter.flatMap { FolderProcessingState.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
     processingReasonFilterPopUpButton.selectItem(at:
-      viewModel.reasonFilter.flatMap { FolderProcessingReason.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
+      viewModel.processingReasonFilter.flatMap { FolderProcessingReason.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? .zero)
     let selection = "\(viewModel.selectedRows.count) selected."
-    statusLabel.stringValue = viewModel.resultCountText + " " + selection + " " + viewModel.statusMessage
+    statusLabel.stringValue = viewModel.unresolvedFolderResultCountText + " " + selection + " " + viewModel.statusMessage
     tableView.setAccessibilityHelp(selection + " Select one folder to choose a movie, or multiple folders to retry.")
   }
 
@@ -234,7 +234,7 @@ final class CollectionResultsViewController: NSViewController {
     let reasonIndex = processingReasonFilterPopUpButton.indexOfSelectedItem - 1
     let reason: FolderProcessingReason? = FolderProcessingReason.allCases.indices.contains(reasonIndex)
       ? FolderProcessingReason.allCases[reasonIndex] : .none
-    viewModel.setFilters(state: state, reason: reason)
+    viewModel.setProcessingFilters(state: state, reason: reason)
   }
 
   /// Opens selection only when the model admits the explicit request.
@@ -268,21 +268,21 @@ extension CollectionResultsViewController: CollectionResultsViewModelDelegate {
 
 extension CollectionResultsViewController: NSTableViewDataSource, NSTableViewDelegate {
   /// Supplies only rows present in the saved evidence projection.
-  func numberOfRows(in tableView: NSTableView) -> Int { viewModel.rows.count }
+  func numberOfRows(in tableView: NSTableView) -> Int { viewModel.unresolvedFolderRecords.count }
 
   /// Renders a read-only cell with a descriptive accessibility label.
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard viewModel.rows.indices.contains(row), let tableColumn else { return .none }
-    let folder = viewModel.rows[row]
+    guard viewModel.unresolvedFolderRecords.indices.contains(row), let tableColumn else { return .none }
+    let folder = viewModel.unresolvedFolderRecords[row]
     let text: String
     switch tableColumn.identifier.rawValue {
-    case "folder": text = folder.name
-    case "state": text = folder.state.displayDescription
-    case "reason": text = folder.reason?.displayDescription ?? "Not recorded"
+    case "folder": text = folder.folderName
+    case "state": text = folder.processingState.displayDescription
+    case "reason": text = folder.processingReason?.displayDescription ?? "Not recorded"
     default: text = viewModel.retryAvailability(for: folder)
     }
     let label = NSTextField(wrappingLabelWithString: text)
-    label.setAccessibilityLabel("\(folder.name), \(tableColumn.title): \(text)")
+    label.setAccessibilityLabel("\(folder.folderName), \(tableColumn.title): \(text)")
     label.maximumNumberOfLines = 2
 
     return label

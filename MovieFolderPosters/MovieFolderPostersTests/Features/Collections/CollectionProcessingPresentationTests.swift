@@ -56,7 +56,7 @@ import Testing
   #expect(text.string.contains("previous processing context") == false)
   #expect(!text.string.contains("folder-identity"))
   let buttonTitles = views.compactMap { ($0 as? NSButton)?.title }
-  #expect(buttonTitles == ["Close"])
+  #expect(buttonTitles == ["Close", "Copy Verified Movie Title", "Copy TMDb Identifier"])
 }
 
 /// Labels a last completed run as historical when it belongs to a prior saved context.
@@ -90,7 +90,7 @@ import Testing
   let initial = processingStateForTesting(rootID: rootID)
   let processingState = CollectionProcessingState(
     context: initial.context,
-    currentRun: CollectionProcessingRun(action: .automatic, startedAt: Date(), state: .partial),
+    currentRun: CollectionProcessingRun(action: .automatic, startedAt: Date(), runState: .partial),
     folders: [FolderProcessingRecord(name: "Pending.Movie", state: .pending)],
     isInventoryComplete: true,
     inspectedAt: Date()
@@ -140,33 +140,34 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
     store: PersistenceStore(directory: temporaryDirectory.appendingPathComponent("Settings")))
   let rootID = UUID()
   let authorizationVersion = UUID()
+  let directory = MonitoredDirectory(
+    id: rootID, path: "/Movies", transferBookmark: Data([1]),
+    authorizationVersion: authorizationVersion, identity: "root-identity")
   var savedConfiguration = DirectoryConfiguration()
-  savedConfiguration.directories = [
-    MonitoredDirectory(
-      id: rootID, path: "/Movies", transferBookmark: Data([1]),
-      authorizationVersion: authorizationVersion, identity: "root-identity")
-  ]
+  savedConfiguration.directories = [directory]
   try configurationRepository.update { $0 = savedConfiguration }
   let context = CollectionProcessingContext(
     rootID: rootID, rootIdentity: "root-identity",
     authorizationVersion: authorizationVersion,
     credentialRevision: savedConfiguration.credentialRevision,
-    usesStubTMDbResponses: false, appearance: .softFinish)
+    usesStubTMDbResponses: false, appearance: .softFinish,
+    movieMatchingConfiguration: savedConfiguration.effectiveMovieMatchingConfiguration(for: directory),
+    processingConfigurationRevision: directory.processingConfiguration.revision)
   let running = CollectionProcessingState(
     context: context,
-    currentRun: CollectionProcessingRun(action: .automatic, startedAt: Date(), state: .running))
+    currentRun: CollectionProcessingRun(action: .automatic, startedAt: Date(), runState: .running))
   let reader = FailingOrphanReread(processingState: running, failure: error)
   let service = CollectionSummaryService(
     configuration: configurationRepository,
     processingStore: reader,
-    coordinationStore: try PersistenceStore(
+    processingLockStore: try PersistenceStore(
       directory: temporaryDirectory.appendingPathComponent("ProcessingLocks")))
 
   let summary = await service.summaries()[rootID]
 
   let expectedState: CollectionProcessingDisplayState = error == .busy ? .busy : .unavailable
   #expect(summary?.displayState == expectedState)
-  #expect(summary?.presentation.state == expectedState)
+  #expect(summary?.presentation.displayState == expectedState)
   #expect(summary?.displayState != .interrupted)
   if error != .busy { #expect(summary?.counts.total == .none) }
   #expect(reader.calls == 2)
@@ -176,7 +177,7 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
 /// Logging failure never replaces a successful configuration result.
 @MainActor
 @Test func configurationResultSurvivesLoggingFailure() async {
-  let activity = ActivityServiceFake()
+  let activity = MovieFolderActivityServiceFake()
   await activity.setFailures(write: true)
   let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: activity)
   await model.saveCredential("private-test-token")

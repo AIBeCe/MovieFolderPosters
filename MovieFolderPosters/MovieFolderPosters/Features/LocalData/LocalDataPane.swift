@@ -18,7 +18,7 @@ final class LocalDataPane: NSViewController, NSTableViewDataSource, NSTableViewD
   /// Narrow read-only storage source.
   private let service: any LocalDataExportServicing
   /// Latest finite category report.
-  private var report: LocalStorageReport?
+  private var report: ApplicationLocalStorageReport?
   /// Cancels presentation of stale refreshes.
   private var generation = UInt64.zero
   /// Cancels work when Refresh is replaced or the pane disappears.

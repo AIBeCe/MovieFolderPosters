@@ -107,7 +107,7 @@ struct CredentialServiceTests {
     let credentials = CredentialTestStore()
     let fixture = try CredentialServiceFixture(credentials: credentials, transport: CredentialTestTransport { _ in
       try credentials.save("newer-token")
-      return HTTPResponse(data: Data(), statusCode: 401, contentType: "application/json")
+      return HTTPTransportResponse(data: Data(), statusCode: 401, contentType: "application/json")
     })
     defer { fixture.cleanup() }
     try credentials.save("old-token")
@@ -279,17 +279,17 @@ private final class CredentialTestNotifier: ConfigurationChangeNotifying {
 /// Supplies one explicit provider response, independent of Debug movie fixtures.
 struct CredentialTestTransport: HTTPTransport {
   /// Operation controlling the request boundary for race and failure tests.
-  let operation: @Sendable (URLRequest) async throws -> HTTPResponse
+  let operation: @Sendable (URLRequest) async throws -> HTTPTransportResponse
   /// Valid authentication response required by the production Network client.
-  static var success: HTTPResponse {
-    HTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200, contentType: "application/json")
+  static var success: HTTPTransportResponse {
+    HTTPTransportResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200, contentType: "application/json")
   }
 
   /// Uses successful authentication unless the test supplies a different provider outcome.
-  init(operation: @escaping @Sendable (URLRequest) async throws -> HTTPResponse = { _ in Self.success }) {
+  init(operation: @escaping @Sendable (URLRequest) async throws -> HTTPTransportResponse = { _ in Self.success }) {
     self.operation = operation
   }
-  func send(_ request: URLRequest) async throws -> HTTPResponse { try await operation(request) }
+  func send(_ request: URLRequest) async throws -> HTTPTransportResponse { try await operation(request) }
 }
 
 /// Performs a synchronous competing change at the HTTP response boundary.
@@ -300,7 +300,7 @@ private final class CredentialRaceTransport: HTTPTransport {
   func setOperation(_ operation: @escaping @Sendable () throws -> Void) {
     self.operation.withLock { $0 = operation }
   }
-  func send(_ request: URLRequest) throws -> HTTPResponse {
+  func send(_ request: URLRequest) throws -> HTTPTransportResponse {
     let callback = operation.withLock { $0 }
     try callback?()
 

@@ -170,7 +170,7 @@ final class MoviePosterActionViewModel {
   /// Returns a possible spelling difference for one current search result.
   /// - Parameter movie: A movie from the current provider response.
   /// - Returns: A qualifying returned title, or `.none` when no title qualifies.
-  func spellingSuggestion(for movie: MovieMetadata) -> String? {
+  func possibleSpellingDifference(for movie: MovieMetadata) -> String? {
     guard let searchedTitle else { return .none }
 
     return MovieTitleSpellingDifferenceChecker().possibleSpellingDifference(from: searchedTitle, movie: movie)
