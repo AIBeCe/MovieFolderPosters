@@ -30,6 +30,8 @@ nonisolated private struct MetadataCacheKey: Encodable {
   let credentialRevision: UUID?
   /// Distinguishes explicit fixtures from production evidence.
   let usesFixtures: Bool
+  /// Captured budget for search keys; absent for compatible alias keys.
+  let pageLimit: Int?
 
   /// Produces deterministic encoded evidence before hashing, avoiding concatenated-field ambiguities.
   func digest() throws -> String {
@@ -43,10 +45,10 @@ nonisolated private struct MetadataCacheKey: Encodable {
 extension MovieFolderProcessor {
   /// Derives the query key using complete captured request context.
   static func queryKey(title: String, year: Int?, language: TMDbLanguage = .english,
-                       credentialRevision: UUID? = .none, usesFixtures: Bool = false) throws -> String {
+                       credentialRevision: UUID? = .none, usesFixtures: Bool = false, pageLimit: Int) throws -> String {
     try MetadataCacheKey(category: .movieSearch, title: title.trimmingCharacters(in: .whitespacesAndNewlines),
       year: year, movieID: .none, language: language, credentialRevision: credentialRevision,
-      usesFixtures: usesFixtures).digest()
+      usesFixtures: usesFixtures, pageLimit: pageLimit).digest()
   }
 
   /// Loads every eligible alias sequentially and applies the fixed five-ID ceiling before cache lookup.
@@ -60,7 +62,7 @@ extension MovieFolderProcessor {
       try Task.checkCancellation()
       let key = try MetadataCacheKey(category: .alternativeTitles, title: .none, year: .none, movieID: id,
         language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-        usesFixtures: usesFixtureMetadata).digest()
+        usesFixtures: usesFixtureMetadata, pageLimit: .none).digest()
       if let cached = state.alternativeTitles[key], cached.movieID == id,
         now().timeIntervalSince(cached.createdAt) >= 0,
         now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {

@@ -31,6 +31,7 @@ struct CollectionSetupPolicyTests {
       as? [String: Any])
     fields.removeValue(forKey: "movieMatchingConfiguration")
     fields["version"] = 1
+    fields.removeValue(forKey: "searchPageLimit")
     let old = try convertLegacySettingsFixture(JSONSerialization.data(withJSONObject: fields))
     #expect(old.movieMatchingConfiguration == MovieMatchingConfiguration())
     configuration.movieMatchingConfiguration.comparesOriginalTitles = false

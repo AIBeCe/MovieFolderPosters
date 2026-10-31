@@ -11,6 +11,44 @@ import Testing
 
 /// Covers persistence, folder-access, overlap, and credential behavior in the host service.
 struct DirectoryConfigurationServiceTests {
+  /// The global limit persists independently of overrides and failed saves restore visible state.
+  @Test @MainActor func searchPageLimitPersistsAndRestoresAfterFailure() async throws {
+    let fixture = try ConfigurationServiceFixture()
+    defer { fixture.cleanup() }
+    let collection = MonitoredDirectory(id: UUID(), path: "/AbsentCollection", transferBookmark: Data([1]),
+      authorizationVersion: UUID(), movieMatchingConfiguration: MovieMatchingConfiguration())
+    try fixture.repository.update { $0.directories = [collection] }
+    let original = try fixture.repository.read()
+    let model = ConfigurationViewModel(service: fixture.service, activity: MovieFolderActivityServiceFake())
+    await model.load()
+    #expect(model.searchPageLimit == 3)
+    await model.setSearchPageLimit(5)
+    #expect(model.searchPageLimit == 5)
+    let saved = try fixture.repository.read()
+    #expect(saved.searchPageLimit == 5)
+    #expect(saved.directories == original.directories)
+    #expect(saved.credentialRevision == original.credentialRevision)
+    #expect(saved.processingCacheRevision == original.processingCacheRevision)
+    await model.setSearchPageLimit(6)
+    #expect(model.searchPageLimit == 5)
+    #expect(model.errorMessage == "Could not save matching settings.")
+    #expect(!model.isBusy)
+    #expect(try fixture.repository.read() == saved)
+  }
+
+  /// Only the global page budget requests passive cancellation; ordinary changes preserve resuming behavior.
+  @Test @MainActor func searchPageBudgetNotificationIsPassiveAndOrdinaryChangesResume() async throws {
+    let notifier = SearchBudgetNotificationProbe()
+    let fixture = try ConfigurationServiceFixture(notifier: notifier)
+    defer { fixture.cleanup() }
+    try await fixture.service.setSearchPageLimit(5)
+    try await fixture.service.setMovieMatchingConfiguration(MovieMatchingConfiguration())
+    notifier.configurationDidChange()
+    #expect(notifier.resumeFlags == [false, true, true])
+    await #expect(throws: ConfigurationError.invalidConfiguration) { try await fixture.service.setSearchPageLimit(6) }
+    #expect(notifier.resumeFlags == [false, true, true])
+  }
+
   /// Normal loading of old settings shows the recovery action without a separate discarded startup read.
   @Test @MainActor func configurationLoadExplainsRequiredMigration() async throws {
     let fixture = try ConfigurationServiceFixture()
@@ -18,6 +56,7 @@ struct DirectoryConfigurationServiceTests {
     var object = try #require(JSONSerialization.jsonObject(with:
       JSONEncoder().encode(DirectoryConfiguration())) as? [String: Any])
     object["version"] = 3
+    object.removeValue(forKey: "searchPageLimit")
     let source = try PersistenceStore(directory: fixture.root.appendingPathComponent("Shared"))
     do {
       let persistenceAccess = try #require(try source.acquireAccess(for: ConfigurationRepository.recordKey))
@@ -107,7 +146,7 @@ final class CollectionSetupNotificationProbe: ConfigurationChangeNotifying, Send
   var configurationCount: Int { counts.withLock { $0.configuration } }
   /// How often friendly-name presentation was invalidated.
   var presentationCount: Int { counts.withLock { $0.presentation } }
-  func configurationDidChange() { counts.withLock { $0.configuration += 1 } }
+  func configurationDidChange(scheduleObservedCollections: Bool) { counts.withLock { $0.configuration += 1 } }
   func collectionPresentationDidChange() { counts.withLock { $0.presentation += 1 } }
 }
 
@@ -136,7 +175,8 @@ struct ConfigurationServiceFixture {
   /// Creates an isolated service fixture with the requested authorization behavior.
   init(
     authorization: any DirectoryAuthorizationProviding = TestDirectoryAuthorization(mode: .implicit),
-    activity: (any MovieFolderActivityServicing)? = .none
+    activity: (any MovieFolderActivityServicing)? = .none,
+    notifier: (any ConfigurationChangeNotifying)? = .none
   ) throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     repository = ConfigurationRepository(
@@ -148,7 +188,7 @@ struct ConfigurationServiceFixture {
     service = DirectoryConfigurationService(
       repository: repository,
       authorizations: authorizations,
-      credentials: credentials, notifier: SilentConfigurationNotifier(),
+      credentials: credentials, notifier: notifier ?? SilentConfigurationNotifier(),
       authorization: authorization, activity: activity ?? MovieFolderActivityServiceFake(),
       credentialTransport: CredentialTestTransport(),
       recovery: ProcessingRecoveryService(
@@ -174,7 +214,7 @@ final class ConfigurationCredentialProbe: CredentialStoring {
 /// No-op notifier for tests that do not inspect notifications.
 struct SilentConfigurationNotifier: ConfigurationChangeNotifying {
   /// Ignores configuration-change notifications.
-  func configurationDidChange() {}
+  func configurationDidChange(scheduleObservedCollections: Bool) {}
 }
 
 /// Controls bookmark resolution behavior for authorization edge-case tests.
@@ -209,7 +249,7 @@ final class ConfigurationNotifierProbe: ConfigurationChangeNotifying, Sendable {
   /// Creates the probe with the repository whose committed state it observes.
   init(repository: ConfigurationRepository) { self.repository = repository }
   /// Reads the saved appearance after a service notification.
-  func configurationDidChange() {
+  func configurationDidChange(scheduleObservedCollections: Bool) {
     let saved = try? repository.read().posterAppearance
     appearance.withLock { $0 = saved }
   }
@@ -312,4 +352,15 @@ actor InclusionCommittedHistoryProbe: MovieFolderActivityServicing {
 
   func entries() -> [MovieFolderActivityLogEntry] { [] }
   func clear() {}
+}
+
+/// Records scheduler intent without posting any distributed notification.
+private final class SearchBudgetNotificationProbe: ConfigurationChangeNotifying, Sendable {
+  /// Scheduler resume flags in service invocation order.
+  private let flags = Mutex<[Bool]>([])
+  /// A stable read of recorded notification intents.
+  var resumeFlags: [Bool] { flags.withLock { $0 } }
+  func configurationDidChange(scheduleObservedCollections: Bool) {
+    flags.withLock { $0.append(scheduleObservedCollections) }
+  }
 }

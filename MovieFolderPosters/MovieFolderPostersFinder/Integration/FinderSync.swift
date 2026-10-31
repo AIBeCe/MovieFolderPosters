@@ -118,6 +118,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         credentialRevision: configuration.credentialRevision,
         usesFixtureMetadata: usesFixtureMetadata,
         movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
+        searchPageLimit: configuration.searchPageLimit,
         processingConfiguration: root.directory.processingConfiguration,
         activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: root.directory))
     }
@@ -352,7 +353,15 @@ final class FinderSync: FIFinderSync {
   /// Reloads committed settings without blocking the notification callback.
   @objc private func configurationChanged(_ notification: Notification) {
     let scheduler = scheduler
-    Task { await scheduler.reload() }
+    let scheduleObservedCollections = Self.schedulesObservedCollections(for: notification)
+    Task { await scheduler.reload(scheduleObservedCollections: scheduleObservedCollections) }
+  }
+
+  /// Reads passive reload intent while preserving ordinary behavior for older or malformed notifications.
+  /// - Parameter notification: Shared configuration change received from the host or another process.
+  /// - Returns: False only for an explicit false resume flag; absent or malformed values resume observations.
+  static func schedulesObservedCollections(for notification: Notification) -> Bool {
+    notification.userInfo?["scheduleObservedCollections"] as? Bool ?? true
   }
 
   override func beginObservingDirectory(at url: URL) {

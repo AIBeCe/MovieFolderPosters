@@ -1,5 +1,25 @@
 # Saved-data version migration
 
+## R120-03 settings schema extension
+
+Implementation scope on `feature/bounded-search-pagination`; see
+[the implementation plan](R120-03_IMPLEMENTATION_PLAN.md) for checks, review, and remaining phase gates.
+The dated original migration design and evidence below remain historical.
+
+Settings schema 7 adds the global `searchPageLimit` integer (1–5). New installations default to 3. Existing
+settings schemas 1–6 require **Migrate Saved Data…**; conversion follows the existing historical chain and then
+adds the default of 3. Normal reads do not migrate or manufacture a missing current-schema field. Missing,
+malformed, out-of-range, and unsupported future records fail closed.
+
+The existing migration service backs up original bytes before validated atomic replacement. The settings change
+preserves collection overrides, bookmarks, authorization, credential/cache/history generations, and saved movie
+decisions. It introduces no new collection outcome schema or background migration. Increasing the page limit does
+not itself reopen confirmed identities or schedule a new search. Its passive settings reload retains independent
+folder events and existing retry deadlines; ordinary configuration changes keep their reload/resume behavior.
+The focused correction and independent review passed; see the implementation plan.
+This implementation's focused fixtures do not establish
+live-user-data migration qualification.
+
 Status: Implemented, validated and integrated into `develop` on 2026-10-26.
 Independent implementation and validation reviews PASS.
 Feature branch: `bugfix/storage-schema-migration`; baseline: `21a105d`; implementation: `d685a93`;

@@ -33,7 +33,9 @@ struct ProcessingRecoveryTests {
     let recovery = try coordinator(at: directory)
     let rejected = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: .authentication), recovery: recovery, credential: "secret-token")
-    await #expect(throws: TMDbError.authentication) { try await rejected.searchMovies(title: "Title", year: .none) }
+    await #expect(throws: TMDbError.authentication) {
+      try await rejected.searchMovies(title: "Title", year: .none, language: .english, pageLimit: 3)
+    }
     let reopened = try coordinator(at: directory)
     let same = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: reopened, credential: " secret-token ")
@@ -65,7 +67,7 @@ struct ProcessingRecoveryTests {
       provider: RecoveryTestProvider(), recovery: reopened, credential: "changed")
     await #expect(throws: ProcessingRecoveryError.providerBackoff(
       until: timestamp.addingTimeInterval(1_200), reason: .rateLimited)) {
-      try await provider.searchMovies(title: "Title", year: .none)
+      try await provider.searchMovies(title: "Title", year: .none, language: .english, pageLimit: 3)
     }
     // Provider backoff must not prohibit a local cached icon operation.
     _ = try reopened.acquireProcessingAccess()
@@ -105,7 +107,8 @@ struct ProcessingRecoveryTests {
       store: try PersistenceStore(directory: directory), now: { timestamp.addingTimeInterval(61) })
     let success = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(recovery: later), recovery: later, credential: "credential")
-    #expect(try await success.searchMovies(title: "Title", year: .none).movies.isEmpty)
+    #expect(try await success.searchMovies(title: "Title", year: .none,
+      language: .english, pageLimit: 3).movies.isEmpty)
   }
 
   /// Unsupported payloads and malformed persisted bytes never reset the mode to permissive defaults.
@@ -200,7 +203,8 @@ extension ProcessingRecoveryTests {
     }
     let changed = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: reopened, credential: "third")
-    #expect(try await changed.searchMovies(title: "Title", year: .none).movies.isEmpty)
+    #expect(try await changed.searchMovies(title: "Title", year: .none,
+      language: .english, pageLimit: 3).movies.isEmpty)
   }
 
   /// Once rejected-credential history fills, a further rejection must durably pause unknown credentials.
@@ -273,7 +277,9 @@ extension ProcessingRecoveryTests {
     let recovery = try coordinator(at: directory)
     let provider = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(failure: failure), recovery: recovery, credential: "credential")
-    await #expect(throws: failure) { try await provider.searchMovies(title: "Title", year: .none) }
+    await #expect(throws: failure) {
+      try await provider.searchMovies(title: "Title", year: .none, language: .english, pageLimit: 3)
+    }
     #expect(try recovery.read().providerRetryAt == .none)
     #expect(try recovery.read().providerFailureReason == .none)
   }
@@ -287,13 +293,14 @@ extension ProcessingRecoveryTests {
       provider: RecoveryTestProvider(), recovery: recovery, credential: "credential")
     try recovery.setRecoveryModeEnabled(true)
     await #expect(throws: ProcessingRecoveryError.recoveryMode) {
-      try await provider.searchMovies(title: "Title", year: .none)
+      try await provider.searchMovies(title: "Title", year: .none, language: .english, pageLimit: 3)
     }
     await #expect(throws: ProcessingRecoveryError.recoveryMode) {
       try await provider.downloadPoster(path: "/poster.jpg")
     }
     try recovery.setRecoveryModeEnabled(false)
-    #expect(try await provider.searchMovies(title: "Title", year: .none).movies.isEmpty)
+    #expect(try await provider.searchMovies(title: "Title", year: .none,
+      language: .english, pageLimit: 3).movies.isEmpty)
   }
 
   /// HTTP authentication variants all persist the rejected credential independent of future clock changes.
@@ -310,7 +317,7 @@ extension ProcessingRecoveryTests {
     let reopened = RecoveryAwareMovieMetadataProvider(
       provider: RecoveryTestProvider(), recovery: future, credential: "credential")
     await #expect(throws: ProcessingRecoveryError.authenticationRequired) {
-      try await reopened.searchMovies(title: "Title", year: .none)
+      try await reopened.searchMovies(title: "Title", year: .none, language: .english, pageLimit: 3)
     }
   }
 
@@ -341,7 +348,7 @@ extension ProcessingRecoveryTests {
       provider: RecoveryTestProvider(failure: .authentication), recovery: recovery, credential: "credential")
     let task = Task {
       withUnsafeCurrentTask { $0?.cancel() }
-      _ = try await provider.searchMovies(title: "Title", year: .none)
+      _ = try await provider.searchMovies(title: "Title", year: .none, language: .english, pageLimit: 3)
     }
     await #expect(throws: CancellationError.self) { try await task.value }
     #expect(try recovery.read().providerFailureReason == .none)
@@ -372,7 +379,17 @@ private struct RecoveryTestProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     _ = try recovery?.read()
     if let failure { throw failure }
 

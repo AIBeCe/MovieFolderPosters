@@ -42,7 +42,7 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
   try fixture.addFolder("Dune (2021) [tt1160419]")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none, pageLimit: 3)
   let staleSearch = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
   try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
@@ -97,7 +97,7 @@ func cachedEditionSuffixDecisionIsReassessedOnce() async throws {
   try fixture.addFolder("Dune (2021) Director’s Cut")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none, pageLimit: 3)
   let staleSearch = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: clock.now)
   try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
@@ -150,7 +150,7 @@ func incompleteSearchRecoveryEvictsOnlyItsQueryBeforeRetry() async throws {
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none, pageLimit: 3)
   let incomplete = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
   try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,
@@ -176,7 +176,7 @@ func legacyUnresolvedRecoveryReassessesFreshAndPersistsClassification() async th
   try fixture.addFolder("Dune (2021)")
   let candidate = try #require(try FileSystemService().candidates(in: fixture.movies).first)
   let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
-  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none)
+  let queryKey = try MovieFolderProcessor.queryKey(title: "Dune", year: .none, pageLimit: 3)
   let incomplete = CachedMovieSearch(result: MovieSearchResult(movies: [], hasMorePages: true), createdAt: clock.now)
   try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved,

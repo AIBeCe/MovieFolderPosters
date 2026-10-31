@@ -10,7 +10,7 @@ import Testing
 struct CollectionProcessingIntegrationTests {
   /// A cache-save failure records the actual verified poster and stops before the next folder change.
   @Test func automaticCacheFailurePreservesActualInstalledEvidence() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Alpha (2021)", "Beta (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Alpha (2021)", "Beta (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     #if SWIFT_PACKAGE
       let image = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
@@ -40,7 +40,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// A result-store failure after a real assignment retains both operation success and failed persistence.
   @Test func authoritativePersistenceFailureRetainsActualOperationHistory() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     #if SWIFT_PACKAGE
       let image = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
@@ -74,7 +74,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// Manual selection/removal share collection evidence without claiming a new full collection run.
   @Test func manualActionsUpdateVerifiedStateAndPreserveCollectionRun() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Missing (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Missing (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider()).process(
       root: fixture.root, processingContext: fixture.context)
@@ -123,7 +123,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// Readers observe committed membership during provider work, and cancellation leaves no fabricated result.
   @Test func cancellationPersistsInterruptedPendingWork() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Waiting (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Waiting (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let provider = BlockingCollectionProcessingMetadataProvider()
     let processor = fixture.processor(provider: provider)
@@ -146,7 +146,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// Complete negative and ambiguous searches remain distinguishable after reopening storage.
   @Test func distinctMatchingResultsSurviveReopening() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Missing (2021)", "Ambiguous (2021)", "Incomplete (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Missing (2021)", "Ambiguous (2021)", "Incomplete (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let processor = fixture.processor(provider: CollectionProcessingMetadataProvider())
     let summary = try await processor.process(root: fixture.root, processingContext: fixture.context)
@@ -164,7 +164,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// Conclusive negative and ambiguous matches never arm an automatic retry.
   @Test func conclusiveResultsDoNotScheduleAutomaticRetry() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Missing (2021)", "Ambiguous (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Missing (2021)", "Ambiguous (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let summary = try await fixture.processor(provider: CollectionProcessingMetadataProvider()).process(
       root: fixture.root, processingContext: fixture.context)
@@ -174,7 +174,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// An established empty inventory is different from a missing summary.
   @Test func emptyCollectionEstablishesRealZeros() async throws {
-    let fixture = try CollectionProcessingFixture(names: [])
+    let fixture = try CollectionProcessingTestEnvironment(names: [])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     #expect(try fixture.processingStore.read(rootID: fixture.context.rootID) == .none)
     _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider()).process(
@@ -187,7 +187,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// Authentication backoff stops the traversal without inventing processingStore for unvisited folders.
   @Test func providerBackoffPersistsPartialTraversal() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["First (2021)", "Second (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["First (2021)", "Second (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let provider = CollectionProcessingMetadataProvider(authenticationFailure: true)
     _ = try await fixture.processor(provider: provider).process(
@@ -202,7 +202,7 @@ struct CollectionProcessingIntegrationTests {
   /// Neither a new authentication failure nor cached rejection can fabricate a completed collection run.
   @Test(arguments: [false, true])
   func authenticationAdmissionPreservesPartialTraversal(cachedRejection: Bool) async throws {
-    let fixture = try CollectionProcessingFixture(names: ["First (2021)", "Second (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["First (2021)", "Second (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let recovery = ProcessingRecoveryService(
       store: try PersistenceStore(directory: fixture.base.appendingPathComponent("Recovery")))
@@ -210,7 +210,9 @@ struct CollectionProcessingIntegrationTests {
       provider: CollectionProcessingMetadataProvider(authenticationFailure: true),
       recovery: recovery, credential: "token")
     if cachedRejection {
-      await #expect(throws: TMDbError.authentication) { try await provider.searchMovies(title: "Warmup", year: .none) }
+      await #expect(throws: TMDbError.authentication) {
+        try await provider.searchMovies(title: "Warmup", year: .none, language: .english, pageLimit: 3)
+      }
     }
     let processor = MovieFolderProcessor(
       persistence: fixture.processing, provider: provider,
@@ -227,7 +229,7 @@ struct CollectionProcessingIntegrationTests {
   }
   /// An explicit refresh cannot replace unchanged confirmed identity or hide its manual-resolution result.
   @Test func refreshIdentityConflictRetainsDecisionAndManualResult() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root)
     let previous = FolderProcessingCacheRecord(fingerprint: candidate.fingerprint, status: .processed,
@@ -263,7 +265,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// A prior manual-resolution result cannot donate identity to a changed folder after a fresh refresh fails.
   @Test func refreshFailureDoesNotProjectIdentityAcrossChangedFingerprint() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root)
     let previous = FolderProcessingCacheRecord(fingerprint: "obsolete", status: .unresolved,
@@ -290,7 +292,7 @@ struct CollectionProcessingIntegrationTests {
 
   /// Over-budget re-identification persists a manual choice without spending any alias or artwork request.
   @Test func refreshOverBudgetPersistsManualMatchingRequired() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: "Movie (2021)", in: fixture.root)
     let movies = (1...6).map {
@@ -319,7 +321,7 @@ struct CollectionProcessingIntegrationTests {
 }
 
 /// Local collection and current configuration required by the result change fence.
-struct CollectionProcessingFixture {
+struct CollectionProcessingTestEnvironment {
   /// Root directory holding all disposable test inputs and records.
   let base: URL
   /// Collection containing only test-created child folders.
@@ -395,7 +397,22 @@ private struct CollectionProcessingMetadataProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    if page > 1 {
+      guard (2...6).contains(page), title == "Incomplete" else { throw TMDbError.invalidQuery }
+
+      return MovieSearchPage(movies: [], page: page, totalPages: 6)
+    }
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     if authenticationFailure { throw TMDbError.authentication }
     if missingArtwork {
       return MovieSearchResult(
@@ -480,7 +497,17 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try await testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     started = true
     waiter?.resume()
     waiter = .none
@@ -499,7 +526,7 @@ private actor BlockingCollectionProcessingMetadataProvider: MovieMetadataProvide
 struct CollectionProcessingArtworkIntegrationTests {
   /// Identity remains available when the conservatively identified movie has no artwork.
   @Test func missingArtworkIsNotMissingMovieIdentity() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     _ = try await fixture.processor(provider: CollectionProcessingMetadataProvider(missingArtwork: true)).process(
       root: fixture.root, processingContext: fixture.context)
@@ -513,7 +540,7 @@ struct CollectionProcessingArtworkIntegrationTests {
 
   /// A poster transport failure retains established movie identity and is not a metadata failure.
   @Test func artworkFailureKeepsIdentifiedMovie() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let provider = CollectionProcessingMetadataProvider(posterData: Data([1]), shouldFailPoster: true)
     let summary = try await fixture.processor(provider: provider).process(
@@ -532,7 +559,7 @@ struct CollectionProcessingArtworkIntegrationTests {
 
   /// A failed restyle leaves the existing verified poster Done and records the failed attempt separately.
   @Test func automaticRestyleFailureRetainsVerifiedInstalledPoster() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Movie (2021)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Movie (2021)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     #if SWIFT_PACKAGE
       let image = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))

@@ -212,8 +212,18 @@ final class MoviePosterActionViewModel {
           result.movies.contains(where: Self.hasPoster)
           ? "Choose a poster below and apply it when ready."
           : "No poster-bearing movies were found."
+        self?.appendIncompleteSearchMessage()
       }
     )
+  }
+
+  /// Preserves completeness guidance while selection replaces the primary status text.
+  private func appendIncompleteSearchMessage() {
+    guard searchResult?.hasMorePages == true else { return }
+
+    statusMessage = (statusMessage ?? "") + " Search page limit reached. Results are incomplete. "
+      + "Refine the title or year, "
+      + "or increase Maximum search pages in Settings."
   }
 
   /// Selects a poster-bearing result from the current search response.
@@ -239,6 +249,7 @@ final class MoviePosterActionViewModel {
     } else {
       statusMessage = "Choose a poster below and apply it when ready."
     }
+    appendIncompleteSearchMessage()
     publish()
 
     return true

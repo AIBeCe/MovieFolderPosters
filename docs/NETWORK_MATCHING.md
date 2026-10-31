@@ -1,5 +1,33 @@
 # Network service and conservative matching
 
+## R120-03 — Bounded pagination
+
+Implementation scope on `feature/bounded-search-pagination`; checks and review are recorded in
+[the implementation plan](R120-03_IMPLEMENTATION_PLAN.md). Formal Validation and Acceptance Testing remain
+separate, unstarted phases. The original Phase 4 descriptions and results below are historical evidence.
+
+Network supplies one validated TMDb page at a time. MovieFolderCommon coordinates sequential requests through
+shared recovery admission before every page. Settings → Matching Defaults → Maximum search pages is a global
+limit, default 3, permitted values 1–5; it applies even when a collection overrides its matching choices.
+Every search captures its limit and other request inputs. A settings change never expands an in-flight budget.
+Saving the page limit passively reloads configuration and cancels stale active work without synthesizing a new
+Finder visit. Independent folder events, already queued work, and retry deadlines remain valid triggers.
+
+Complete searches stop before spending unused requests. Searches with pages remaining after the limit return
+explicit incomplete evidence and cannot establish a unique automatic identity. A later-page failure or cancellation
+throws rather than publishing or caching a partial success. Pagination metadata must remain consistent. Identical
+records deduplicate in first-seen order; conflicting records for the same ID fail instead of selecting one version.
+
+Existing conservative title/year evidence and the five-candidate evidence limit remain. An uncached identification
+can issue at most `pageLimit + 5 alternative-title + 5 release-date` requests (15 at the maximum setting); artwork
+requests are separate. Search cache identities include the captured page limit, language, credential generation,
+and fixture context. Alias cache identities remain compatible with the preceding implementation.
+
+Choose Movie labels budget-exhausted results as incomplete and permits only deliberate candidate selection.
+Refining title/year or increasing the limit may expose more results but does not guarantee a match. Throttling,
+authentication, and transport failures keep their distinct recovery explanations; the search does not retry pages
+or wait for backoff internally.
+
 Phase 4 adds a local SwiftPM package, `Packages/Network`, and an application-owned `MovieMatcher`.
 Both use Swift 6 with immutable Sendable values. There are no third-party dependencies.
 The host and its unit-test target link Network; Finder integration remains a later phase.

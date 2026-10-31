@@ -462,9 +462,9 @@ extension MovieFolderProcessor {
     activity.stage = .search
     let queryKey = try Self.queryKey(title: parsed.title, year: .none,
       language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-      usesFixtures: usesFixtureMetadata)
+      usesFixtures: usesFixtureMetadata, pageLimit: searchPageLimit)
     let search = try await provider.searchMovies(title: parsed.title, year: .none,
-      language: movieMatchingConfiguration.searchLanguage)
+      language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
     try Task.checkCancellation()
     candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
     try ensureReplaceableIcon(for: candidate, in: root)

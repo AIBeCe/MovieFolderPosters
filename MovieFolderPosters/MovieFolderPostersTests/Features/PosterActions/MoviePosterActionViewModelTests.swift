@@ -82,6 +82,8 @@ struct MoviePosterActionViewModelTests {
     await waitForIdle(viewModel)
 
     #expect(viewModel.hasMorePages)
+    #expect(viewModel.selectedMovieID == .none)
+    #expect(viewModel.statusMessage?.contains("Search page limit reached. Results are incomplete.") == true)
     let navigation = ActionNavigationProbe()
     viewModel.navigationDelegate = navigation
     viewModel.openSelectedMoviePage()
@@ -90,6 +92,7 @@ struct MoviePosterActionViewModelTests {
     let countsBeforeApply = await service.callCounts
     #expect(countsBeforeApply.apply == 0)
     #expect(viewModel.selectMovie(id: 7))
+    #expect(viewModel.statusMessage?.contains("increase Maximum search pages in Settings.") == true)
     viewModel.openSelectedMoviePage()
     #expect(navigation.openedURL?.absoluteString == "https://www.themoviedb.org/movie/7")
     #expect(navigation.sender === viewModel)

@@ -46,6 +46,22 @@ shared-storage checks. Collection rows distinguish access evidence and uncertain
 legacy overlaps block processing. See [Installation readiness](INSTALLATION_READINESS.md) for recovery instructions,
 stable-identity rename behavior, the complete access matrix, and unperformed native checks.
 
+## Search request limit — R120-03 implementation scope
+
+Settings → Matching Defaults → Maximum search pages selects the maximum number of TMDb search pages, from 1 to 5
+(default 3). It applies globally to automatic processing and manual searches, including collections with explicit
+matching overrides. Complete searches stop early; reaching the limit leaves results incomplete and prevents
+automatic uniqueness. Existing title/year evidence and candidate limits still apply. More pages may require more
+time and requests without resolving the movie.
+
+Existing installations require the explicit **Migrate Saved Data…** command to upgrade settings to schema 7.
+Changing the limit passively reloads settings and cancels stale active work without scheduling a new search.
+Existing folder events, queued visits, and retry deadlines remain independent triggers. Other configuration
+changes retain their existing reload-and-resume behavior. The approved correction and its independent review
+passed focused checks; rendered UI and formal Validation/Acceptance remain unperformed.
+Implementation checks and outstanding Validation/Acceptance
+phases are recorded in [the implementation plan](R120-03_IMPLEMENTATION_PLAN.md).
+
 ## Poster appearance
 
 Choose Raw (no styling), Soft finish (default), or Matte frame in **Settings > Poster Layout**. This global selection

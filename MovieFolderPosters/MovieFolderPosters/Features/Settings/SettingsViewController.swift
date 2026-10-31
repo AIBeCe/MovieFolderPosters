@@ -97,6 +97,8 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
     target: .none, action: .none)
   /// Native provider language choice saved with the complete matching configuration.
   private let languagePicker = MovieSearchLanguagePicker()
+  /// Global bounded search request budget, separate from collection overrides.
+  private let pageLimitPicker = NSPopUpButton(frame: .zero, pullsDown: false)
   /// Displays a fixed safe save failure without exposing underlying storage errors.
   private let errorLabel = NSTextField(wrappingLabelWithString: "")
   /// Retains only the currently presented contextual help; AppKit keeps the delegate weak.
@@ -146,7 +148,20 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
       "Automatic matching requires complete title evidence and one unique movie identity. "
         + "Alternative-title requests are limited to five candidates; larger searches require a manual choice.")
     evidenceHelp.textColor = .secondaryLabelColor
-    content += [languageRow, languageHelp, evidenceHelp]
+    pageLimitPicker.addItems(withTitles: (1...5).map(String.init))
+    pageLimitPicker.target = self
+    pageLimitPicker.action = #selector(searchPageLimitChanged)
+    pageLimitPicker.setAccessibilityLabel("Maximum search pages")
+    let pageHelp = "Applies to all collections and manual searches, including collections with matching overrides. "
+      + "Each search requests up to this many TMDb result pages."
+    pageLimitPicker.toolTip = pageHelp
+    pageLimitPicker.setAccessibilityHelp(pageHelp)
+    let pageRow = NSStackView(views: [NSTextField(labelWithString: "Maximum search pages"), pageLimitPicker])
+    pageRow.spacing = 8
+    let pageDetail = NSTextField(wrappingLabelWithString: pageHelp)
+    pageDetail.textColor = .secondaryLabelColor
+    content += [languageRow, languageHelp, evidenceHelp, NSTextField(labelWithString: "Search requests"),
+      pageRow, pageDetail]
     errorLabel.textColor = .systemRed
     _ = makeContent(content + [errorLabel])
     updatePresentation()
@@ -159,8 +174,16 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
     originalButton.isEnabled = !viewModel.isBusy
     languagePicker.display(viewModel.movieMatchingConfiguration.searchLanguage)
     languagePicker.isEnabled = !viewModel.isBusy
+    pageLimitPicker.selectItem(at: viewModel.searchPageLimit - 1)
+    pageLimitPicker.isEnabled = !viewModel.isBusy
     errorLabel.stringValue = viewModel.errorMessage == "Could not save matching settings."
       ? viewModel.errorMessage ?? "" : ""
+  }
+
+  /// Persists the selected global budget and restores saved state after a failed save.
+  @objc private func searchPageLimitChanged() {
+    let limit = pageLimitPicker.indexOfSelectedItem + 1
+    Task { await viewModel.setSearchPageLimit(limit); updatePresentation() }
   }
 
   /// Saves one immutable checkbox snapshot through the shared configuration model.

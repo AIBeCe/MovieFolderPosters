@@ -81,7 +81,7 @@ actor TMDbRequestObservationRecorderDelegate: TMDbClientRequestDelegate {
     token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
 
   await #expect(throws: TMDbError.malformedResponse) {
-    try await tmdbClient.searchMovies(title: "private title", year: 1979)
+    try await tmdbClient.searchMoviePage(title: "private title", year: 1979, page: 1)
   }
 
   let observations = await delegate.captured()

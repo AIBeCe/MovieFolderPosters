@@ -68,7 +68,28 @@ public struct MovieMetadata: Equatable, Sendable {
   }
 }
 
-/// Movies returned from the first page of a TMDb search.
+/// One validated provider page, before whole-search completeness is established.
+public struct MovieSearchPage: Equatable, Sendable {
+  /// Movie records in provider order.
+  public let movies: [MovieMetadata]
+  /// Positive requested and returned page number.
+  public let page: Int
+  /// Provider page count; zero is valid only for an empty first page.
+  public let totalPages: Int
+
+  /// Captures one provider page. The client and aggregator validate pagination before use.
+  /// - Parameters:
+  ///   - movies: The page's movie records.
+  ///   - page: The returned page number.
+  ///   - totalPages: The provider's total page count.
+  public init(movies: [MovieMetadata], page: Int, totalPages: Int) {
+    self.movies = movies
+    self.page = page
+    self.totalPages = totalPages
+  }
+}
+
+/// Movies collected within a finite search budget.
 public struct MovieSearchResult: Equatable, Sendable {
   /// The validated movie results in server order.
   public let movies: [MovieMetadata]

@@ -21,7 +21,7 @@ struct PersistedModelNamingCompatibilityTests {
     encoder.outputFormatting = [.sortedKeys]
     let migrated = try encoder.encode(decoded)
     let migratedObject = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
-    #expect(migratedObject["version"] as? Int == 6)
+    #expect(migratedObject["version"] as? Int == 7)
     #expect(migratedObject["developmentFixtures"] as? Bool == true)
     #expect(migratedObject["processingCacheRevision"] as? String == "11111111-1111-1111-1111-111111111111")
   }
@@ -92,7 +92,8 @@ struct PersistedModelNamingCompatibilityTests {
   /// - Throws: Configuration or fixture JSON encoding/decoding failures.
   @Test func privacyNamesRetainCurrentWireKeysAndBytes() throws {
     let persisted = try JSONSerialization.data(withJSONObject: [
-      "version": 6,
+      "version": 7,
+      "searchPageLimit": 3,
       "directories": [[
         "id": "11111111-1111-1111-1111-111111111111",
         "path": "/Movies",

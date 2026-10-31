@@ -59,7 +59,7 @@ extension MovieFolderProcessor {
         // A retry must not establish a new classification from the same inconclusive search.
         visit.processingCache.queries.removeValue(forKey: try Self.queryKey(title: parsed.title, year: .none,
           language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-          usesFixtures: usesFixtureMetadata))
+          usesFixtures: usesFixtureMetadata, pageLimit: searchPageLimit))
         visit.processingCache.folders[candidate.name] = FolderProcessingCacheRecord(
           fingerprint: candidate.fingerprint, status: .transientFailure, retryDate: .none,
           matchedMovieID: record.matchedMovieID, posterPath: record.posterPath, processingReason: .interrupted,
@@ -423,13 +423,13 @@ extension MovieFolderProcessor {
     let access = request.access
     let queryKey = try Self.queryKey(title: title, year: year,
       language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-      usesFixtures: usesFixtureMetadata)
+      usesFixtures: usesFixtureMetadata, pageLimit: searchPageLimit)
     if let cached = visit.processingCache.queries[queryKey],
       now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {
       return cached.searchResult()
     } else {
       let search = try await provider.searchMovies(title: title, year: year,
-        language: movieMatchingConfiguration.searchLanguage)
+        language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
       try Task.checkCancellation()
 
       guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return .none }

@@ -172,7 +172,22 @@ actor CountingProvider {
     return [movieID: []]
   }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    if page > 1 {
+      guard (2...6).contains(page), search?.hasMorePages == true else { throw TMDbError.invalidQuery }
+
+      return MovieSearchPage(movies: [], page: page, totalPages: 6)
+    }
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try await testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
     if let nextSearchError {
       self.nextSearchError = .none

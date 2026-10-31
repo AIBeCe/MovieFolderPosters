@@ -110,7 +110,8 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     return ConfigurationSummary(
       directories: statuses, credentialConfigured: snapshot.token != .none,
       posterAppearance: configuration.posterAppearance,
-      movieMatchingConfiguration: configuration.movieMatchingConfiguration)
+      movieMatchingConfiguration: configuration.movieMatchingConfiguration,
+      searchPageLimit: configuration.searchPageLimit)
   }
 
   /// Saves refreshed evidence only while each root still equals the originally inspected configuration.
@@ -316,6 +317,14 @@ extension DirectoryConfigurationService {
       changed = change(&configuration.directories[index].processingConfiguration)
     }
     if changed { notifier.configurationDidChange() }
+  }
+
+  /// Persists the global page budget and invalidates in-flight configuration work.
+  func setSearchPageLimit(_ limit: Int) throws {
+    guard (1...5).contains(limit) else { throw ConfigurationError.invalidConfiguration }
+
+    try repository.update { $0.searchPageLimit = limit }
+    notifier.configurationDidChange(scheduleObservedCollections: false)
   }
 
   /// Persists automatic matching defaults without modifying explicit overrides or credentials.

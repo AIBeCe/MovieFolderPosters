@@ -79,16 +79,20 @@ public struct TMDbClient: Sendable {
     }
   }
 
-  /// Searches the first TMDb movie-result page by title and optional release year.
+  /// Searches one explicitly requested TMDb movie-result page by title and optional release year.
   ///
   /// - Parameters:
   ///   - title: The nonempty title query.
   ///   - year: An optional Gregorian year from 1 through 9999.
   ///   - language: Validated language sent unchanged as the single provider language parameter.
-  /// - Returns: Validated movies and whether additional pages exist.
+  ///   - page: Positive provider page to request; exactly one request is dispatched.
+  /// - Returns: Validated movie records and the returned page metadata.
   /// - Throws: ``TMDbError`` for invalid input, rejected responses, or transport failures.
-  public func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english)
-    async throws -> MovieSearchResult {
+  public func searchMoviePage(title: String, year: Int?, language: TMDbLanguage = .english, page: Int)
+    async throws -> MovieSearchPage {
+    guard page > 0 else { throw TMDbError.invalidQuery }
+
+    let requestedPage = page
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTitle.isEmpty, !cleanTitle.contains("\r"), !cleanTitle.contains("\n"),
       year.map({ (1...9999).contains($0) }) ?? true
@@ -101,7 +105,7 @@ public struct TMDbClient: Sendable {
       URLQueryItem(name: "query", value: cleanTitle),
       URLQueryItem(name: "include_adult", value: "false"),
       URLQueryItem(name: "language", value: language.rawValue),
-      URLQueryItem(name: "page", value: "1")
+      URLQueryItem(name: "page", value: String(requestedPage))
     ]
     if let year { components.queryItems?.append(URLQueryItem(name: "year", value: String(year))) }
     guard let url = components.url else { throw TMDbError.invalidQuery }
@@ -115,8 +119,8 @@ public struct TMDbClient: Sendable {
     else { throw TMDbError.malformedResponse }
     do {
       let page = try JSONDecoder().decode(TMDbMovieSearchPage.self, from: response.data)
-      guard page.page == 1, page.totalPages >= 0,
-        page.totalPages != 0 || page.results.isEmpty
+      guard page.page == requestedPage, page.totalPages >= requestedPage ||
+        (requestedPage == 1 && page.totalPages == 0 && page.results.isEmpty)
       else { throw TMDbError.malformedResponse }
       let movies = try page.results.map { item -> MovieMetadata in
         guard item.id > 0, !item.title.isEmpty, !item.originalTitle.isEmpty else {
@@ -128,7 +132,7 @@ public struct TMDbClient: Sendable {
           id: item.id, title: item.title, originalTitle: item.originalTitle,
           releaseYear: date?.year, posterPath: item.posterPath)
       }
-      return MovieSearchResult(movies: movies, hasMorePages: page.totalPages > page.page)
+      return MovieSearchPage(movies: movies, page: page.page, totalPages: page.totalPages)
     } catch let error as TMDbError {
       throw error
     } catch {

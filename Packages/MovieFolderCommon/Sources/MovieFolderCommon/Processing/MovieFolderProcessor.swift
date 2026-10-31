@@ -28,6 +28,8 @@ public actor MovieFolderProcessor {
   let appearance: PosterAppearance
   /// Effective automatic matching choices captured when this processor is composed.
   let movieMatchingConfiguration: MovieMatchingConfiguration
+  /// Global page budget captured at processor creation.
+  let searchPageLimit: Int
   /// Collection pause and identity-based exclusion choices captured for this operation.
   let processingConfiguration: CollectionProcessingConfiguration
   /// Commits authoritative results independently of operational caches.
@@ -66,6 +68,7 @@ public actor MovieFolderProcessor {
   ///   - activityHistoryService: Optional retained best-effort activity writer.
   ///   - activityLogContext: Trusted root-bound names and capture-time privacy for this processor.
   ///   - movieMatchingConfiguration: Effective choices captured for this collection's automatic matching.
+  ///   - searchPageLimit: Global captured search budget; aggregation rejects values outside one through five.
   public init(
     fileSystem: FileSystemService = FileSystemService(),
     persistence: PersistenceStore,
@@ -82,6 +85,7 @@ public actor MovieFolderProcessor {
     usesFixtureMetadata: Bool = false,
     configuration: MovieFolderProcessorConfiguration = .standard,
     movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+    searchPageLimit: Int = 3,
     processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
     activityHistoryService: (any MovieFolderActivityServicing)? = .none,
     activityLogContext: MovieFolderActivityLogContext? = .none
@@ -101,6 +105,7 @@ public actor MovieFolderProcessor {
     self.processingVerifier = processingVerifier
     self.appearance = appearance
     self.movieMatchingConfiguration = movieMatchingConfiguration
+    self.searchPageLimit = searchPageLimit
     self.processingConfiguration = processingConfiguration
     self.processingStore = processingStore
     self.recovery = recovery

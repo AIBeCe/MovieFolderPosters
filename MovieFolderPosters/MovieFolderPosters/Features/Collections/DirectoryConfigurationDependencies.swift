@@ -6,12 +6,14 @@ import Persistence
 /// Notifies shared components after configuration has been persisted.
 nonisolated protocol ConfigurationChangeNotifying: Sendable {
   /// Informs shared app components that persisted configuration changed.
-  func configurationDidChange()
+  func configurationDidChange(scheduleObservedCollections: Bool)
   /// Refreshes collection names without cancelling in-flight Finder processing.
   func collectionPresentationDidChange()
 }
 
 nonisolated extension ConfigurationChangeNotifying {
+  /// Preserves ordinary configuration changes' existing reload-and-resume behavior.
+  func configurationDidChange() { configurationDidChange(scheduleObservedCollections: true) }
   /// Retains compatibility for observers without separate presentation invalidations.
   func collectionPresentationDidChange() {}
 }
@@ -19,7 +21,9 @@ nonisolated extension ConfigurationChangeNotifying {
 /// Sends configuration-change notifications through the shared environment.
 nonisolated struct SharedConfigurationChangeNotifier: ConfigurationChangeNotifying {
   /// Publishes a process-wide configuration change notification.
-  func configurationDidChange() { MovieFolderEnvironment.notifyConfigurationChanged() }
+  func configurationDidChange(scheduleObservedCollections: Bool) {
+    MovieFolderEnvironment.notifyConfigurationChanged(scheduleObservedCollections: scheduleObservedCollections)
+  }
   /// Publishes presentation-only changes to interested host interfaces.
   func collectionPresentationDidChange() {
     DistributedNotificationCenter.default().postNotificationName(

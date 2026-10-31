@@ -51,6 +51,7 @@ private struct OperationalMigrationFixture {
     var settingsObject = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
       as? [String: Any])
     settingsObject["version"] = 5
+    settingsObject.removeValue(forKey: "searchPageLimit")
     var matching = try #require(settingsObject["movieMatchingConfiguration"] as? [String: Any])
     matching.removeValue(forKey: "searchLanguage")
     settingsObject["movieMatchingConfiguration"] = matching

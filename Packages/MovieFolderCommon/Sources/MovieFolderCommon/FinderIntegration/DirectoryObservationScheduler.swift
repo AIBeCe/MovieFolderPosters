@@ -48,6 +48,8 @@ public actor FinderDirectoryObservationScheduler {
   private var isReloading = false
   /// Whether another reload must run after the current reload completes.
   private var reloadRequested = false
+  /// Keeps ordinary reload scheduling sticky while concurrent reload requests drain.
+  private var shouldResumeObservedCollectionsAfterReload = false
   /// Whether all future observation and reload requests must be ignored.
   private var isStopped = false
   /// Privacy-preserving diagnostic events for this component.
@@ -60,33 +62,63 @@ public actor FinderDirectoryObservationScheduler {
     self.delegate = delegate
   }
 
-  /// Cancels and drains old processing before loading and scheduling the current roots.
-  public func reload() async {
+  /// Cancels and drains old processing before loading the current roots.
+  /// - Parameter scheduleObservedCollections: Whether this change also schedules all observed roots.
+  public func reload(scheduleObservedCollections: Bool = true) async {
     guard !isStopped else { return }
+
     reloadRequested = true
+    shouldResumeObservedCollectionsAfterReload = shouldResumeObservedCollectionsAfterReload || scheduleObservedCollections
+
     guard !isReloading else { return }
+
     isReloading = true
     defer {
       isReloading = false
+      shouldResumeObservedCollectionsAfterReload = false
       pump()
     }
     repeat {
       reloadRequested = false
-      generation = UUID()
-      stopAllMonitors()
-      cancelDeferredTasks()
-      resumedExpiredDeadlines = [:]
+      let schedulesObservedCollections = shouldResumeObservedCollectionsAfterReload
+      if schedulesObservedCollections {
+        generation = UUID()
+        stopAllMonitors()
+        cancelDeferredTasks()
+        resumedExpiredDeadlines = [:]
+        pending = []
+      }
       activeTask?.cancel()
       await activeTask?.value
       activeTask = .none
       activeURL = .none
-      pending = []
+
       guard !isStopped else { return }
+
       roots = await delegate.directoryObservationSchedulerLoadRoots(self)
       observed.formIntersection(roots)
-      pending = Array(observed).sorted { $0.path < $1.path }
+      if schedulesObservedCollections {
+        pending = Array(observed).sorted { $0.path < $1.path }
+      } else {
+        pending.removeAll { !roots.contains($0) || !observed.contains($0) }
+        removeSchedulingForUnobservedRoots()
+      }
     } while reloadRequested && !isStopped
     for root in observed { startMonitoring(root) }
+  }
+
+  /// Removes old scheduling resources if a passive reload discovers changed authorization.
+  private func removeSchedulingForUnobservedRoots() {
+    for root in Array(monitors.keys) where !observed.contains(root) {
+      stopMonitoring(root)
+    }
+    for root in Array(changeTasks.keys) where !observed.contains(root) {
+      changeTasks.removeValue(forKey: root)?.task.cancel()
+    }
+    for root in Array(retryTasks.keys) where !observed.contains(root) {
+      retryTasks.removeValue(forKey: root)?.task.cancel()
+    }
+    resumedExpiredDeadlines = resumedExpiredDeadlines.filter { observed.contains($0.key) }
   }
 
   /// Queues a registered root when observation begins, coalescing duplicate visits.

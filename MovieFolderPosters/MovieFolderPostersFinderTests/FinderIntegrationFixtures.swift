@@ -9,7 +9,7 @@ import Synchronization
 import Testing
 
 /// Temporary filesystem, grants, and repositories owned by one integration test.
-struct FinderFixture: Sendable {
+struct FinderTestEnvironment: Sendable {
   /// Isolated container removed after each test.
   let container: URL
   /// Real collection root used by authorization and selection validation.
@@ -60,12 +60,22 @@ struct QuietActivityNotifier: MovieFolderActivityChangeNotifying {
 
 /// Supplies deterministic provider results; no network request or icon write is needed for missing posters.
 struct NoMatchesProvider: MovieMetadataProvider {
-  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed empty alternative-title evidence for this focused test data.
   /// Supplies completed release events for this provider.
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page test data independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try Task.checkCancellation()
 
     return MovieSearchResult(movies: [], hasMorePages: false)
@@ -78,12 +88,22 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
   /// Number of searches that reached the underlying movieMetadataProvider.
   private(set) var searchCount = Int.zero
 
-  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed empty alternative-title evidence for this focused test data.
   /// Supplies completed release events for this provider.
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page test data independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searchCount += 1
 
     return MovieSearchResult(movies: [], hasMorePages: false)
@@ -101,12 +121,22 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
   /// Tracks provider entry even when it precedes registration of the waiter.
   private var hasStarted = false
 
-  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed empty alternative-title evidence for this focused test data.
   /// Supplies completed release events for this provider.
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try await testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page test data independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
     hasStarted = true
     started?.resume()
     started = .none
@@ -148,12 +178,22 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
   /// Controls whether the production composition can read current collection settings.
   let configurationReadControl: FinderConfigurationReadControl
 
-  /// Supplies completed empty alternative-title evidence for this focused fixture.
+  /// Supplies completed empty alternative-title evidence for this focused test data.
   /// Supplies completed release events for this provider.
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page test data independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     try repository.update { $0.directories[0].usesPrivateHistory = false }
     configurationReadControl.failsCurrentRead.withLock { $0 = false }
 
@@ -166,7 +206,7 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
 /// Redirects system boundaries into one test-owned container while retaining runtime configuration.
 struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   /// Real test-owned repositories and collection.
-  let fixture: FinderFixture
+  let testEnvironment: FinderTestEnvironment
   /// Captured configuration registration sequence.
   let registrations: FinderRegistrations
   /// Activity history used to verify terminal behavior.
@@ -184,24 +224,24 @@ struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   /// Captures collection-specific composition without exposing request or folder contents.
   let providerCollections = FinderProviderCollections()
 
-  /// Creates isolated runtime dependencies and a recorder rooted in the fixture container.
-  /// - Parameter fixture: Test-owned stores and authorized root.
-  @MainActor init(_ fixture: FinderFixture) {
-    self.fixture = fixture
+  /// Creates isolated runtime dependencies and a recorder rooted in the test data container.
+  /// - Parameter testEnvironment: Test-owned stores and authorized root.
+  @MainActor init(_ testEnvironment: FinderTestEnvironment) {
+    self.testEnvironment = testEnvironment
     registrations = FinderRegistrations()
-    activity = MovieFolderActivityRecorder(directory: fixture.container.appendingPathComponent("Activity"),
-      notifier: QuietActivityNotifier(), configurationRepository: fixture.repository)
+    activity = MovieFolderActivityRecorder(directory: testEnvironment.container.appendingPathComponent("Activity"),
+      notifier: QuietActivityNotifier(), configurationRepository: testEnvironment.repository)
   }
 
   func configurationRepository() throws -> ConfigurationRepository {
     if configurationReadControl.failsCurrentRead.withLock({ $0 }) { throw ConfigurationError.busy }
 
-    return fixture.repository
+    return testEnvironment.repository
   }
   func authorizationStore() throws -> PersistenceStore {
-    try PersistenceStore(directory: fixture.container.appendingPathComponent("Authorization"))
+    try PersistenceStore(directory: testEnvironment.container.appendingPathComponent("Authorization"))
   }
-  func containerURL() throws -> URL { fixture.container }
+  func containerURL() throws -> URL { testEnvironment.container }
   func credential() throws -> String? { token }
   func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
     if providerFailure { throw TMDbError.authentication }
@@ -218,8 +258,8 @@ struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   }
   func processingStore() throws -> CollectionProcessingStore {
     try CollectionProcessingStore(
-      store: PersistenceStore(directory: fixture.container.appendingPathComponent("Outcomes")),
-      configuration: fixture.repository)
+      store: PersistenceStore(directory: testEnvironment.container.appendingPathComponent("Outcomes")),
+      configuration: testEnvironment.repository)
   }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?

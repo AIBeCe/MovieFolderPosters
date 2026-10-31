@@ -120,7 +120,8 @@ extension MovieFolderActivityLogEvent {
     switch reason {
     case .noSuitableMovie: "No suitable provider movie was found."
     case .ambiguousMovie: "Choose the intended movie from unresolved results."
-    case .incompleteSearch: "The provider search was incomplete; try again when the provider is available."
+    case .incompleteSearch: "Search results are incomplete, so a unique movie could not be established. "
+      + "Refine the search or review Maximum search pages in Settings."
     case .missingArtwork: "The confirmed movie has no usable artwork."
     case .parsingProblem: "The folder name could not establish a movie; choose a movie manually."
     case .existingPosterPreserved: "An existing custom icon was preserved."

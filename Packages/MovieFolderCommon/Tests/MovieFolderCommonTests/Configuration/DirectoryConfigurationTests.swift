@@ -272,6 +272,7 @@ extension DirectoryConfigurationTests {
         as? [String: Any])
     old.removeValue(forKey: "posterAppearance")
     old["version"] = 4
+    old.removeValue(forKey: "searchPageLimit")
     let migrated = try convertLegacySettingsFixture(JSONSerialization.data(withJSONObject: old))
     #expect(migrated.posterAppearance == .softFinish)
     #expect(migrated.directories == configuration.directories)
@@ -333,7 +334,7 @@ extension DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 7 } }
+    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 8 } }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID())

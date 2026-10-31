@@ -47,7 +47,17 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   let failure: TMDbError?
   /// Creates a provider with completed empty evidence or one controlled failure.
   init(failure: TMDbError? = .none) { self.failure = failure }
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage) -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage) -> MovieSearchResult {
     MovieSearchResult(movies: [], hasMorePages: false)
   }
   /// Supplies completed release events for this provider.
@@ -114,12 +124,14 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
 
 /// Structured request keys isolate exact title spellings, language, credentials and fixture context.
 @Test func metadataCacheKeysIsolateRequestContext() throws {
-  let base = try MovieFolderProcessor.queryKey(title: "Alien", year: 1979)
-  #expect(base == (try MovieFolderProcessor.queryKey(title: " Alien ", year: 1979)))
-  #expect(base != (try MovieFolderProcessor.queryKey(title: "alien", year: 1979)))
-  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, language: TMDbLanguage("pt-BR"))))
-  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, credentialRevision: UUID())))
-  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, usesFixtures: true)))
+  let base = try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, pageLimit: 3)
+  #expect(base == (try MovieFolderProcessor.queryKey(title: " Alien ", year: 1979, pageLimit: 3)))
+  #expect(base != (try MovieFolderProcessor.queryKey(title: "alien", year: 1979, pageLimit: 3)))
+  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979,
+    language: TMDbLanguage("pt-BR"), pageLimit: 3)))
+  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979,
+    credentialRevision: UUID(), pageLimit: 3)))
+  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, usesFixtures: true, pageLimit: 3)))
 }
 
 /// Alias eviction is deterministic and cannot discard unrelated confirmed folder decisions.

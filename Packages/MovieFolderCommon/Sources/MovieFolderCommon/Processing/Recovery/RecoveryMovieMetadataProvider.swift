@@ -21,12 +21,12 @@ nonisolated public struct RecoveryAwareMovieMetadataProvider: MovieMetadataProvi
     credentialDigest = ProcessingRecoveryService.credentialDigest(credential)
   }
 
-  public func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english)
-    async throws -> MovieSearchResult {
+  public func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int)
+    async throws -> MovieSearchPage {
     try Task.checkCancellation()
     try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
     do {
-      return try await provider.searchMovies(title: title, year: year, language: language)
+      return try await provider.searchMoviePage(title: title, year: year, language: language, page: page)
     } catch {
       try recovery.recordProviderFailure(error, credentialDigest: credentialDigest)
       throw error

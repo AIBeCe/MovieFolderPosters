@@ -195,10 +195,12 @@ nonisolated public enum MovieFolderEnvironment {
   }
 
   /// Announces a committed configuration change to other signed processes.
-  public static func notifyConfigurationChanged() {
+  /// - Parameter scheduleObservedCollections: Whether Finder should also schedule observed collections.
+  public static func notifyConfigurationChanged(scheduleObservedCollections: Bool = true) {
+    let userInfo: [AnyHashable: Any]? = scheduleObservedCollections ? .none : ["scheduleObservedCollections": false]
     DistributedNotificationCenter.default().postNotificationName(
       .movieFolderConfigurationChanged, object: .none,
-      userInfo: .none, deliverImmediately: true)
+      userInfo: userInfo, deliverImmediately: true)
   }
 
   /// Announces committed collection processing state writes so host summary views can reload persisted state.

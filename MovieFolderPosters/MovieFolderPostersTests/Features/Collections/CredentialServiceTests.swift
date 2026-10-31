@@ -273,7 +273,7 @@ private final class CredentialTestNotifier: ConfigurationChangeNotifying {
   private let notifications = Mutex<Int>(.zero)
   /// Observed notification count.
   var count: Int { notifications.withLock { $0 } }
-  func configurationDidChange() { notifications.withLock { $0 += 1 } }
+  func configurationDidChange(scheduleObservedCollections: Bool) { notifications.withLock { $0 += 1 } }
 }
 
 /// Supplies one explicit provider response, independent of Debug movie fixtures.

@@ -96,7 +96,7 @@ func alternativeTitlesRetainProviderFailures(status: Int) async throws {
 @Test func searchForwardsSelectedLanguage() async throws {
   let transport = ScriptedHTTPTransport([.success(response("{\"page\":1,\"total_pages\":0,\"results\":[]}"))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  _ = try await client.searchMovies(title: "Alien", year: 1979, language: TMDbLanguage("pt-BR"))
+  _ = try await client.searchMoviePage(title: "Alien", year: 1979, language: TMDbLanguage("pt-BR"), page: 1)
   let url = try #require(await transport.capturedRequests().first?.url)
   let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
   #expect(query.first(where: { $0.name == "language" })?.value == "pt-BR")

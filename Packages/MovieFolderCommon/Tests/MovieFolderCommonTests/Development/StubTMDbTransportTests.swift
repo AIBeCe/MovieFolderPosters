@@ -15,7 +15,7 @@ import Testing
         token: try TMDbAccessToken("fixture-token"),
         transport: StubTMDbTransport(posterData: poster))
 
-      let search = try await client.searchMovies(title: "The Last Frame", year: 2026)
+      let search = try await client.searchMovies(title: "The Last Frame", year: 2026, language: .english, pageLimit: 3)
       #expect(search.movies == [
         MovieMetadata(
           id: 1, title: "The Last Frame", originalTitle: "The Last Frame",
@@ -33,7 +33,7 @@ import Testing
         token: try TMDbAccessToken("fixture-token"),
         transport: StubTMDbTransport(posterData: Data()))
 
-      let search = try await client.searchMovies(title: "Another Movie", year: .none)
+      let search = try await client.searchMovies(title: "Another Movie", year: .none, language: .english, pageLimit: 3)
       #expect(search.movies.isEmpty)
       #expect(!search.hasMorePages)
     }

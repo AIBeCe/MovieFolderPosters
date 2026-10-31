@@ -42,6 +42,7 @@ private struct MovieFolderStorageMigrationFixture {
     var settingsObject = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
       as? [String: Any])
     settingsObject["version"] = settingsVersion
+    settingsObject.removeValue(forKey: "searchPageLimit")
     let matching = ["requiresReleaseYearForAutomaticIdentification": true, "comparesOriginalTitles": true]
     settingsObject.removeValue(forKey: "movieMatchingConfiguration")
     settingsObject["identificationPolicy"] = matching
@@ -104,7 +105,7 @@ private struct MovieFolderStorageMigrationFixture {
   let report = try fixture.migrator.migrate()
   #expect(report.migratedRecordCount == 2)
   let configuration = try ConfigurationRepository(store: fixture.settings).read()
-  #expect(configuration.version == 6)
+  #expect(configuration.version == 7)
   #expect(configuration.movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching)
   let statePayload = try #require(try fixture.read(fixture.outcomes,
     key: CollectionProcessingStore.processingStateKey(for: fixture.root.id)))
@@ -137,7 +138,7 @@ private struct MovieFolderStorageMigrationFixture {
     }
     withExtendedLifetime(outcomeAccess) {}
   }
-  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 6)
+  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 7)
   let check = try fixture.migrator.preflight()
   #expect(!check.settingsRequiresMigration)
   #expect(check.legacyCollectionOutcomeRecordCount == 1)
@@ -159,7 +160,7 @@ private struct MovieFolderStorageMigrationFixture {
   }
 
   #expect(try fixture.migrator.migrate().migratedRecordCount == 2)
-  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 6)
+  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 7)
 }
 
 /// Cancellation before the manual operation leaves all saved records byte-for-byte unchanged.
@@ -279,14 +280,14 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 @Test func futureSettingsSchemaIsRejectedWithoutChangingBytes() throws {
   let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
-  let (original, _) = try fixture.seed(settingsVersion: 7)
-  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
+  let (original, _) = try fixture.seed(settingsVersion: 8)
+  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 8)) {
     try fixture.migrator.preflight()
   }
-  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
+  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 8)) {
     try fixture.migrator.migrate()
   }
-  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 7)) {
+  #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: 8)) {
     try ConfigurationRepository(store: fixture.settings).read()
   }
   #expect(try fixture.read(fixture.settings, key: ConfigurationRepository.recordKey) == original)
@@ -317,7 +318,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
     #expect(throws: MovieFolderStorageMigrationError.backupUnavailable(record: record)) {
       try fixture.migrator.migrate()
     }
-    #expect(try ConfigurationRepository(store: fixture.settings).read().version == 6)
+    #expect(try ConfigurationRepository(store: fixture.settings).read().version == 7)
     #expect(try fixture.read(fixture.outcomes,
       key: CollectionProcessingStore.processingStateKey(for: fixture.root.id)) == original)
     withExtendedLifetime(backupAccess) {}
@@ -329,7 +330,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
 @Test func malformedCurrentRecordErrorsRemainSpecificAndReadOnly() throws {
   let fixture = try MovieFolderStorageMigrationFixture()
   defer { try? FileManager.default.removeItem(at: fixture.directory) }
-  let invalidSettings = Data("{\"version\":6}".utf8)
+  let invalidSettings = Data("{\"version\":7}".utf8)
   try fixture.write(invalidSettings, to: fixture.settings, key: ConfigurationRepository.recordKey)
   #expect(throws: MovieFolderStorageMigrationError.invalidRecord(record: .settings)) {
     try ConfigurationRepository(store: fixture.settings).read()
@@ -345,4 +346,38 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
   #expect(try fixture.read(fixture.settings, key: ConfigurationRepository.recordKey) == invalidSettings)
   #expect(try fixture.read(fixture.outcomes,
     key: CollectionProcessingStore.processingStateKey(for: fixture.root.id)) == invalidOutcomes)
+}
+
+/// Schema six conversion keeps its exact backup, collection authorization, overrides, generations, and decisions.
+@Test func schemaSixPageBudgetMigrationBacksUpAndPreservesCurrentOutcomes() throws {
+  let fixture = try MovieFolderStorageMigrationFixture()
+  defer { try? FileManager.default.removeItem(at: fixture.directory) }
+  var current = DirectoryConfiguration()
+  var root = fixture.root
+  root.movieMatchingConfiguration = MovieMatchingConfiguration(comparesOriginalTitles: false)
+  root.usesPrivateHistory = true
+  current.directories = [root]
+  current.isNetworkHistoryRecordingEnabled = true
+  current.usesStubTMDbResponses = true
+  var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
+  object["version"] = 6
+  object.removeValue(forKey: "searchPageLimit")
+  let legacy = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+  try fixture.write(legacy, to: fixture.settings, key: ConfigurationRepository.recordKey)
+  let context = CollectionProcessingContext(rootID: root.id, rootIdentity: "fixture-root",
+    authorizationVersion: root.authorizationVersion, credentialRevision: current.credentialRevision,
+    usesStubTMDbResponses: true, appearance: current.posterAppearance)
+  let outcome = CollectionProcessingState(context: context, folders: [
+    FolderProcessingRecord(name: "Dune", state: .preserved, reason: .existingPosterPreserved,
+      movieID: 42, movieTitle: "Saved movie", ownership: .unowned, fingerprint: "saved")
+  ])
+  let outcomeBytes = try JSONEncoder().encode(outcome)
+  let outcomeKey = CollectionProcessingStore.processingStateKey(for: root.id)
+  try fixture.write(outcomeBytes, to: fixture.outcomes, key: outcomeKey)
+  #expect(try fixture.migrator.preflight().requiresMigration)
+  #expect(try fixture.migrator.migrate().migratedRecordCount == 1)
+  #expect(try ConfigurationRepository(store: fixture.settings).read() == current)
+  #expect(try fixture.read(fixture.outcomes, key: outcomeKey) == outcomeBytes)
+  let backup = MovieFolderStorageMigrator.backupRecordKey(for: .settings, originalPayload: legacy)
+  #expect(try fixture.read(fixture.backups, key: backup) == legacy)
 }

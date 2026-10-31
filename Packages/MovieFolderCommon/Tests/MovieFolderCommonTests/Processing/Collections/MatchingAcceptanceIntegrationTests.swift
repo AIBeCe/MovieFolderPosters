@@ -11,7 +11,7 @@ struct R12001MatchingAcceptanceTests {
   /// Given a Brazilian folder title and a verified TMDb alias, processing preserves that movie identity.
   @Test func verifiedInternationalAliasPersistsProviderMovieIdentity() async throws {
     let language = try TMDbLanguage("pt-BR")
-    let fixture = try CollectionProcessingFixture(
+    let fixture = try CollectionProcessingTestEnvironment(
       names: ["Coração Valente (1995)"],
       matchingConfiguration: MovieMatchingConfiguration(searchLanguage: language))
     defer { try? FileManager.default.removeItem(at: fixture.base) }
@@ -35,7 +35,7 @@ struct R12001MatchingAcceptanceTests {
 
   /// Given direct and verified alias evidence for different IDs, the persisted result remains ambiguous.
   @Test func competingInternationalEvidencePersistsSeveralMatches() async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Coração Valente (1995)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Coração Valente (1995)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let search = MovieSearchResult(movies: [
       MovieMetadata(id: 42, title: "Coração Valente", originalTitle: "Braveheart", releaseYear: 1995,
@@ -60,7 +60,7 @@ struct R12001MatchingAcceptanceTests {
   /// Given five candidates, processing spends at most five alias requests; six candidates remain unresolved.
   @Test(arguments: [5, 6])
   func candidateBoundaryPersistsBoundedMatchingResult(candidateCount: Int) async throws {
-    let fixture = try CollectionProcessingFixture(names: ["Unknown Title (1995)"])
+    let fixture = try CollectionProcessingTestEnvironment(names: ["Unknown Title (1995)"])
     defer { try? FileManager.default.removeItem(at: fixture.base) }
     let movies = (1...candidateCount).map {
       MovieMetadata(id: $0, title: "Candidate \($0)", originalTitle: "Candidate \($0)", releaseYear: 1995,

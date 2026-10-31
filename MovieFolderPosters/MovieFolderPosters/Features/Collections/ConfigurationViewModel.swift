@@ -87,6 +87,8 @@ final class ConfigurationViewModel {
   private(set) var posterAppearance: PosterAppearance = .softFinish
   /// Application defaults shown by Settings and copied into new setup drafts.
   private(set) var movieMatchingConfiguration = MovieMatchingConfiguration()
+  /// Persisted global provider page budget.
+  private(set) var searchPageLimit = 3
   /// Whether a configuration operation is currently running.
   private(set) var isBusy = false
   /// A user-facing explanation for the latest failed operation, if any.
@@ -267,6 +269,16 @@ final class ConfigurationViewModel {
     )
   }
 
+  /// Saves the global budget, retaining the previous presentation if persistence fails.
+  /// - Parameter limit: Maximum provider search pages, one through five.
+  func setSearchPageLimit(_ limit: Int) async {
+    await perform(action: .movieMatchingConfigurationSaved, failureMessage: "Could not save matching settings.") {
+      try await self.service.setSearchPageLimit(limit)
+
+      return try await self.service.configurationSummary()
+    }
+  }
+
   /// Persists the complete automatic matching defaults and refreshes presentation.
   /// - Parameter configuration: Current matching choices, including the selected search language.
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) async {
@@ -378,6 +390,7 @@ final class ConfigurationViewModel {
     credentialConfigured = summary.credentialConfigured
     posterAppearance = summary.posterAppearance
     movieMatchingConfiguration = summary.movieMatchingConfiguration
+    searchPageLimit = summary.searchPageLimit
   }
 
   /// Notifies all currently retained observers of the latest state.

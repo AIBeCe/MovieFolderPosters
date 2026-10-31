@@ -109,8 +109,18 @@ private struct RecoveryCheckpointProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
-    try await (title == "Beta" ? pending : completed).searchMovies(title: title, year: year)
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try await testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+    try await (title == "Beta" ? pending : completed).testSearchData(title: title, year: year)
   }
 
   func downloadPoster(path: String) async throws -> Data { try await completed.downloadPoster(path: path) }

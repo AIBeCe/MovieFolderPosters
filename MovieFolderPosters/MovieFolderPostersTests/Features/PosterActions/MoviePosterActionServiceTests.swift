@@ -442,7 +442,17 @@ private actor ActionProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
     searches.append("\(title):\(year.map(String.init) ?? "none")")
     searchLanguages.append(language.rawValue)
     if cancels { throw CancellationError() }
@@ -488,7 +498,17 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) async -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = await testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async -> MovieSearchResult {
     hasStarted = true
     startedWaiter?.resume()
     startedWaiter = .none
@@ -514,6 +534,21 @@ struct MoviePosterActionServiceConfigurationTests {
 
       return false
     }
+  }
+
+  /// A budget change during a suspended provider request invalidates its result without extending that search.
+  @Test func pageLimitChangeDuringSearchRejectsResults() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let provider = SuspendedActionProvider()
+    let service = fixture.service(movieMetadataProvider: provider)
+    let search = Task { try await service.searchMovies(for: fixture.request, query: "Dune", year: 2021) }
+    await provider.waitForSearch()
+    try fixture.repository.update { $0.searchPageLimit = 5 }
+    await provider.finishSearch()
+    await #expect(throws: ConfigurationError.configurationChanged) { try await search.value }
+    #expect(try FileSystemService().readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
+      .hasCustomIcon == false)
   }
 
   /// A configuration change during poster download must stop the final change guard.

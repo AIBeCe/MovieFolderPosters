@@ -310,10 +310,7 @@ private final class MoviePosterActionViewController: NSViewController,
     yearField.isEnabled = viewModel.canStartAction
     cancelButton.isEnabled = busy && !viewModel.isCancelling
     cancelButton.title = viewModel.isCancelling ? "Cancelling…" : "Cancel"
-    statusLabel.stringValue =
-      viewModel.hasMorePages
-      ? (viewModel.statusMessage ?? "") + " More results may be available on TMDb."
-      : viewModel.statusMessage ?? ""
+    statusLabel.stringValue = viewModel.statusMessage ?? ""
     statusLabel.isHidden = statusLabel.stringValue.isEmpty
     errorLabel.stringValue = viewModel.errorMessage ?? ""
     errorLabel.textColor = .systemRed

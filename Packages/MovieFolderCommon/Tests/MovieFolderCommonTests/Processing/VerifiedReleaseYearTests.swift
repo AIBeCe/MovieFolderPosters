@@ -55,7 +55,22 @@ private actor ReleaseYearProvider: MovieMetadataProvider {
     self.posterError = posterError
   }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage) -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    if page > 1 {
+      guard (2...6).contains(page), hasMorePages else { throw TMDbError.invalidQuery }
+
+      return MovieSearchPage(movies: [], page: page, totalPages: 6)
+    }
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage) -> MovieSearchResult {
     searchYears.append(year)
     requests.append("search")
 
@@ -272,7 +287,7 @@ func releaseYearHistoricUnresolvedResultIsReviewedOnce(reason: FolderProcessingR
   var state = CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(fingerprint: candidate.fingerprint,
     status: .unresolved, retryDate: .distantFuture, matchedMovieID: .none, posterPath: .none,
     processingReason: reason)],
-    queries: [try MovieFolderProcessor.queryKey(title: "Alien", year: .none): stale, "keep": stale])
+    queries: [try MovieFolderProcessor.queryKey(title: "Alien", year: .none, pageLimit: 3): stale, "keep": stale])
   do {
     let access = try #require(try fixture.persistence.acquireAccess(for:
       MovieFolderProcessor.processingStateKey(for: fixture.movies)))

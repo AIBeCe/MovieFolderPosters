@@ -176,7 +176,7 @@ struct CoverageAuthorization: DirectoryAuthorizationProviding {
 
 /// Keeps test configuration changes in process without notifying a user's running app copies.
 private struct CoverageConfigurationNotifier: ConfigurationChangeNotifying {
-  func configurationDidChange() {}
+  func configurationDidChange(scheduleObservedCollections: Bool) {}
 }
 
 /// Supplies no credential without consulting Keychain.

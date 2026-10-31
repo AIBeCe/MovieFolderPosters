@@ -11,14 +11,22 @@ extension MovieFolderStorageMigrator {
     var object = try recordObject(payload, record: record)
     let version = try recordVersion(object, field: "version", record: record)
 
-    guard (1...6).contains(version) else {
+    guard (1...7).contains(version) else {
       throw MovieFolderStorageMigrationError.unsupportedVersion(record: record, version: version)
     }
 
     if version < 6 {
       try migrateLegacySettings(&object, version: version, record: record)
     }
-    let converted = version < 6 ? try encodeObject(object, record: record) : payload
+    if version < 7 {
+      guard object["searchPageLimit"] == nil else {
+        throw MovieFolderStorageMigrationError.conflictingValues(record: record, field: "searchPageLimit")
+      }
+
+      object["searchPageLimit"] = 3
+      object["version"] = 7
+    }
+    let converted = version < 7 ? try encodeObject(object, record: record) : payload
     let configuration: DirectoryConfiguration
     do {
       configuration = try JSONDecoder().decode(DirectoryConfiguration.self, from: converted)
@@ -27,7 +35,7 @@ extension MovieFolderStorageMigrator {
       throw MovieFolderStorageMigrationError.invalidRecord(record: record)
     }
 
-    return (converted, version < 6, configuration)
+    return (converted, version < 7, configuration)
   }
 
   /// Adds only the fields introduced after the stored schema while preserving captured generations.

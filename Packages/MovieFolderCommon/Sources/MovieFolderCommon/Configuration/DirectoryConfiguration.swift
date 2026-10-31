@@ -302,6 +302,8 @@ nonisolated public struct ConfigurationSummary: Sendable, Equatable {
   public let posterAppearance: PosterAppearance
   /// Application-wide automatic matching defaults.
   public let movieMatchingConfiguration: MovieMatchingConfiguration
+  /// Global finite provider page budget.
+  public let searchPageLimit: Int
 
   /// Collects assessed roots, credential presence, and the configured poster finish for presentation.
   ///
@@ -310,15 +312,17 @@ nonisolated public struct ConfigurationSummary: Sendable, Equatable {
   ///   - credentialConfigured: Whether a shared TMDb credential exists.
   ///   - posterAppearance: The selected poster rendering finish.
   ///   - movieMatchingConfiguration: Application defaults inherited by collections without explicit overrides.
+  ///   - searchPageLimit: Global captured search budget, independent of collection overrides.
   public init(
     directories: [ConfiguredDirectoryStatus], credentialConfigured: Bool,
     posterAppearance: PosterAppearance = .softFinish,
-    movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration()
+    movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(), searchPageLimit: Int = 3
   ) {
     self.directories = directories
     self.credentialConfigured = credentialConfigured
     self.posterAppearance = posterAppearance
     self.movieMatchingConfiguration = movieMatchingConfiguration
+    self.searchPageLimit = searchPageLimit
   }
 }
 
@@ -421,6 +425,8 @@ nonisolated public protocol ConfigurationServicing: Sendable {
   /// Saves automatic matching defaults; explicit collection overrides remain unchanged.
   /// - Parameter configuration: The automatic matching defaults chosen in Settings.
   /// - Throws: Settings contention or persistence errors.
+  /// Persists the global search budget without modifying collection overrides.
+  func setSearchPageLimit(_ limit: Int) async throws
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) async throws
   /// Sets whole-collection pause state if the captured inclusion generation is current.
   func setCollectionPaused(
@@ -541,6 +547,8 @@ nonisolated public extension ConfigurationServicing {
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) throws {
     throw ConfigurationError.invalidConfiguration
   }
+  /// Rejects services that cannot persist the global page budget.
+  func setSearchPageLimit(_ limit: Int) throws { throw ConfigurationError.invalidConfiguration }
   /// Rejects inclusion edits when an older service does not provide revision checks.
   func setCollectionPaused(_ identifier: UUID, isPaused: Bool, expectedProcessingConfigurationRevision: UUID) throws {
     throw ConfigurationError.configurationChanged
@@ -714,7 +722,7 @@ nonisolated public struct ExtensionReadinessReceipt: Codable, Sendable, Equatabl
 /// Versioned shared settings read by the host and Finder extension.
 nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// The version of the serialized settings or activated extension, as appropriate to the payload.
-  public var version = 6
+  public var version = 7
   /// The configured roots in their saved presentation order.
   public var directories: [MonitoredDirectory] = []
   /// Authentication generation used to reject stale credential operations and change authorizations.
@@ -731,6 +739,8 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public var posterAppearance: PosterAppearance = .softFinish
   /// Application defaults used by collections without an explicit matching override.
   public var movieMatchingConfiguration = MovieMatchingConfiguration()
+  /// Global maximum search pages, independent of collection matching overrides.
+  public var searchPageLimit = 3
 
   /// Resolves a collection's explicit choices or the application defaults.
   /// - Parameter directory: Collection whose automatic matching configuration is requested.
@@ -774,6 +784,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
 
   /// Stable field names for decoding persisted settings.
   private enum CodingKeys: String, CodingKey {
+    case searchPageLimit
     case version = "version"
     case directories = "directories"
     case credentialRevision = "credentialRevision"
@@ -790,9 +801,12 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// - Parameter encoder: Destination for current shared settings.
   /// - Throws: A migration error for a noncurrent schema, or an encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
-    guard version == 6 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
+    guard version == 7 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
+
+    guard (1...5).contains(searchPageLimit) else { throw ConfigurationError.invalidConfiguration }
 
     var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(searchPageLimit, forKey: .searchPageLimit)
     try values.encode(version, forKey: .version)
     try values.encode(directories, forKey: .directories)
     try values.encode(credentialRevision, forKey: .credentialRevision)
@@ -811,8 +825,8 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)
-    guard version == 6 else {
-      if (1...5).contains(version) {
+    guard version == 7 else {
+      if (1...6).contains(version) {
         throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: version)
       }
       throw MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: version)
@@ -821,6 +835,10 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
     guard !values.contains(.legacyGlobalMatching) else {
       throw MovieFolderStorageMigrationError.invalidRecord(record: .settings)
     }
+
+    searchPageLimit = try values.decode(Int.self, forKey: .searchPageLimit)
+
+    guard (1...5).contains(searchPageLimit) else { throw ConfigurationError.invalidConfiguration }
 
     directories = try values.decode([MonitoredDirectory].self, forKey: .directories)
     credentialRevision = try values.decode(UUID.self, forKey: .credentialRevision)

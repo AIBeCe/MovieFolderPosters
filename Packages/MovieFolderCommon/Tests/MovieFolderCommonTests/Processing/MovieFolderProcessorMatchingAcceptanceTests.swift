@@ -124,7 +124,17 @@ private actor MatchingAcceptanceProvider: MovieMetadataProvider {
     self.dates = dates
   }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage) async throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+    -> MovieSearchPage {
+    guard page == 1 else { throw TMDbError.invalidQuery }
+
+    let result = try await testSearchData(title: title, year: year, language: language)
+
+    return MovieSearchPage(movies: result.movies, page: 1, totalPages: result.hasMorePages ? 6 : 1)
+  }
+
+  /// Supplies the existing first-page fixture independently of pagination transport.
+  func testSearchData(title: String, year: Int?, language: TMDbLanguage) async throws -> MovieSearchResult {
     MovieSearchResult(movies: movies, hasMorePages: false)
   }
 

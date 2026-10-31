@@ -363,7 +363,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         }
 
         let result = try await movieMetadataProvider.searchMovies(title: cleanQuery, year: year,
-          language: effectiveLanguage)
+          language: effectiveLanguage, pageLimit: context.configuration.searchPageLimit)
         try Task.checkCancellation()
         try checkConfigurationHasNotChanged(context)
         guard let current = try? fileSystem.readCurrentFolderCandidate(ofChild: request.childName, in: context.root),
@@ -611,6 +611,7 @@ private extension MoviePosterActionService {
       credentialRevision: context.configuration.credentialRevision,
       usesFixtureMetadata: usesFixtureMetadata,
       movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
+      searchPageLimit: context.configuration.searchPageLimit,
       processingConfiguration: context.directory.processingConfiguration,
       activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: context.directory))
 
@@ -685,7 +686,7 @@ private struct MissingTMDbTokenProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { throw TMDbError.missingToken }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { throw TMDbError.missingToken }
 
-  func searchMovies(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws -> MovieSearchPage {
     throw TMDbError.missingToken
   }
 

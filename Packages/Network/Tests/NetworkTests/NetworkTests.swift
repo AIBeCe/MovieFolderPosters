@@ -74,7 +74,7 @@ private func validPNG() throws -> Data {
   ])
   let client = try TMDbClient(token: TMDbAccessToken("secret-token"), transport: transport)
 
-  let result = try await client.searchMovies(title: "Alien", year: 1979)
+  let result = try await client.searchMoviePage(title: "Alien", year: 1979, page: 1)
   let requests = await transport.capturedRequests()
   let requestURL = try #require(requests.first?.url)
   let components = try #require(
@@ -89,7 +89,7 @@ private func validPNG() throws -> Data {
         id: 42, title: "Alien", originalTitle: "Alien",
         releaseYear: 1979, posterPath: "/alien.jpg")
     ])
-  #expect(result.hasMorePages)
+  #expect((result.totalPages > result.page))
   #expect(components.host == "api.themoviedb.org")
   #expect(query["query"] == "Alien")
   #expect(query["year"] == "1979")
@@ -103,9 +103,9 @@ private func validPNG() throws -> Data {
     .success(response("{\"page\":1,\"total_pages\":0,\"results\":[]}"))
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  let result = try await client.searchMovies(title: "missing", year: .none)
+  let result = try await client.searchMoviePage(title: "missing", year: .none, page: 1)
   #expect(result.movies.isEmpty)
-  #expect(!result.hasMorePages)
+  #expect(!(result.totalPages > result.page))
 }
 
 /// Scenario: access token rejects empty and line breaks and redacts description.
@@ -125,7 +125,9 @@ private func validPNG() throws -> Data {
         contentType: "text/plain"))
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  await #expect(throws: TMDbError.authentication) { try await client.searchMovies(title: "Alien", year: .none) }
+  await #expect(throws: TMDbError.authentication) {
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
+  }
 }
 
 /// Scenario: auth failures are typed.
@@ -133,7 +135,9 @@ private func validPNG() throws -> Data {
 func authFailuresAreTyped(status: Int) async throws {
   let transport = ScriptedHTTPTransport([.success(response("{}", status: status))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  await #expect(throws: TMDbError.authentication) { try await client.searchMovies(title: "Alien", year: .none) }
+  await #expect(throws: TMDbError.authentication) {
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
+  }
 }
 
 /// Scenario: rate limit carries retry after without body.
@@ -147,7 +151,7 @@ func authFailuresAreTyped(status: Int) async throws {
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.rateLimited(retryAfter: "30")) {
-    try await client.searchMovies(title: "Alien", year: .none)
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
   }
 }
 
@@ -157,7 +161,7 @@ func otherHTTPFailuresPreserveStatus(status: Int) async throws {
   let transport = ScriptedHTTPTransport([.success(response("private body", status: status))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.httpStatus(status)) {
-    try await client.searchMovies(title: "Alien", year: .none)
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
   }
 }
 
@@ -166,7 +170,7 @@ func otherHTTPFailuresPreserveStatus(status: Int) async throws {
   let transport = ScriptedHTTPTransport([.failure(URLError(.notConnectedToInternet))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.transport(code: URLError.notConnectedToInternet.rawValue)) {
-    try await client.searchMovies(title: "Alien", year: .none)
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
   }
 }
 
@@ -181,7 +185,7 @@ func otherHTTPFailuresPreserveStatus(status: Int) async throws {
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.responseTooLarge) {
-    try await client.searchMovies(title: "Alien", year: .none)
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
   }
 }
 
@@ -204,7 +208,7 @@ func malformedSearchPayloadsAreRejected(json: String) async throws {
   let transport = ScriptedHTTPTransport([.success(response(json))])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
   await #expect(throws: TMDbError.malformedResponse) {
-    try await client.searchMovies(title: "Alien", year: .none)
+    try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
   }
 }
 
@@ -227,7 +231,7 @@ func malformedSearchPayloadsAreRejected(json: String) async throws {
     .success(HTTPTransportResponse(data: png, statusCode: 200, contentType: "image/png"))
   ])
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  let search = try await client.searchMovies(title: "Unknown", year: .none)
+  let search = try await client.searchMoviePage(title: "Unknown", year: .none, page: 1)
   #expect(search.movies.first?.releaseYear == .none)
   let downloaded = try await client.downloadPoster(path: "/p.png")
   #expect(downloaded == png)
@@ -308,7 +312,7 @@ func untrustedImageConfigurationIsRejected(baseURL: String) async throws {
   let task = Task { @Sendable in
     withUnsafeCurrentTask { $0?.cancel() }
 
-    return try await client.searchMovies(title: "Alien", year: .none)
+    return try await client.searchMoviePage(title: "Alien", year: .none, page: 1)
   }
   await #expect(throws: CancellationError.self) { try await task.value }
   #expect(await transport.capturedRequests().isEmpty)
@@ -350,7 +354,7 @@ actor SuspendedHTTPTransport: HTTPTransport {
 @Test func cancellationDuringTransportIsPropagatedAfterResponse() async throws {
   let transport = SuspendedHTTPTransport()
   let client = try TMDbClient(token: TMDbAccessToken("token"), transport: transport)
-  let task = Task { try await client.searchMovies(title: "Alien", year: .none) }
+  let task = Task { try await client.searchMoviePage(title: "Alien", year: .none, page: 1) }
   await transport.waitUntilStarted()
   task.cancel()
   await transport.resume(with: response("{\"page\":1,\"total_pages\":0,\"results\":[]}"))
