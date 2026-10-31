@@ -336,6 +336,7 @@ struct CoordinatorLifecycleTests {
 }
 
 /// Creates preference storage that cannot change the user's application settings.
+@MainActor
 private func coordinatorLifecycleAppearance() throws -> AppAppearanceSettings {
   let name = "CoordinatorLifecycleTests.\(UUID().uuidString)"
   let defaults = try #require(UserDefaults(suiteName: name))

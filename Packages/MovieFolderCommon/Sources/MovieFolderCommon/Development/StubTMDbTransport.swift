@@ -28,20 +28,38 @@ import OSLog
       switch (url.host, url.path) {
       case ("api.themoviedb.org", "/3/search/movie"):
         logger.notice("Development fixture: movie search")
-        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-          .first { $0.name == "query" }?.value
-        let movies: [[String: Any]] =
-          query == "The Last Frame" || query == "The Last Frane"
-          ? [
-            [
-              "id": 1, "title": "The Last Frame", "original_title": "The Last Frame",
-              "release_date": "2026-01-01", "poster_path": "/test-poster.png"
-            ]
-          ] : []
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let query = queryItems.first { $0.name == "query" }?.value
+        let page = Int(queryItems.first { $0.name == "page" }?.value ?? "1") ?? 1
+        let totalPages = query == "Pagination Fixture" ? 2 : 1
+        let movies: [[String: Any]]
+        if query == "Pagination Fixture" {
+          movies = switch page {
+          case 1:
+            [[
+              "id": 1, "title": "First Frame", "original_title": "First Frame",
+              "release_date": "2024-01-01", "poster_path": "/test-poster.png"
+            ]]
+          case 2:
+            [[
+              "id": 2, "title": "The Other Frame", "original_title": "The Other Frame",
+              "release_date": "2025-01-01", "poster_path": "/test-poster.png"
+            ]]
+          default:
+            []
+          }
+        } else if query == "The Last Frame" || query == "The Last Frane" {
+          movies = [[
+            "id": 1, "title": "The Last Frame", "original_title": "The Last Frame",
+            "release_date": "2026-01-01", "poster_path": "/test-poster.png"
+          ]]
+        } else {
+          movies = []
+        }
 
         return HTTPTransportResponse(
           data: try JSONSerialization.data(withJSONObject: [
-            "page": 1, "total_pages": 1, "results": movies
+            "page": page, "total_pages": totalPages, "results": movies
           ]), statusCode: 200, contentType: "application/json")
       case ("api.themoviedb.org", "/3/movie/1/alternative_titles"):
         return HTTPTransportResponse(data: Data("{\"id\":1,\"titles\":[]}".utf8), statusCode: 200,

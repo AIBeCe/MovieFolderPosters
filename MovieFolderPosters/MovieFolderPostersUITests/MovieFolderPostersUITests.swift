@@ -4,7 +4,185 @@ import Persistence
 import XCTest
 
 /// Exercises complete host-app configuration and explicit movie-selection journeys.
-final class MovieFolderPostersUITests: XCTestCase {
+class MovieFolderPostersUITestCase: XCTestCase {
+  /// Adds a collection with an explicit language override and verifies the setup controls.
+  @MainActor
+  fileprivate func addCollectionWithLanguageOverride(
+    at collectionRoot: URL, app: XCUIApplication, main: XCUIElement
+  ) {
+    let addWindow = openCollectionSetup(at: collectionRoot, in: app, from: main)
+
+    let inherit = addWindow.checkBoxes["Use application matching settings"]
+    XCTAssertTrue(inherit.waitForExistence(timeout: 5))
+    XCTAssertEqual(
+      addWindow.textFields["Collection display name"].value as? String,
+      collectionRoot.lastPathComponent)
+    XCTAssertEqual(inherit.value as? Int, 1)
+    let language = addWindow.popUpButtons["Search language"]
+    XCTAssertTrue((language.value as? String)?.contains("(pt-BR)") == true)
+    XCTAssertFalse(language.isEnabled)
+    inherit.click()
+    XCTAssertTrue(language.isEnabled)
+    selectLanguage("pt-PT", in: language)
+    addWindow.buttons["Add Collection"].click()
+    let setupClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: addWindow)
+    XCTAssertEqual(XCTWaiter.wait(for: [setupClosed], timeout: 10), .completed)
+  }
+
+  /// Enables deterministic metadata responses without configuring a real credential.
+  fileprivate func seedFixtureMode(sharedRoot: URL) throws {
+    let storageRoot = sharedRoot.standardizedFileURL
+    let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)
+    let settingsDirectory = storageRoot
+      .appendingPathComponent("Shared", isDirectory: true)
+      .appendingPathComponent("Settings", isDirectory: true)
+    let repository = ConfigurationRepository(
+      store: try storeFactory.makeStore(directory: settingsDirectory))
+    try repository.update { $0.usesStubTMDbResponses = true }
+  }
+
+  /// Adds a configured collection through the host app's native directory chooser.
+  @MainActor
+  fileprivate func addCollection(at collectionRoot: URL, in app: XCUIApplication, main: XCUIElement) {
+    let addWindow = openCollectionSetup(at: collectionRoot, in: app, from: main)
+    let addButton = addWindow.buttons["Add Collection"]
+    XCTAssertTrue(addButton.isEnabled)
+    addButton.click()
+    XCTAssertTrue(app.tables.cells.firstMatch.waitForExistence(timeout: 10))
+  }
+
+  /// Selects and prepares a folder through the host app's security-scoped directory chooser.
+  @MainActor
+  fileprivate func openCollectionSetup(
+    at collectionRoot: URL, in app: XCUIApplication, from main: XCUIElement
+  ) -> XCUIElement {
+    main.buttons["Add collection"].click()
+    let addWindow = app.sheets.firstMatch
+    XCTAssertTrue(addWindow.waitForExistence(timeout: 5))
+    addWindow.buttons["Choose…"].click()
+    app.typeKey("g", modifierFlags: [.command, .shift])
+    app.typeText(collectionRoot.deletingLastPathComponent().path)
+    app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+    let openPanel = app.sheets["open-panel"]
+    let collectionFolder = openPanel.textFields.matching(
+      NSPredicate(format: "value == %@", collectionRoot.lastPathComponent)).firstMatch
+    XCTAssertTrue(collectionFolder.waitForExistence(timeout: 5))
+    collectionFolder.click()
+    let chooseFolder = openPanel.buttons["OKButton"]
+    XCTAssertTrue(chooseFolder.waitForExistence(timeout: 5))
+    chooseFolder.click()
+    let displayName = addWindow.textFields["Collection display name"]
+    expectation(
+      for: NSPredicate(format: "value == %@", collectionRoot.lastPathComponent),
+      evaluatedWith: displayName)
+    waitForExpectations(timeout: 10)
+    return addWindow
+  }
+
+  /// Writes one real saved unresolved result into the same isolated persistent namespaces as the app.
+  fileprivate func seedUnresolvedOutcome(collectionRoot: URL, child: URL, sharedRoot: URL) throws {
+    let storageRoot = sharedRoot.standardizedFileURL
+    let shared = storageRoot.appendingPathComponent("Shared", isDirectory: true)
+    let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)
+    let repository = ConfigurationRepository(
+      store: try storeFactory.makeStore(
+        directory: shared.appendingPathComponent("Settings", isDirectory: true)))
+    var configuration = try repository.read()
+    let canonicalCollectionPath = collectionRoot.resolvingSymlinksInPath().standardizedFileURL.path
+    guard let index = configuration.directories.firstIndex(where: { $0.path == canonicalCollectionPath }) else {
+      throw XCTSkip("The host app did not persist the acceptance collection")
+    }
+    let directory = configuration.directories[index]
+    let identity = try XCTUnwrap(directory.identity)
+    let fileSystem = FileSystemService()
+    let context = CollectionProcessingContext(
+      rootID: directory.id, rootIdentity: identity, authorizationVersion: directory.authorizationVersion,
+      credentialRevision: configuration.credentialRevision,
+      usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance,
+      movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: directory),
+      processingConfigurationRevision: directory.processingConfiguration.revision)
+    let processing = CollectionProcessingStore(
+      store: try CollectionProcessingStorageNamespace.open(in: shared, using: storeFactory),
+      configuration: repository)
+    var state = try processing.recordProcessingStart(context: context, action: .automatic)
+    state.folders = [FolderProcessingRecord(
+      name: child.lastPathComponent,
+      identity: try fileSystem.readCurrentFolderCandidate(ofChild: child.lastPathComponent,
+        in: collectionRoot).identity,
+      state: .unresolved, reason: .manualMatchingRequired)]
+    state.isInventoryComplete = true
+    state.inspectedAt = Date()
+    state.currentRun?.runState = .partial
+    _ = try processing.commit(state, expectedRevision: state.revision)
+    configuration = try repository.read()
+    XCTAssertTrue(configuration.usesStubTMDbResponses)
+  }
+
+  /// Saves a global search language through the native Settings interface.
+  @MainActor
+  fileprivate func configureGlobalLanguage(_ code: String, in app: XCUIApplication) {
+    app.windows["Movie Folder Posters"].buttons["Settings"].click()
+    let matchingTab = app.toolbars.buttons["Matching Defaults"]
+    XCTAssertTrue(matchingTab.waitForExistence(timeout: 5))
+    matchingTab.click()
+    selectLanguage(code, in: app.popUpButtons["Search language"])
+    app.windows["Matching Defaults"].buttons[XCUIIdentifierCloseWindow].click()
+  }
+
+  /// Selects a language menu entry by its stable ISO code suffix.
+  @MainActor
+  fileprivate func selectLanguage(_ code: String, in picker: XCUIElement) {
+    picker.click()
+    let menuTitle = switch code {
+    case "pt-BR": "Portuguese (Brazil) (pt-BR)"
+    case "pt-PT": "Portuguese (Portugal) (pt-PT)"
+    case "de-DE": "German (Germany) (de-DE)"
+    default: code
+    }
+    let item = picker.menuItems[menuTitle]
+    XCTAssertTrue(item.waitForExistence(timeout: 5))
+    item.click()
+    let selectedLanguage = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS %@", "(\(code))"), object: picker)
+    XCTAssertEqual(XCTWaiter.wait(for: [selectedLanguage], timeout: 5), .completed)
+  }
+
+  /// Waits for a context action to become available after its collection is saved.
+  @MainActor
+  fileprivate func waitUntilEnabled(_ element: XCUIElement) {
+    let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: element)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed)
+  }
+
+  /// Selects a saved global search budget through the native Matching Defaults window.
+  @MainActor
+  fileprivate func selectPageLimit(_ limit: Int, in picker: XCUIElement) {
+    picker.click()
+    let item = picker.menuItems[String(limit)]
+    XCTAssertTrue(item.waitForExistence(timeout: 5))
+    item.click()
+    let savedLimit = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", String(limit)), object: picker)
+    XCTAssertEqual(XCTWaiter.wait(for: [savedLimit], timeout: 5), .completed)
+  }
+
+  /// Opens the existing Matching Defaults Settings window and waits until its controls are queryable.
+  @MainActor
+  fileprivate func openMatchingDefaults(in app: XCUIApplication) -> XCUIElement {
+    app.windows["Movie Folder Posters"].buttons["Settings"].click()
+    let matchingTab = app.toolbars.buttons["Matching Defaults"]
+    XCTAssertTrue(matchingTab.waitForExistence(timeout: 5))
+    matchingTab.click()
+    let window = app.windows["Matching Defaults"]
+    XCTAssertTrue(window.waitForExistence(timeout: 5))
+
+    return window
+  }
+
+}
+
+/// Exercises host configuration journeys in the isolated full application.
+final class MovieFolderPostersUITests: MovieFolderPostersUITestCase {
   /// Exercises the host app's main configuration, Settings, and log windows.
   /// Confirms the native windows expose their primary controls and secure token field.
   @MainActor
@@ -38,7 +216,7 @@ final class MovieFolderPostersUITests: XCTestCase {
     let main = app.windows["Movie Folder Posters"]
     XCTAssertTrue(main.waitForExistence(timeout: 10))
     main.buttons["Settings"].click()
-    app.toolbars.buttons["Matching Defaults"].waitForExistence(timeout: 5)
+    XCTAssertTrue(app.toolbars.buttons["Matching Defaults"].waitForExistence(timeout: 5))
     app.toolbars.buttons["Matching Defaults"].click()
 
     let language = app.popUpButtons["Search language"]
@@ -59,7 +237,7 @@ final class MovieFolderPostersUITests: XCTestCase {
     app.launch()
     XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
     app.windows["Movie Folder Posters"].buttons["Settings"].click()
-    app.toolbars.buttons["Matching Defaults"].waitForExistence(timeout: 5)
+    XCTAssertTrue(app.toolbars.buttons["Matching Defaults"].waitForExistence(timeout: 5))
     app.toolbars.buttons["Matching Defaults"].click()
     let reopenedLanguage = app.popUpButtons["Search language"]
     XCTAssertTrue(reopenedLanguage.waitForExistence(timeout: 5))
@@ -110,159 +288,114 @@ final class MovieFolderPostersUITests: XCTestCase {
     XCTAssertTrue((reopenedEditWindow.popUpButtons["Search language"].value as? String)?.contains("(pt-PT)") == true)
   }
 
-  /// Adds a collection with an explicit language override and verifies the setup controls.
+  /// A selected global page budget remains saved and visible after the host app relaunches.
   @MainActor
-  private func addCollectionWithLanguageOverride(
-    at collectionRoot: URL, app: XCUIApplication, main: XCUIElement
-  ) {
-    let addWindow = openCollectionSetup(at: collectionRoot, in: app, from: main)
+  func testMaximumSearchPagesPersistsAcrossRelaunch() throws {
+    let support = try MovieFolderPostersAcceptanceSupport()
+    defer { support.tearDown() }
+    let (app, _) = support.launchIsolatedApp()
+    let main = app.windows["Movie Folder Posters"]
+    XCTAssertTrue(main.waitForExistence(timeout: 10))
 
-    let inherit = addWindow.checkBoxes["Use application matching settings"]
-    XCTAssertTrue(inherit.waitForExistence(timeout: 5))
-    XCTAssertEqual(
-      addWindow.textFields["Collection display name"].value as? String,
-      collectionRoot.lastPathComponent)
-    XCTAssertEqual(inherit.value as? Int, 1)
-    let language = addWindow.popUpButtons["Search language"]
-    XCTAssertTrue((language.value as? String)?.contains("(pt-BR)") == true)
-    XCTAssertFalse(language.isEnabled)
-    inherit.click()
-    XCTAssertTrue(language.isEnabled)
-    selectLanguage("pt-PT", in: language)
-    addWindow.buttons["Add Collection"].click()
-    let setupClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: addWindow)
-    XCTAssertEqual(XCTWaiter.wait(for: [setupClosed], timeout: 10), .completed)
-  }
-
-  /// Enables deterministic metadata responses without configuring a real credential.
-  private func seedFixtureMode(sharedRoot: URL) throws {
-    let storageRoot = sharedRoot.standardizedFileURL
-    let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)
-    let settingsDirectory = storageRoot
-      .appendingPathComponent("Shared", isDirectory: true)
-      .appendingPathComponent("Settings", isDirectory: true)
-    let repository = ConfigurationRepository(
-      store: try storeFactory.makeStore(directory: settingsDirectory))
-    try repository.update { $0.usesStubTMDbResponses = true }
-  }
-
-  /// Adds a configured collection through the host app's native directory chooser.
-  @MainActor
-  private func addCollection(at collectionRoot: URL, in app: XCUIApplication, main: XCUIElement) {
-    let addWindow = openCollectionSetup(at: collectionRoot, in: app, from: main)
-    let addButton = addWindow.buttons["Add Collection"]
-    XCTAssertTrue(addButton.isEnabled)
-    addButton.click()
-    XCTAssertTrue(app.tables.cells.firstMatch.waitForExistence(timeout: 10))
-  }
-
-  /// Selects and prepares a folder through the host app's security-scoped directory chooser.
-  @MainActor
-  private func openCollectionSetup(
-    at collectionRoot: URL, in app: XCUIApplication, from main: XCUIElement
-  ) -> XCUIElement {
-    main.buttons["Add collection"].click()
-    let addWindow = app.sheets.firstMatch
-    XCTAssertTrue(addWindow.waitForExistence(timeout: 5))
-    addWindow.buttons["Choose…"].click()
-    app.typeKey("g", modifierFlags: [.command, .shift])
-    app.typeText(collectionRoot.deletingLastPathComponent().path)
-    app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
-    let openPanel = app.sheets["open-panel"]
-    let collectionFolder = openPanel.textFields.matching(
-      NSPredicate(format: "value == %@", collectionRoot.lastPathComponent)).firstMatch
-    XCTAssertTrue(collectionFolder.waitForExistence(timeout: 5))
-    collectionFolder.click()
-    let chooseFolder = openPanel.buttons["OKButton"]
-    XCTAssertTrue(chooseFolder.waitForExistence(timeout: 5))
-    chooseFolder.click()
-    let displayName = addWindow.textFields["Collection display name"]
-    expectation(
-      for: NSPredicate(format: "value == %@", collectionRoot.lastPathComponent),
-      evaluatedWith: displayName)
-    waitForExpectations(timeout: 10)
-    return addWindow
-  }
-
-  /// Writes one real saved unresolved result into the same isolated persistent namespaces as the app.
-  private func seedUnresolvedOutcome(collectionRoot: URL, child: URL, sharedRoot: URL) throws {
-    let storageRoot = sharedRoot.standardizedFileURL
-    let shared = storageRoot.appendingPathComponent("Shared", isDirectory: true)
-    let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)
-    let repository = ConfigurationRepository(
-      store: try storeFactory.makeStore(
-        directory: shared.appendingPathComponent("Settings", isDirectory: true)))
-    var configuration = try repository.read()
-    let canonicalCollectionPath = collectionRoot.resolvingSymlinksInPath().standardizedFileURL.path
-    guard let index = configuration.directories.firstIndex(where: { $0.path == canonicalCollectionPath }) else {
-      throw XCTSkip("The host app did not persist the acceptance collection")
-    }
-    let directory = configuration.directories[index]
-    let identity = try XCTUnwrap(directory.identity)
-    let fileSystem = FileSystemService()
-    let context = CollectionProcessingContext(
-      rootID: directory.id, rootIdentity: identity, authorizationVersion: directory.authorizationVersion,
-      credentialRevision: configuration.credentialRevision,
-      usesStubTMDbResponses: configuration.usesStubTMDbResponses, appearance: configuration.posterAppearance,
-      movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: directory),
-      processingConfigurationRevision: directory.processingConfiguration.revision)
-    let processing = CollectionProcessingStore(
-      store: try CollectionProcessingStorageNamespace.open(in: shared, using: storeFactory),
-      configuration: repository)
-    var state = try processing.recordProcessingStart(context: context, action: .automatic)
-    state.folders = [FolderProcessingRecord(
-      name: child.lastPathComponent,
-      identity: try fileSystem.readCurrentFolderCandidate(ofChild: child.lastPathComponent,
-        in: collectionRoot).identity,
-      state: .unresolved, reason: .manualMatchingRequired)]
-    state.isInventoryComplete = true
-    state.inspectedAt = Date()
-    state.currentRun?.runState = .partial
-    _ = try processing.commit(state, expectedRevision: state.revision)
-    configuration = try repository.read()
-    XCTAssertTrue(configuration.usesStubTMDbResponses)
-  }
-
-  /// Saves a global search language through the native Settings interface.
-  @MainActor
-  private func configureGlobalLanguage(_ code: String, in app: XCUIApplication) {
-    app.windows["Movie Folder Posters"].buttons["Settings"].click()
-    let matchingTab = app.toolbars.buttons["Matching Defaults"]
-    XCTAssertTrue(matchingTab.waitForExistence(timeout: 5))
-    matchingTab.click()
-    selectLanguage(code, in: app.popUpButtons["Search language"])
+    let picker = openMatchingDefaults(in: app).popUpButtons["Maximum search pages"]
+    XCTAssertTrue(picker.waitForExistence(timeout: 5))
+    XCTAssertEqual(picker.value as? String, "3")
+    selectPageLimit(5, in: picker)
     app.windows["Matching Defaults"].buttons[XCUIIdentifierCloseWindow].click()
-  }
 
-  /// Selects a language menu entry by its stable ISO code suffix.
-  @MainActor
-  private func selectLanguage(_ code: String, in picker: XCUIElement) {
-    picker.click()
-    let menuTitle = switch code {
-    case "pt-BR": "Portuguese (Brazil) (pt-BR)"
-    case "pt-PT": "Portuguese (Portugal) (pt-PT)"
-    case "de-DE": "German (Germany) (de-DE)"
-    default: code
-    }
-    let item = picker.menuItems[menuTitle]
-    XCTAssertTrue(item.waitForExistence(timeout: 5))
-    item.click()
-    let selectedLanguage = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value CONTAINS %@", "(\(code))"), object: picker)
-    XCTAssertEqual(XCTWaiter.wait(for: [selectedLanguage], timeout: 5), .completed)
-  }
-
-  /// Waits for a context action to become available after its collection is saved.
-  @MainActor
-  private func waitUntilEnabled(_ element: XCUIElement) {
-    let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: element)
-    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed)
+    app.terminate()
+    app.launch()
+    XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
+    let reopenedPicker = openMatchingDefaults(in: app).popUpButtons["Maximum search pages"]
+    XCTAssertTrue(reopenedPicker.waitForExistence(timeout: 5))
+    XCTAssertEqual(reopenedPicker.value as? String, "5")
   }
 
 }
 
 /// Exercises explicit movie selection and spelling review in isolated full-app journeys.
-final class MovieFolderPostersMovieSelectionUITests: MovieFolderPostersUITests {
+final class MovieFolderPostersMovieSelectionUITests: MovieFolderPostersUITestCase {
+  /// A one-page budget shows an incomplete-results explanation and leaves the movie unapplied.
+  @MainActor
+  func testOnePageBudgetShowsIncompleteSearchWithoutApplyingResult() throws {
+    try searchPaginationFixture(pageLimit: 1, expectIncomplete: true)
+  }
+
+  /// A two-page budget fetches the remaining fixture result and removes the incomplete warning.
+  @MainActor
+  func testTwoPageBudgetCompletesPaginationFixture() throws {
+    try searchPaginationFixture(pageLimit: 2, expectIncomplete: false)
+  }
+
+  /// Runs a real Choose Movie journey against the isolated deterministic multipage transport.
+  @MainActor
+  private func searchPaginationFixture(pageLimit: Int, expectIncomplete: Bool) throws {
+    let support = try MovieFolderPostersAcceptanceSupport()
+    defer { support.tearDown() }
+    let (app, root) = support.launchIsolatedApp()
+    let main = app.windows["Movie Folder Posters"]
+    XCTAssertTrue(main.waitForExistence(timeout: 10))
+    app.windows["Movie Folder Posters"].buttons["Settings"].click()
+    let matchingTab = app.toolbars.buttons["Matching Defaults"]
+    XCTAssertTrue(matchingTab.waitForExistence(timeout: 5))
+    matchingTab.click()
+    let pageLimitPicker = app.popUpButtons["Maximum search pages"]
+    XCTAssertTrue(pageLimitPicker.waitForExistence(timeout: 5))
+    selectPageLimit(pageLimit, in: pageLimitPicker)
+    selectLanguage("pt-BR", in: app.popUpButtons["Search language"])
+    app.windows["Matching Defaults"].buttons[XCUIIdentifierCloseWindow].click()
+
+    let collectionRoot = root.appendingPathComponent("Test Movies", isDirectory: true)
+    try FileManager.default.createDirectory(at: collectionRoot, withIntermediateDirectories: true)
+    let child = collectionRoot.appendingPathComponent("Pagination Fixture", isDirectory: true)
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
+    addCollection(at: collectionRoot, in: app, main: main)
+    try seedUnresolvedOutcome(collectionRoot: collectionRoot, child: child, sharedRoot: root)
+
+    app.terminate()
+    app.launch()
+    XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
+    let collectionRow = app.tables.cells.firstMatch
+    XCTAssertTrue(collectionRow.waitForExistence(timeout: 10))
+    collectionRow.rightClick()
+    let unresolvedAction = app.menuItems["Unresolved Results…"]
+    XCTAssertTrue(unresolvedAction.waitForExistence(timeout: 5))
+    waitUntilEnabled(unresolvedAction)
+    unresolvedAction.click()
+    let results = app.sheets.firstMatch
+    XCTAssertTrue(results.waitForExistence(timeout: 5))
+    let unresolvedRow = results.tables["Unresolved collection folders"].cells.firstMatch
+    XCTAssertTrue(unresolvedRow.waitForExistence(timeout: 5))
+    unresolvedRow.click()
+    results.buttons["Choose Movie…"].click()
+
+    let chooseMovie = app.sheets.element(boundBy: 1)
+    XCTAssertTrue(chooseMovie.waitForExistence(timeout: 5))
+    let titleField = chooseMovie.textFields["Movie title"]
+    XCTAssertTrue(titleField.waitForExistence(timeout: 5))
+    titleField.click()
+    app.typeKey("a", modifierFlags: .command)
+    titleField.typeText("Pagination Fixture")
+    let searchButton = chooseMovie.buttons["Search TMDb"]
+    waitUntilEnabled(searchButton)
+    searchButton.click()
+
+    let warning = "Search page limit reached. Results are incomplete."
+    let warningText = chooseMovie.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", warning)).firstMatch
+    if expectIncomplete {
+      XCTAssertTrue(warningText.waitForExistence(timeout: 10))
+      XCTAssertFalse(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
+    } else {
+      XCTAssertTrue(chooseMovie.staticTexts["Choose a poster below and apply it when ready."].waitForExistence(timeout: 10))
+      XCTAssertFalse(warningText.exists)
+      XCTAssertFalse(chooseMovie.buttons["Apply Selected Movie"].isEnabled)
+      let resultsPicker = chooseMovie.popUpButtons.firstMatch
+      resultsPicker.click()
+      let secondPageMovie = resultsPicker.menuItems["The Other Frame (2025) · TMDb ID 2"]
+      XCTAssertTrue(secondPageMovie.waitForExistence(timeout: 5))
+    }
+  }
+
   /// An unresolved folder opens the real Choose Movie flow and searches only after explicit user action.
   @MainActor
   func testChooseMovieUsesSavedLanguageAndSearchesDeterministicFixture() throws {
