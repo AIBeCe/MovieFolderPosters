@@ -49,5 +49,12 @@ provider result automatically; spelling differences must remain suggestions when
   passed across the six scenarios. YR-04 contributes five parameterized cases. SP-01 full-app UI evidence is listed
   above.
 
-The exact-path test entitlements and derived-data signing were temporary. Production entitlements and project signing
-settings were not changed. Test fixture directories created during retries were removed after the run.
+## Final regression run and scope
+
+- The final full macOS Xcode scheme run passed 294 unit tests, 5 UI tests, and 2 launch tests. The captured output is
+  `/private/tmp/R120-02-final-tests.log`.
+- The acceptance run used test-only entitlements granting the XCTest runner and fixture-mode host app access to
+  `/private/tmp/MovieFolderPostersAcceptance`. Derived-data signing was temporary. No Release or production
+  entitlements or project signing settings changed. Test fixture directories created during retries were removed.
+- No live TMDb credentials, real movie folders, Finder registration, or icon writes were used. Finder extension
+  runtime behavior, actual Finder icon persistence, and signed/notarized release qualification remain unverified.

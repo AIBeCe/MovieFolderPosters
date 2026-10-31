@@ -1,7 +1,8 @@
 # R120-02 — Year, edition, and spelling evidence
 
-Status: Implementation committed as `46df21c`; issue-scoped Validation completed; awaiting Validation Phase approval.
-Branch: `feature/year-edition-spelling`, based on `develop` at `53a3908`.
+Status: Implementation, Validation, and Acceptance Testing complete; integrated into `develop` by fast-forward.
+Implementation commit: `46df21c`; validation and acceptance commit: `d53a66a`.
+Branch: `develop`, fast-forwarded from `feature/year-edition-spelling`.
 Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/16
 
 ## Goal and architecture
@@ -15,7 +16,7 @@ The approved proposal in this chat is the specification; this document preserves
 
 - All three points were individually approved; the complete proposal was approved before implementation.
 - Implement points sequentially; the completed Implementation Phase was approved and committed as `46df21c`.
-- Validation was separately authorized; Acceptance Testing still requires explicit authorization.
+- Validation and Acceptance Testing were separately authorized, completed, approved, and committed as `d53a66a`.
 - Preserve Swift 6, programmatic AppKit, configured deployment floor, existing modules and movie contents.
 - Preserve unrelated Xcode user data and MovieFolderParsing `.swiftpm` files.
 - No live credentials, TMDb requests, Finder registration, real movie folders, or live icon changes for checks.
@@ -218,10 +219,12 @@ Inspect an unsigned native build for compilation coherence; it does not establis
   (`/private/tmp/R120-02-common-fixed.log`).
 - Focused post-refactor Common tests also passed: 20 `MovieMatcherTests`, 16 `VerifiedReleaseYearTests`, 16
   `MovieFolderProcessorSelectedRetryTests`, and 4 `MatchingAcceptanceIntegrationTests` (56 total).
-- The host app/XCTest target was not rebuilt after the collection-update API cleanup because the earlier Xcode build
-  registered its temporary app bundle with LaunchServices despite the disable setting. The new host source/test call
-  sites were reviewed, but host-target compilation, rendered UI, accessibility, Finder runtime, and release
-  qualification remain unverified.
+- The initial Validation checkpoint did not rebuild the host app/XCTest target after the collection-update API
+  cleanup because an earlier Xcode build registered its temporary app bundle with LaunchServices. During Acceptance
+  Testing, the full macOS Xcode scheme subsequently rebuilt and ran the host unit and UI targets successfully; this
+  supersedes that checkpoint for compilation and tested UI journeys. The UI run exercised Settings, collection
+  language persistence, unresolved results, Choose Movie, spelling suggestions, and launch appearance. Finder
+  extension runtime, real Finder icon persistence, and release qualification remain unverified.
 - A first host harness attempt exposed two stale method declarations after the approved renames; those declarations
   were corrected and the final 22-test host run passed. Default SwiftPM cache attempts failed before compilation due
   sandbox permissions; package-local writable caches were used for completed runs.
@@ -230,8 +233,16 @@ Inspect an unsigned native build for compilation coherence; it does not establis
   entry was removed and absence verified. No rendered UI, accessibility, Finder runtime, or release qualification
   was performed.
 
-## Phase boundary
+## Final status
 
-Implementation commit `46df21c` is complete. Validation results are presented for user review; its validation changes
-remain uncommitted pending Validation Phase approval. Acceptance Testing remains a separate required phase and has not
-started. The known baseline legacy-cache fixture failure and native runtime limitations are recorded above.
+- Implementation commit `46df21c` and Validation/Acceptance commit `d53a66a` are integrated into `develop`.
+- Validation passed: the full Common suite passed 352 tests in 33 suites; the full macOS Xcode scheme passed 294
+  unit tests, 5 UI tests, and 2 launch tests. SwiftLint reported no warnings or errors, `git diff --check` passed,
+  DocC comments were reviewed, and modified Swift files were checked against the installed Swift Style Guide.
+- Acceptance passed: all 6 scenarios and 10 executable cases passed, including the full-app spelling suggestion
+  journey. The final full Xcode run is recorded at `/private/tmp/R120-02-final-tests.log`.
+- Test data and credentials were isolated. No live TMDb credentials, real movie folders, Finder registration, or
+  icon writes were used.
+- Finder extension runtime behavior, actual Finder icon persistence, and signed/notarized release qualification
+  remain outside the completed evidence.
+- The feature has been fast-forwarded into `develop`; documentation updates on `develop` are committed separately.
