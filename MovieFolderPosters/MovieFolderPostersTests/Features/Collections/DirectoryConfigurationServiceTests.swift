@@ -49,6 +49,49 @@ struct DirectoryConfigurationServiceTests {
     #expect(notifier.resumeFlags == [false, true, true])
   }
 
+  /// Source-only option changes cancel stale work without synthesizing collection visits.
+  @Test @MainActor func localInformationOptionsUsePassiveReloadAndPersistIndependently() async throws {
+    let notifier = SearchBudgetNotificationProbe()
+    let fixture = try ConfigurationServiceFixture(notifier: notifier)
+    defer { fixture.cleanup() }
+    var matching = MovieMatchingConfiguration()
+    matching.readsNFOInformation = true
+    try await fixture.service.setMovieMatchingConfiguration(matching)
+    matching.readsImmediateVideoNames = true
+    try await fixture.service.setMovieMatchingConfiguration(matching)
+    matching.readsImmediateImageNames = true
+    try await fixture.service.setMovieMatchingConfiguration(matching)
+    let summary = try await fixture.service.configurationSummary()
+    #expect(summary.movieMatchingConfiguration == matching)
+    #expect(notifier.resumeFlags == [false, false, false])
+    matching.comparesOriginalTitles.toggle()
+    try await fixture.service.setMovieMatchingConfiguration(matching)
+    #expect(notifier.resumeFlags == [false, false, false, true])
+  }
+
+  /// Collection overrides persist source options and use the same passive invalidation as global defaults.
+  @Test @MainActor func localInformationCollectionOverridePersistsWithoutSchedulingVisits() async throws {
+    let notifier = SearchBudgetNotificationProbe()
+    let fixture = try ConfigurationServiceFixture(notifier: notifier)
+    defer { fixture.cleanup() }
+    let collection = MonitoredDirectory(id: UUID(), path: "/AbsentCollection", transferBookmark: Data([1]),
+      authorizationVersion: UUID())
+    try fixture.repository.update { $0.directories = [collection] }
+    let edit = CollectionEditViewModel(identifier: collection.id, service: fixture.service)
+    await edit.load()
+    edit.inheritsApplicationConfiguration = false
+    edit.overrideConfiguration.readsNFOInformation = true
+    edit.overrideConfiguration.readsImmediateImageNames = true
+    #expect(await edit.save())
+    let saved = try #require(try fixture.repository.read().directories.first)
+    #expect(saved.movieMatchingConfiguration?.readsNFOInformation == true)
+    #expect(saved.movieMatchingConfiguration?.readsImmediateImageNames == true)
+    #expect(saved.movieMatchingConfiguration?.readsImmediateVideoNames == false)
+    #expect(saved.authorizationVersion == collection.authorizationVersion)
+    #expect(saved.transferBookmark == collection.transferBookmark)
+    #expect(notifier.resumeFlags == [false])
+  }
+
   /// Normal loading of old settings shows the recovery action without a separate discarded startup read.
   @Test @MainActor func configurationLoadExplainsRequiredMigration() async throws {
     let fixture = try ConfigurationServiceFixture()

@@ -2,6 +2,16 @@ import Foundation
 import Network
 
 nonisolated public extension MovieMetadataProvider {
+  /// Unsupported providers fail closed instead of falling back to weaker title matching.
+  func movie(movieID: Int, language: TMDbLanguage) async throws -> MovieMetadata? {
+    throw TMDbError.invalidConfiguration
+  }
+
+  /// Unsupported providers fail closed instead of manufacturing an empty successful lookup.
+  func movie(imdbID: String, language: TMDbLanguage) async throws -> MovieMetadata? {
+    throw TMDbError.invalidConfiguration
+  }
+
   /// Collects pages sequentially within a captured global budget, publishing only a successful whole search.
   ///
   /// Identical records are deduplicated in provider order. Conflicting records or inconsistent page totals fail

@@ -6,6 +6,8 @@ public enum TMDbRequestCategory: String, Codable, Sendable, CaseIterable {
   case credentialValidation
   /// Searches movies by title and optional release year.
   case movieSearch
+  /// Retrieves a movie by an explicit provider identity.
+  case movieLookup
   /// Retrieves provider-verified alternative titles for one movie.
   case alternativeTitles
   /// Retrieves dated release events for one movie.

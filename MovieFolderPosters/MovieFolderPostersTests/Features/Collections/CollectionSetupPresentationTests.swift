@@ -110,6 +110,10 @@ import Testing
   #expect(buttons.first(where: { $0.title == "Add Collection" })?.isEnabled == false)
   #expect(buttons.first(where: { $0.title == "Use application matching settings" })?.state == .on)
   #expect(buttons.first(where: { $0.title == "Compare TMDb original titles" })?.isEnabled == false)
+  for title in ["Read NFO information", "Read immediate video filenames", "Read immediate image filenames"] {
+    #expect(buttons.first(where: { $0.title == title })?.isEnabled == false)
+    #expect(buttons.first(where: { $0.title == title })?.state == .off)
+  }
 }
 
 /// Setup controls form an explicit keyboard loop independent of AppKit's stack-view loop recalculation.
@@ -126,11 +130,14 @@ import Testing
   let inheritButton = try #require(buttons.first { $0.title == "Use application matching settings" })
   let yearButton = try #require(buttons.first { $0.title == "Require a release year for automatic matching" })
   let originalButton = try #require(buttons.first { $0.title == "Compare TMDb original titles" })
+  let nfoButton = try #require(buttons.first { $0.title == "Read NFO information" })
+  let videoNamesButton = try #require(buttons.first { $0.title == "Read immediate video filenames" })
+  let imageNamesButton = try #require(buttons.first { $0.title == "Read immediate image filenames" })
   let cancelButton = try #require(buttons.first { $0.title == "Cancel" })
   let addButton = try #require(buttons.first { $0.title == "Add Collection" })
   let languagePicker = try #require(views.compactMap { $0 as? MovieSearchLanguagePicker }.first)
   let controls: [NSView] = [chooseButton, nameField, privateHistoryCheckbox, inheritButton, yearButton, originalButton,
-    languagePicker, cancelButton, addButton]
+    nfoButton, videoNamesButton, imageNamesButton, languagePicker, cancelButton, addButton]
 
   for (current, next) in zip(controls, controls.dropFirst() + [controls[0]]) {
     #expect(current.nextKeyView === next)

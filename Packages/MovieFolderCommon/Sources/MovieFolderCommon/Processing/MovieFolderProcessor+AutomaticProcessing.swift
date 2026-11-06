@@ -101,6 +101,12 @@ extension MovieFolderProcessor {
     var stateChanged = pruneCache(&visit.processingCache, candidates: inventory, currentTime: currentTime)
     try assessExistingIcons(candidates, root: root, visit: &visit)
 
+    if let deadline = visit.processingCache.providerRetryAt, deadline > currentTime {
+      for candidate in candidates where !candidate.hasCustomIcon {
+        try prepareMovieInformation(candidate, root: root, visit: &visit)
+      }
+      stateChanged = true
+    }
     if try deferForProviderBackoff(
       candidates, currentTime: currentTime, stateChanged: stateChanged, access: access, visit: &visit
     ) { return true }

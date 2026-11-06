@@ -15,6 +15,10 @@ nonisolated public protocol MovieMetadataProvider: Sendable {
   /// - Returns: One provider page; no automatic aggregation or hidden request retries.
   /// - Throws: Provider, transport, decoding, or cancellation errors.
   func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws -> MovieSearchPage
+  /// Retrieves exactly the requested TMDb movie identity.
+  func movie(movieID: Int, language: TMDbLanguage) async throws -> MovieMetadata?
+  /// Resolves one labelled IMDb identity to a movie, excluding other media.
+  func movie(imdbID: String, language: TMDbLanguage) async throws -> MovieMetadata?
   /// Retrieves complete provider alternative-title evidence for exactly the requested identity.
   func alternativeTitles(movieID: Int) async throws -> MovieAlternativeTitlesByID
   /// Retrieves complete dated release evidence for exactly the requested identity.

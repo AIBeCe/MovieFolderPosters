@@ -84,16 +84,16 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
     MovieMetadata(id: $0, title: "Movie \($0)", originalTitle: "Movie \($0)", releaseYear: 1979, posterPath: .none)
   }
   let five = MovieSearchResult(movies: Array(movies.prefix(5)), hasMorePages: false)
-  _ = try await processor.matchMovieUsingEvidence(title: "Alien", year: 1979, search: five, state: &state)
+  _ = try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: five, state: &state)
   #expect(await provider.requestedIDs == [1, 2, 3, 4, 5])
   #expect(state.alternativeTitles.count == 5)
-  _ = try await processor.matchMovieUsingEvidence(title: "Alien", year: 1979, search: five, state: &state)
+  _ = try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: five, state: &state)
   #expect(await provider.requestedIDs.count == 5)
-  let result = try await processor.matchMovieUsingEvidence(title: "Alien", year: 1979,
+  let result = try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979,
     search: MovieSearchResult(movies: movies, hasMorePages: false), state: &state)
   #expect(result == .unresolved(.incompleteTitleEvidence))
   #expect(await provider.requestedIDs.count == 5)
-  _ = try await processor.matchMovieUsingEvidence(title: "Alien", year: 1979,
+  _ = try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979,
     search: MovieSearchResult(movies: [movies[0]], hasMorePages: true), state: &state)
   #expect(await provider.requestedIDs.count == 5)
 }
@@ -110,15 +110,15 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
   let search = MovieSearchResult(movies: [MovieMetadata(id: 42, title: "Alien", originalTitle: "Alien",
     releaseYear: 1979, posterPath: .none)], hasMorePages: false)
   var state = CollectionProcessingCache()
-  _ = try await earlier.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
-  _ = try await later.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
+  _ = try await earlier.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: search, state: &state)
+  _ = try await later.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: search, state: &state)
   #expect(await provider.requestedIDs == [42, 42])
   let failing = AliasEvidenceProvider(failure: .authentication)
   let processor = MovieFolderProcessor(
     persistence: fixture.persistence, provider: failing, cacheDirectory: fixture.cache)
   var empty = CollectionProcessingCache()
   await #expect(throws: TMDbError.authentication) {
-    try await processor.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &empty)
+    try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: search, state: &empty)
   }
   #expect(empty.alternativeTitles.isEmpty)
 }
@@ -132,7 +132,7 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
     language: TMDbLanguage("pt-BR"), pageLimit: 3)))
   #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979,
     credentialRevision: UUID(), pageLimit: 3)))
-  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, usesFixtures: true, pageLimit: 3)))
+  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, usesStubTMDbResponses: true, pageLimit: 3)))
 }
 
 /// Alias eviction is deterministic and cannot discard unrelated confirmed folder decisions.

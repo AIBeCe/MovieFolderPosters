@@ -71,6 +71,9 @@ extension MovieFolderProcessor {
     do {
       let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
       defer { withExtendedLifetime(settingsAccess) {} }
+      if let sha256 = selection.localInformationReadResultSHA256 {
+        try informationContext(candidate, root: root, sha256: sha256).validate()
+      }
       try replacePoster(imageData, candidate: candidate, root: root)
     }
     activity.append(.posterApplied)
@@ -80,8 +83,10 @@ extension MovieFolderProcessor {
     refreshedRecord.movieYear = selection.movieYear
     refreshedRecord.acceptedMovieReleaseDates = selection.releaseDates
     refreshedRecord.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
-    refreshedRecord.movieIdentitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
+    refreshedRecord.movieIdentitySource = selection.identitySource
     refreshedRecord.requiresAutomaticReview = state.folders[child]?.requiresAutomaticReview
+    refreshedRecord.localInformationReadResultSHA256 = selection.localInformationReadResultSHA256
+      ?? state.folders[child]?.localInformationReadResultSHA256
     state.folders[child] = refreshedRecord
     state.providerRetryAt = .none
     try saveAssignedState(
@@ -424,6 +429,8 @@ extension MovieFolderProcessor {
     var movieTitle = state.folders[child]?.movieTitle
     var movieYear = state.folders[child]?.movieYear
     var releaseDates = state.folders[child]?.acceptedMovieReleaseDates ?? []
+    var localInformationReadResultSHA256: String?
+    var identitySource = state.folders[child]?.movieIdentitySource ?? .savedDecision
     if let record = state.folders[child], record.fingerprint == candidate.fingerprint,
       record.status == .processed, let savedMovieID = record.matchedMovieID,
       let savedPosterPath = record.posterPath,
@@ -438,12 +445,17 @@ extension MovieFolderProcessor {
       releaseDates = savedReleaseDates(result.releaseDates, movie: result.movie, candidate: candidate,
         saved: state.folders[child]) ?? []
       posterPath = result.posterPath
-      state.queries[result.queryKey] = CachedMovieSearch(result: result.search, createdAt: now())
+      localInformationReadResultSHA256 = result.localInformationReadResultSHA256
+      identitySource = result.identitySource
+      if let key = result.queryKey, let search = result.search {
+        state.queries[key] = CachedMovieSearch(result: search, createdAt: now())
+      }
     }
 
     return RefreshMovieSelection(
       movieID: movieID, posterPath: posterPath, movieTitle: movieTitle, movieYear: movieYear,
-      releaseDates: releaseDates)
+      releaseDates: releaseDates, localInformationReadResultSHA256: localInformationReadResultSHA256,
+      identitySource: identitySource)
   }
 
   /// Searches and conservatively validates a fresh refresh choice before caching its result.
@@ -451,28 +463,58 @@ extension MovieFolderProcessor {
     root: URL, candidate: inout MovieFolderCandidate, state: inout CollectionProcessingCache,
     activity: ProcessorActivityLog
   ) async throws -> RefreshSearchResult {
-    guard case .parsed(let parsed) = parser.parse(candidate.name) else {
+    let readResult = try readMovieInformation(candidate, root: root)
+    let context = informationContext(candidate, root: root, sha256: readResult.sha256)
+    let metadataProvider = informationProvider(context)
+    let match: MovieMatchResult
+    var queryKey: String?
+    var search: MovieSearchResult?
+    var identitySource: MovieIdentitySource = .conservativeMatch
+    let information = LocalMovieInformationResolver().resolve(folderName: candidate.name, readResult: readResult)
+    switch information {
+    case .unparseableFolder:
       activity.append(.unresolved, reason: .parsingProblem)
       throw PosterActionError.unresolved
-    }
-
-    if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, parsed.year == .none {
-      recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
-      activity.append(.unresolved, reason: .manualMatchingRequired)
+    case .unusable, .conflicting:
+      let reason: FolderProcessingReason
+      if case .conflicting = information { reason = .conflictingMovieInformation }
+      else { reason = .manualMatchingRequired }
+      recordUnresolved(candidate, in: &state, reason: reason)
+      state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
+      activity.append(.unresolved, reason: reason)
       throw PosterActionError.unresolved
+    case .identifiers(let identifiers):
+      identitySource = .validatedIdentifier
+      let resolution = try await metadataProvider.resolveMovieIdentifiers(identifiers,
+        language: movieMatchingConfiguration.searchLanguage)
+      switch resolution {
+      case .matched(let movie): match = .matched(movie, releaseDates: [])
+      case .notFound: match = .unresolved(.noSuitableMatch)
+      case .conflicting:
+        recordUnresolved(candidate, in: &state, reason: .conflictingMovieInformation)
+        state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
+        activity.append(.unresolved, reason: .conflictingMovieInformation)
+        throw PosterActionError.unresolved
+      }
+    case .title(let title, let year, let source):
+      identitySource = source.identitySource
+      if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, year == .none {
+        recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
+        state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
+        activity.append(.unresolved, reason: .manualMatchingRequired)
+        throw PosterActionError.unresolved
+      }
+      activity.stage = .search
+      queryKey = try Self.queryKey(title: title, year: .none,
+        language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
+        usesStubTMDbResponses: usesStubTMDbResponses, pageLimit: searchPageLimit)
+      let result = try await metadataProvider.searchMovies(title: title, year: .none,
+        language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
+      search = result
+      match = try await fetchAlternativeTitlesAndReleaseDates(title: title, year: year, search: result, state: &state,
+        metadataProvider: metadataProvider)
     }
-
-    activity.stage = .search
-    let queryKey = try Self.queryKey(title: parsed.title, year: .none,
-      language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-      usesFixtures: usesFixtureMetadata, pageLimit: searchPageLimit)
-    let search = try await provider.searchMovies(title: parsed.title, year: .none,
-      language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
-    try Task.checkCancellation()
-    candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
-    try ensureReplaceableIcon(for: candidate, in: root)
-    let match = try await matchMovieUsingEvidence(title: parsed.title, year: parsed.year, search: search, state: &state)
-    try Task.checkCancellation()
+    try context.validate()
     candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
     try ensureReplaceableIcon(for: candidate, in: root)
 
@@ -484,7 +526,10 @@ extension MovieFolderProcessor {
       case .ambiguousMovie: .severalMatches
       default: .unresolved
       }
-      if reason == .manualMatchingRequired { recordUnresolved(candidate, in: &state, reason: reason) }
+      if reason == .manualMatchingRequired {
+        recordUnresolved(candidate, in: &state, reason: reason)
+        state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
+      }
       activity.append(result, reason: reason)
       throw PosterActionError.unresolved
     }
@@ -504,7 +549,7 @@ extension MovieFolderProcessor {
     }
 
     return RefreshSearchResult(queryKey: queryKey, search: search, movie: movie, posterPath: posterPath,
-      releaseDates: releaseDates)
+      releaseDates: releaseDates, localInformationReadResultSHA256: readResult.sha256, identitySource: identitySource)
   }
 
   /// Saves an explicit manual-resolution requirement when a fresh search cannot replace confirmed evidence.
@@ -513,7 +558,8 @@ extension MovieFolderProcessor {
     processingState: inout CollectionProcessingState?, activity: ProcessorActivityLog
   ) throws {
     guard let saved = state.folders[candidate.name], saved.fingerprint == candidate.fingerprint,
-      saved.processingReason == .manualMatchingRequired else { return }
+      saved.processingReason == .manualMatchingRequired || saved.processingReason == .conflictingMovieInformation
+      else { return }
 
     try saveState(state, to: access, activity: activity)
     try recordFolderProcessing(cachedFolderResult(candidate, saved: saved),
@@ -536,6 +582,9 @@ extension MovieFolderProcessor {
 
     guard Self.isValidPoster(imageData) else { throw PosterActionError.noPoster }
 
+    if let sha256 = selection.localInformationReadResultSHA256 {
+      try informationContext(candidate, root: root, sha256: sha256).validate()
+    }
     candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
 
@@ -580,18 +629,26 @@ private struct RefreshMovieSelection {
   let movieYear: Int?
   /// Dated events that supported the automatic identity.
   let releaseDates: [MovieReleaseDate]
+  /// Fresh automatic input contract, absent when reusing an authoritative saved identity.
+  let localInformationReadResultSHA256: String?
+  /// Source that actually established the selected provider identity.
+  let identitySource: MovieIdentitySource
 }
 
 /// Search evidence retained until a refresh selection has passed identity and artwork checks.
 private struct RefreshSearchResult {
   /// Cache identity containing the captured request context.
-  let queryKey: String
-  /// Complete provider search result used for future bounded review.
-  let search: MovieSearchResult
+  let queryKey: String?
+  /// Complete provider search result, absent for explicit identifier resolution.
+  let search: MovieSearchResult?
   /// Conservatively selected provider identity.
   let movie: MovieMetadata
   /// Nonempty artwork path checked before returning.
   let posterPath: String
   /// Dated events that supported the fresh automatic identity.
   let releaseDates: [MovieReleaseDate]
+  /// Fresh automatic input contract, absent when reusing an authoritative saved identity.
+  let localInformationReadResultSHA256: String?
+  /// Source that actually established the selected provider identity.
+  let identitySource: MovieIdentitySource
 }

@@ -12,7 +12,7 @@ nonisolated public enum FolderProcessingReason: String, Codable, Sendable, CaseI
   case posterFailure, filesystemFailure, savedIdentityUnavailable, ownershipChanged
   case capacityExceeded, cachePersistenceFailure, authentication, rateLimited, unknown
   case connectivity, serverFailure, invalidResponse, recoveryMode
-  case manualMatchingRequired, explicitExclusion
+  case manualMatchingRequired, explicitExclusion, conflictingMovieInformation
 }
 /// Ownership evidence for the icon currently installed on a folder.
 nonisolated public enum FolderPosterOwnershipRecord: String, Codable, Sendable {
@@ -21,6 +21,7 @@ nonisolated public enum FolderPosterOwnershipRecord: String, Codable, Sendable {
 /// Evidence source used to associate a folder with a provider movie identity.
 nonisolated public enum MovieIdentitySource: String, Codable, Sendable {
   case conservativeMatch, explicitSelection, savedDecision
+  case validatedIdentifier, nfoInformation, videoNameInformation, imageNameInformation
 }
 /// The authoritative current result and supporting evidence for one visible child directory.
 nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, Identifiable {
@@ -111,7 +112,7 @@ nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, 
       let processingReason, let nextRetryAt else { return .none }
     switch processingReason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-         .authentication, .recoveryMode, .unknown, .manualMatchingRequired:
+         .authentication, .recoveryMode, .unknown, .manualMatchingRequired, .conflictingMovieInformation:
       return .none
     default:
       return nextRetryAt

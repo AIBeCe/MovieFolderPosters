@@ -61,14 +61,20 @@ extension MovieFolderProcessor {
       !candidate.hasCustomIcon,
       try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
 
-    if requiresManualReview(record.processingReason) { return .notEligible }
-
-    let cache = try loadState(from: access)
+    var preparation = AutomaticProcessingPass(processingCache: try loadState(from: access))
+    let hadPriorAssessment = preparation.processingCache.folders[child] != nil
+    try prepareMovieInformation(candidate, root: root, visit: &preparation)
+    let cache = preparation.processingCache
     let prior = cache.folders[child]
+    let informationChanged = hadPriorAssessment && prior == nil
+
+    if !informationChanged, requiresManualReview(record.processingReason) { return .notEligible }
+    if informationChanged, let deadline = cache.providerRetryAt, deadline > now() { return .waiting(until: deadline) }
+
     activity.movie = savedActivityMovie(prior, candidate: candidate)
     let sameFingerprint = prior?.fingerprint == candidate.fingerprint
     if sameFingerprint, prior?.blocksAutomaticRecovery == true { return .notEligible }
-    let isLegacyUnresolvedResult = sameFingerprint && prior?.isLegacyUnresolvedResult == true
+    let isLegacyUnresolvedResult = informationChanged || (sameFingerprint && prior?.isLegacyUnresolvedResult == true)
     let retryContext = SelectedFolderRetryDelayContext(
       saved: record, prior: prior, cache: cache, sameFingerprint: sameFingerprint,
       isLegacyUnresolvedResult: isLegacyUnresolvedResult, activity: activity)
@@ -82,7 +88,8 @@ extension MovieFolderProcessor {
     var visit = AutomaticProcessingPass(
       processingCache: cache, collectionProcessingRecord: try recordProcessingStart(context:
         processingContext, action: .manual, child: child),
-      activityLog: activity, selectedRetryChildName: child)
+      activityLog: activity, localInformationReadResults: preparation.localInformationReadResults,
+      selectedRetryChildName: child)
     defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord, child: child) }
 
     if try !shouldSkipCandidate(candidate, root: root, visit: &visit),
@@ -127,7 +134,7 @@ extension MovieFolderProcessor {
   private func requiresManualReview(_ reason: FolderProcessingReason?) -> Bool {
     switch reason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork, .authentication,
-         .manualMatchingRequired: true
+         .manualMatchingRequired, .conflictingMovieInformation: true
     default: false
     }
   }

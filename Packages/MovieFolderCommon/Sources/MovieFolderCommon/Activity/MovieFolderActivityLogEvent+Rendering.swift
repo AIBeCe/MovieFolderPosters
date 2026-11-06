@@ -147,6 +147,8 @@ extension MovieFolderActivityLogEvent {
     case .invalidResponse: "The provider response was invalid."
     case .recoveryMode: "Recovery mode pauses processing; review recovery settings."
     case .manualMatchingRequired: "Choose the intended movie manually."
+    case .conflictingMovieInformation:
+      "The movie information disagrees. Choose the intended movie manually."
     case .explicitExclusion: "The folder is explicitly excluded from automatic processing."
     }
   }

@@ -36,11 +36,12 @@ extension MovieFolderProcessor {
         ? now().addingTimeInterval(configuration.incompleteSearchRetryInterval) : .none,
       matchedMovieID: confirmed ? saved?.matchedMovieID : movie?.id,
       posterPath: confirmed ? saved?.posterPath : movie?.posterPath,
-      processingReason: confirmed ? .manualMatchingRequired : reason,
+      processingReason: confirmed && reason != .conflictingMovieInformation ? .manualMatchingRequired : reason,
       movieTitle: confirmed ? saved?.movieTitle : movie?.title,
       movieYear: confirmed ? saved?.movieYear : movie?.releaseYear,
       movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
+    record.localInformationReadResultSHA256 = saved?.localInformationReadResultSHA256
     record.acceptedMovieReleaseDates = savedReleaseDates(releaseDates, movie: movie, candidate: candidate, saved: saved)
     record.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
     record.nameParserRevision = ReleaseNameParser.revision
@@ -52,7 +53,7 @@ extension MovieFolderProcessor {
   /// - Parameters:
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - state: The root processing state being inspected or updated.
-  func recordTransientFailure(
+  func saveTemporaryFailure(
     _ candidate: MovieFolderCandidate, in state: inout CollectionProcessingCache,
     stage: FolderProcessingStage = .unknown, movie: MovieMetadata? = .none,
     reason: FolderProcessingReason? = .none, failureReason: FolderProcessingFailureReason = .unavailable,
@@ -75,11 +76,15 @@ extension MovieFolderProcessor {
       lastFailure: AutomaticFolderProcessingFailure(reason: failureReason, stage: stage, occurredAt: now()),
       movieIdentitySource: confirmed ? saved?.movieIdentitySource : (movie == .none ? .none : .conservativeMatch)
     )
+    state.folders[candidate.name]?.localInformationReadResultSHA256 = saved?.localInformationReadResultSHA256
     state.folders[candidate.name]?.acceptedMovieReleaseDates = savedReleaseDates(
       releaseDates, movie: movie, candidate: candidate, saved: saved)
     state.folders[candidate.name]?.savedMatchingRulesVersion = movie == .none
       ? saved?.savedMatchingRulesVersion : Self.savedMatchingRulesVersion
     state.folders[candidate.name]?.requiresAutomaticReview = requiresReview
+    if MovieIdentifierInformationParser().parse(candidate.name) != .absent {
+      state.folders[candidate.name]?.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
+    }
   }
 
   /// Retains dated provenance only for a confirmed current folder identity when no replacement events were requested.

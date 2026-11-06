@@ -58,6 +58,7 @@ private extension MovieFolderActivityLogEvent {
     if let processingError = error as? AutomaticProcessingIssue {
       return switch processingError {
       case .changedIdentity: .ownershipChanged
+      case .changedInformation: .cancelled
       case .invalidPoster: .invalidResponse
       case .cacheWriteFailed: .storage
       }

@@ -334,7 +334,7 @@ extension DirectoryConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try PersistenceStore(directory: root)
     let repository = ConfigurationRepository(store: store)
-    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 8 } }
+    #expect(throws: ConfigurationError.self) { try repository.update { $0.version = 9 } }
     let directory = MonitoredDirectory(
       id: UUID(), path: "/Movies", transferBookmark: Data([1]),
       authorizationVersion: UUID())

@@ -95,6 +95,14 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
   /// Includes TMDb original titles in exact automatic comparisons.
   private let originalButton = NSButton(checkboxWithTitle: "Compare TMDb original titles",
     target: .none, action: .none)
+  /// Opt-in read-only NFO movie metadata.
+  private let nfoButton = NSButton(checkboxWithTitle: "Read NFO information", target: .none, action: .none)
+  /// Opt-in identity hints from immediate video filenames only.
+  private let videoNamesButton = NSButton(checkboxWithTitle: "Read immediate video filenames",
+    target: .none, action: .none)
+  /// Opt-in identity hints from immediate image filenames; never local artwork selection.
+  private let imageNamesButton = NSButton(checkboxWithTitle: "Read immediate image filenames",
+    target: .none, action: .none)
   /// Native provider language choice saved with the complete matching configuration.
   private let languagePicker = MovieSearchLanguagePicker()
   /// Global bounded search request budget, separate from collection overrides.
@@ -138,6 +146,15 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
       detail.textColor = .secondaryLabelColor
       content += [row, detail]
     }
+    for button in [nfoButton, videoNamesButton, imageNamesButton] {
+      button.target = self
+      button.action = #selector(matchingConfigurationChanged)
+    }
+    let localInformationHelp = NSTextField(wrappingLabelWithString:
+      "Read-only, immediate files only. NFO reads metadata; video and image options read filenames only. "
+        + "No subfolders or media contents are read. Images provide movie identity, never local artwork.")
+    localInformationHelp.textColor = .secondaryLabelColor
+    content += [nfoButton, videoNamesButton, imageNamesButton, localInformationHelp]
     languagePicker.target = self
     languagePicker.action = #selector(matchingConfigurationChanged)
     let languageRow = NSStackView(views: [NSTextField(labelWithString: "Search language"), languagePicker])
@@ -172,6 +189,10 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
     originalButton.state = viewModel.movieMatchingConfiguration.comparesOriginalTitles ? .on : .off
     yearButton.isEnabled = !viewModel.isBusy
     originalButton.isEnabled = !viewModel.isBusy
+    nfoButton.state = viewModel.movieMatchingConfiguration.readsNFOInformation ? .on : .off
+    videoNamesButton.state = viewModel.movieMatchingConfiguration.readsImmediateVideoNames ? .on : .off
+    imageNamesButton.state = viewModel.movieMatchingConfiguration.readsImmediateImageNames ? .on : .off
+    for button in [nfoButton, videoNamesButton, imageNamesButton] { button.isEnabled = !viewModel.isBusy }
     languagePicker.display(viewModel.movieMatchingConfiguration.searchLanguage)
     languagePicker.isEnabled = !viewModel.isBusy
     pageLimitPicker.selectItem(at: viewModel.searchPageLimit - 1)
@@ -191,6 +212,9 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
     var configuration = viewModel.movieMatchingConfiguration
     configuration.requiresReleaseYearForAutomaticMatching = yearButton.state == .on
     configuration.comparesOriginalTitles = originalButton.state == .on
+    configuration.readsNFOInformation = nfoButton.state == .on
+    configuration.readsImmediateVideoNames = videoNamesButton.state == .on
+    configuration.readsImmediateImageNames = imageNamesButton.state == .on
     configuration.searchLanguage = languagePicker.selectedLanguage
     Task { await viewModel.setMovieMatchingConfiguration(configuration); updatePresentation() }
   }

@@ -26,6 +26,7 @@ nonisolated public struct MovieFolderNetworkHistoryEvent: Codable, Sendable, Equ
     switch purpose {
     case .credentialValidation: "Credential Validation"
     case .movieSearch: "Movie Search"
+    case .movieLookup: "Movie Lookup"
     case .posterConfiguration: "Poster Configuration"
     case .posterDownload: "Poster Download"
     case .alternativeTitles: "Alternative Titles"

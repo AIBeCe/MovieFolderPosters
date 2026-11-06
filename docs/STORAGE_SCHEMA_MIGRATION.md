@@ -1,5 +1,19 @@
 # Saved-data version migration
 
+## R120-04 local-information schema extension
+
+Implementation on `feature/explicit-identifiers-local-information` uses settings schema 8, collection outcomes
+schema 4 and operational cache schema 2. Three required matching choices default to off during explicit
+conversion: `readsNFOInformation`, `readsImmediateVideoNames`, and `readsImmediateImageNames`. Conversion
+covers global/collection matching choices, current and historical processing contexts, and operational state.
+Current-format missing fields fail closed. Optional automatic-assessment digests retain no raw NFO contents.
+
+The existing backup-protected **Migrate Saved Data…** workflow preserves authorizations, bookmarks, privacy,
+pause/exclusions, generations, saved identities/outcomes, unknown fields and versioned query data. Fields
+already required by preceding formats remain required; malformed settings do not receive new privacy or
+participation defaults. Normal reads do not migrate. Focused checks and the phase/review status are in
+[the R120-04 plan](R120-04_IMPLEMENTATION_PLAN.md); live-user-data migration remains unperformed.
+
 ## R120-03 settings schema extension
 
 Implementation scope on `feature/bounded-search-pagination`; see

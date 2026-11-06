@@ -155,6 +155,8 @@ extension DirectoryConfigurationService {
     let activityLogContext: MovieFolderActivityLogContext
     /// Whether processing consumers require a settings invalidation.
     let processingChanged: Bool
+    /// Whether existing scheduling semantics require visiting observed collections.
+    let scheduleObservedCollections: Bool
     /// Whether presentation consumers require refreshed names.
     let presentationChanged: Bool
     /// Whether optional history privacy changed.
@@ -235,6 +237,7 @@ extension DirectoryConfigurationService {
     var committedActivityLogContext = MovieFolderActivityLogContext(directory: expected.directory)
     var privacyChanged = false
     var processingChanged = false
+    var scheduleObservedCollections = false
     var presentationChanged = false
     try repository.update { configuration in
       guard let index = configuration.directories.firstIndex(where: { $0.id == identifier }) else {
@@ -251,6 +254,11 @@ extension DirectoryConfigurationService {
       processingChanged =
         configuration.directories[index].movieMatchingConfiguration != update.movieMatchingConfiguration
         || configuration.directories[index].processingConfiguration != update.processingConfiguration
+      let previousMatching = configuration.effectiveMovieMatchingConfiguration(for: configuration.directories[index])
+      let currentMatching = update.movieMatchingConfiguration ?? configuration.movieMatchingConfiguration
+      scheduleObservedCollections =
+        requiresObservedScheduling(previous: previousMatching, current: currentMatching)
+        || configuration.directories[index].processingConfiguration != update.processingConfiguration
       presentationChanged = configuration.directories[index].displayName
         != MonitoredDirectory.normalizedDisplayName(update.displayName)
       configuration.directories[index].displayName = MonitoredDirectory.normalizedDisplayName(update.displayName)
@@ -262,13 +270,16 @@ extension DirectoryConfigurationService {
     }
 
     return CommittedCollectionUpdate(activityLogContext: committedActivityLogContext,
-      processingChanged: processingChanged, presentationChanged: presentationChanged, privacyChanged: privacyChanged)
+      processingChanged: processingChanged, scheduleObservedCollections: scheduleObservedCollections,
+      presentationChanged: presentationChanged, privacyChanged: privacyChanged)
   }
 
   /// Publishes only committed evidence after the caller has released configuration and directory authorization.
   /// - Parameter committedUpdate: The committed values and change flags to publish.
   private func publishCommittedCollectionUpdate(_ committedUpdate: CommittedCollectionUpdate) async {
-    if committedUpdate.processingChanged { notifier.configurationDidChange() }
+    if committedUpdate.processingChanged {
+      notifier.configurationDidChange(scheduleObservedCollections: committedUpdate.scheduleObservedCollections)
+    }
     if committedUpdate.presentationChanged { notifier.collectionPresentationDidChange() }
     if committedUpdate.privacyChanged { MovieFolderEnvironment.notifyHistoryConfigurationChanged() }
     _ = await activity.record(committedUpdate.activityLogContext.event(
@@ -327,10 +338,24 @@ extension DirectoryConfigurationService {
     notifier.configurationDidChange(scheduleObservedCollections: false)
   }
 
+  /// Preserves established settings triggers while local-source-only changes wait for a normal visit.
+  private func requiresObservedScheduling(previous: MovieMatchingConfiguration,
+    current: MovieMatchingConfiguration) -> Bool {
+    previous == current
+      || previous.requiresReleaseYearForAutomaticMatching != current.requiresReleaseYearForAutomaticMatching
+      || previous.comparesOriginalTitles != current.comparesOriginalTitles
+      || previous.searchLanguage != current.searchLanguage
+  }
+
   /// Persists automatic matching defaults without modifying explicit overrides or credentials.
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) throws {
-    try repository.update { $0.movieMatchingConfiguration = configuration }
-    notifier.configurationDidChange()
+    var scheduleObservedCollections = false
+    try repository.update {
+      scheduleObservedCollections = requiresObservedScheduling(previous: $0.movieMatchingConfiguration,
+        current: configuration)
+      $0.movieMatchingConfiguration = configuration
+    }
+    notifier.configurationDidChange(scheduleObservedCollections: scheduleObservedCollections)
   }
 
   /// Changes only presentation metadata; root authorization and processing identity remain stable.

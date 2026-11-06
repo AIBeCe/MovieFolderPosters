@@ -265,7 +265,7 @@ extension CollectionProcessingStoreTests {
     let fixture = try Fixture()
     let current = CollectionProcessingState(context: fixture.context)
     var unsupported = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
-    unsupported["schemaVersion"] = 4
+    unsupported["schemaVersion"] = 5
     do {
       let access = try #require(try fixture.processingStorePersistence.acquireAccess(
         for: CollectionProcessingStore.processingStateKey(for: fixture.context.rootID)
@@ -274,7 +274,7 @@ extension CollectionProcessingStoreTests {
     }
 
     #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(
-      record: .collectionOutcomes(fixture.context.rootID), version: 4)) {
+      record: .collectionOutcomes(fixture.context.rootID), version: 5)) {
       try fixture.processingStore.read(rootID: fixture.context.rootID)
     }
     let access = try #require(try fixture.processingStorePersistence.acquireAccess(

@@ -1,5 +1,19 @@
 # Network service and conservative matching
 
+## R120-04 identifiers and opt-in local information
+
+Implementation on `feature/explicit-identifiers-local-information` adds direct TMDb movie lookup and IMDb
+resolution through the existing recovery-aware provider boundary. IMDb find results can include other media;
+only a unique movie result is eligible. Supplied identifiers must agree, lookup failures cannot authorize a
+weaker title fallback, and captured language/cancellation/shared admission apply to each lookup.
+
+Default-off NFO/video-name/image-name choices add bounded immediate local information. Identifiers reconcile
+first; title-source priority is NFO, video, image, folder. Existing conservative provider title/year and
+finite-search rules still apply to title matching. Information freshness checks protect provider waits
+and final assignment; explicit/confirmed identities remain protected. See
+[supported information and scope](LOCAL_MOVIE_INFORMATION.md) and the
+[implementation plan](R120-04_IMPLEMENTATION_PLAN.md) for focused results and remaining phase gates.
+
 ## R120-03 — Bounded pagination
 
 Implementation scope on `feature/bounded-search-pagination`; checks and review are recorded in

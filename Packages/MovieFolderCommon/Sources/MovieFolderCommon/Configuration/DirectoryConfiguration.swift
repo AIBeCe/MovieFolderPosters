@@ -9,6 +9,13 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
   /// Whether exact automatic comparison also considers the provider's original title.
   public var comparesOriginalTitles: Bool
 
+  /// Whether bounded NFO metadata may contribute automatic movie information.
+  public var readsNFOInformation: Bool
+  /// Whether immediate video filenames may contribute movie identity without reading video bytes.
+  public var readsImmediateVideoNames: Bool
+  /// Whether immediate image filenames may contribute identity without selecting local artwork.
+  public var readsImmediateImageNames: Bool
+
   /// Provider language captured for each search and matching assessment.
   public var searchLanguage: TMDbLanguage
 
@@ -17,6 +24,7 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
     case requiresReleaseYearForAutomaticMatching = "requiresReleaseYearForAutomaticMatching"
     case comparesOriginalTitles = "comparesOriginalTitles"
     case searchLanguage
+    case readsNFOInformation, readsImmediateVideoNames, readsImmediateImageNames
     case legacyRequiredYear = "requiresReleaseYearForAutomaticIdentification"
   }
 
@@ -35,6 +43,9 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
       Bool.self, forKey: .requiresReleaseYearForAutomaticMatching)
     comparesOriginalTitles = try values.decode(Bool.self, forKey: .comparesOriginalTitles)
     searchLanguage = try values.decode(TMDbLanguage.self, forKey: .searchLanguage)
+    readsNFOInformation = try values.decode(Bool.self, forKey: .readsNFOInformation)
+    readsImmediateVideoNames = try values.decode(Bool.self, forKey: .readsImmediateVideoNames)
+    readsImmediateImageNames = try values.decode(Bool.self, forKey: .readsImmediateImageNames)
   }
 
   /// Encodes only the current matching choice names.
@@ -45,17 +56,28 @@ nonisolated public struct MovieMatchingConfiguration: Codable, Sendable, Equatab
     try values.encode(requiresReleaseYearForAutomaticMatching, forKey: .requiresReleaseYearForAutomaticMatching)
     try values.encode(comparesOriginalTitles, forKey: .comparesOriginalTitles)
     try values.encode(searchLanguage, forKey: .searchLanguage)
+    try values.encode(readsNFOInformation, forKey: .readsNFOInformation)
+    try values.encode(readsImmediateVideoNames, forKey: .readsImmediateVideoNames)
+    try values.encode(readsImmediateImageNames, forKey: .readsImmediateImageNames)
   }
 
   /// Creates automatic matching choices; defaults preserve established behavior.
   /// - Parameters:
   ///   - requiresReleaseYearForAutomaticMatching: Reject yearless automatic matching when enabled.
   ///   - comparesOriginalTitles: Include original titles in exact matching when enabled.
+  ///   - searchLanguage: Captured language for provider requests.
+  ///   - readsNFOInformation: Enable bounded read-only immediate NFO metadata.
+  ///   - readsImmediateVideoNames: Enable video filenames without reading their contents.
+  ///   - readsImmediateImageNames: Enable image filenames for identity only, never local artwork.
   public init(requiresReleaseYearForAutomaticMatching: Bool = false, comparesOriginalTitles: Bool = true,
-              searchLanguage: TMDbLanguage = .english) {
+              searchLanguage: TMDbLanguage = .english, readsNFOInformation: Bool = false,
+              readsImmediateVideoNames: Bool = false, readsImmediateImageNames: Bool = false) {
     self.requiresReleaseYearForAutomaticMatching = requiresReleaseYearForAutomaticMatching
     self.comparesOriginalTitles = comparesOriginalTitles
     self.searchLanguage = searchLanguage
+    self.readsNFOInformation = readsNFOInformation
+    self.readsImmediateVideoNames = readsImmediateVideoNames
+    self.readsImmediateImageNames = readsImmediateImageNames
   }
 }
 
@@ -691,7 +713,7 @@ nonisolated public struct ExtensionReadinessReceipt: Codable, Sendable, Equatabl
 /// Versioned shared settings read by the host and Finder extension.
 nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// The version of the serialized settings or activated extension, as appropriate to the payload.
-  public var version = 7
+  public var version = 8
   /// The configured roots in their saved presentation order.
   public var directories: [MonitoredDirectory] = []
   /// Authentication generation used to reject stale credential operations and change authorizations.
@@ -770,7 +792,7 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   /// - Parameter encoder: Destination for current shared settings.
   /// - Throws: A migration error for a noncurrent schema, or an encoding error from the destination encoder.
   public func encode(to encoder: any Encoder) throws {
-    guard version == 7 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
+    guard version == 8 else { throw MovieFolderStorageMigrationError.invalidRecord(record: .settings) }
 
     guard (1...5).contains(searchPageLimit) else { throw ConfigurationError.invalidConfiguration }
 
@@ -794,8 +816,8 @@ nonisolated public struct DirectoryConfiguration: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decode(Int.self, forKey: .version)
-    guard version == 7 else {
-      if (1...6).contains(version) {
+    guard version == 8 else {
+      if (1...7).contains(version) {
         throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: version)
       }
       throw MovieFolderStorageMigrationError.unsupportedVersion(record: .settings, version: version)

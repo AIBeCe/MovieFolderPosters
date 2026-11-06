@@ -133,7 +133,7 @@ struct CollectionProcessingModelTests {
     var processingState = CollectionProcessingState(schemaVersion: 99, context: context)
     #expect(throws: MovieFolderStorageMigrationError.unsupportedVersion(
       record: .collectionOutcomes(context.rootID), version: 99)) { try processingState.validate() }
-    processingState.schemaVersion = 3
+    processingState.schemaVersion = 4
     processingState.folders = [FolderProcessingRecord(name: "Film"), FolderProcessingRecord(name: "Film")]
     #expect(throws: CollectionProcessingError.invalidState) { try processingState.validate() }
   }

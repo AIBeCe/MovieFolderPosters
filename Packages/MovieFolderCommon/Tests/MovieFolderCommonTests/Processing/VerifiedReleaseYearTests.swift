@@ -146,10 +146,10 @@ private func releaseYearEvents(_ years: [Int], type: Int = 3) throws -> [MovieRe
     cacheDirectory: fixture.cache)
   var state = CollectionProcessingCache()
   let search = MovieSearchResult(movies: [movie, releaseYearMovie(43, year: 1980, title: "Other")], hasMorePages: false)
-  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980, search: search, state: &state)
+  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980, search: search, state: &state)
     == .matched(movie, releaseDates: events))
   #expect(await provider.requests == ["aliases:42", "aliases:43", "dates:42"])
-  _ = try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980, search: search, state: &state)
+  _ = try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980, search: search, state: &state)
   #expect(await provider.requests == ["aliases:42", "aliases:43", "dates:42", "dates:42"])
 }
 
@@ -197,7 +197,7 @@ func releaseYearMatchingRejectsIncompleteEvents(dates: MovieReleaseDatesByID) as
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
     cacheDirectory: fixture.cache)
   var state = CollectionProcessingCache()
-  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
+  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: [movie], hasMorePages: false), state: &state)
     == .unresolved(.incompleteYearEvidence))
 }
@@ -213,14 +213,14 @@ func releaseYearMatchingRejectsIncompleteEvents(dates: MovieReleaseDatesByID) as
   let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
     cacheDirectory: fixture.cache)
   var state = CollectionProcessingCache()
-  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
+  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: [movie], hasMorePages: false), state: &state)
     == .matched(movie, releaseDates: events))
   let six = (1...6).map { releaseYearMovie($0) }
-  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
+  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: six, hasMorePages: false), state: &state)
     == .unresolved(.incompleteTitleEvidence))
-  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
+  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: [movie], hasMorePages: true), state: &state)
     == .unresolved(.incompleteSearch))
   #expect(await provider.requests == ["aliases:42", "dates:42"])
@@ -322,7 +322,7 @@ func releaseYearHistoricUnresolvedResultIsReviewedOnce(reason: FolderProcessingR
   #expect(fixture.assigner.assignmentCount == 0)
   var state = try releaseYearSavedState(fixture)
   #expect(state.alternativeTitles.count == 5)
-  #expect(try await processor.matchMovieUsingEvidence(title: "Alien", year: 1980,
+  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980,
     search: MovieSearchResult(movies: movies + [releaseYearMovie(6)], hasMorePages: false), state: &state)
     == .unresolved(.incompleteTitleEvidence))
   #expect(await provider.requests.count == 11)

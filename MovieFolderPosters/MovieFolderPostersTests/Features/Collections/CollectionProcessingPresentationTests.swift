@@ -49,7 +49,7 @@ import Testing
 
   #expect(text.string.contains("Verified Movie (2024), ID 4242"))
   #expect(text.string.contains("Poster ownership: App-owned"))
-  #expect(text.string.contains("Movie identity evidence: Conservative folder-name match"))
+  #expect(text.string.contains("Matched using: Conservative folder-name match"))
   #expect(text.string.contains("Folder identity evidence: Captured"))
   #expect(text.string.contains("Earliest eligible; runs only on later authorized invocation:"))
   #expect(text.string.contains("Last completed collection run:"))

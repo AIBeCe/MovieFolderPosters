@@ -21,6 +21,28 @@ nonisolated public struct RecoveryAwareMovieMetadataProvider: MovieMetadataProvi
     credentialDigest = ProcessingRecoveryService.credentialDigest(credential)
   }
 
+  /// Admits each direct identity request under the existing shared recovery contract.
+  public func movie(movieID: Int, language: TMDbLanguage) async throws -> MovieMetadata? {
+    try Task.checkCancellation()
+    try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
+    do { return try await provider.movie(movieID: movieID, language: language) }
+    catch {
+      try recovery.recordProviderFailure(error, credentialDigest: credentialDigest)
+      throw error
+    }
+  }
+
+  /// Admits each IMDb resolution independently without bypassing shared backoff.
+  public func movie(imdbID: String, language: TMDbLanguage) async throws -> MovieMetadata? {
+    try Task.checkCancellation()
+    try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
+    do { return try await provider.movie(imdbID: imdbID, language: language) }
+    catch {
+      try recovery.recordProviderFailure(error, credentialDigest: credentialDigest)
+      throw error
+    }
+  }
+
   public func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int)
     async throws -> MovieSearchPage {
     try Task.checkCancellation()

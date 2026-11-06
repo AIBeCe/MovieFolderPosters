@@ -141,6 +141,86 @@ public struct TMDbClient: Sendable {
     }
   }
 
+  /// Retrieves one positive Int32 movie identity using the captured provider language.
+  /// - Parameters:
+  ///   - movieID: A positive identity within TMDb's Int32 range.
+  ///   - language: Captured provider language forwarded unchanged.
+  /// - Returns: The validated movie; unsuccessful HTTP responses throw.
+  /// - Throws: `TMDbError` for invalid input, mismatched records, or provider failures.
+  public func movie(movieID: Int, language: TMDbLanguage) async throws -> MovieMetadata? {
+    guard movieID > 0, movieID <= Int(Int32.max) else { throw TMDbError.invalidQuery }
+
+    let response = try await identifierResponse(path: "movie/\(movieID)", language: language)
+    let record: TMDbMovieSearchRecord
+    do { record = try JSONDecoder().decode(TMDbMovieSearchRecord.self, from: response.data) }
+    catch { throw TMDbError.malformedResponse }
+
+    guard record.id == movieID else { throw TMDbError.malformedResponse }
+
+    return try validatedMovie(record)
+  }
+
+  /// Resolves a bounded IMDb identity using only TMDb's movie results.
+  /// - Parameters:
+  ///   - imdbID: Canonical lowercase `tt` followed by seven through ten ASCII digits.
+  ///   - language: Captured provider language forwarded unchanged.
+  /// - Returns: No movie for a completed empty movie result set.
+  /// - Throws: `TMDbError` for malformed, ambiguous, or unsuccessful provider responses.
+  public func movie(imdbID: String, language: TMDbLanguage) async throws -> MovieMetadata? {
+    guard imdbID.range(of: #"^tt[0-9]{7,10}$"#, options: .regularExpression) != .none,
+      imdbID.dropFirst(2).contains(where: { $0 != "0" }) else {
+      throw TMDbError.invalidQuery
+    }
+
+    let response = try await identifierResponse(path: "find/\(imdbID)", language: language,
+      additionalQuery: [URLQueryItem(name: "external_source", value: "imdb_id")])
+    let result: TMDbFindMovieResponse
+    do { result = try JSONDecoder().decode(TMDbFindMovieResponse.self, from: response.data) }
+    catch { throw TMDbError.malformedResponse }
+
+    guard result.movies.count <= 1 else { throw TMDbError.malformedResponse }
+    guard let record = result.movies.first else { return .none }
+
+    return try validatedMovie(record)
+  }
+
+  /// Dispatches one bounded authenticated identity request without hidden retries.
+  private func identifierResponse(path: String, language: TMDbLanguage,
+    additionalQuery: [URLQueryItem] = []) async throws -> HTTPTransportResponse {
+    guard let base = Self.apiBase,
+      var components = URLComponents(url: base.appending(path: path), resolvingAgainstBaseURL: false) else {
+      throw TMDbError.invalidConfiguration
+    }
+
+    components.queryItems = [URLQueryItem(name: "language", value: language.rawValue)] + additionalQuery
+
+    guard let url = components.url else { throw TMDbError.invalidQuery }
+
+    let response = try await send(authenticatedRequest(url: url), purpose: .movieLookup)
+    try validateHTTPStatus(response)
+
+    guard response.contentType?.split(separator: ";").first?
+      .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "application/json" else {
+      throw TMDbError.malformedResponse
+    }
+
+    return response
+  }
+
+  /// Validates movie records consistently before exposing provider identity information.
+  private func validatedMovie(_ record: TMDbMovieSearchRecord) throws -> MovieMetadata {
+    guard record.id > 0, record.id <= Int(Int32.max),
+      !record.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      !record.originalTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw TMDbError.malformedResponse
+    }
+
+    let date = try parseReleaseDate(record.releaseDate)
+
+    return MovieMetadata(id: record.id, title: record.title, originalTitle: record.originalTitle,
+      releaseYear: date?.year, posterPath: record.posterPath)
+  }
+
   /// Retrieves complete alternative-title evidence for one positive movie identity.
   /// - Parameter movieID: The TMDb movie identity whose alternative titles are requested.
   /// - Returns: Exactly one dictionary entry, including a valid empty title list.
@@ -561,4 +641,12 @@ extension TMDbClient {
       throw TMDbError.malformedResponse
     }
   }
+}
+
+/// Find envelope deliberately excludes unrelated media categories.
+private struct TMDbFindMovieResponse: Decodable {
+  /// Only movie identities may enter movie processing.
+  let movies: [TMDbMovieSearchRecord]
+  /// Provider field mapping.
+  enum CodingKeys: String, CodingKey { case movies = "movie_results" }
 }

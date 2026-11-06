@@ -32,6 +32,7 @@ extension MovieFolderProcessor {
         movieYear: assignment.record.movieYear,
         movieIdentitySource: assignment.record.movieIdentitySource ?? .savedDecision
       )
+      cachedRecord.localInformationReadResultSHA256 = assignment.record.localInformationReadResultSHA256
       cachedRecord.acceptedMovieReleaseDates = assignment.record.acceptedMovieReleaseDates
       cachedRecord.savedMatchingRulesVersion = assignment.record.savedMatchingRulesVersion
       cachedRecord.nameParserRevision = assignment.record.nameParserRevision
@@ -58,7 +59,7 @@ extension MovieFolderProcessor {
         originalTitle: assignment.record.movieTitle ?? "", releaseYear: assignment.record.movieYear,
         posterPath: assignment.posterPath)
 
-      recordTransientFailure(candidate, in: &visit.processingCache, stage: .assignPoster, movie: movie)
+      saveTemporaryFailure(candidate, in: &visit.processingCache, stage: .assignPoster, movie: movie)
       visit.processingCache.folders[candidate.name]?.movieIdentitySource = assignment.record.movieIdentitySource
       var failureRecord = failedFolderResult(candidate, stage: .assignPoster, movie: movie)
       failureRecord.movieIdentitySource = assignment.record.movieIdentitySource
@@ -122,7 +123,7 @@ extension MovieFolderProcessor {
         identitySource: decision.record.movieIdentitySource)
     }
     if let error = error as? TMDbError {
-      return try recordProviderFailure(
+      return try recordSourceProviderFailure(
         error, candidate: context.candidate, access: context.access, visit: &visit,
         attempt: FolderPosterAssignmentAttemptResult(failedProcessingStage: .artwork, matchedMovie: decision.movie,
           acceptedMovieReleaseDates: decision.record.acceptedMovieReleaseDates ?? []),
@@ -138,7 +139,7 @@ extension MovieFolderProcessor {
         (.posterFailure, .unavailable)
       }
 
-    recordTransientFailure(
+    saveTemporaryFailure(
       context.candidate, in: &visit.processingCache, stage: .artwork, movie: decision.movie,
       reason: evidence.reason, failureReason: evidence.failureReason)
     if let identitySource = decision.record.movieIdentitySource {
@@ -241,6 +242,7 @@ extension MovieFolderProcessor {
       fingerprint: candidate.fingerprint, status: .processed, retryDate: .none,
       matchedMovieID: movieID, posterPath: posterPath, movieTitle: saved.movieTitle,
       movieYear: saved.movieYear, movieIdentitySource: saved.movieIdentitySource ?? .savedDecision)
+    record.localInformationReadResultSHA256 = saved.localInformationReadResultSHA256
     record.acceptedMovieReleaseDates = saved.acceptedMovieReleaseDates
     record.savedMatchingRulesVersion = saved.savedMatchingRulesVersion
     record.nameParserRevision = saved.nameParserRevision

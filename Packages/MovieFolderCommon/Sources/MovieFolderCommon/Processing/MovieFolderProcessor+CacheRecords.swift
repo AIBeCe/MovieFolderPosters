@@ -6,6 +6,7 @@ import Persistence
 /// Internal processing failures recorded or propagated by the automatic pipeline.
 nonisolated enum AutomaticProcessingIssue: Error {
   case changedIdentity
+  case changedInformation
   case invalidPoster
   case cacheWriteFailed
 }
@@ -45,6 +46,7 @@ nonisolated struct FolderProcessingCacheRecord: Codable {
     case nameParserRevision
     case requiresAutomaticReview = "requiresAutomaticReassessment"
     case acceptedMovieReleaseDates, savedMatchingRulesVersion
+    case localInformationReadResultSHA256 = "localInformationDigest"
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
@@ -57,6 +59,9 @@ nonisolated struct FolderProcessingCacheRecord: Codable {
   var acceptedMovieReleaseDates: [MovieReleaseDate]? = .none
   /// Matching revision that completed a matching run; absent older unresolved decisions can be reviewed once.
   var savedMatchingRulesVersion: Int? = .none
+
+  /// Digest of enabled local inputs used by this automatic assessment; no source contents are persisted.
+  var localInformationReadResultSHA256: String? = .none
 
   /// Derives all source-classified years without duplicating writable year evidence.
   func sourceClassifiedMovieYears() -> [MovieYear] {
@@ -72,7 +77,7 @@ nonisolated struct FolderProcessingCacheRecord: Codable {
   var blocksAutomaticRecovery: Bool {
     requiresManualResolution ||
       (status == .unresolved && (processingReason == .parsingProblem || processingReason == .missingArtwork
-        || processingReason == .manualMatchingRequired))
+        || processingReason == .manualMatchingRequired || processingReason == .conflictingMovieInformation))
   }
 
   /// Whether this unchanged folder has a confirmed result that needs user resolution.
@@ -84,7 +89,7 @@ nonisolated struct FolderProcessingCacheRecord: Codable {
 /// Per-root folder decisions, cached searches, and provider backoff persisted together.
 nonisolated struct CollectionProcessingCache: Codable {
   /// Current operational format; absent versions require explicit migration.
-  var schemaVersion = 1
+  var schemaVersion = 2
   /// Provider-verified title responses, independent of folder decisions.
   var alternativeTitles: [String: CachedMovieAlternativeTitles] = [:]
   /// Processing decisions keyed by immediate child folder name.
@@ -114,7 +119,7 @@ nonisolated struct CollectionProcessingCache: Codable {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
 
-    guard schemaVersion == 1 else {
+    guard schemaVersion == 2 else {
       throw DecodingError.dataCorruptedError(forKey: .schemaVersion, in: values,
         debugDescription: "Operational state requires explicit storage migration")
     }
@@ -134,6 +139,9 @@ nonisolated struct CollectionProcessingCache: Codable {
     let languageOnly = previous.requiresReleaseYearForAutomaticMatching
       == configuration.requiresReleaseYearForAutomaticMatching
       && previous.comparesOriginalTitles == configuration.comparesOriginalTitles
+      && previous.readsNFOInformation == configuration.readsNFOInformation
+      && previous.readsImmediateVideoNames == configuration.readsImmediateVideoNames
+      && previous.readsImmediateImageNames == configuration.readsImmediateImageNames
     if previous != configuration {
       folders = folders.compactMapValues { saved in
         if saved.movieIdentitySource == .explicitSelection { return saved }

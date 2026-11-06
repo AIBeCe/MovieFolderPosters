@@ -37,7 +37,7 @@ public actor MovieFolderProcessor {
   /// Shared recovery admission and change fencing, when supplied by production composition.
   let recovery: ProcessingRecoveryService?
   /// Explicit fixture context captured by production composition.
-  let usesFixtureMetadata: Bool
+  let usesStubTMDbResponses: Bool
   /// Credential generation captured at composition, never refreshed by an in-flight operation.
   let credentialRevision: UUID?
   /// Optional retained reporting service; logging never participates in processing authorization.
@@ -82,7 +82,7 @@ public actor MovieFolderProcessor {
     processingStore: CollectionProcessingStore? = .none,
     recovery: ProcessingRecoveryService? = .none,
     credentialRevision: UUID? = .none,
-    usesFixtureMetadata: Bool = false,
+    usesStubTMDbResponses: Bool = false,
     configuration: MovieFolderProcessorConfiguration = .standard,
     movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
     searchPageLimit: Int = 3,
@@ -93,7 +93,7 @@ public actor MovieFolderProcessor {
     self.activityHistoryService = activityHistoryService
     self.activityLogContext = activityLogContext
     self.credentialRevision = credentialRevision
-    self.usesFixtureMetadata = usesFixtureMetadata
+    self.usesStubTMDbResponses = usesStubTMDbResponses
     self.configuration = configuration
     self.fileSystem = fileSystem
     self.persistence = persistence

@@ -175,9 +175,9 @@ extension R12001MatchingAcceptanceTests {
         searchLanguage: try TMDbLanguage("de-DE")))
     var state = CollectionProcessingCache()
 
-    let first = try await portuguese.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
-    let second = try await german.matchMovieUsingEvidence(title: "Alien", year: 1979, search: search, state: &state)
-    let third = try await newCredential.matchMovieUsingEvidence(title: "Alien",
+    let first = try await portuguese.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: search, state: &state)
+    let second = try await german.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1979, search: search, state: &state)
+    let third = try await newCredential.fetchAlternativeTitlesAndReleaseDates(title: "Alien",
       year: 1979, search: search, state: &state)
 
     #expect(first == .matched(movie))

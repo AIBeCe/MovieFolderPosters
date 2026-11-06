@@ -290,11 +290,12 @@ extension MovieFolderProcessorTests {
   /// - Throws: JSON serialization errors.
   private func makeLegacyCache(fingerprint: String) throws -> Data {
     try JSONSerialization.data(withJSONObject: [
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "alternativeTitles": [String: String](),
       "movieMatchingConfiguration": [
         "requiresReleaseYearForAutomaticMatching": false,
         "comparesOriginalTitles": true,
+        "readsNFOInformation": false, "readsImmediateVideoNames": false, "readsImmediateImageNames": false,
         "searchLanguage": "en-US"
       ],
       "folders": [

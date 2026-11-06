@@ -29,9 +29,15 @@ nonisolated private struct MetadataCacheKey: Encodable {
   /// Captured credential generation; absent only for isolated callers.
   let credentialRevision: UUID?
   /// Distinguishes explicit fixtures from production evidence.
-  let usesFixtures: Bool
+  let usesStubTMDbResponses: Bool
   /// Captured budget for search keys; absent for compatible alias keys.
   let pageLimit: Int?
+
+  private enum CodingKeys: String, CodingKey {
+    case category, revision, title, year, movieID, language, credentialRevision
+    case usesStubTMDbResponses = "usesFixtures"
+    case pageLimit
+  }
 
   /// Produces deterministic encoded evidence before hashing, avoiding concatenated-field ambiguities.
   func digest() throws -> String {
@@ -46,16 +52,18 @@ extension MovieFolderProcessor {
   /// Derives the query key using complete captured request context.
   static func queryKey(title: String, year: Int?, language: TMDbLanguage = .english,
                        credentialRevision: UUID? = .none,
-                       usesFixtures: Bool = false, pageLimit: Int) throws -> String {
+                       usesStubTMDbResponses: Bool = false, pageLimit: Int) throws -> String {
     try MetadataCacheKey(category: .movieSearch, title: title.trimmingCharacters(in: .whitespacesAndNewlines),
       year: year, movieID: .none, language: language, credentialRevision: credentialRevision,
-      usesFixtures: usesFixtures, pageLimit: pageLimit).digest()
+      usesStubTMDbResponses: usesStubTMDbResponses, pageLimit: pageLimit).digest()
   }
 
   /// Loads every eligible alias sequentially and applies the fixed five-ID ceiling before cache lookup.
-  func matchMovieUsingEvidence(
-    title: String, year: Int?, search: MovieSearchResult, state: inout CollectionProcessingCache
+  func fetchAlternativeTitlesAndReleaseDates(
+    title: String, year: Int?, search: MovieSearchResult, state: inout CollectionProcessingCache,
+    metadataProvider: (any MovieMetadataProvider)? = .none
   ) async throws -> MovieMatchResult {
+    let metadataProvider = metadataProvider ?? provider
     if let issue = matcher.candidateIssue(title: title, year: year, search: search,
       configuration: movieMatchingConfiguration) { return .unresolved(issue) }
     let identifiers = matcher.candidateIDs(year: year, search: search)
@@ -64,14 +72,14 @@ extension MovieFolderProcessor {
       try Task.checkCancellation()
       let key = try MetadataCacheKey(category: .alternativeTitles, title: .none, year: .none, movieID: id,
         language: movieMatchingConfiguration.searchLanguage, credentialRevision: credentialRevision,
-        usesFixtures: usesFixtureMetadata, pageLimit: .none).digest()
+        usesStubTMDbResponses: usesStubTMDbResponses, pageLimit: .none).digest()
       if let cached = state.alternativeTitles[key], cached.movieID == id,
         now().timeIntervalSince(cached.createdAt) >= 0,
         now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {
         evidence[id] = cached.titles
         continue
       }
-      let result = try await provider.alternativeTitles(movieID: id)
+      let result = try await metadataProvider.alternativeTitles(movieID: id)
       try Task.checkCancellation()
 
       guard result.count == 1, let titles = result[id], titles.allSatisfy({
@@ -96,7 +104,7 @@ extension MovieFolderProcessor {
         guard movie.releaseYear != .none else { return .unresolved(.incompleteYearEvidence) }
 
         try Task.checkCancellation()
-        let result = try await provider.releaseDates(movieID: id)
+        let result = try await metadataProvider.releaseDates(movieID: id)
         try Task.checkCancellation()
 
         guard result.count == 1, let events = result[id] else { return .unresolved(.incompleteYearEvidence) }

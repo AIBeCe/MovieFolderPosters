@@ -5,7 +5,8 @@ extension MovieFolderStorageMigrator {
   func normalizeOutcomeMatching(in object: inout [String: Any], record: MovieFolderStorageRecordKind) throws {
     if object["identificationPolicy"] == nil {
       object["identificationPolicy"] = ["requiresReleaseYearForAutomaticMatching": false,
-        "comparesOriginalTitles": true, "searchLanguage": "en-US"]
+        "comparesOriginalTitles": true, "searchLanguage": "en-US",
+        "readsNFOInformation": false, "readsImmediateVideoNames": false, "readsImmediateImageNames": false]
     }
     try normalizeNestedMatching(in: &object, record: record)
   }
@@ -22,7 +23,8 @@ extension MovieFolderStorageMigrator {
       throw MovieFolderStorageMigrationError.conflictingValues(record: record, field: "movieMatchingConfiguration")
     }
     object["movieMatchingConfiguration"] = current ?? legacy ?? [
-      "requiresReleaseYearForAutomaticMatching": false, "comparesOriginalTitles": true, "searchLanguage": "en-US"
+      "requiresReleaseYearForAutomaticMatching": false, "comparesOriginalTitles": true, "searchLanguage": "en-US",
+      "readsNFOInformation": false, "readsImmediateVideoNames": false, "readsImmediateImageNames": false
     ]
     object.removeValue(forKey: "identificationPolicy")
   }
@@ -66,6 +68,9 @@ extension MovieFolderStorageMigrator {
       matching.removeValue(forKey: oldKey)
     }
     if matching["searchLanguage"] == nil { matching["searchLanguage"] = "en-US" }
+    for field in ["readsNFOInformation", "readsImmediateVideoNames", "readsImmediateImageNames"] {
+      if matching[field] == nil { matching[field] = false }
+    }
     do {
       _ = try JSONDecoder().decode(MovieMatchingConfiguration.self, from: encodeObject(matching, record: record))
     } catch {

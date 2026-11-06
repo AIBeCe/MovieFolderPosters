@@ -377,7 +377,8 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     }
     switch folder.processingReason {
     case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged, .manualMatchingRequired:
+      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged, .manualMatchingRequired,
+      .conflictingMovieInformation:
       return false
     default: return true
     }

@@ -593,9 +593,9 @@ private extension MoviePosterActionService {
       root: context.root, rootIdentity: context.rootIdentity)
 
     #if DEBUG
-      let usesFixtureMetadata = context.configuration.usesStubTMDbResponses
+      let usesStubTMDbResponses = context.configuration.usesStubTMDbResponses
     #else
-      let usesFixtureMetadata = false
+      let usesStubTMDbResponses = false
     #endif
 
     return MovieFolderProcessor(
@@ -609,7 +609,7 @@ private extension MoviePosterActionService {
       processingStore: try environment.makeCollectionProcessingStore(),
       recovery: try environment.makeProcessingRecoveryService(),
       credentialRevision: context.configuration.credentialRevision,
-      usesFixtureMetadata: usesFixtureMetadata,
+      usesStubTMDbResponses: usesStubTMDbResponses,
       movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
       searchPageLimit: context.configuration.searchPageLimit,
       processingConfiguration: context.directory.processingConfiguration,

@@ -105,12 +105,12 @@ private struct MovieFolderStorageMigrationFixture {
   let report = try fixture.migrator.migrate()
   #expect(report.migratedRecordCount == 2)
   let configuration = try ConfigurationRepository(store: fixture.settings).read()
-  #expect(configuration.version == 7)
+  #expect(configuration.version == 8)
   #expect(configuration.movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching)
   let statePayload = try #require(try fixture.read(fixture.outcomes,
     key: CollectionProcessingStore.processingStateKey(for: fixture.root.id)))
   let state = try JSONDecoder().decode(CollectionProcessingState.self, from: statePayload)
-  #expect(state.schemaVersion == 3)
+  #expect(state.schemaVersion == 4)
   #expect(state.revision == 17)
   #expect(state.folders.first?.matchedMovieTitle == "Saved title")
   #expect(state.folders.first?.ownership == .unowned)
@@ -138,7 +138,7 @@ private struct MovieFolderStorageMigrationFixture {
     }
     withExtendedLifetime(outcomeAccess) {}
   }
-  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 7)
+  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 8)
   let check = try fixture.migrator.preflight()
   #expect(!check.settingsRequiresMigration)
   #expect(check.legacyCollectionOutcomeRecordCount == 1)
@@ -160,7 +160,7 @@ private struct MovieFolderStorageMigrationFixture {
   }
 
   #expect(try fixture.migrator.migrate().migratedRecordCount == 2)
-  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 7)
+  #expect(try ConfigurationRepository(store: fixture.settings).read().version == 8)
 }
 
 /// Cancellation before the manual operation leaves all saved records byte-for-byte unchanged.
@@ -318,7 +318,7 @@ func legacySchemaMigrationPreservesExplicitPrivacyAndNestedOverrides(version: In
     #expect(throws: MovieFolderStorageMigrationError.backupUnavailable(record: record)) {
       try fixture.migrator.migrate()
     }
-    #expect(try ConfigurationRepository(store: fixture.settings).read().version == 7)
+    #expect(try ConfigurationRepository(store: fixture.settings).read().version == 8)
     #expect(try fixture.read(fixture.outcomes,
       key: CollectionProcessingStore.processingStateKey(for: fixture.root.id)) == original)
     withExtendedLifetime(backupAccess) {}

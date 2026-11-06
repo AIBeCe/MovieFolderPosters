@@ -26,6 +26,14 @@ import MovieFolderCommon
   /// Explicit inheritance choice.
   private let inheritButton = NSButton(checkboxWithTitle: "Use application matching settings",
     target: .none, action: .none)
+  /// Opt-in read-only NFO movie metadata.
+  private let nfoButton = NSButton(checkboxWithTitle: "Read NFO information", target: .none, action: .none)
+  /// Opt-in identity hints from immediate video filenames only.
+  private let videoNamesButton = NSButton(checkboxWithTitle: "Read immediate video filenames",
+    target: .none, action: .none)
+  /// Opt-in identity hints from immediate image filenames; never local artwork selection.
+  private let imageNamesButton = NSButton(checkboxWithTitle: "Read immediate image filenames",
+    target: .none, action: .none)
   /// Native language selected only in the local matching override draft.
   private let languagePicker = MovieSearchLanguagePicker()
   /// Conservative year requirement.
@@ -86,7 +94,8 @@ import MovieFolderCommon
     originalButton.toolTip = "Include original-language TMDb titles in exact automatic title comparisons."
     yearButton.setAccessibilityHelp(yearButton.toolTip)
     originalButton.setAccessibilityHelp(originalButton.toolTip)
-    for button in [privateHistoryCheckbox, pauseButton, inheritButton, yearButton, originalButton] {
+    for button in [privateHistoryCheckbox, pauseButton, inheritButton, yearButton, originalButton,
+      nfoButton, videoNamesButton, imageNamesButton] {
       button.target = self
       button.action = #selector(choicesChanged)
     }
@@ -121,6 +130,9 @@ import MovieFolderCommon
       note("Pausing keeps this collection and its existing posters."),
       separator(), heading("Excluded Folders"), exclusions,
       separator(), heading("Matching"), inheritButton, yearButton, originalButton,
+      nfoButton, videoNamesButton, imageNamesButton,
+      note("Read-only, immediate files only. NFO reads metadata; video and image options read filenames only. "
+        + "No subfolders or media contents are read. Images provide movie identity, never local artwork."),
       NSTextField(labelWithString: "Search language"), languagePicker,
       note(MovieSearchLanguagePicker.supportingText),
       note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
@@ -215,9 +227,13 @@ import MovieFolderCommon
     inheritButton.state = viewModel.inheritsApplicationConfiguration ? .on : .off
     yearButton.state = viewModel.effectiveConfiguration.requiresReleaseYearForAutomaticMatching ? .on : .off
     originalButton.state = viewModel.effectiveConfiguration.comparesOriginalTitles ? .on : .off
+    nfoButton.state = viewModel.effectiveConfiguration.readsNFOInformation ? .on : .off
+    videoNamesButton.state = viewModel.effectiveConfiguration.readsImmediateVideoNames ? .on : .off
+    imageNamesButton.state = viewModel.effectiveConfiguration.readsImmediateImageNames ? .on : .off
     for control in [nameField, pauseButton, inheritButton] as [NSControl] { control.isEnabled = !viewModel.isBusy }
     yearButton.isEnabled = !viewModel.isBusy && !viewModel.inheritsApplicationConfiguration
     originalButton.isEnabled = yearButton.isEnabled
+    for button in [nfoButton, videoNamesButton, imageNamesButton] { button.isEnabled = yearButton.isEnabled }
     languagePicker.display(viewModel.effectiveConfiguration.searchLanguage)
     languagePicker.isEnabled = yearButton.isEnabled
     saveButton.isEnabled = viewModel.canSave
@@ -244,6 +260,9 @@ import MovieFolderCommon
       var configuration = viewModel.overrideConfiguration
       configuration.requiresReleaseYearForAutomaticMatching = yearButton.state == .on
       configuration.comparesOriginalTitles = originalButton.state == .on
+      configuration.readsNFOInformation = nfoButton.state == .on
+      configuration.readsImmediateVideoNames = videoNamesButton.state == .on
+      configuration.readsImmediateImageNames = imageNamesButton.state == .on
       configuration.searchLanguage = languagePicker.selectedLanguage
       viewModel.overrideConfiguration = configuration
     }

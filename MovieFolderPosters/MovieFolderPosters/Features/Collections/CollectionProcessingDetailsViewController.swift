@@ -178,7 +178,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
       lines.append("  State: \(folder.processingState.displayDescription)")
       lines.append("  Reason: \(folder.processingReason?.displayDescription ?? "Not recorded")")
       lines.append("  Movie: \(movieDescription(folder))")
-      lines.append("  Movie identity evidence: \(identitySourceDescription(folder.movieIdentitySource))")
+      lines.append("  Matched using: \(identitySourceDescription(folder.movieIdentitySource))")
       lines.append("  Poster ownership: \(folder.ownership.displayDescription)")
       lines.append(
         "  Folder identity evidence: \(folder.folderIdentity == .none ? "Unavailable" : "Captured")")
@@ -214,6 +214,10 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
   private func identitySourceDescription(_ source: MovieIdentitySource?) -> String {
     switch source {
     case .conservativeMatch: "Conservative folder-name match"
+    case .validatedIdentifier: "Validated identifier"
+    case .nfoInformation: "NFO metadata"
+    case .videoNameInformation: "Video filename"
+    case .imageNameInformation: "Image filename"
     case .explicitSelection: "Explicitly selected"
     case .savedDecision: "Saved decision"
     case .none: "Not recorded"
@@ -294,6 +298,8 @@ extension FolderProcessingReason {
     case .missingArtwork: "Poster artwork was unavailable"
     case .parsingProblem: "Folder name could not be parsed"
     case .manualMatchingRequired: "Choose the intended movie manually"
+    case .conflictingMovieInformation:
+      "The movie information disagrees. Choose the intended movie manually."
     case .existingPosterPreserved: "An existing poster was preserved"
     case .policySuppressed: "Processing was suppressed by configuration"
     case .processingFailure: "Processing failed"
