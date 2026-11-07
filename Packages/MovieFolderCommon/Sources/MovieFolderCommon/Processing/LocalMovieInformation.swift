@@ -60,6 +60,20 @@ nonisolated struct LocalMovieInformationResolver {
 
       return .identifiers(unique)
     }
+    return resolveTitle(folderName: folderName, files: readResult.files, nfo: nfo)
+  }
+
+  /// Applies NFO, video filename, image filename and folder title precedence after checking identifiers.
+  /// - Parameters:
+  ///   - folderName: Immediate child name used as the final title fallback.
+  ///   - files: Selected immediate files that passed the bounded read checks.
+  ///   - nfo: Parsed NFO information from those files.
+  /// - Returns: The highest priority title decision or the applicable unresolved reason.
+  private func resolveTitle(
+    folderName: String,
+    files: [MovieFolderInformationFile],
+    nfo: [NFOMovieInformation]
+  ) -> AutomaticMovieInformation {
     let nfoTitles = nfo.compactMap { information -> Title? in
       guard let title = information.title ?? information.originalTitle else { return .none }
 
@@ -71,7 +85,7 @@ nonisolated struct LocalMovieInformationResolver {
       (Set(["jpg", "jpeg", "png", "webp", "heic", "tif", "tiff", "bmp", "avif"]), .imageName)
     ] {
       var titles = [Title]()
-      for file in readResult.files where extensions.contains((file.name as NSString).pathExtension.lowercased()) {
+      for file in files where extensions.contains((file.name as NSString).pathExtension.lowercased()) {
         let stem = (file.name as NSString).deletingPathExtension
         if genericNames.contains(stem.lowercased()) { continue }
 

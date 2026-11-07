@@ -152,8 +152,11 @@ public struct TMDbClient: Sendable {
 
     let response = try await identifierResponse(path: "movie/\(movieID)", language: language)
     let record: TMDbMovieSearchRecord
-    do { record = try JSONDecoder().decode(TMDbMovieSearchRecord.self, from: response.data) }
-    catch { throw TMDbError.malformedResponse }
+    do {
+      record = try JSONDecoder().decode(TMDbMovieSearchRecord.self, from: response.data)
+    } catch {
+      throw TMDbError.malformedResponse
+    }
 
     guard record.id == movieID else { throw TMDbError.malformedResponse }
 
@@ -175,8 +178,11 @@ public struct TMDbClient: Sendable {
     let response = try await identifierResponse(path: "find/\(imdbID)", language: language,
       additionalQuery: [URLQueryItem(name: "external_source", value: "imdb_id")])
     let result: TMDbFindMovieResponse
-    do { result = try JSONDecoder().decode(TMDbFindMovieResponse.self, from: response.data) }
-    catch { throw TMDbError.malformedResponse }
+    do {
+      result = try JSONDecoder().decode(TMDbFindMovieResponse.self, from: response.data)
+    } catch {
+      throw TMDbError.malformedResponse
+    }
 
     guard result.movies.count <= 1 else { throw TMDbError.malformedResponse }
     guard let record = result.movies.first else { return .none }
@@ -185,8 +191,11 @@ public struct TMDbClient: Sendable {
   }
 
   /// Dispatches one bounded authenticated identity request without hidden retries.
-  private func identifierResponse(path: String, language: TMDbLanguage,
-    additionalQuery: [URLQueryItem] = []) async throws -> HTTPTransportResponse {
+  private func identifierResponse(
+    path: String,
+    language: TMDbLanguage,
+    additionalQuery: [URLQueryItem] = []
+  ) async throws -> HTTPTransportResponse {
     guard let base = Self.apiBase,
       var components = URLComponents(url: base.appending(path: path), resolvingAgainstBaseURL: false) else {
       throw TMDbError.invalidConfiguration

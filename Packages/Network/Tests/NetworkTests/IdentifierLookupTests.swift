@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Network
+import Testing
 
 /// Direct lookup captures language and rejects a response for another identity.
 @Test func identifierLookupPreservesIdentityAndLanguage() async throws {

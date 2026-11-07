@@ -91,8 +91,13 @@ nonisolated private final class NFOInformationXMLDelegate: NSObject, XMLParserDe
       year: years.first)
   }
 
-  func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
-    qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+  func parser(
+    _ parser: XMLParser,
+    didStartElement elementName: String,
+    namespaceURI: String?,
+    qualifiedName qName: String?,
+    attributes attributeDict: [String: String] = [:]
+  ) {
     depth += 1
     if depth == 1 {
       rootWasMovie = elementName == "movie" && namespaceURI == .none
@@ -116,8 +121,12 @@ nonisolated private final class NFOInformationXMLDelegate: NSObject, XMLParserDe
     if depth == 2, field != .none { text += value }
   }
 
-  func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
-    qualifiedName qName: String?) {
+  func parser(
+    _ parser: XMLParser,
+    didEndElement elementName: String,
+    namespaceURI: String?,
+    qualifiedName qName: String?
+  ) {
     defer { depth -= 1 }
 
     guard depth == 2, let field else { return }
@@ -152,8 +161,12 @@ nonisolated private final class NFOInformationXMLDelegate: NSObject, XMLParserDe
     invalidate(parser)
   }
 
-  func parser(_ parser: XMLParser, foundExternalEntityDeclarationWithName name: String,
-    publicID: String?, systemID: String?) {
+  func parser(
+    _ parser: XMLParser,
+    foundExternalEntityDeclarationWithName name: String,
+    publicID: String?,
+    systemID: String?
+  ) {
     invalidate(parser)
   }
 

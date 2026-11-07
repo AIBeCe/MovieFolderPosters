@@ -44,8 +44,11 @@ extension MovieFolderProcessor {
   }
 
   /// Reads before unresolved cache gates and invalidates only unconfirmed decisions when inputs changed.
-  func prepareMovieInformation(_ candidate: MovieFolderCandidate, root: URL,
-    visit: inout AutomaticProcessingPass) throws {
+  func prepareMovieInformation(
+    _ candidate: MovieFolderCandidate,
+    root: URL,
+    visit: inout AutomaticProcessingPass
+  ) throws {
     let readResult = try readMovieInformation(candidate, root: root)
     visit.localInformationReadResults = [candidate.name: readResult]
     visit.localInformationContexts.removeAll()

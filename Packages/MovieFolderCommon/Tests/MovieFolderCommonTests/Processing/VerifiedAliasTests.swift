@@ -132,7 +132,8 @@ private actor AliasEvidenceProvider: MovieMetadataProvider {
     language: TMDbLanguage("pt-BR"), pageLimit: 3)))
   #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979,
     credentialRevision: UUID(), pageLimit: 3)))
-  #expect(base != (try MovieFolderProcessor.queryKey(title: "Alien", year: 1979, usesStubTMDbResponses: true, pageLimit: 3)))
+  #expect(base != (try MovieFolderProcessor.queryKey(
+    title: "Alien", year: 1979, usesStubTMDbResponses: true, pageLimit: 3)))
 }
 
 /// Alias eviction is deterministic and cannot discard unrelated confirmed folder decisions.

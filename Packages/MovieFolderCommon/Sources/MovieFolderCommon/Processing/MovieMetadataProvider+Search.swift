@@ -3,12 +3,12 @@ import Network
 
 nonisolated public extension MovieMetadataProvider {
   /// Unsupported providers fail closed instead of falling back to weaker title matching.
-  func movie(movieID: Int, language: TMDbLanguage) async throws -> MovieMetadata? {
+  func movie(movieID: Int, language: TMDbLanguage) throws -> MovieMetadata? {
     throw TMDbError.invalidConfiguration
   }
 
   /// Unsupported providers fail closed instead of manufacturing an empty successful lookup.
-  func movie(imdbID: String, language: TMDbLanguage) async throws -> MovieMetadata? {
+  func movie(imdbID: String, language: TMDbLanguage) throws -> MovieMetadata? {
     throw TMDbError.invalidConfiguration
   }
 

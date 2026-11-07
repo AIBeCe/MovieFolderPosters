@@ -63,22 +63,12 @@ extension MovieFolderProcessor {
         candidate: candidate, access: access, state: &state, processingState: &processingState, activity: activity)
       throw error
     }
-    let movieID = selection.movieID
-    let posterPath = selection.posterPath
-    let imageData = try await downloadRefreshArtwork(
+    let imageData = try await downloadAndAssignRefreshArtwork(
       for: selection, root: root, candidate: &candidate, activity: activity)
-    activity.stage = .assignPoster
-    do {
-      let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
-      defer { withExtendedLifetime(settingsAccess) {} }
-      if let sha256 = selection.localInformationReadResultSHA256 {
-        try informationContext(candidate, root: root, sha256: sha256).validate()
-      }
-      try replacePoster(imageData, candidate: candidate, root: root)
-    }
     activity.append(.posterApplied)
-    try? fileSystem.writeData(imageData, named: Self.posterCacheName(posterPath), in: cacheDirectory)
-    var refreshedRecord = processedRecord(for: candidate, movieID: movieID, posterPath: posterPath)
+    try? fileSystem.writeData(imageData, named: Self.posterCacheName(selection.posterPath), in: cacheDirectory)
+    var refreshedRecord = processedRecord(for: candidate, movieID: selection.movieID,
+      posterPath: selection.posterPath)
     refreshedRecord.movieTitle = selection.movieTitle
     refreshedRecord.movieYear = selection.movieYear
     refreshedRecord.acceptedMovieReleaseDates = selection.releaseDates
@@ -93,7 +83,7 @@ extension MovieFolderProcessor {
       state, to: access, candidate: candidate, root: root, processingState: &processingState, activity: activity)
     try finishProcessingRun(&processingState, state: .completed, activity: activity)
 
-    return movieID
+    return selection.movieID
   }
 
   /// Applies an explicitly selected movie and records that choice for later refreshes.
@@ -469,20 +459,17 @@ extension MovieFolderProcessor {
     let match: MovieMatchResult
     var queryKey: String?
     var search: MovieSearchResult?
-    var identitySource: MovieIdentitySource = .conservativeMatch
-    let information = LocalMovieInformationResolver().resolve(folderName: candidate.name, readResult: readResult)
-    switch information {
+    let identitySource: MovieIdentitySource
+    switch LocalMovieInformationResolver().resolve(folderName: candidate.name, readResult: readResult) {
     case .unparseableFolder:
       activity.append(.unresolved, reason: .parsingProblem)
       throw PosterActionError.unresolved
-    case .unusable, .conflicting:
-      let reason: FolderProcessingReason
-      if case .conflicting = information { reason = .conflictingMovieInformation }
-      else { reason = .manualMatchingRequired }
-      recordUnresolved(candidate, in: &state, reason: reason)
-      state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
-      activity.append(.unresolved, reason: reason)
-      throw PosterActionError.unresolved
+    case .unusable:
+      try rejectUnresolvedRefresh(candidate, reason: .manualMatchingRequired,
+        sha256: readResult.sha256, state: &state, activity: activity)
+    case .conflicting:
+      try rejectUnresolvedRefresh(candidate, reason: .conflictingMovieInformation,
+        sha256: readResult.sha256, state: &state, activity: activity)
     case .identifiers(let identifiers):
       identitySource = .validatedIdentifier
       let resolution = try await metadataProvider.resolveMovieIdentifiers(identifiers,
@@ -491,18 +478,14 @@ extension MovieFolderProcessor {
       case .matched(let movie): match = .matched(movie, releaseDates: [])
       case .notFound: match = .unresolved(.noSuitableMatch)
       case .conflicting:
-        recordUnresolved(candidate, in: &state, reason: .conflictingMovieInformation)
-        state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
-        activity.append(.unresolved, reason: .conflictingMovieInformation)
-        throw PosterActionError.unresolved
+        try rejectUnresolvedRefresh(candidate, reason: .conflictingMovieInformation,
+          sha256: readResult.sha256, state: &state, activity: activity)
       }
     case .title(let title, let year, let source):
       identitySource = source.identitySource
       if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, year == .none {
-        recordUnresolved(candidate, in: &state, reason: .manualMatchingRequired)
-        state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
-        activity.append(.unresolved, reason: .manualMatchingRequired)
-        throw PosterActionError.unresolved
+        try rejectUnresolvedRefresh(candidate, reason: .manualMatchingRequired,
+          sha256: readResult.sha256, state: &state, activity: activity)
       }
       activity.stage = .search
       queryKey = try Self.queryKey(title: title, year: .none,
@@ -514,10 +497,59 @@ extension MovieFolderProcessor {
       match = try await fetchAlternativeTitlesAndReleaseDates(title: title, year: year, search: result, state: &state,
         metadataProvider: metadataProvider)
     }
-    try context.validate()
-    candidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
-    try ensureReplaceableIcon(for: candidate, in: root)
+    try revalidateRefreshTarget(context, candidate: &candidate)
 
+    let (movie, releaseDates, posterPath) = try validateRefreshMatch(
+      match, candidate: candidate, sha256: readResult.sha256, state: &state, activity: activity)
+
+    return RefreshSearchResult(queryKey: queryKey, search: search, movie: movie, posterPath: posterPath,
+      releaseDates: releaseDates, localInformationReadResultSHA256: readResult.sha256, identitySource: identitySource)
+  }
+
+  /// Rechecks the captured sources and the immediate child before accepting a provider result.
+  /// - Parameters:
+  ///   - context: Captured collection root and local input digest.
+  ///   - candidate: Selected folder, updated with its current filesystem state.
+  /// - Throws: Stale input, changed identity, ownership, or filesystem errors.
+  private func revalidateRefreshTarget(
+    _ context: MovieInformationReadContext, candidate: inout MovieFolderCandidate
+  ) throws {
+    try context.validate()
+    candidate = try actionCandidate(root: context.root, child: candidate.name, expectedIdentity: candidate.identity)
+    try ensureReplaceableIcon(for: candidate, in: context.root)
+  }
+
+  /// Records an unresolved local information result with the digest of the assessed sources.
+  /// - Parameters:
+  ///   - candidate: Selected folder whose local information could not establish a match.
+  ///   - reason: Reason the refresh requires manual resolution.
+  ///   - sha256: Digest of the local information used for this decision.
+  ///   - state: Operational state receiving the decision and digest.
+  ///   - activity: Activity log receiving the unresolved result.
+  /// - Throws: `PosterActionError.unresolved` after recording the decision.
+  private func rejectUnresolvedRefresh(
+    _ candidate: MovieFolderCandidate, reason: FolderProcessingReason, sha256: String,
+    state: inout CollectionProcessingCache, activity: ProcessorActivityLog
+  ) throws -> Never {
+    recordUnresolved(candidate, in: &state, reason: reason)
+    state.folders[candidate.name]?.localInformationReadResultSHA256 = sha256
+    activity.append(.unresolved, reason: reason)
+    throw PosterActionError.unresolved
+  }
+
+  /// Checks the confirmed identity and artwork before exposing a fresh refresh match.
+  /// - Parameters:
+  ///   - match: Provider identity resolution for the assessed inputs.
+  ///   - candidate: Revalidated immediate child.
+  ///   - sha256: Digest to retain with a new manual resolution requirement.
+  ///   - state: Operational state that may receive an unresolved decision.
+  ///   - activity: Activity log receiving any terminal matching failure.
+  /// - Returns: The selected movie, its release dates, and its provider artwork path.
+  /// - Throws: An unresolved match or missing poster error.
+  private func validateRefreshMatch(
+    _ match: MovieMatchResult, candidate: MovieFolderCandidate, sha256: String,
+    state: inout CollectionProcessingCache, activity: ProcessorActivityLog
+  ) throws -> (MovieMetadata, [MovieReleaseDate], String) {
     guard case .matched(let movie, let releaseDates) = match else {
       let (reason, identifiedMovie) = unresolvedIdentity(match)
       activity.movie = identifiedMovie
@@ -528,7 +560,7 @@ extension MovieFolderProcessor {
       }
       if reason == .manualMatchingRequired {
         recordUnresolved(candidate, in: &state, reason: reason)
-        state.folders[candidate.name]?.localInformationReadResultSHA256 = readResult.sha256
+        state.folders[candidate.name]?.localInformationReadResultSHA256 = sha256
       }
       activity.append(result, reason: reason)
       throw PosterActionError.unresolved
@@ -548,8 +580,7 @@ extension MovieFolderProcessor {
       throw PosterActionError.noPoster
     }
 
-    return RefreshSearchResult(queryKey: queryKey, search: search, movie: movie, posterPath: posterPath,
-      releaseDates: releaseDates, localInformationReadResultSHA256: readResult.sha256, identitySource: identitySource)
+    return (movie, releaseDates, posterPath)
   }
 
   /// Saves an explicit manual-resolution requirement when a fresh search cannot replace confirmed evidence.
@@ -567,8 +598,15 @@ extension MovieFolderProcessor {
     try finishProcessingRun(&processingState, state: .failed, activity: activity)
   }
 
-  /// Downloads usable artwork and rechecks the authorized target before any icon write.
-  private func downloadRefreshArtwork(
+  /// Downloads artwork and retains current settings authorization for the final information check and write.
+  /// - Parameters:
+  ///   - selection: Saved or freshly established movie identity and artwork path.
+  ///   - root: Authorized collection root.
+  ///   - candidate: Selected child, updated after the artwork download.
+  ///   - activity: Activity log tracking artwork and assignment stages.
+  /// - Returns: The assigned artwork bytes for the existing poster cache.
+  /// - Throws: Provider, cancellation, authorization, filesystem, or poster errors.
+  private func downloadAndAssignRefreshArtwork(
     for selection: RefreshMovieSelection, root: URL,
     candidate: inout MovieFolderCandidate, activity: ProcessorActivityLog
   ) async throws -> Data {
@@ -587,6 +625,14 @@ extension MovieFolderProcessor {
     }
     candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
     try ensureReplaceableIcon(for: candidate, in: root)
+
+    activity.stage = .assignPoster
+    let settingsAccess = try checkIconChange(.manualPosterAssignment, to: candidate, in: root)
+    defer { withExtendedLifetime(settingsAccess) {} }
+    if let sha256 = selection.localInformationReadResultSHA256 {
+      try informationContext(candidate, root: root, sha256: sha256).validate()
+    }
+    try replacePoster(imageData, candidate: candidate, root: root)
 
     return imageData
   }

@@ -1,8 +1,8 @@
 import FileSystem
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Testing
-@testable import MovieFolderCommon
 
 /// Successful source interpretations retain accurate, stable movie-identity provenance in persisted outcomes.
 @Test(arguments: [0, 1, 2, 3])
@@ -45,9 +45,14 @@ func movieInformationOutcomeDistinguishesConflictFromUnusableInputs(kind: Int) a
     try FileManager.default.createSymbolicLink(atPath: nfo.path, withDestinationPath: "/absent")
   } else {
     let xml: String
-    if kind == 0 { xml = #"<movie><uniqueid type="tmdb">43</uniqueid></movie>"# }
-    else if kind == 3 { xml = "<movie><title>Alien</title><title>Dune</title></movie>" }
-    else { xml = "<movie>" }
+    switch kind {
+    case 0:
+      xml = #"<movie><uniqueid type="tmdb">43</uniqueid></movie>"#
+    case 3:
+      xml = "<movie><title>Alien</title><title>Dune</title></movie>"
+    default:
+      xml = "<movie>"
+    }
     try Data(xml.utf8).write(to: nfo)
   }
   let provider = IdentifierInformationProvider(fails: false, disagrees: false, hasPoster: true)
@@ -120,7 +125,10 @@ func movieInformationOutcomeDistinguishesConflictFromUnusableInputs(kind: Int) a
     retryAt: Date())
   #expect(record.automaticRetryAt == .none)
   #expect(try JSONDecoder().decode(FolderProcessingRecord.self, from: JSONEncoder().encode(record)) == record)
-  for source in [MovieIdentitySource.validatedIdentifier, .nfoInformation, .videoNameInformation, .imageNameInformation] {
+  let sources: [MovieIdentitySource] = [
+    .validatedIdentifier, .nfoInformation, .videoNameInformation, .imageNameInformation
+  ]
+  for source in sources {
     #expect(try JSONDecoder().decode(MovieIdentitySource.self, from: JSONEncoder().encode(source)) == source)
   }
 }

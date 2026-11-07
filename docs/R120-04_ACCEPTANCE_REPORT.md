@@ -3,21 +3,23 @@
 Issue: [R120-04, explicit identifiers and opt-in local information](https://github.com/AIBeCe/MovieFolderPosters/issues/18)
 
 Scenario BDD definitions and requirement mappings are in [R120-04_ACCEPTANCE_TESTS.md](R120-04_ACCEPTANCE_TESTS.md).
-This report preserves each executed result. The direct-identifier UI journey was rerun after fixing transient
-configuration-lock handling and now passes. Acceptance Testing remains incomplete pending the separate diagnostic
-method and phase review.
+This report preserves each executed result. Validation reran the complete issue BDD and UI suites; the previously
+untested standalone IMDb-only UI journey now passes. Acceptance Testing remains incomplete pending phase review.
 
 ## Execution summary
 
-| Status | Scenarios | New acceptance/UI test methods |
+| Status | Scenarios | BDD + full-app UI test methods |
 | --- | ---: | ---: |
-| PASS | 22 | 32 |
+| PASS | 22 | 34 |
 | FAIL | 0 | 0 |
 | BLOCKED | 0 | 0 |
-| NOT TESTED | 0 | 1 |
+| NOT TESTED | 0 | 0 |
 
-**Overall: INCOMPLETE.** AT04 now passes for IMDb-only, combined, and repeated identifiers. AT21's conflict/manual and
-source-provenance journeys passed in run9; the standalone AT04 diagnostic remains NOT TESTED.
+**Behavioral execution: PASS after focused rerun, with one failed full-suite attempt preserved.** All 23 Common BDD
+declarations passed. The post-cleanup full UI run had 10 passing methods and one direct-identifier context-menu
+failure. That method passed in a focused rerun against the final rebuilt app. The 34 method counts above represent
+each scenario method's latest result; they do not erase the failed full-suite attempt. AT04 passes for IMDb-only,
+combined, and repeated identifiers.
 
 New Common processor acceptance: 23 test declarations passed. Base run: 20 declarations, 0 failures, 26.566 seconds,
 `/private/tmp/R120-04-acceptance-common-final.log`; review reruns for updated AT08, AT16, and AT20 passed in
@@ -33,7 +35,11 @@ host-composition selected-identifier method passed all three variants in
 support selection: 3 declarations passed, including five NFO budget examples and two replacement cases, in
 `/private/tmp/R120-04-acceptance-existing-filesystem2.log`.
 
-New full-app UI suite latest observed outcomes: 10 PASS, 0 FAIL, 1 NOT TESTED across 11 declarations. The initial six-method attempt is in
+The pre-cleanup full-app UI suite completed with 11 PASS. After the lint-driven test refactors, the complete UI
+class run is recorded in `/private/tmp/R120-04-validation-ui-lint-rerun2.xcresult`; ten methods passed, and the direct-ID
+method failed to find “Processing Details…” after a selected retry. The isolated rerun passed in
+`/private/tmp/R120-04-validation-ui-direct-final.xcresult` (one test, 0 failures, 136.715 seconds) against the final
+build. The initial six-method attempt is in
 `/private/tmp/R120-04-acceptance-ui-run4.log` and `/private/tmp/R120-04-acceptance-ui-run4.xcresult`. Defaults,
 global 8-combination persistence, collection inheritance/override/cancel, passive settings change, NFO/image/video
 source, and changed-input selected retry passed. The changed-input retry also passed in isolation in run8
@@ -47,8 +53,8 @@ manual journey passed in run9 in 93.177 seconds (`/private/tmp/R120-04-acceptanc
 including Apply, relaunch, persisted identity/provenance, and owned-icon assertions. The same method had earlier
 failed in runs4/6/7; those failed attempts remain recorded. The run9 identifier method then failed for its IMDb-only
 variant after TMDb-only, combined-ID, and repeated-ID variants passed. NFO, video, and image UI journeys passed in
-run9 (68.984, 83.193, and 79.482 seconds). A standalone `testIMDbOnlyIdentifierAsIndependentJourney` was added to
-isolate the IMDb-only behavior; it is NOT TESTED pending build/execution. The failure was traced to transient
+run9 (68.984, 83.193, and 79.482 seconds). The standalone
+`testIMDbOnlyIdentifierAsIndependentJourney` passed in the validation rerun. The failure was traced to transient
 `ConfigurationError.busy` at the post-provider authorization fence. Selected retry now briefly waits and revalidates
 the fence while retaining the provider result. The focused processor regression passed, and the direct-identifier
 UI method passed all three variants in 143.850 seconds (`/private/tmp/R120-04-acceptance-ui-final-rerun.xcresult`).
@@ -57,7 +63,7 @@ The earlier failed attempt remains recorded in `/private/tmp/R120-04-acceptance-
 Runner history: UI run3 failed before tests started with “Couldn’t communicate with a helper application”; the later
 run4 runner was signed ad hoc without an entitlements file, while the host target retained its acceptance entitlements.
 This startup failure is an environment/setup attempt, not a scenario result. Run4 successfully launched and produced
-the test outcomes above. The next run is being rebuilt with fixed completion waits and helper interactions.
+the test outcomes above. Validation reran the completed suite after those completion-wait and helper-interaction fixes.
 
 Counts above include the 23 new Common declarations and 11 new UI methods. The Debug transport's real-client method
 (`identifierFixturesPassThroughRealClient`, 2 variants), 31 pre-existing Common regressions, and
@@ -71,7 +77,7 @@ methods. Parameterized examples are enumerated in the acceptance specification; 
 | AT01 | Given fresh settings, when defaults are inspected and all 8 global combinations are saved/relaunched, then all options default off and each combination persists independently. P2. | `testLocalInformationDefaultsAreOff` PASS; `testGlobalLocalInformationOptionsPersistAcrossRelaunch` PASS; `MovieFolderPosters/MovieFolderPostersUITests/R12004LocalInformationUITests.swift`. | Full-app isolated Debug host. | Off defaults and saved combinations survive relaunch. | Both methods passed in the UI run. | PASS; run4 log/xcresult. |
 | AT02 | Given mixed global values, when collection inheritance, override, cancellation, and relaunch are exercised, then effective settings and override persist and Cancel discards edits. P2. | `testCollectionInheritanceOverrideAndCancelPersistAcrossRelaunch` PASS; UI test file. | Full-app isolated host and temporary collection. | Correct inheritance, independent override, cancellation. | Method passed in the UI run. | PASS; run4 log/xcresult. |
 | AT03 | Given saved outcomes, when local-source options change without collection visit, then no run/outcome is synthesized. P2/P4. | `testChangingLocalInformationOptionsDoesNotStartCollectionProcessing` PASS; UI test file. | Full-app isolated host and store. | No processing until authorized invocation. | Method passed in the UI run. | PASS; run4 log/xcresult. |
-| AT04 | Given valid TMDb/IMDb/combined identifiers, when selected retry runs, then direct resolution assigns one reconciled movie and validated-ID provenance; repeated IDs collapse. P1. | Common `at04LabelledIdentifiersEstablishOneOwnedPoster` PASS; host composition `at04HostProviderCompositionResolvesSelectedIdentifiers` PASS; UI `testRetrySelectedMatchesValidatedIdentifiersAndShowsProvenance` PASS; `testIMDbOnlyIdentifierAsIndependentJourney` NOT TESTED. | Real processor, actual host provider composition, and full-app retry. | Correct identity/provenance for TMDb, IMDb, combined IDs without weaker search. | All three UI variants passed after selected retry began retrying transient configuration-lock contention at the post-provider authorization fence. | PASS; `/private/tmp/R120-04-acceptance-ui-final-rerun.xcresult`. Diagnostic method is NOT TESTED. |
+| AT04 | Given valid TMDb/IMDb/combined identifiers, when selected retry runs, then direct resolution assigns one reconciled movie and validated-ID provenance; repeated IDs collapse. P1. | Common `at04LabelledIdentifiersEstablishOneOwnedPoster` PASS; host composition `at04HostProviderCompositionResolvesSelectedIdentifiers` PASS; UI `testRetrySelectedMatchesValidatedIdentifiersAndShowsProvenance` PASS on focused rerun; `testIMDbOnlyIdentifierAsIndependentJourney` PASS. | Real processor, actual host provider composition, and full-app retry. | Correct identity/provenance for TMDb, IMDb, combined IDs without weaker search. | All three UI variants passed in the focused rerun after the full-class rerun intermittently failed to open Processing Details. | PASS; `/private/tmp/R120-04-validation-ui-direct-final.xcresult`. Standalone diagnostic passed in the full-class run. |
 | AT05 | Given malformed/zero/overflow/overlong/suffix-junk IDs, when processed, then invalid labels do not truncate or permit fallback. P1. | Common `at05UnusableIdentifiersNeverFallBack` PASS; supporting parser test `labelledIdentifierParsingRejectsInvalidInformation`. | Real processor and disposable filesystem. | No identity assignment or weaker search. | Processor acceptance passed across the parameterized invalid labels. | PASS; Common base log. |
 | AT06 | Given missing/malformed/disagreeing/provider-failed/credential-rejected ID responses, when processed, then no fallback occurs and recovery/conflict state is retained. P1. | Common `at06ProviderFailuresPreserveRecoveryAndNeverFallBack` PASS. | Real processor and deterministic HTTP transport. | No automatic fallback; correct recoverable state. | Processor acceptance passed across all response modes. | PASS; Common base log. |
 | AT07 | Given usable local sources, when each option is enabled/disabled independently, then only enabled sources contribute. P2/P3. | Common `at07SourceGatesAreIndependent` PASS; UI NFO/video/image tests PASS. | Real processor and full-app retry UI. | Source-specific enabled/disabled behavior. | Common acceptance passed; NFO/video/image UI completed in 68.984/83.193/79.482 s. | PASS; Common base and UI run9 logs/xcresult. |
@@ -100,8 +106,31 @@ methods. Parameterized examples are enumerated in the acceptance specification; 
   `pt-BR` baseline: spelling suggestion, 37.472 seconds (run6), and saved search language, 49.126 seconds (run7).
   Their original saved-language fixture failure is preserved in run6; the corrected test restores an explicit
   language assertion rather than weakening it. These checks are not R120-04 scenario methods.
-- Full-app collected run: initial run4 had 8 PASS and 2 FAIL; later reruns fixed shared UI wait issues. Current
-  R120-04 UI method outcomes are 10 PASS, 0 FAIL, and 1 NOT TESTED. AT01–AT04 passed; AT07 source journeys and
-  AT20 changed-input retry passed. AT21's conflict/manual and source journeys passed. The separate AT04 diagnostic
-  `testIMDbOnlyIdentifierAsIndependentJourney` remains NOT TESTED.
+- Full-app collected run: initial run4 had 8 PASS and 2 FAIL; later reruns fixed shared UI wait issues. The pre-cleanup UI run passed all 11 methods. After lint refactoring, 10 methods passed and one context-menu assertion
+  failed; the isolated direct-ID rerun then passed, including all three ID variants.
 - Finder registration, extension runtime, and persistent Finder icon qualification were not performed or required.
+
+
+## Validation evidence
+
+- Issue BDD: all 23 declarations passed after the acceptance-file split in `/private/tmp/R12004-core-lint-tests.log`;
+  the prior complete BDD rerun is `/private/tmp/R120-04-validation-common-bdd.log` (31.481 seconds).
+- Full-app UI/E2E: the pre-cleanup complete run passed 11/11 in `/private/tmp/R120-04-validation-ui.xcresult`. After
+  lint refactoring, 10/11 passed in `/private/tmp/R120-04-validation-ui-lint-rerun2.xcresult`; the direct-ID method
+  passed on isolated rerun in `/private/tmp/R120-04-validation-ui-direct-final.xcresult`.
+- Focused Common unit/regression selection: 66 tests passed; FileSystem information tests: 8 passed; Network identifier
+  lookup tests: 7 passed. Selected host tests were blocked because unrelated actor-isolation errors in
+  `InstallationReadinessTests`, `InstallationReportCoverageTests`, and `LocalDataExportPublicationTests` prevented
+  the host test target from compiling.
+- Apple documentation review: Foundation's `XMLParser` documentation supports in-memory data parsing and its
+  event-driven delegate model. Apple's `shouldResolveExternalEntities` documentation warns enabling it can cause
+  network or disk access; this implementation keeps it disabled and rejects external-entity resolution. Apple's
+  sandbox file-access documentation notes that a sandbox grant does not guarantee an operation will succeed, matching
+  the implementation's recoverable filesystem-failure handling. Sources: [XMLParser](https://developer.apple.com/documentation/foundation/xmlparser?changes=_2),
+  [shouldResolveExternalEntities](https://developer.apple.com/documentation/foundation/xmlparser/shouldresolveexternalentities?changes=_1_5),
+  [external entity delegate](https://developer.apple.com/documentation/foundation/xmlparserdelegate/parser%28_%3Aresolveexternalentityname%3Asystemid%3A%29),
+  and [macOS sandbox file access](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox?changes=_4).
+- SwiftLint strict scan of all 35 R120-04 changed/new Swift files reported 0 violations and 0 serious findings.
+  The configured repository-wide command reports 3 baseline warnings in the unchanged shared UI test helper; those
+  warnings are outside this issue scope. No SwiftLint rules or configuration were changed. A first cached run could
+  not write SwiftLint's cache in the temporary directory; the no-cache issue-scoped run completed cleanly.

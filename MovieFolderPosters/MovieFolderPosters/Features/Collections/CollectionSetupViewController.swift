@@ -131,28 +131,7 @@ import MovieFolderCommon
   ///   - drop: Functional collection-folder drop target.
   ///   - actions: Explicit Cancel and Add controls.
   private func installForm(folderRow: NSStackView, drop: CollectionFolderDropView, actions: NSStackView) {
-    let content = NSStackView(views: [
-      heading("Folder and access"), folderRow, drop,
-      note("Choose or drop one collection root. "
-        + "Finder extension registration does not itself grant filesystem access."),
-      separator(), heading("Display name"), nameField,
-      note("Optional, up to 120 characters. A blank name uses the root folder name."),
-      separator(), heading("Matching"), inheritButton, yearButton, originalButton,
-      nfoButton, videoNamesButton, imageNamesButton,
-      note("Read-only, immediate files only. NFO reads metadata; video and image options read filenames only. "
-        + "No subfolders or media contents are read. Images provide movie identity, never local artwork."),
-      NSTextField(labelWithString: "Search language"), languagePicker,
-      note(MovieSearchLanguagePicker.supportingText),
-      note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
-      separator(), heading("History"), privateHistoryCheckbox,
-      note("New activity omits collection identifiers and network history is omitted. "
-        + "Existing history is retained until you clear its source in Log."),
-      errorLabel
-    ])
-    content.orientation = .vertical
-    content.alignment = .leading
-    content.distribution = .fill
-    content.spacing = 9
+    let content = makeFormContent(folderRow: folderRow, drop: drop)
     content.translatesAutoresizingMaskIntoConstraints = false
     formContent = content
     let scroll = NSScrollView()
@@ -184,6 +163,34 @@ import MovieFolderCommon
       child.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
     }
     finishFormInstallation(content: content)
+  }
+
+  /// Creates the collection setup sections in their visible top-to-bottom order.
+  private func makeFormContent(folderRow: NSStackView, drop: CollectionFolderDropView) -> NSStackView {
+    let content = NSStackView(views: [
+      heading("Folder and access"), folderRow, drop,
+      note("Choose or drop one collection root. "
+        + "Finder extension registration does not itself grant filesystem access."),
+      separator(), heading("Display name"), nameField,
+      note("Optional, up to 120 characters. A blank name uses the root folder name."),
+      separator(), heading("Matching"), inheritButton, yearButton, originalButton,
+      nfoButton, videoNamesButton, imageNamesButton,
+      note("Read-only, immediate files only. NFO reads metadata; video and image options read filenames only. "
+        + "No subfolders or media contents are read. Images provide movie identity, never local artwork."),
+      NSTextField(labelWithString: "Search language"), languagePicker,
+      note(MovieSearchLanguagePicker.supportingText),
+      note("Exact title checks remain conservative. Yearless folders can always be identified manually."),
+      separator(), heading("History"), privateHistoryCheckbox,
+      note("New activity omits collection identifiers and network history is omitted. "
+        + "Existing history is retained until you clear its source in Log."),
+      errorLabel
+    ])
+    content.orientation = .vertical
+    content.alignment = .leading
+    content.distribution = .fill
+    content.spacing = 9
+
+    return content
   }
 
   /// Adds the form rows that need a full-width constraint and records the first measured document size.

@@ -1,8 +1,8 @@
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
 import Testing
-@testable import MovieFolderCommon
 
 /// Only bounded, explicitly identified bracket metadata may establish identity.
 @Test func labelledIdentifierParsingIsBoundedAndTyped() {

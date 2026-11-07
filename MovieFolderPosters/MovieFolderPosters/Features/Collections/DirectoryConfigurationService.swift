@@ -338,15 +338,6 @@ extension DirectoryConfigurationService {
     notifier.configurationDidChange(scheduleObservedCollections: false)
   }
 
-  /// Preserves established settings triggers while local-source-only changes wait for a normal visit.
-  private func requiresObservedScheduling(previous: MovieMatchingConfiguration,
-    current: MovieMatchingConfiguration) -> Bool {
-    previous == current
-      || previous.requiresReleaseYearForAutomaticMatching != current.requiresReleaseYearForAutomaticMatching
-      || previous.comparesOriginalTitles != current.comparesOriginalTitles
-      || previous.searchLanguage != current.searchLanguage
-  }
-
   /// Persists automatic matching defaults without modifying explicit overrides or credentials.
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) throws {
     var scheduleObservedCollections = false
@@ -705,14 +696,4 @@ private extension DirectoryConfigurationService {
     }
   }
 
-  /// Keeps arbitrary storage and transport diagnostics from reaching presentation.
-  /// - Parameter error: Failure raised by a credential dependency.
-  /// - Returns: Existing allowlisted product errors or a generic storage failure.
-  func safeCredentialError(_ error: any Error) -> any Error {
-    switch error {
-    case is ConfigurationError, is ProcessingRecoveryError, is TMDbError, is CancellationError,
-      is MovieFolderStorageMigrationError: error
-    default: ConfigurationError.credentialStorage(-1)
-    }
-  }
 }

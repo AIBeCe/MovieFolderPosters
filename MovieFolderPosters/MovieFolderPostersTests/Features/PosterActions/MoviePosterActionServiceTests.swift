@@ -10,37 +10,6 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
-  /// R120-04: The actual host service resolves identifiers through its configuration and recovery fences.
-  @Test(arguments: ["[tmdb:1]", "[imdb:tt0000001]", "[tmdb:1] [imdb:tt0000001]"])
-  func hostServiceRetriesExplicitIdentifiers(labels: String) async throws {
-    let fixture = try PosterActionFixture(childName: "Unrelated " + labels)
-    defer { fixture.cleanup() }
-    let configuration = try fixture.repository.read()
-    let directory = try #require(configuration.directories.first)
-    let context = CollectionProcessingContext(rootID: directory.id,
-      rootIdentity: try #require(directory.identity), authorizationVersion: directory.authorizationVersion,
-      credentialRevision: configuration.credentialRevision, usesStubTMDbResponses: false,
-      appearance: configuration.posterAppearance,
-      processingConfigurationRevision: directory.processingConfiguration.revision)
-    var state = try fixture.processing.recordProcessingStart(context: context, action: .automatic)
-    state.folders = [FolderProcessingRecord(name: fixture.request.childName, identity: fixture.request.identity,
-      state: .failed, reason: .metadataFailure)]
-    state.isInventoryComplete = true
-    state.inspectedAt = Date()
-    state.currentRun?.runState = .partial
-    _ = try fixture.processing.commit(state, expectedRevision: state.revision)
-    let image = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/TestPoster.png")
-    let client = TMDbClient(token: try TMDbAccessToken("fixture-token"),
-      transport: StubTMDbTransport(posterData: try Data(contentsOf: image)))
-    _ = try await fixture.service(movieMetadataProvider: client).retryFolder(for: fixture.request)
-    let saved = try #require(try fixture.processing.read(rootID: directory.id))
-    let outcome = try #require(saved.folders.first)
-    #expect(outcome.matchedMovieID == 1)
-    #expect(outcome.movieIdentitySource == .validatedIdentifier)
-    #expect(outcome.isVerifiedDone)
-  }
-
   /// Explicit movie search forwards the saved regional language through the authorized action service.
   @Test func movieSelectionSearchUsesSavedLanguage() async throws {
     let fixture = try PosterActionFixture()
@@ -379,6 +348,40 @@ struct MoviePosterActionServiceTests {
       == [.started, .cancelled])
     #expect(try FileSystemService().readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
       .hasCustomIcon == false)
+  }
+
+}
+
+extension MoviePosterActionServiceTests {
+  /// R120-04: The actual host service resolves identifiers through its configuration and recovery fences.
+  @Test(arguments: ["[tmdb:1]", "[imdb:tt0000001]", "[tmdb:1] [imdb:tt0000001]"])
+  func hostServiceRetriesExplicitIdentifiers(labels: String) async throws {
+    let fixture = try PosterActionFixture(childName: "Unrelated " + labels)
+    defer { fixture.cleanup() }
+    let configuration = try fixture.repository.read()
+    let directory = try #require(configuration.directories.first)
+    let context = CollectionProcessingContext(rootID: directory.id,
+      rootIdentity: try #require(directory.identity), authorizationVersion: directory.authorizationVersion,
+      credentialRevision: configuration.credentialRevision, usesStubTMDbResponses: false,
+      appearance: configuration.posterAppearance,
+      processingConfigurationRevision: directory.processingConfiguration.revision)
+    var state = try fixture.processing.recordProcessingStart(context: context, action: .automatic)
+    state.folders = [FolderProcessingRecord(name: fixture.request.childName, identity: fixture.request.identity,
+      state: .failed, reason: .metadataFailure)]
+    state.isInventoryComplete = true
+    state.inspectedAt = Date()
+    state.currentRun?.runState = .partial
+    _ = try fixture.processing.commit(state, expectedRevision: state.revision)
+    let image = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/TestPoster.png")
+    let client = TMDbClient(token: try TMDbAccessToken("fixture-token"),
+      transport: StubTMDbTransport(posterData: try Data(contentsOf: image)))
+    _ = try await fixture.service(movieMetadataProvider: client).retryFolder(for: fixture.request)
+    let saved = try #require(try fixture.processing.read(rootID: directory.id))
+    let outcome = try #require(saved.folders.first)
+    #expect(outcome.matchedMovieID == 1)
+    #expect(outcome.movieIdentitySource == .validatedIdentifier)
+    #expect(outcome.isVerifiedDone)
   }
 
 }

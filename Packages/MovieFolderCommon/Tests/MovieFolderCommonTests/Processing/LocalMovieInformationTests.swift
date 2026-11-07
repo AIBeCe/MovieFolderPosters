@@ -1,8 +1,8 @@
-import Foundation
 @testable import FileSystem
+import Foundation
+@testable import MovieFolderCommon
 import Network
 import Testing
-@testable import MovieFolderCommon
 
 /// NFO interpretation is movie-specific and accepts bounded labelled identifiers with title/year metadata.
 @Test func nfoInformationParsesMovieMetadata() {

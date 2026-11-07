@@ -185,31 +185,10 @@ final class R12004LocalInformationUITests: MovieFolderPostersUITestCase {
     let guidance = results.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",
       "The movie information disagrees. Choose the intended movie manually.")).firstMatch
     XCTAssertTrue(guidance.waitForExistence(timeout: 5))
-    waitUntilEnabled(results.buttons["Choose Movie…"])
-    results.buttons["Choose Movie…"].click()
-    let choose = app.sheets.element(boundBy: 1)
-    XCTAssertTrue(choose.waitForExistence(timeout: 5))
-    choose.buttons["Cancel"].click()
+    cancelManualMovieChoice(in: app)
     XCTAssertEqual(try processingState(at: support.root).folders.first?.processingReason,
       .conflictingMovieInformation)
-    waitUntilEnabled(results.buttons["Choose Movie…"])
-    results.buttons["Choose Movie…"].click()
-    let title = choose.textFields["Movie title"]
-    XCTAssertTrue(title.waitForExistence(timeout: 5))
-    title.click()
-    app.typeKey("a", modifierFlags: .command)
-    title.typeText("The Last Frame")
-    choose.buttons["Search TMDb"].click()
-    let picker = choose.popUpButtons.firstMatch
-    waitUntilEnabled(picker)
-    let available = choose.staticTexts["Choose a poster below and apply it when ready."]
-    XCTAssertTrue(available.waitForExistence(timeout: 15))
-    picker.click()
-    picker.menuItems["The Last Frame (2026) · TMDb ID 1"].click()
-    waitUntilEnabled(choose.buttons["Apply Selected Movie"])
-    choose.buttons["Apply Selected Movie"].click()
-    XCTAssertTrue(choose.staticTexts["Poster updated from TMDb movie 1."].waitForExistence(timeout: 30))
-    choose.buttons["Done"].click()
+    chooseMovieManually(in: app)
     XCTAssertEqual(try processingState(at: support.root).folders.first?.matchedMovieID, 1)
     relaunch(app)
     let selected = try XCTUnwrap(processingState(at: support.root).folders.first)
@@ -254,7 +233,45 @@ final class R12004LocalInformationUITests: MovieFolderPostersUITestCase {
     XCTAssertEqual(after.folders.first { $0.folderName == sibling.lastPathComponent }, unrelated)
   }
 
-  // MARK: - Native journeys
+}
+
+/// Keeps the native journey operations together while keeping the test declaration readable.
+extension R12004LocalInformationUITests {
+  /// Cancels one manual selection sheet while preserving the unresolved-results sheet.
+  @MainActor
+  private func cancelManualMovieChoice(in app: XCUIApplication) {
+    let results = app.sheets.firstMatch
+    waitUntilEnabled(results.buttons["Choose Movie…"])
+    results.buttons["Choose Movie…"].click()
+    let choose = app.sheets.element(boundBy: 1)
+    XCTAssertTrue(choose.waitForExistence(timeout: 5))
+    choose.buttons["Cancel"].click()
+  }
+
+  /// Searches for and applies the explicitly chosen movie from the conflict results.
+  @MainActor
+  private func chooseMovieManually(in app: XCUIApplication) {
+    let results = app.sheets.firstMatch
+    waitUntilEnabled(results.buttons["Choose Movie…"])
+    results.buttons["Choose Movie…"].click()
+    let choose = app.sheets.element(boundBy: 1)
+    let title = choose.textFields["Movie title"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    title.click()
+    app.typeKey("a", modifierFlags: .command)
+    title.typeText("The Last Frame")
+    choose.buttons["Search TMDb"].click()
+    let picker = choose.popUpButtons.firstMatch
+    waitUntilEnabled(picker)
+    let available = choose.staticTexts["Choose a poster below and apply it when ready."]
+    XCTAssertTrue(available.waitForExistence(timeout: 15))
+    picker.click()
+    picker.menuItems["The Last Frame (2026) · TMDb ID 1"].click()
+    waitUntilEnabled(choose.buttons["Apply Selected Movie"])
+    choose.buttons["Apply Selected Movie"].click()
+    XCTAssertTrue(choose.staticTexts["Poster updated from TMDb movie 1."].waitForExistence(timeout: 30))
+    choose.buttons["Done"].click()
+  }
   /// Changes only controls that differ from the requested independent bit pattern.
   @MainActor
   private func setOptions(_ combination: Int, in surface: XCUIElement) {
@@ -366,8 +383,13 @@ final class R12004LocalInformationUITests: MovieFolderPostersUITestCase {
 
   /// Proves disabled-source nonparticipation before enabling exactly one source and retrying the same folder.
   @MainActor
-  private func exerciseSource(index: Int, filename: String, contents: String,
-    source: MovieIdentitySource, description: String) throws {
+  private func exerciseSource(
+    index: Int,
+    filename: String,
+    contents: String,
+    source: MovieIdentitySource,
+    description: String
+  ) throws {
     let support = try MovieFolderPostersAcceptanceSupport()
     defer { support.tearDown() }
     let (app, collection, child) = try prepareMovie("Unresolved", support: support)

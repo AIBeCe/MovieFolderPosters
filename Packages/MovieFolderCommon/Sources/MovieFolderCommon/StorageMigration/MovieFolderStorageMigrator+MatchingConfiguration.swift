@@ -68,8 +68,9 @@ extension MovieFolderStorageMigrator {
       matching.removeValue(forKey: oldKey)
     }
     if matching["searchLanguage"] == nil { matching["searchLanguage"] = "en-US" }
-    for field in ["readsNFOInformation", "readsImmediateVideoNames", "readsImmediateImageNames"] {
-      if matching[field] == nil { matching[field] = false }
+    let localInformationFields = ["readsNFOInformation", "readsImmediateVideoNames", "readsImmediateImageNames"]
+    for field in localInformationFields where matching[field] == nil {
+      matching[field] = false
     }
     do {
       _ = try JSONDecoder().decode(MovieMatchingConfiguration.self, from: encodeObject(matching, record: record))

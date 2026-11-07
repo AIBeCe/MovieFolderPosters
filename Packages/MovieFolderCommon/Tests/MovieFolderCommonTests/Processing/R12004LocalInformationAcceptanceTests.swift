@@ -1,10 +1,10 @@
 import Darwin
 import FileSystem
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
 import Testing
-@testable import MovieFolderCommon
 
 /// AT04–AT20/AT22 integration acceptance through real processing, durable outcomes and disposable Finder icons.
 /// Full-app Settings/Choose Movie E2E is covered separately by the native UI test target.
@@ -67,41 +67,6 @@ struct R12004LocalInformationAcceptanceTests {
       in: fixture.environment.root).hasCustomIcon)
   }
 
-  /// AT06: Given a completed empty/nonmovie/ambiguous response or provider failure, no weaker match is assigned.
-  @Test(arguments: [R12004AcceptanceTransport.Mode.missing, .nonmovie, .ambiguous, .malformed,
-    .mismatched, .authentication, .rateLimited, .offline])
-  func at06ProviderFailuresPreserveRecoveryAndNeverFallBack(mode: R12004AcceptanceTransport.Mode) async throws {
-    let fixture = try R12004AcceptanceFixture(name: "Alien (1979) [tmdb:348] [imdb:tt0078748]", mode: mode)
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    let recovery = ProcessingRecoveryService(store: try PersistenceStore(
-      directory: fixture.environment.base.appendingPathComponent("Recovery")))
-    let provider = RecoveryAwareMovieMetadataProvider(provider: fixture.provider, recovery: recovery,
-      credential: "R12004-fixture-not-a-real-credential")
-    let processor = MovieFolderProcessor(persistence: fixture.environment.processing, provider: provider,
-      cacheDirectory: fixture.environment.base.appendingPathComponent("Posters"),
-      processingLockStore: fixture.environment.coordination, processingStore: fixture.environment.processingStore,
-      recovery: recovery, credentialRevision: fixture.environment.context.credentialRevision)
-    #expect(try await processor.process(root: fixture.environment.root,
-      processingContext: fixture.environment.context).assigned == 0)
-    let result = try fixture.outcome()
-    #expect(result.matchedMovieID == .none)
-    #expect(await fixture.transport.queries.isEmpty)
-    let reason: FolderProcessingReason = switch mode {
-    case .missing, .nonmovie: .noSuitableMovie
-    case .authentication: .authentication
-    case .rateLimited: .rateLimited
-    case .offline: .connectivity
-    default: .invalidResponse
-    }
-    #expect(result.processingReason == reason)
-    if [.authentication, .rateLimited, .offline].contains(mode) {
-      #expect(try recovery.read().providerFailureReason == reason)
-      let requests = await fixture.transport.paths.count
-      _ = try await processor.process(root: fixture.environment.root, processingContext: fixture.environment.context)
-      #expect(await fixture.transport.paths.count == requests)
-    }
-  }
-
   /// AT07: Given each source enabled or disabled independently, only the explicitly enabled source can match.
   @Test(arguments: ["nfo", "video", "image"], [false, true])
   func at07SourceGatesAreIndependent(source: String, enabled: Bool) async throws {
@@ -109,8 +74,12 @@ struct R12004LocalInformationAcceptanceTests {
       readsImmediateVideoNames: source == "video" && enabled, readsImmediateImageNames: source == "image" && enabled)
     let fixture = try R12004AcceptanceFixture(matching: matching)
     defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    if source == "nfo" { try fixture.writeNFO() }
-    else { try fixture.write("Alien (1979)." + (source == "video" ? "mkv" : "jpg")) }
+    if source == "nfo" {
+      try fixture.writeNFO()
+    } else {
+      let suffix = source == "video" ? "mkv" : "jpg"
+      try fixture.write("Alien (1979)." + suffix)
+    }
     #expect(try await fixture.process().assigned == (enabled ? 1 : 0))
     if enabled {
       let identity: MovieIdentitySource = source == "nfo" ? .nfoInformation
@@ -135,8 +104,7 @@ struct R12004LocalInformationAcceptanceTests {
     if level <= 3 { names.append("Image Movie (1979).jpg") }
     if reversesCreation { names.reverse() }
     for name in names {
-      if name == "movie.nfo" { try fixture.writeNFO(title: "NFO Movie") }
-      else { try fixture.write(name) }
+      if name == "movie.nfo" { try fixture.writeNFO(title: "NFO Movie") } else { try fixture.write(name) }
     }
     #expect(try await fixture.process().assigned == 1)
     let sources: [MovieIdentitySource] = [.validatedIdentifier, .nfoInformation, .videoNameInformation,
@@ -197,21 +165,6 @@ struct R12004LocalInformationAcceptanceTests {
     try fixture.expectAssigned(source: identitySource)
   }
 
-  /// AT10: Given supported NFO fields and Unicode encodings, reopening real processing installs the intended movie.
-  @Test(arguments: ["title", "originaltitle", "tmdb", "imdb"], [false, true])
-  func at10NFOFieldsAndEncodingEstablishMovie(field: String, utf16: Bool) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(readsNFOInformation: true))
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    let xml = field == "title" || field == "originaltitle"
-      ? "<movie><\(field)>Alien</\(field)><year>1979</year></movie>"
-      : "<movie><uniqueid type=\"\(field)\">\(field == "tmdb" ? "348" : "tt0078748")</uniqueid></movie>"
-    try fixture.write("movie.nfo", contents: #require(xml.data(using: utf16 ? .utf16 : .utf8)))
-    #expect(try await fixture.process().assigned == 1)
-    let source: MovieIdentitySource = field == "title" || field == "originaltitle"
-      ? .nfoInformation : .validatedIdentifier
-    try fixture.expectAssigned(source: source)
-  }
-
   /// AT11: Given unsafe or malformed selected XML, processing rejects the complete document without provider work.
   @Test(arguments: ["", "<movie>", "<tvshow><title>Alien</title></tvshow>",
     "<movie><year>zero</year></movie>", "<movie><year>0000</year></movie>",
@@ -229,82 +182,6 @@ struct R12004LocalInformationAcceptanceTests {
     try fixture.write("movie.nfo", contents: Data(xml.utf8))
     #expect(try await fixture.process().assigned == 0)
     #expect(try fixture.outcome().matchedMovieID == .none)
-    #expect(await fixture.transport.paths.isEmpty)
-  }
-
-  /// AT12: Given immediate unsafe entries or irrelevant nested/unsupported files, no content-derived fallback occurs.
-  @Test(arguments: ["nested", "unsupported", "symlink", "fifo", "hidden"])
-  func at12OnlyImmediateRegularSupportedInformationContributes(kind: String) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(readsNFOInformation: true,
-      readsImmediateVideoNames: true))
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    switch kind {
-    case "nested":
-      try FileManager.default.createDirectory(at: fixture.child.appendingPathComponent("nested"),
-        withIntermediateDirectories: false)
-      try fixture.write("nested/Alien (1979).mkv")
-    case "unsupported": try fixture.write("Alien (1979).txt")
-    case "symlink":
-      let outsideMovie = fixture.environment.base.appendingPathComponent("OutsideMovie.nfo")
-      try Data("<movie><title>Alien</title><year>1979</year></movie>".utf8).write(to: outsideMovie)
-      try FileManager.default.createSymbolicLink(atPath: fixture.child.appendingPathComponent("movie.nfo").path,
-        withDestinationPath: outsideMovie.path)
-    case "fifo": #expect(mkfifo(fixture.child.appendingPathComponent("movie.nfo").path, 0o600) == 0)
-    default: try fixture.write(".Alien (1979).mkv")
-    }
-    #expect(try await fixture.process().assigned == (kind == "hidden" ? 1 : 0))
-    if kind == "hidden" { try fixture.expectAssigned(source: .videoNameInformation) }
-    else { #expect(await fixture.transport.paths.isEmpty) }
-  }
-
-  /// AT13: Given exact or exceeded budgets, only a complete within-budget source can establish a unique movie.
-  @Test(arguments: ["entries", "nfo-count", "nfo-bytes", "nfo-total"], [false, true])
-  func at13InclusiveBudgetsRejectPartialUniqueness(budget: String, exceeds: Bool) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(readsNFOInformation: true))
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    switch budget {
-    case "entries":
-      try fixture.writeNFO()
-      for index in 0..<(exceeds ? 1_024 : 1_023) { try fixture.write("ignored-\(index).txt") }
-    case "nfo-count":
-      for index in 0..<(exceeds ? 9 : 8) { try fixture.writeNFO(name: "\(index).nfo") }
-    case "nfo-bytes": try fixture.writeNFO(bytes: 256 * 1_024 + (exceeds ? 1 : 0))
-    default:
-      for index in 0..<4 {
-        let bytes = exceeds && index == 0 ? 256 * 1_024 - 255 : 256 * 1_024
-        try fixture.writeNFO(bytes: bytes, name: "\(index).nfo")
-      }
-      if exceeds { try fixture.writeNFO(bytes: 256, name: "4.nfo") }
-    }
-    #expect(try await fixture.process().assigned == (exceeds ? 0 : 1))
-    if exceeds { #expect(await fixture.transport.paths.isEmpty) }
-    else { try fixture.expectAssigned(source: .nfoInformation) }
-  }
-
-  /// AT14: Given each supported case-insensitive extension, filenames establish identity without media decoding.
-  @Test(arguments: ["mkv", "mp4", "m4v", "avi", "mov", "mpg", "mpeg", "ts", "jpg", "jpeg", "png",
-    "webp", "heic", "tif", "tiff", "bmp", "avif"])
-  func at14EverySupportedExtensionUsesItsFilename(suffix: String) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(
-      readsImmediateVideoNames: true, readsImmediateImageNames: true))
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    let bytes = Data("deliberately invalid media bytes".utf8)
-    try fixture.write("Alien (1979)." + suffix.uppercased(), contents: bytes)
-    #expect(try await fixture.process().assigned == 1)
-    let video = ["mkv", "mp4", "m4v", "avi", "mov", "mpg", "mpeg", "ts"].contains(suffix)
-    try fixture.expectAssigned(source: video ? .videoNameInformation : .imageNameInformation)
-    #expect(try Data(contentsOf: fixture.child.appendingPathComponent("Alien (1979)." + suffix.uppercased())) == bytes)
-  }
-
-  /// AT14: Given generic artwork/sample stems, they contribute no identity and cannot create a provider request.
-  @Test(arguments: ["poster", "cover", "folder", "fanart", "sample", "trailer"])
-  func at14GenericNamesCannotEstablishIdentity(stem: String) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(
-      readsImmediateVideoNames: true, readsImmediateImageNames: true))
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    try fixture.write(stem + ".jpg")
-    try fixture.write(stem.uppercased() + ".MKV")
-    #expect(try await fixture.process().assigned == 0)
     #expect(await fixture.transport.paths.isEmpty)
   }
 
@@ -347,44 +224,6 @@ struct R12004LocalInformationAcceptanceTests {
     #expect(changed.folders[fixture.name]?.localInformationReadResultSHA256 != sha256)
     #expect(await fixture.transport.queries == ["Unknown", "Alien"])
     try fixture.expectPrivateNFOAbsent("private-NFO-secret")
-  }
-
-  /// AT17: Edits during each remote stage prevent stale identity and real icon assignment after the response arrives.
-  @Test(arguments: ["search/movie", "alternative_titles", "release_dates", "w500/fixture.png"])
-  func at17ProviderWaitChangesDiscardStaleAttempts(stage: String) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(readsNFOInformation: true),
-      hold: stage)
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    try fixture.writeNFO(year: 1980)
-    let task = Task { try await fixture.process() }
-    await fixture.transport.waitUntilHeld()
-    try fixture.writeNFO(title: "Dune")
-    await fixture.transport.resume()
-    #expect(try await task.value.assigned == 0)
-    #expect(try fixture.outcome().matchedMovieID == .none)
-    #expect(try !fixture.fileSystem.readCurrentFolderCandidate(ofChild: fixture.name,
-      in: fixture.environment.root).hasCustomIcon)
-    let cache = try JSONDecoder().decode(CollectionProcessingCache.self, from: fixture.operationalBytes())
-    #expect(cache.folders[fixture.name]?.matchedMovieID == .none)
-  }
-
-  /// AT12/AT17: A final-boundary edit or directory replacement prevents the real icon adapter from writing.
-  @Test(arguments: [false, true])
-  func at17FinalFenceAndReplacementPreventAssignment(replacesFolder: Bool) async throws {
-    let fixture = try R12004AcceptanceFixture(matching: MovieMatchingConfiguration(readsNFOInformation: true))
-    defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
-    try fixture.writeNFO()
-    let verifier = R12004AcceptanceMutationVerifier(child: fixture.child, replacesFolder: replacesFolder)
-    let processor = fixture.processor(verifier: verifier)
-    do {
-      #expect(try await processor.process(root: fixture.environment.root,
-        processingContext: fixture.environment.context).assigned == 0)
-    } catch {
-      #expect(replacesFolder)
-      #expect(error is DirectoryAccessError || error is AutomaticProcessingIssue)
-    }
-    #expect(try !fixture.fileSystem.readCurrentFolderCandidate(ofChild: fixture.name,
-      in: fixture.environment.root).hasCustomIcon)
   }
 
   /// AT18: Cancellation saves no negative identity; a later authorized visit completes from current information.
@@ -451,7 +290,8 @@ struct R12004LocalInformationAcceptanceTests {
       try fixture.expectAssigned(source: .nfoInformation)
     } else if refresh {
       let task = Task { try await processor.refreshPoster(root: fixture.environment.root, child: fixture.name,
-        expectedIdentity: candidate.identity, processingContext: fixture.environment.context) }
+        expectedIdentity: candidate.identity, processingContext: fixture.environment.context)
+      }
       await fixture.transport.waitUntilHeld()
       try fixture.writeNFO(title: "Dune")
       await fixture.transport.resume()
@@ -471,14 +311,17 @@ struct R12004LocalInformationAcceptanceTests {
 }
 
 /// Changes only an isolated fixture at the real synchronous current-authorization boundary.
-private struct R12004AcceptanceMutationVerifier: MovieFolderProcessingVerifier {
+struct R12004AcceptanceMutationVerifier: MovieFolderProcessingVerifier {
   /// Disposable directory selected for this scenario.
   let child: URL
   /// Whether the test replaces the directory rather than edits its NFO.
   let replacesFolder: Bool
   func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess? { .none }
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: MovieFolderCandidate,
-    in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange,
+    to candidate: MovieFolderCandidate,
+    in root: URL
+  ) throws -> PersistenceAccess? {
     if change == .automaticPosterAssignment {
       if replacesFolder {
         try FileManager.default.moveItem(at: child, to: child.appendingPathExtension("previous"))
@@ -523,58 +366,16 @@ extension R12004LocalInformationAcceptanceTests {
     let fixture = try R12004AcceptanceFixture(name: "Alien [tmdb:348]")
     defer { try? FileManager.default.removeItem(at: fixture.environment.base) }
     let environment = fixture.environment
-    var original = try environment.configuration.read()
-    original.movieMatchingConfiguration.comparesOriginalTitles = false
-    original.directories[0].movieMatchingConfiguration = MovieMatchingConfiguration()
-    var settings = try r12004JSONObject(JSONEncoder().encode(original))
-    settings["version"] = 7
-    settings["movieMatchingConfiguration"] = try r12004PriorMatching(settings["movieMatchingConfiguration"])
-    var directories = try #require(settings["directories"] as? [[String: Any]])
-    directories[0]["identificationPolicy"] = try r12004PriorMatching(directories[0]["identificationPolicy"])
-    settings["directories"] = directories
-    let settingsBytes = try JSONSerialization.data(withJSONObject: settings)
-    let settingsStore = try PersistenceStore(directory: environment.base.appendingPathComponent("Settings"))
-    do {
-      let access = try #require(try settingsStore.acquireAccess(for: ConfigurationRepository.recordKey))
-      try access.write(settingsBytes)
-    }
-    let candidate = try #require(fixture.fileSystem.candidates(in: environment.root).first)
-    let oldFolder = FolderProcessingRecord(name: fixture.name, identity: candidate.identity, state: .notFound,
-      reason: .noSuitableMovie, assessedAt: Date(timeIntervalSince1970: 1_234), fingerprint: candidate.fingerprint)
-    let oldOutcome = CollectionProcessingState(revision: 17, context: environment.context, folders: [oldFolder],
-      isInventoryComplete: true, inspectedAt: Date(timeIntervalSince1970: 1_234),
-      lastCompletedRunContext: environment.context)
-    var outcome = try r12004JSONObject(JSONEncoder().encode(oldOutcome))
-    outcome["schemaVersion"] = 3
-    for key in ["context", "lastCompletedRunContext"] {
-      var context = try #require(outcome[key] as? [String: Any])
-      context["identificationPolicy"] = try r12004PriorMatching(context["identificationPolicy"])
-      outcome[key] = context
-    }
-    let outcomeBytes = try JSONSerialization.data(withJSONObject: outcome)
-    let outcomeStore = try PersistenceStore(directory: environment.base.appendingPathComponent("Outcomes"))
-    do {
-      let access = try #require(try outcomeStore.acquireAccess(for:
-        CollectionProcessingStore.processingStateKey(for: environment.context.rootID)))
-      try access.write(outcomeBytes)
-    }
-    var oldRecord = FolderProcessingCacheRecord(fingerprint: candidate.fingerprint, status: .unresolved,
-      retryDate: .none, matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)
-    oldRecord.savedMatchingRulesVersion = 1
-    let retained = FolderProcessingCacheRecord(fingerprint: "historical", status: .processed, retryDate: .none,
-      matchedMovieID: 999, posterPath: "/saved.png", movieIdentitySource: .explicitSelection)
-    var operational = try r12004JSONObject(JSONEncoder().encode(CollectionProcessingCache(
-      folders: [fixture.name: oldRecord, "Retained historical": retained])))
-    operational["schemaVersion"] = 1
-    operational["movieMatchingConfiguration"] = try r12004PriorMatching(operational["movieMatchingConfiguration"])
-    let operationalBytes = try JSONSerialization.data(withJSONObject: operational)
-    let operationalStore = try PersistenceStore(directory: environment.base.appendingPathComponent(
-      "Processing/\(original.processingCacheRevision)"))
+    let legacy = try R12004LegacyMigrationData(fixture: fixture)
+    let original = legacy.original
+    let oldFolder = legacy.oldFolder
+    let settingsBytes = legacy.settingsBytes
+    let outcomeBytes = legacy.outcomeBytes
+    let operationalBytes = legacy.operationalBytes
+    let settingsStore = legacy.settingsStore
+    let outcomeStore = legacy.outcomeStore
+    let operationalStore = legacy.operationalStore
     let operationalKey = MovieFolderProcessor.processingStateKey(for: environment.root)
-    do {
-      let access = try #require(try operationalStore.acquireAccess(for: operationalKey))
-      try access.write(operationalBytes)
-    }
     let backups = try PersistenceStore(directory: environment.base.appendingPathComponent("Backups"))
     let migrator = MovieFolderStorageMigrator(configurationStore: settingsStore, collectionOutcomeStore: outcomeStore,
       backupStore: backups, operationalContainer: environment.base, processingLockStore: environment.coordination)
@@ -611,6 +412,113 @@ extension R12004LocalInformationAcceptanceTests {
     try fixture.expectAssigned(source: .validatedIdentifier)
     #expect(await fixture.transport.queries.isEmpty)
   }
+}
+
+/// Holds the exact prior-schema payloads and persistence locations needed by the migration acceptance scenario.
+private struct R12004LegacyMigrationData {
+  /// Previous global movie-matching configuration before local-information fields existed.
+  let original: DirectoryConfiguration
+  /// Previous unresolved outcome whose historical timestamp and reason must survive migration.
+  let oldFolder: FolderProcessingRecord
+  /// Exact encoded prior settings payload written to the isolated settings store.
+  let settingsBytes: Data
+  /// Exact encoded prior outcome payload written to the isolated outcome store.
+  let outcomeBytes: Data
+  /// Exact encoded prior processing cache written to the isolated operational store.
+  let operationalBytes: Data
+  /// Settings store used to verify the migration backup and migrated record.
+  let settingsStore: PersistenceStore
+  /// Outcome store used to verify migration preserves prior results.
+  let outcomeStore: PersistenceStore
+  /// Operational store used to verify the migrated cache and retained history.
+  let operationalStore: PersistenceStore
+
+  /// Creates and persists realistic prior-schema bytes in disposable fixture stores.
+  init(fixture: R12004AcceptanceFixture) throws {
+    let environment = fixture.environment
+    var original = try environment.configuration.read()
+    original.movieMatchingConfiguration.comparesOriginalTitles = false
+    original.directories[0].movieMatchingConfiguration = MovieMatchingConfiguration()
+    let candidate = try #require(fixture.fileSystem.candidates(in: environment.root).first)
+    let oldFolder = FolderProcessingRecord(name: fixture.name, identity: candidate.identity, state: .notFound,
+      reason: .noSuitableMovie, assessedAt: Date(timeIntervalSince1970: 1_234), fingerprint: candidate.fingerprint)
+
+    self.original = original
+    self.oldFolder = oldFolder
+    (settingsBytes, settingsStore) = try writeR12004LegacySettings(environment, original)
+    (outcomeBytes, outcomeStore) = try writeR12004LegacyOutcome(environment, oldFolder)
+    (operationalBytes, operationalStore) = try writeR12004LegacyOperational(
+      environment, fixture, candidate, original.processingCacheRevision)
+  }
+}
+
+/// Writes an encoded settings record in the last schema before local-information choices were added.
+private func writeR12004LegacySettings(
+  _ environment: CollectionProcessingTestEnvironment,
+  _ original: DirectoryConfiguration
+) throws -> (Data, PersistenceStore) {
+  var settings = try r12004JSONObject(JSONEncoder().encode(original))
+  settings["version"] = 7
+  settings["movieMatchingConfiguration"] = try r12004PriorMatching(settings["movieMatchingConfiguration"])
+  var directories = try #require(settings["directories"] as? [[String: Any]])
+  directories[0]["identificationPolicy"] = try r12004PriorMatching(directories[0]["identificationPolicy"])
+  settings["directories"] = directories
+  let bytes = try JSONSerialization.data(withJSONObject: settings)
+  let store = try PersistenceStore(directory: environment.base.appendingPathComponent("Settings"))
+  let access = try #require(try store.acquireAccess(for: ConfigurationRepository.recordKey))
+  try access.write(bytes)
+
+  return (bytes, store)
+}
+
+/// Writes an encoded collection outcome in the last schema before local-information choices were added.
+private func writeR12004LegacyOutcome(
+  _ environment: CollectionProcessingTestEnvironment,
+  _ oldFolder: FolderProcessingRecord
+) throws -> (Data, PersistenceStore) {
+  let oldOutcome = CollectionProcessingState(revision: 17, context: environment.context, folders: [oldFolder],
+    isInventoryComplete: true, inspectedAt: Date(timeIntervalSince1970: 1_234),
+    lastCompletedRunContext: environment.context)
+  var outcome = try r12004JSONObject(JSONEncoder().encode(oldOutcome))
+  outcome["schemaVersion"] = 3
+  for key in ["context", "lastCompletedRunContext"] {
+    var context = try #require(outcome[key] as? [String: Any])
+    context["identificationPolicy"] = try r12004PriorMatching(context["identificationPolicy"])
+    outcome[key] = context
+  }
+  let bytes = try JSONSerialization.data(withJSONObject: outcome)
+  let store = try PersistenceStore(directory: environment.base.appendingPathComponent("Outcomes"))
+  let access = try #require(try store.acquireAccess(for:
+    CollectionProcessingStore.processingStateKey(for: environment.context.rootID)))
+  try access.write(bytes)
+
+  return (bytes, store)
+}
+
+/// Writes an encoded processing cache in the last schema before local-information choices were added.
+private func writeR12004LegacyOperational(
+  _ environment: CollectionProcessingTestEnvironment,
+  _ fixture: R12004AcceptanceFixture,
+  _ candidate: MovieFolderCandidate,
+  _ revision: UUID
+) throws -> (Data, PersistenceStore) {
+  var oldRecord = FolderProcessingCacheRecord(fingerprint: candidate.fingerprint, status: .unresolved,
+    retryDate: .none, matchedMovieID: .none, posterPath: .none, processingReason: .noSuitableMovie)
+  oldRecord.savedMatchingRulesVersion = 1
+  let retained = FolderProcessingCacheRecord(fingerprint: "historical", status: .processed, retryDate: .none,
+    matchedMovieID: 999, posterPath: "/saved.png", movieIdentitySource: .explicitSelection)
+  var operational = try r12004JSONObject(JSONEncoder().encode(CollectionProcessingCache(
+    folders: [fixture.name: oldRecord, "Retained historical": retained])))
+  operational["schemaVersion"] = 1
+  operational["movieMatchingConfiguration"] = try r12004PriorMatching(operational["movieMatchingConfiguration"])
+  let bytes = try JSONSerialization.data(withJSONObject: operational)
+  let directory = environment.base.appendingPathComponent("Processing/\(revision)")
+  let store = try PersistenceStore(directory: directory)
+  let access = try #require(try store.acquireAccess(for:
+    MovieFolderProcessor.processingStateKey(for: environment.root)))
+  try access.write(bytes)
+
+  return (bytes, store)
 }
 
 /// Extracts a complete legacy fixture object without weakening the production decoder.

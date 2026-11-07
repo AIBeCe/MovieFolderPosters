@@ -25,8 +25,7 @@ nonisolated public struct RecoveryAwareMovieMetadataProvider: MovieMetadataProvi
   public func movie(movieID: Int, language: TMDbLanguage) async throws -> MovieMetadata? {
     try Task.checkCancellation()
     try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
-    do { return try await provider.movie(movieID: movieID, language: language) }
-    catch {
+    do { return try await provider.movie(movieID: movieID, language: language) } catch {
       try recovery.recordProviderFailure(error, credentialDigest: credentialDigest)
       throw error
     }
@@ -36,8 +35,7 @@ nonisolated public struct RecoveryAwareMovieMetadataProvider: MovieMetadataProvi
   public func movie(imdbID: String, language: TMDbLanguage) async throws -> MovieMetadata? {
     try Task.checkCancellation()
     try recovery.validateProviderAllowed(credentialDigest: credentialDigest)
-    do { return try await provider.movie(imdbID: imdbID, language: language) }
-    catch {
+    do { return try await provider.movie(imdbID: imdbID, language: language) } catch {
       try recovery.recordProviderFailure(error, credentialDigest: credentialDigest)
       throw error
     }

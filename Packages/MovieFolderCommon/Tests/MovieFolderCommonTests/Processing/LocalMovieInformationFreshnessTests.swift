@@ -1,9 +1,9 @@
-import Foundation
 import FileSystem
+import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
 import Testing
-@testable import MovieFolderCommon
 
 /// Unchanged local information preserves manual resolution; a changed NFO permits a new automatic assessment.
 @Test func localInformationFreshnessReassessesChangedUnresolvedInformation() async throws {
@@ -24,7 +24,8 @@ import Testing
     let bytes = try #require(try access.read())
     let cache = try JSONDecoder().decode(CollectionProcessingCache.self, from: bytes)
     #expect(cache.folders[name]?.localInformationReadResultSHA256?.count == 64)
-    #expect(!String(decoding: bytes, as: UTF8.self).contains("private-source-R120"))
+    let operationalText = try #require(String(bytes: bytes, encoding: .utf8))
+    #expect(!operationalText.contains("private-source-R120"))
   }
   let provider = CountingProvider()
   let next = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
@@ -128,7 +129,8 @@ func localInformationFreshnessPreservesConfirmedIdentity(explicit: Bool) async t
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner,
     movieMatchingConfiguration: MovieMatchingConfiguration(readsNFOInformation: true))
   let task = Task { try await processor.refreshPoster(root: fixture.movies, child: name,
-    expectedIdentity: candidate.identity) }
+    expectedIdentity: candidate.identity)
+  }
   await provider.waitForSearch()
   try Data("<movie><title>Alien</title><year>1979</year></movie>".utf8).write(to: nfo)
   await provider.allowSearch()
@@ -141,8 +143,11 @@ private struct InformationMutationVerifier: MovieFolderProcessingVerifier {
   /// Disposable fixture file to change before final assignment.
   let nfo: URL
   func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess? { .none }
-  func checkIconChange(_ change: MovieFolderIconChange, to candidate: MovieFolderCandidate,
-    in root: URL) throws -> PersistenceAccess? {
+  func checkIconChange(
+    _ change: MovieFolderIconChange,
+    to candidate: MovieFolderCandidate,
+    in root: URL
+  ) throws -> PersistenceAccess? {
     if change == .automaticPosterAssignment {
       try Data("<movie><title>Alien</title><year>1979</year></movie>".utf8).write(to: nfo)
     }
@@ -204,7 +209,8 @@ func localInformationFreshnessProtectsSelectedRetry(changesWhileWaiting: Bool) a
     cacheDirectory: fixture.cache, posterAssigner: fixture.assigner, processingStore: scenario.collectionStore,
     movieMatchingConfiguration: matching)
   let task = Task { try await next.retryEligibleFolder(root: fixture.movies, child: name,
-    expectedIdentity: candidate.identity, processingContext: context) }
+    expectedIdentity: candidate.identity, processingContext: context)
+  }
   if changesWhileWaiting {
     await provider.waitForSearch()
     try Data("<movie><title>Alien</title><year>1979</year></movie>".utf8).write(to: nfo)

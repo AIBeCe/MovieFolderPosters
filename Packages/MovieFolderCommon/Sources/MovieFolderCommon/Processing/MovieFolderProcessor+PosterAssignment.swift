@@ -11,8 +11,12 @@ extension MovieFolderProcessor {
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - root: The authorized collection directory containing the immediate child.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
-  func assign(_ data: Data, to candidate: MovieFolderCandidate, in root: URL,
-    localInformationReadResultSHA256: String? = .none) throws -> FolderPosterAssignmentResult {
+  func assign(
+    _ data: Data,
+    to candidate: MovieFolderCandidate,
+    in root: URL,
+    localInformationReadResultSHA256: String? = .none
+  ) throws -> FolderPosterAssignmentResult {
     try Task.checkCancellation()
     let recoveryAccess = try recovery?.acquireProcessingAccess()
     defer { withExtendedLifetime(recoveryAccess) {} }

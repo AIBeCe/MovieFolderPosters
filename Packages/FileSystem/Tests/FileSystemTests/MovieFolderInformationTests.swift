@@ -1,7 +1,7 @@
-import Foundation
 import Darwin
-import Testing
 @testable import FileSystem
+import Foundation
+import Testing
 
 /// Disabled source choices perform no directory access, even when the supplied fixture path does not exist.
 @Test func movieInformationReadResultDisabledDoesNotOpenDirectories() throws {

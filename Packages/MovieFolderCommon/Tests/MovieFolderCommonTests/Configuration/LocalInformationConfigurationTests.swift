@@ -1,7 +1,7 @@
 import Foundation
+@testable import MovieFolderCommon
 import Persistence
 import Testing
-@testable import MovieFolderCommon
 
 /// Optional local sources are independent, opt-in choices preserved by current storage.
 @Test func localInformationConfigurationDefaultsAndRoundTrips() throws {

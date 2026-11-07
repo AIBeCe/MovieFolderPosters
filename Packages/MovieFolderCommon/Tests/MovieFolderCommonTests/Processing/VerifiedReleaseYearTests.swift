@@ -146,10 +146,12 @@ private func releaseYearEvents(_ years: [Int], type: Int = 3) throws -> [MovieRe
     cacheDirectory: fixture.cache)
   var state = CollectionProcessingCache()
   let search = MovieSearchResult(movies: [movie, releaseYearMovie(43, year: 1980, title: "Other")], hasMorePages: false)
-  #expect(try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980, search: search, state: &state)
-    == .matched(movie, releaseDates: events))
+  let firstMatch = try await processor.fetchAlternativeTitlesAndReleaseDates(
+    title: "Alien", year: 1980, search: search, state: &state)
+  #expect(firstMatch == .matched(movie, releaseDates: events))
   #expect(await provider.requests == ["aliases:42", "aliases:43", "dates:42"])
-  _ = try await processor.fetchAlternativeTitlesAndReleaseDates(title: "Alien", year: 1980, search: search, state: &state)
+  _ = try await processor.fetchAlternativeTitlesAndReleaseDates(
+    title: "Alien", year: 1980, search: search, state: &state)
   #expect(await provider.requests == ["aliases:42", "aliases:43", "dates:42", "dates:42"])
 }
 

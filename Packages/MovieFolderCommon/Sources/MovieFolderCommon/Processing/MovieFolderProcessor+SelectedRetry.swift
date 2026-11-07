@@ -55,11 +55,7 @@ extension MovieFolderProcessor {
 
     let candidate = try actionCandidate(root: root, child: child, expectedIdentity: expectedIdentity)
 
-    guard !record.isVerifiedDone, record.processingState != .preserved, record.processingState != .suppressed,
-      record.processingState != .excluded,
-      !processingConfiguration.excludesFolder(identity: candidate.identity),
-      !candidate.hasCustomIcon,
-      try !fileSystem.isPosterSuppressed(toChild: child, in: root) else { return .notEligible }
+    guard try canRetry(record, candidate: candidate, root: root) else { return .notEligible }
 
     var preparation = AutomaticProcessingPass(processingCache: try loadState(from: access))
     let hadPriorAssessment = preparation.processingCache.folders[child] != nil
@@ -103,6 +99,27 @@ extension MovieFolderProcessor {
         ? .partial : .completed, activity: visit.activityLog)
 
     return .attempted(visit.processingSummary, stopSelection: visit.providerAdmissionStoppedPass)
+  }
+
+  /// Checks whether the selected result and current folder permit automatic retry.
+  /// - Parameters:
+  ///   - record: Current authoritative folder result.
+  ///   - candidate: Selected child whose identity was revalidated.
+  ///   - root: Authorized collection directory.
+  /// - Returns: Whether the folder may proceed to retry assessment.
+  /// - Throws: A failure checking poster suppression on disk.
+  private func canRetry(
+    _ record: FolderProcessingRecord,
+    candidate: MovieFolderCandidate,
+    root: URL
+  ) throws -> Bool {
+    guard !record.isVerifiedDone, record.processingState != .preserved, record.processingState != .suppressed,
+      record.processingState != .excluded,
+      !processingConfiguration.excludesFolder(identity: candidate.identity),
+      !candidate.hasCustomIcon,
+      try !fileSystem.isPosterSuppressed(toChild: candidate.name, in: root) else { return false }
+
+    return true
   }
 
   /// Returns a saved provider or folder retry deadline unless the selected result is legacy or interrupted.

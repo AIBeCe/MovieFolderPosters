@@ -129,23 +129,7 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
       "Include original-language titles when checking exact title matches from TMDb."
     ]
     var content = heading("Matching Defaults", detail: "Defaults apply to collections using application settings.")
-    for (index, button) in [yearButton, originalButton].enumerated() {
-      button.target = self
-      button.action = #selector(matchingConfigurationChanged)
-      button.toolTip = explanations[index]
-      button.setAccessibilityHelp(explanations[index])
-      let help = NSButton(title: "", target: self, action: #selector(showHelp(_:)))
-      help.bezelStyle = .helpButton
-      help.tag = index
-      help.toolTip = explanations[index]
-      help.setAccessibilityLabel("About \(button.title)")
-      help.setAccessibilityHelp(explanations[index])
-      let row = NSStackView(views: [button, help])
-      row.spacing = 8
-      let detail = NSTextField(wrappingLabelWithString: explanations[index])
-      detail.textColor = .secondaryLabelColor
-      content += [row, detail]
-    }
+    content += matchingDefaultRows(explanations: explanations)
     for button in [nfoButton, videoNamesButton, imageNamesButton] {
       button.target = self
       button.action = #selector(matchingConfigurationChanged)
@@ -182,6 +166,30 @@ private final class MatchingPane: SettingsTabViewController, NSPopoverDelegate {
     errorLabel.textColor = .systemRed
     _ = makeContent(content + [errorLabel])
     updatePresentation()
+  }
+
+  /// Builds the two matching-default rows with their contextual help controls.
+  private func matchingDefaultRows(explanations: [String]) -> [NSView] {
+    var rows = [NSView]()
+    for (index, button) in [yearButton, originalButton].enumerated() {
+      button.target = self
+      button.action = #selector(matchingConfigurationChanged)
+      button.toolTip = explanations[index]
+      button.setAccessibilityHelp(explanations[index])
+      let help = NSButton(title: "", target: self, action: #selector(showHelp(_:)))
+      help.bezelStyle = .helpButton
+      help.tag = index
+      help.toolTip = explanations[index]
+      help.setAccessibilityLabel("About \(button.title)")
+      help.setAccessibilityHelp(explanations[index])
+      let row = NSStackView(views: [button, help])
+      row.spacing = 8
+      let detail = NSTextField(wrappingLabelWithString: explanations[index])
+      detail.textColor = .secondaryLabelColor
+      rows += [row, detail]
+    }
+
+    return rows
   }
 
   override func updatePresentation() {

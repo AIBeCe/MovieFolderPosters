@@ -1,11 +1,11 @@
-import FileSystem
 import Darwin
+import FileSystem
 import Foundation
+@testable import MovieFolderCommon
 import Network
 import Persistence
 import Synchronization
 import Testing
-@testable import MovieFolderCommon
 
 /// Disposable configured collection exercising real processing, persistence, provider decoding and icon assignment.
 struct R12004AcceptanceFixture {
@@ -23,8 +23,12 @@ struct R12004AcceptanceFixture {
   let fileSystem = FileSystemService()
 
   /// Builds isolated processing state; all files remain under a fresh temporary directory.
-  init(name: String = "Unclear (2021) (2022)", matching: MovieMatchingConfiguration = MovieMatchingConfiguration(),
-    mode: R12004AcceptanceTransport.Mode = .normal, hold: String? = .none) throws {
+  init(
+    name: String = "Unclear (2021) (2022)",
+    matching: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+    mode: R12004AcceptanceTransport.Mode = .normal,
+    hold: String? = .none
+  ) throws {
     self.name = name
     environment = try CollectionProcessingTestEnvironment(names: [name], matchingConfiguration: matching)
     transport = R12004AcceptanceTransport(mode: mode, hold: hold)
@@ -62,13 +66,15 @@ struct R12004AcceptanceFixture {
 
   /// Checks every persisted application namespace for source-only private XML information.
   func expectPrivateNFOAbsent(_ marker: String) throws {
-    #expect(!String(decoding: try operationalBytes(), as: UTF8.self).contains(marker))
+    let operationalText = try #require(String(bytes: operationalBytes(), encoding: .utf8))
+    #expect(!operationalText.contains(marker))
     for (directory, key) in [("Settings", ConfigurationRepository.recordKey),
       ("Outcomes", CollectionProcessingStore.processingStateKey(for: environment.context.rootID))] {
       let store = try PersistenceStore(directory: environment.base.appendingPathComponent(directory))
       let access = try #require(try store.acquireAccess(for: key))
       let bytes = try #require(try access.read())
-      #expect(!String(decoding: bytes, as: UTF8.self).contains(marker))
+      let text = try #require(String(bytes: bytes, encoding: .utf8))
+      #expect(!text.contains(marker))
     }
   }
 
@@ -213,14 +219,7 @@ actor R12004AcceptanceTransport: HTTPTransport {
     let url = try #require(request.url)
     let path = url.path
     paths.append(path)
-    if let hold, path.hasSuffix(hold), !heldOnce {
-      heldOnce = true
-      await withCheckedContinuation { continuation in
-        heldRequest = continuation
-        heldObserver?.resume()
-        heldObserver = .none
-      }
-    }
+    await suspendRequestedPathIfNeeded(path)
     if path == "/t/p/w500/fixture.png" {
       let resource = try #require(Bundle.module.url(forResource: "TestPoster", withExtension: "png"))
       let png = try Data(contentsOf: resource)
@@ -269,6 +268,18 @@ actor R12004AcceptanceTransport: HTTPTransport {
     }
 
     throw TMDbError.invalidConfiguration
+  }
+
+  /// Suspends only the first selected path until its scenario permits the provider response to continue.
+  private func suspendRequestedPathIfNeeded(_ path: String) async {
+    guard let hold, path.hasSuffix(hold), !heldOnce else { return }
+
+    heldOnce = true
+    await withCheckedContinuation { continuation in
+      heldRequest = continuation
+      heldObserver?.resume()
+      heldObserver = .none
+    }
   }
 
   /// Waits for the selected request; the serialized acceptance suite has a bounded test time limit.

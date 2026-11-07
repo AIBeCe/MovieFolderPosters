@@ -14,8 +14,11 @@ public struct MovieFolderInformationOptions: Sendable {
   public var isEnabled: Bool { readsNFOInformation || readsImmediateVideoNames || readsImmediateImageNames }
 
   /// Captures explicit source choices; omitted choices perform no local reads.
-  public init(readsNFOInformation: Bool = false, readsImmediateVideoNames: Bool = false,
-    readsImmediateImageNames: Bool = false) {
+  public init(
+    readsNFOInformation: Bool = false,
+    readsImmediateVideoNames: Bool = false,
+    readsImmediateImageNames: Bool = false
+  ) {
     self.readsNFOInformation = readsNFOInformation
     self.readsImmediateVideoNames = readsImmediateVideoNames
     self.readsImmediateImageNames = readsImmediateImageNames
@@ -51,8 +54,12 @@ extension FileSystemService {
   ///   - options: Independent explicitly enabled sources.
   /// - Returns: Bounded in-memory information, completeness, and its SHA-256 value.
   /// - Throws: Cancellation, invalid paths, unavailable directories or changed directory identity.
-  public func movieInformation(toChild name: String, in directory: URL, expectedIdentity: String,
-    options: MovieFolderInformationOptions) throws -> MovieFolderInformationReadResult {
+  public func movieInformation(
+    toChild name: String,
+    in directory: URL,
+    expectedIdentity: String,
+    options: MovieFolderInformationOptions
+  ) throws -> MovieFolderInformationReadResult {
     var reader = MovieFolderInformationReader(options: options)
 
     guard options.isEnabled else { return reader.readResult }

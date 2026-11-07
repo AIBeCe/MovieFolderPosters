@@ -27,40 +27,7 @@ import OSLog
       guard let url = request.url else { throw TMDbError.invalidQuery }
       switch (url.host, url.path) {
       case ("api.themoviedb.org", "/3/search/movie"):
-        logger.notice("Development fixture: movie search")
-        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        let query = queryItems.first { $0.name == "query" }?.value
-        let page = Int(queryItems.first { $0.name == "page" }?.value ?? "1") ?? 1
-        let totalPages = query == "Pagination Fixture" ? 2 : 1
-        let movies: [[String: Any]]
-        if query == "Pagination Fixture" {
-          movies = switch page {
-          case 1:
-            [[
-              "id": 1, "title": "First Frame", "original_title": "First Frame",
-              "release_date": "2024-01-01", "poster_path": "/test-poster.png"
-            ]]
-          case 2:
-            [[
-              "id": 2, "title": "The Other Frame", "original_title": "The Other Frame",
-              "release_date": "2025-01-01", "poster_path": "/test-poster.png"
-            ]]
-          default:
-            []
-          }
-        } else if query == "The Last Frame" || query == "The Last Frane" {
-          movies = [[
-            "id": 1, "title": "The Last Frame", "original_title": "The Last Frame",
-            "release_date": "2026-01-01", "poster_path": "/test-poster.png"
-          ]]
-        } else {
-          movies = []
-        }
-
-        return HTTPTransportResponse(
-          data: try JSONSerialization.data(withJSONObject: [
-            "page": page, "total_pages": totalPages, "results": movies
-          ]), statusCode: 200, contentType: "application/json")
+        return try searchResponse(for: url)
       case ("api.themoviedb.org", "/3/movie/1"), ("api.themoviedb.org", "/3/movie/2"):
         let id = url.lastPathComponent == "1" ? 1 : 2
         let title = id == 1 ? "The Last Frame" : "The Other Frame"
@@ -99,6 +66,46 @@ import OSLog
       default:
         throw TMDbError.invalidConfiguration
       }
+    }
+
+    /// Returns the deterministic single-page or paginated fixture for the requested query.
+    /// - Parameter url: The fixture search URL carrying the query and page.
+    /// - Throws: A JSON serialization failure.
+    private func searchResponse(for url: URL) throws -> HTTPTransportResponse {
+      logger.notice("Development fixture: movie search")
+      let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+      let query = queryItems.first { $0.name == "query" }?.value
+      let page = Int(queryItems.first { $0.name == "page" }?.value ?? "1") ?? 1
+      let totalPages = query == "Pagination Fixture" ? 2 : 1
+      let movies: [[String: Any]]
+      if query == "Pagination Fixture" {
+        movies = switch page {
+        case 1:
+          [[
+            "id": 1, "title": "First Frame", "original_title": "First Frame",
+            "release_date": "2024-01-01", "poster_path": "/test-poster.png"
+          ]]
+        case 2:
+          [[
+            "id": 2, "title": "The Other Frame", "original_title": "The Other Frame",
+            "release_date": "2025-01-01", "poster_path": "/test-poster.png"
+          ]]
+        default:
+          []
+        }
+      } else if query == "The Last Frame" || query == "The Last Frane" {
+        movies = [[
+          "id": 1, "title": "The Last Frame", "original_title": "The Last Frame",
+          "release_date": "2026-01-01", "poster_path": "/test-poster.png"
+        ]]
+      } else {
+        movies = []
+      }
+
+      return HTTPTransportResponse(
+        data: try JSONSerialization.data(withJSONObject: [
+          "page": page, "total_pages": totalPages, "results": movies
+        ]), statusCode: 200, contentType: "application/json")
     }
   }
 #endif
