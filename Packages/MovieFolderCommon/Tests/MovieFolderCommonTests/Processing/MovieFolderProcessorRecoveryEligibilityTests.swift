@@ -48,7 +48,8 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
     matchedMovieID: .none, posterPath: .none, processingReason: reason)],
     queries: [queryKey: staleSearch, "unrelated": staleSearch]), fixture: fixture)
-  let provider = CountingProvider()
+  let movie = MovieMetadata(id: 42, title: "Dune", originalTitle: "Dune", releaseYear: 2021, posterPath: "/dune.jpg")
+  let provider = CountingProvider(imdbMovies: ["tt1160419": movie])
   let processor = try fixture.processor(provider: provider, clock: { clock.now })
 
   let first = try await processor.process(root: fixture.movies)
@@ -57,9 +58,11 @@ func cachedIdentifierSuffixDecisionsAreReassessed(reason: FolderProcessingReason
 
   #expect(first.assigned == 1)
   #expect(second.examined == 0)
-  #expect(await provider.searchCount == 1)
+  #expect(await provider.imdbLookups == ["tt1160419"])
+  #expect(await provider.searchCount == 0)
   let saved = try readRecoveryCache(fixture)
   #expect(saved.folders[candidate.name]?.status == .processed)
+  #expect(saved.folders[candidate.name]?.movieIdentitySource == .validatedIdentifier)
   #expect(saved.folders[candidate.name]?.nameParserRevision == ReleaseNameParser.revision)
   #expect(saved.queries["unrelated"] != nil)
 }
@@ -74,7 +77,7 @@ func cachedIdentifierSuffixReviewStopsAfterCurrentUnresolvedDecision() async thr
   try writeRecoveryCache(CollectionProcessingCache(folders: [candidate.name: FolderProcessingCacheRecord(
     fingerprint: candidate.fingerprint, status: .unresolved, retryDate: .none,
     matchedMovieID: .none, posterPath: .none, processingReason: .parsingProblem)]), fixture: fixture)
-  let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false))
+  let provider = CountingProvider(imdbMovies: ["tt1160419": nil])
   let processor = try fixture.processor(provider: provider)
 
   let first = try await processor.process(root: fixture.movies)
@@ -83,9 +86,11 @@ func cachedIdentifierSuffixReviewStopsAfterCurrentUnresolvedDecision() async thr
 
   #expect(first.examined == 1)
   #expect(second.examined == 0)
-  #expect(await provider.searchCount == 1)
+  #expect(await provider.imdbLookups == ["tt1160419"])
+  #expect(await provider.searchCount == 0)
   let saved = try readRecoveryCache(fixture)
   #expect(saved.folders[candidate.name]?.processingReason == .noSuitableMovie)
+  #expect(fixture.assigner.assignmentCount == 0)
   #expect(saved.folders[candidate.name]?.nameParserRevision == ReleaseNameParser.revision)
 }
 

@@ -388,9 +388,21 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
     Self.paths.append(path)
     Self.lock.unlock()
 
+    if path == "/offline" {
+      client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+      return
+    }
+    if path == "/non-http" {
+      let response = URLResponse(url: url, mimeType: nil, expectedContentLength: 0, textEncodingName: nil)
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocolDidFinishLoading(self)
+      return
+    }
+
     let status = path == "/redirect" ? 302 : 200
-    let headers = ["Content-Type": "application/json", "Retry-After": "12"]
-      .merging(path == "/redirect" ? ["Location": "https://transport.test/followed"] : [:]) { _, new in new }
+    var headers = ["Content-Type": "application/json", "Retry-After": "12"]
+    if path == "/redirect" { headers["Location"] = "https://transport.test/followed" }
+    if path == "/oversized-header" { headers["Content-Length"] = "10485761" }
     guard
       let response = HTTPURLResponse(
         url: url, statusCode: status, httpVersion: "HTTP/1.1",
@@ -406,7 +418,12 @@ private final class ControlledURLProtocol: URLProtocol, @unchecked Sendable {
     }
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     Self.responseSignal(path).signal()
-    if path == "/hang" { return }
+    if path == "/hang" || path == "/oversized-header" { return }
+    if path == "/at-limit" {
+      client?.urlProtocol(self, didLoad: Data(repeating: 0x61, count: 10_485_760))
+      client?.urlProtocolDidFinishLoading(self)
+      return
+    }
     if path == "/oversized" {
       client?.urlProtocol(self, didLoad: Data(repeating: 0x61, count: 10 * 1_024 * 1024 + 1))
       return
@@ -493,6 +510,36 @@ private func controlledTransport() -> URLSessionTransport {
   await #expect(throws: HTTPTransportError.responseTooLarge) { try await transport.send(request) }
   ControlledURLProtocol.waitForStop(path: "/oversized")
   #expect(ControlledURLProtocol.recordedStoppedPaths().contains("/oversized"))
+}
+
+/// Reports generic failures for responses that cannot be read as HTTP.
+@Test(arguments: [
+  ("/non-http", HTTPTransportError.nonHTTPResponse),
+  ("/offline", .transport(code: URLError.notConnectedToInternet.rawValue))
+])
+func urlSessionTransportReportsGenericFailures(path: String, expectedError: HTTPTransportError) async throws {
+  let transport = controlledTransport()
+  let request = URLRequest(url: requiredURL("https://transport.test" + path))
+
+  await #expect(throws: expectedError) { try await transport.send(request) }
+}
+
+/// Rejects an oversized declared body before the protocol delivers any body bytes.
+@Test func urlSessionTransportRejectsOversizedContentLength() async throws {
+  let transport = controlledTransport()
+  let request = URLRequest(url: requiredURL("https://transport.test/oversized-header"))
+
+  await #expect(throws: HTTPTransportError.responseTooLarge) { try await transport.send(request) }
+}
+
+/// Allows a streamed response that exactly meets the size limit.
+@Test func urlSessionTransportAcceptsBodyAtLimit() async throws {
+  let transport = controlledTransport()
+  let request = URLRequest(url: requiredURL("https://transport.test/at-limit"))
+
+  let result = try await transport.send(request)
+
+  #expect(result.data.count == 10_485_760)
 }
 
 /// Scenario: url session transport does not follow redirects.

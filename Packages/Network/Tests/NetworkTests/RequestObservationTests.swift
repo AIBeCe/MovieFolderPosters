@@ -142,6 +142,50 @@ func translatesHTTPTransportFailures(
   #expect(observations.completed.first?.2 == ticket)
 }
 
+/// Routes one request through a controlled suspension while another fails immediately.
+private struct OverlappingHTTPTransport: HTTPTransport {
+  let search: SuspendedHTTPTransport
+
+  func send(_ request: URLRequest) async throws -> HTTPTransportResponse {
+    if request.url?.lastPathComponent == "authentication" { throw HTTPTransportError.responseTooLarge }
+    return try await search.send(request)
+  }
+}
+
+/// Records each overlapping request with a ticket assigned to its purpose.
+private actor OverlappingRequestDelegate: TMDbClientRequestDelegate {
+  let searchTicket = UUID()
+  let credentialTicket = UUID()
+  private(set) var results: [UUID: TMDbRequestCompletionResult] = [:]
+
+  func tmdbClientWillSendRequest(purpose: TMDbRequestCategory) -> UUID? {
+    purpose == .movieSearch ? searchTicket : credentialTicket
+  }
+
+  func tmdbClientDidCompleteRequest(
+    purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, completedAt: Date, recordingTicket: UUID
+  ) {
+    results[recordingTicket] = result
+  }
+}
+
+/// Associates overlapping success and failure with their original request tickets.
+@Test func overlappingRequestsKeepTheirOwnResults() async throws {
+  let search = SuspendedHTTPTransport()
+  let delegate = OverlappingRequestDelegate()
+  let tmdbClient = try TMDbClient(token: TMDbAccessToken("token"),
+    transport: OverlappingHTTPTransport(search: search), requestDelegate: delegate)
+  async let page = tmdbClient.searchMoviePage(title: "Dune", year: 2021, page: 1)
+  await search.waitUntilStarted()
+
+  await #expect(throws: TMDbError.responseTooLarge) { try await tmdbClient.validateCredential() }
+  await search.resume(with: response(#"{"page":1,"total_pages":0,"results":[]}"#))
+  let loadedPage = try await page
+  #expect(loadedPage.movies.isEmpty)
+  let results = await delegate.results
+  #expect(results == [delegate.credentialTicket: .responseTooLarge, delegate.searchTicket: .response(statusCode: 200)])
+}
+
 /// Records response-size rejection at the HTTP boundary.
 @Test func observesOversizedResponse() async throws {
   let delegate = TMDbRequestObservationRecorderDelegate()

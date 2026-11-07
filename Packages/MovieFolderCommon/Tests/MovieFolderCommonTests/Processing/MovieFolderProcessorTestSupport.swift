@@ -94,10 +94,14 @@ actor CountingProvider {
 
   /// The number of search requests observed by the test provider.
   private(set) var searchCount = Int.zero
+  /// The IMDb identifiers requested by the processor.
+  private(set) var imdbLookups: [String] = []
   /// The number of source-image downloads observed by the test provider.
   private(set) var posterCount = Int.zero
   /// An optional configured search response overriding the default movie fixture.
   private let search: MovieSearchResult?
+  /// Configured IMDb responses, including explicit not-found results.
+  private let imdbMovies: [String: MovieMetadata?]
   /// Primary release year supplied independently of unfiltered request parameters.
   private let primaryReleaseYear: Int
   /// Whether a search suspends until the test explicitly releases its continuation.
@@ -129,6 +133,7 @@ actor CountingProvider {
   ///
   /// - Parameters:
   ///   - search: The provider response, including whether further search pages exist.
+  ///   - imdbMovies: Configured lookup results keyed by IMDb identifier.
   ///   - delaysSearch: Whether a search suspends until the test explicitly releases its continuation.
   ///   - delaysPoster: Whether an image download suspends until the test explicitly releases its continuation.
   ///   - searchError: The configured provider error thrown by a test search.
@@ -136,6 +141,7 @@ actor CountingProvider {
   ///   - failuresRemaining: How many initial provider requests must fail before normal responses resume.
   init(
     search: MovieSearchResult? = .none,
+    imdbMovies: [String: MovieMetadata?] = [:],
     primaryReleaseYear: Int = 2021,
     delaysSearch: Bool = false,
     delaysPoster: Bool = false,
@@ -146,6 +152,7 @@ actor CountingProvider {
     failuresRemaining: Int = .max
   ) {
     self.search = search
+    self.imdbMovies = imdbMovies
     self.primaryReleaseYear = primaryReleaseYear
     self.delaysSearch = delaysSearch
     self.delaysPoster = delaysPoster
@@ -216,6 +223,14 @@ actor CountingProvider {
             id: 42, title: title, originalTitle: title, releaseYear: primaryReleaseYear,
             posterPath: "/dune.jpg")
         ], hasMorePages: false)
+  }
+
+  /// Returns the configured IMDb result or rejects an unconfigured lookup.
+  func movie(imdbID: String, language: TMDbLanguage) throws -> MovieMetadata? {
+    imdbLookups.append(imdbID)
+    guard let result = imdbMovies[imdbID] else { throw TMDbError.invalidConfiguration }
+
+    return result
   }
 
   /// Injects an error consumed by the next provider search.
