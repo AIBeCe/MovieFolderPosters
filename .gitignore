@@ -1,0 +1,38 @@
+# macOS Finder metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100/
+.Trashes/
+.fseventsd/
+
+# Xcode user state and local build products
+**/xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+**/DerivedData/
+**/build/
+**/*.xcarchive/
+**/*.dSYM/
+**/*.xcresult/
+*.ipa
+*.hmap
+*.profdata
+
+# Swift Package Manager local state and build products
+**/.build/
+**/.swiftpm/
+
+# Local tool caches and generated logs
+.swiftlint_cache/
+*.log
+
+# Local environment and signing credentials
+.env
+.env.*
+!.env.example
+*.mobileprovision
+*.p12
+AuthKey_*.p8
