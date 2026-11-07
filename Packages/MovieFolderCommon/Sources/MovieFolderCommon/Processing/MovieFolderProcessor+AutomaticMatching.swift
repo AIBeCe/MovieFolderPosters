@@ -54,7 +54,7 @@ extension MovieFolderProcessor {
             decision, context: context, visit: &visit)
         }
 
-        try assignCachedPoster(assignment, candidate: candidate, root: root, access: access, visit: &visit)
+        try await assignCachedPoster(assignment, candidate: candidate, root: root, access: access, visit: &visit)
         return true
       }
 
@@ -184,21 +184,23 @@ extension MovieFolderProcessor {
       let record = failedFolderResult(candidate, stage: .search, reason: .interrupted)
       try recordFolderProcessing(record, in: &visit.collectionProcessingRecord, activity: visit.activityLog)
     } catch let error as ProcessingRecoveryError {
-      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
+      guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
 
       return try recordRecoveryAdmissionFailure(
         error, candidate: candidate, access: access, visit: &visit, attempt: attempt,
         identitySource: attempt.matchedMovie == .none ? .none : attempt.movieIdentitySource)
     } catch let error as TMDbError {
-      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
+      guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
 
       return try recordSourceProviderFailure(
         error, candidate: candidate, access: access, visit: &visit, attempt: attempt,
         identitySource: attempt.matchedMovie == .none ? .none : attempt.movieIdentitySource)
+    } catch let error as ConfigurationError {
+      throw error
     } catch {
       if Task.isCancelled { throw CancellationError() }
 
-      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
+      guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return false }
 
       saveTemporaryFailure(candidate, in: &visit.processingCache, stage:
         attempt.failedProcessingStage, movie: attempt.matchedMovie,
@@ -367,7 +369,7 @@ extension MovieFolderProcessor {
         language: movieMatchingConfiguration.searchLanguage)
       try Task.checkCancellation()
 
-      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
+      guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
       let movie: MovieMetadata
       switch resolution {
       case .matched(let resolved): movie = resolved
@@ -414,7 +416,7 @@ extension MovieFolderProcessor {
       state: &visit.processingCache, metadataProvider: metadataProvider)
     try Task.checkCancellation()
 
-    guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
+    guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
 
     try saveState(visit.processingCache, to: access, activity: visit.activityLog)
 
@@ -460,7 +462,7 @@ extension MovieFolderProcessor {
     visit.activityLog?.stage = .artwork
     let imageData = try await posterBytes(for: assignment.posterPath, visit: &visit)
 
-    guard try validateSelectedCandidate(candidate, root: assignment.root, visit: &visit) else { return }
+    guard try await validateSelectedCandidate(candidate, root: assignment.root, visit: &visit) else { return }
 
     attempt.failedProcessingStage = .assignPoster
     visit.activityLog?.stage = .assignPoster
@@ -569,7 +571,7 @@ extension MovieFolderProcessor {
         language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
       try Task.checkCancellation()
 
-      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return .none }
+      guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return .none }
 
       visit.processingCache.queries[queryKey] = CachedMovieSearch(result: search, createdAt: now())
       try saveState(visit.processingCache, to: access, activity: visit.activityLog)
@@ -581,15 +583,23 @@ extension MovieFolderProcessor {
   /// Rechecks selected admission and identity before an awaited response can persist decisions.
   func validateSelectedCandidate(
     _ candidate: MovieFolderCandidate, root: URL, visit: inout AutomaticProcessingPass
-  ) throws -> Bool {
+  ) async throws -> Bool {
     if let context = visit.localInformationContexts[candidate.name] { try context.validate() }
 
     guard visit.selectedRetryChildName != .none else { return true }
 
     try Task.checkCancellation()
     try recovery?.validateProcessingAllowed()
-    let settingsAccess = try checkIconChange(.automaticPosterAssignment, to: candidate, in: root)
-    defer { withExtendedLifetime(settingsAccess) {} }
+    for attempt in 0..<8 {
+      do {
+        let settingsAccess = try checkIconChange(.automaticPosterAssignment, to: candidate, in: root)
+        withExtendedLifetime(settingsAccess) {}
+        break
+      } catch ConfigurationError.busy {
+        guard attempt < 7 else { throw ConfigurationError.busy }
+        try await Task.sleep(for: .milliseconds(20))
+      }
+    }
     let currentCandidate = try actionCandidate(root: root, child: candidate.name, expectedIdentity: candidate.identity)
     let currentFolderResult = try folderProcessingResult(
       currentCandidate, root: root, saved: visit.processingCache.folders[currentCandidate.name])

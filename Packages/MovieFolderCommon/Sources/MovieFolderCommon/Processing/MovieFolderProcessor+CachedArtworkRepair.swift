@@ -15,7 +15,7 @@ extension MovieFolderProcessor {
   func assignCachedPoster(
     _ assignment: SavedFolderPosterAssignment, candidate: MovieFolderCandidate, root: URL,
     access: PersistenceAccess, visit: inout AutomaticProcessingPass
-  ) throws {
+  ) async throws {
     visit.activityLog?.begin(candidate.name, movie: savedActivityMovie(assignment.record, candidate: candidate),
       stage: .assignPoster)
     do {
@@ -52,7 +52,7 @@ extension MovieFolderProcessor {
     } catch {
       if Task.isCancelled { throw CancellationError() }
 
-      guard try validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
+      guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
 
       let movie = MovieMetadata(
         id: assignment.movieID, title: assignment.record.movieTitle ?? "",
@@ -84,12 +84,12 @@ extension MovieFolderProcessor {
     visit.activityLog?.begin(context.candidate.name, movie: decision.movie, stage: .artwork)
     do {
       let bytes = try await posterBytes(for: decision.posterPath, visit: &visit)
-      try assignCachedPoster(
+      try await assignCachedPoster(
         SavedFolderPosterAssignment(
           bytes: bytes, movieID: decision.movieID, posterPath: decision.posterPath, record: decision.record),
         candidate: context.candidate, root: context.root, access: context.access, visit: &visit)
     } catch {
-      visit.providerAdmissionStoppedPass = try recordArtworkRepairFailure(
+      visit.providerAdmissionStoppedPass = try await recordArtworkRepairFailure(
         error, decision: decision, context: context, visit: &visit)
       return true
     }
@@ -108,10 +108,10 @@ extension MovieFolderProcessor {
   private func recordArtworkRepairFailure(
     _ error: any Error, decision: SavedPosterDecision, context: ArtworkRepairContext,
     visit: inout AutomaticProcessingPass
-  ) throws -> Bool {
+  ) async throws -> Bool {
     if Task.isCancelled { throw CancellationError() }
 
-    guard try validateSelectedCandidate(context.candidate, root: context.root, visit: &visit) else { return true }
+    guard try await validateSelectedCandidate(context.candidate, root: context.root, visit: &visit) else { return true }
 
     if let error = error as? CollectionProcessingError { throw error }
     if error is CancellationError { throw CancellationError() }
@@ -208,7 +208,7 @@ extension MovieFolderProcessor {
           throw AutomaticProcessingIssue.cacheWriteFailed
         }
       } catch {
-        if try recordArtworkRepairFailure(
+        if try await recordArtworkRepairFailure(
           error, decision: decision, context: context, visit: &visit) {
           visit.providerAdmissionStoppedPass = true
           return

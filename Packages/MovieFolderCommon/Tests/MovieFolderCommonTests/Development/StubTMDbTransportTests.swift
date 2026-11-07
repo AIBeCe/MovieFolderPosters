@@ -6,6 +6,17 @@ import Testing
 #if DEBUG
   /// Verifies that the packaged fixture transport exercises the real client without live requests.
   struct StubTMDbTransportTests {
+    /// Direct identifier fixtures decode through the same client used by the isolated host.
+    @Test(arguments: [1, 2])
+    func identifierFixturesPassThroughRealClient(movieID: Int) async throws {
+      let client = TMDbClient(token: try TMDbAccessToken("fixture-token"),
+        transport: StubTMDbTransport(posterData: Data()))
+      let direct = try await client.movie(movieID: movieID, language: .english)
+      let external = try await client.movie(imdbID: "tt000000\(movieID)", language: .english)
+      #expect(direct?.id == movieID)
+      #expect(external == direct)
+    }
+
     /// All supported fixture endpoints remain compatible with the metadata client's decoding and image checks.
     /// - Throws: Fixture resource, token validation, or client decoding errors.
     @Test func fixtureMovieAndPosterPassThroughRealClient() async throws {

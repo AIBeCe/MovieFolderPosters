@@ -10,6 +10,37 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// R120-04: The actual host service resolves identifiers through its configuration and recovery fences.
+  @Test(arguments: ["[tmdb:1]", "[imdb:tt0000001]", "[tmdb:1] [imdb:tt0000001]"])
+  func hostServiceRetriesExplicitIdentifiers(labels: String) async throws {
+    let fixture = try PosterActionFixture(childName: "Unrelated " + labels)
+    defer { fixture.cleanup() }
+    let configuration = try fixture.repository.read()
+    let directory = try #require(configuration.directories.first)
+    let context = CollectionProcessingContext(rootID: directory.id,
+      rootIdentity: try #require(directory.identity), authorizationVersion: directory.authorizationVersion,
+      credentialRevision: configuration.credentialRevision, usesStubTMDbResponses: false,
+      appearance: configuration.posterAppearance,
+      processingConfigurationRevision: directory.processingConfiguration.revision)
+    var state = try fixture.processing.recordProcessingStart(context: context, action: .automatic)
+    state.folders = [FolderProcessingRecord(name: fixture.request.childName, identity: fixture.request.identity,
+      state: .failed, reason: .metadataFailure)]
+    state.isInventoryComplete = true
+    state.inspectedAt = Date()
+    state.currentRun?.runState = .partial
+    _ = try fixture.processing.commit(state, expectedRevision: state.revision)
+    let image = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/TestPoster.png")
+    let client = TMDbClient(token: try TMDbAccessToken("fixture-token"),
+      transport: StubTMDbTransport(posterData: try Data(contentsOf: image)))
+    _ = try await fixture.service(movieMetadataProvider: client).retryFolder(for: fixture.request)
+    let saved = try #require(try fixture.processing.read(rootID: directory.id))
+    let outcome = try #require(saved.folders.first)
+    #expect(outcome.matchedMovieID == 1)
+    #expect(outcome.movieIdentitySource == .validatedIdentifier)
+    #expect(outcome.isVerifiedDone)
+  }
+
   /// Explicit movie search forwards the saved regional language through the authorized action service.
   @Test func movieSelectionSearchUsesSavedLanguage() async throws {
     let fixture = try PosterActionFixture()
@@ -368,11 +399,11 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   let request: MoviePosterRequest
 
   /// Creates real stores and a child folder whose identity can authorize the request.
-  init() throws {
+  init(childName: String = "Dune (2021)") throws {
     container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     movies = container.appendingPathComponent("Movies")
     try FileManager.default.createDirectory(
-      at: movies.appendingPathComponent("Dune (2021)"), withIntermediateDirectories: true)
+      at: movies.appendingPathComponent(childName), withIntermediateDirectories: true)
     repository = ConfigurationRepository(
       store: try PersistenceStore(directory: container.appendingPathComponent("Settings")))
     authorizations = try PersistenceStore(directory: container.appendingPathComponent("Authorization"))
@@ -384,8 +415,8 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
       transferBookmark: try fileSystem.makeTransferBookmark(for: movies), authorizationVersion: UUID(),
       identity: try fileSystem.persistentDirectoryIdentity(at: movies))
     try repository.update { $0.directories = [directory] }
-    request = MoviePosterRequest(rootID: directory.id, childName: "Dune (2021)",
-      identity: try fileSystem.readCurrentFolderCandidate(ofChild: "Dune (2021)", in: movies).identity, action: .change)
+    request = MoviePosterRequest(rootID: directory.id, childName: childName,
+      identity: try fileSystem.readCurrentFolderCandidate(ofChild: childName, in: movies).identity, action: .change)
   }
 
   func makeDirectoryBookmark(for directory: URL) throws -> Data {
@@ -395,6 +426,14 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   func makeConfigurationRepository() throws -> ConfigurationRepository { repository }
   func makePrivateAuthorizationStore() throws -> PersistenceStore { authorizations }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore { processing }
+  /// Supplies nonisolated test implementations instead of inheriting the app module's actor-isolated defaults.
+  func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore {
+    try PersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
+  }
+  func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
+    ProcessingRecoveryService(store: try makePersistenceStore(
+      directory: container.appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
+  }
   /// Composes the real action service without external storage, credentials, or networking.
   func service(token: String? = "fixture-token", movieMetadataProvider: (any MovieMetadataProvider)? = .none,
                activity: (any MovieFolderActivityServicing)? = .none) -> MoviePosterActionService {

@@ -328,6 +328,9 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     if let actionError = error as? MoviePosterActionServiceError {
       return actionError.errorDescription ?? "Folder authorization changed. Reload saved results before retrying."
     }
+    if let configurationError = error as? ConfigurationError, configurationError == .busy {
+      return "Settings are busy. Wait for the current operation to finish, then retry."
+    }
 
     return "Retry could not finish. Reload saved results to review the current outcome."
   }

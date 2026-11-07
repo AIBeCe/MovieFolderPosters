@@ -88,8 +88,13 @@ func movieInformationReadResultEnforcesDirectoryEntryBudget(count: Int) throws {
   #expect(readResult.files.isEmpty)
 }
 
+/// Explicit tuple types keep parameter generation independent of macro expression inference.
+private let nfoBudgetCases: [(Int, Int)] = [
+  (8, 1), (9, 1), (1, 256 * 1_024), (4, 256 * 1_024), (5, 256 * 1_024)
+]
+
 /// NFO count, individual bytes and total bytes have inclusive bounded maxima.
-@Test(arguments: [(8, 1), (9, 1), (1, 256 * 1_024), (4, 256 * 1_024), (5, 256 * 1_024)])
+@Test(arguments: nfoBudgetCases)
 func movieInformationReadResultEnforcesNFOBudgets(count: Int, bytes: Int) throws {
   let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: root) }

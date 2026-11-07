@@ -2,6 +2,7 @@ import FileSystem
 import Foundation
 import Network
 import Persistence
+import Synchronization
 import Testing
 
 @testable import MovieFolderCommon
@@ -53,6 +54,30 @@ func selectedRetryRechecksAdmissionAfterSearch(enablesRecovery: Bool) async thro
   #expect(await provider.posterCount == .zero)
 }
 
+/// A brief configuration lock after lookup is retried before the validated identifier is discarded.
+@Test func selectedRetryRecoversFromTransientConfigurationBusyAfterLookup() async throws {
+  let scenario = try SelectedRetryScenario()
+  defer { try? FileManager.default.removeItem(at: scenario.source.fixture.base) }
+  let verifier = BusySecondConfigurationReadVerifier()
+  let processor = try scenario.source.fixture.processor(
+    provider: scenario.provider, clock: { scenario.source.clock.now }, posterAssigner: FileSystemService(),
+    processingVerifier: verifier, processingStore: scenario.source.collectionStore)
+
+  let result = try await processor.retryEligibleFolder(
+      root: scenario.source.fixture.movies, child: "Dune (2021)", expectedIdentity: scenario.identity,
+      processingContext: scenario.source.processingContext)
+  let wasAttempted: Bool
+  if case .attempted = result { wasAttempted = true } else { wasAttempted = false }
+  #expect(wasAttempted)
+
+  let saved = try scenario.snapshot()
+  let retried = try #require(saved.folders.first { $0.folderName == "Dune (2021)" })
+  #expect(retried.processingState == .done)
+  #expect(retried.matchedMovieID == 42)
+  #expect(saved.currentRun?.runState == .completed)
+  #expect(await scenario.provider.searchCount == 1)
+}
+
 /// Uses a real configuration access to detect configuration changes at synchronous processing boundaries.
 private struct SelectedRetryConfigurationVerifier: MovieFolderProcessingVerifier {
   /// Current saved settings consulted at every boundary.
@@ -70,6 +95,26 @@ private struct SelectedRetryConfigurationVerifier: MovieFolderProcessingVerifier
     _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
   ) throws -> PersistenceAccess? {
     try repository.configurationAccessForIconChange(for: directory, expectedConfiguration: configuration)
+  }
+}
+
+/// Simulates one transient lock at the post-provider settings fence.
+private final class BusySecondConfigurationReadVerifier: MovieFolderProcessingVerifier, @unchecked Sendable {
+  /// Number of settings fences reached by the selected retry.
+  private let checkCount = Mutex(0)
+
+  func checkAutomaticProcessing(in root: URL) throws -> PersistenceAccess? { .none }
+
+  func checkIconChange(
+    _ change: MovieFolderIconChange, to candidate: MovieFolderCandidate, in root: URL
+  ) throws -> PersistenceAccess? {
+    let count = checkCount.withLock { value in
+      value += 1
+      return value
+    }
+    if count == 2 { throw ConfigurationError.busy }
+
+    return .none
   }
 }
 

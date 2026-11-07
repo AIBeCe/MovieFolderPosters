@@ -216,6 +216,18 @@ struct CollectionResultsViewModelTests {
     #expect(!fixture.model.isBusy)
   }
 
+  /// Configuration contention remains actionable instead of looking like a metadata failure.
+  @Test func configurationBusyProvidesSafeRetryGuidance() async {
+    let fixture = await makeFixture(folders: [folder("Movie")])
+    await fixture.retry.fail(with: ConfigurationError.busy)
+    fixture.model.selectRows(IndexSet(integer: .zero))
+    fixture.model.retrySelected()
+    await settle()
+
+    #expect(fixture.model.statusMessage == "Settings are busy. Wait for the current operation to finish, then retry.")
+    #expect(!fixture.model.isBusy)
+  }
+
   /// Admission stop ends the selection even when authentication provides no retry deadline.
   @Test func stopSelectionWithoutDeadlineHaltsRemainingFolders() async {
     let fixture = await makeFixture(folders: [folder("Movie 1"), folder("Movie 2")])

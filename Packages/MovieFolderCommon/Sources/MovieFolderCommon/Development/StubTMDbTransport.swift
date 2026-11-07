@@ -61,6 +61,25 @@ import OSLog
           data: try JSONSerialization.data(withJSONObject: [
             "page": page, "total_pages": totalPages, "results": movies
           ]), statusCode: 200, contentType: "application/json")
+      case ("api.themoviedb.org", "/3/movie/1"), ("api.themoviedb.org", "/3/movie/2"):
+        let id = url.lastPathComponent == "1" ? 1 : 2
+        let title = id == 1 ? "The Last Frame" : "The Other Frame"
+
+        return HTTPTransportResponse(data: try JSONSerialization.data(withJSONObject: [
+          "id": id, "title": title, "original_title": title,
+          "release_date": id == 1 ? "2026-01-01" : "2025-01-01", "poster_path": "/test-poster.png"
+        ]), statusCode: 200, contentType: "application/json")
+      case ("api.themoviedb.org", "/3/find/tt0000001"), ("api.themoviedb.org", "/3/find/tt0000002"):
+        let id = url.lastPathComponent == "tt0000001" ? 1 : 2
+        let title = id == 1 ? "The Last Frame" : "The Other Frame"
+
+        return HTTPTransportResponse(data: try JSONSerialization.data(withJSONObject: [
+          "movie_results": [["id": id, "title": title, "original_title": title,
+            "release_date": id == 1 ? "2026-01-01" : "2025-01-01", "poster_path": "/test-poster.png"]]
+        ]), statusCode: 200, contentType: "application/json")
+      case ("api.themoviedb.org", "/3/movie/1/release_dates"):
+        return HTTPTransportResponse(data: Data("{\"id\":1,\"results\":[]}".utf8), statusCode: 200,
+          contentType: "application/json")
       case ("api.themoviedb.org", "/3/movie/1/alternative_titles"):
         return HTTPTransportResponse(data: Data("{\"id\":1,\"titles\":[]}".utf8), statusCode: 200,
           contentType: "application/json")

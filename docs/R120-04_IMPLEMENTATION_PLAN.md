@@ -4,9 +4,11 @@ Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/18
 
 ## Authorization and phase
 
-All six proposal points were individually approved in this chat. The user then explicitly approved
-starting implementation. Implementation is authorized; commit, formal Validation, Acceptance Testing,
-merge, and push are not authorized. Preserve unrelated Xcode user data and parser SwiftPM state.
+All six proposal points and the subsequent eight naming points were individually approved.
+The user approved the Implementation Phase; its changes were committed as `04019a5`.
+Acceptance Testing and the AT-01–AT-22 scenario/test additions are now explicitly approved.
+Acceptance changes must remain uncommitted until the user approves the completed phase.
+Formal Validation, merge, and push are not authorized. Preserve unrelated Xcode user data and parser SwiftPM state.
 
 Baseline: current develop, tracked tree clean at start. Work on feature/explicit-identifiers-local-information.
 Use Information terminology throughout new code, documentation, and UI. Existing unrelated Evidence APIs
@@ -94,18 +96,22 @@ need not be renamed. No new module, dependency, watcher, polling, recursion, or 
 - [ ] Point 5 implemented and focused checks recorded.
 - [x] Point 6 format/budget checks integrated and recorded with point 3.
 - [ ] Independent whole-issue review PASS; no open Critical/Important findings.
-- [ ] Implementation presented for user approval; no implementation commit yet.
+- [x] Implementation approved and committed as `04019a5`.
 
 Use Swift Testing for unit/integration tests and installed swift-style-guide for Swift edits/review. Run only
 issue-relevant focused coherence checks during implementation, with raw logs in /private/tmp/R120-04-*.log.
-No SwiftLint until separately authorized Validation. No app launch, Finder registration, live credentials,
-movie folders, or icon mutation on user data. Formal four-part Validation and executable Acceptance/E2E phases
-remain separately authorized. Existing R120-03 acceptance limitations are historical, not this issue's PASS.
+No SwiftLint until separately authorized Validation. Acceptance permits isolated test-app launches and icon
+operations only on disposable test folders. No Finder registration, live credentials, or user movie-folder
+mutation. Formal four-part Validation still requires separate authorization. Existing R120-03 acceptance
+limitations are historical, not this issue's PASS.
 
 ## Findings, decisions, and results
 
-Implementation checks and review findings are recorded below. Formal Validation and Acceptance Testing have
-not started; no live app or Finder runtime checks have been performed.
+Implementation checks and review findings are recorded below. Formal Validation has not started.
+Acceptance Testing is in progress: the dedicated acceptance scheme builds, and the existing isolated native
+window smoke test passed (one test, zero failures; `/private/tmp/R120-04-acceptance-native-main.log`).
+This readiness result does not establish R120-04 scenario coverage. No Finder registration or live-user-data
+runtime checks have been performed. Detailed BDD coverage/results belong to the acceptance specifications/report.
 
 - Branch created from develop; unrelated untracked files preserved. One implementation worker owns source
   and tests across the points; Root owns documentation and design decisions. Independent final review follows.

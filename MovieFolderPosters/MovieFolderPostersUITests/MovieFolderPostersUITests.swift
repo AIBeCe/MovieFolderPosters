@@ -30,7 +30,7 @@ class MovieFolderPostersUITestCase: XCTestCase {
   }
 
   /// Enables deterministic metadata responses without configuring a real credential.
-  fileprivate func seedFixtureMode(sharedRoot: URL) throws {
+  func seedFixtureMode(sharedRoot: URL) throws {
     let storageRoot = sharedRoot.standardizedFileURL
     let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)
     let settingsDirectory = storageRoot
@@ -43,7 +43,7 @@ class MovieFolderPostersUITestCase: XCTestCase {
 
   /// Adds a configured collection through the host app's native directory chooser.
   @MainActor
-  fileprivate func addCollection(at collectionRoot: URL, in app: XCUIApplication, main: XCUIElement) {
+  func addCollection(at collectionRoot: URL, in app: XCUIApplication, main: XCUIElement) {
     let addWindow = openCollectionSetup(at: collectionRoot, in: app, from: main)
     let addButton = addWindow.buttons["Add Collection"]
     XCTAssertTrue(addButton.isEnabled)
@@ -53,7 +53,7 @@ class MovieFolderPostersUITestCase: XCTestCase {
 
   /// Selects and prepares a folder through the host app's security-scoped directory chooser.
   @MainActor
-  fileprivate func openCollectionSetup(
+  func openCollectionSetup(
     at collectionRoot: URL, in app: XCUIApplication, from main: XCUIElement
   ) -> XCUIElement {
     main.buttons["Add collection"].click()
@@ -79,8 +79,12 @@ class MovieFolderPostersUITestCase: XCTestCase {
     return addWindow
   }
 
-  /// Writes one real saved unresolved result into the same isolated persistent namespaces as the app.
-  fileprivate func seedUnresolvedOutcome(collectionRoot: URL, child: URL, sharedRoot: URL) throws {
+  /// Writes a saved result into the app's isolated namespaces; manual selection remains the default.
+  /// Retry journeys explicitly request a failed metadata outcome admitted by the real retry contract.
+  func seedUnresolvedOutcome(
+    collectionRoot: URL, child: URL, sharedRoot: URL,
+    state: FolderProcessingState = .unresolved, reason: FolderProcessingReason = .manualMatchingRequired
+  ) throws {
     let storageRoot = sharedRoot.standardizedFileURL
     let shared = storageRoot.appendingPathComponent("Shared", isDirectory: true)
     let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)
@@ -104,16 +108,16 @@ class MovieFolderPostersUITestCase: XCTestCase {
     let processing = CollectionProcessingStore(
       store: try CollectionProcessingStorageNamespace.open(in: shared, using: storeFactory),
       configuration: repository)
-    var state = try processing.recordProcessingStart(context: context, action: .automatic)
-    state.folders = [FolderProcessingRecord(
+    var processingState = try processing.recordProcessingStart(context: context, action: .automatic)
+    processingState.folders = [FolderProcessingRecord(
       name: child.lastPathComponent,
       identity: try fileSystem.readCurrentFolderCandidate(ofChild: child.lastPathComponent,
         in: collectionRoot).identity,
-      state: .unresolved, reason: .manualMatchingRequired)]
-    state.isInventoryComplete = true
-    state.inspectedAt = Date()
-    state.currentRun?.runState = .partial
-    _ = try processing.commit(state, expectedRevision: state.revision)
+      state: state, reason: reason)]
+    processingState.isInventoryComplete = true
+    processingState.inspectedAt = Date()
+    processingState.currentRun?.runState = .partial
+    _ = try processing.commit(processingState, expectedRevision: processingState.revision)
     configuration = try repository.read()
     XCTAssertTrue(configuration.usesStubTMDbResponses)
   }
@@ -149,7 +153,7 @@ class MovieFolderPostersUITestCase: XCTestCase {
 
   /// Waits for a context action to become available after its collection is saved.
   @MainActor
-  fileprivate func waitUntilEnabled(_ element: XCUIElement) {
+  func waitUntilEnabled(_ element: XCUIElement) {
     let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: element)
     XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed)
   }
@@ -168,7 +172,7 @@ class MovieFolderPostersUITestCase: XCTestCase {
 
   /// Opens the existing Matching Defaults Settings window and waits until its controls are queryable.
   @MainActor
-  fileprivate func openMatchingDefaults(in app: XCUIApplication) -> XCUIElement {
+  func openMatchingDefaults(in app: XCUIApplication) -> XCUIElement {
     app.windows["Movie Folder Posters"].buttons["Settings"].click()
     let matchingTab = app.toolbars.buttons["Matching Defaults"]
     XCTAssertTrue(matchingTab.waitForExistence(timeout: 5))
@@ -404,6 +408,7 @@ final class MovieFolderPostersMovieSelectionUITests: MovieFolderPostersUITestCas
     let (app, root) = support.launchIsolatedApp()
     let main = app.windows["Movie Folder Posters"]
     XCTAssertTrue(main.waitForExistence(timeout: 10))
+    configureGlobalLanguage("pt-BR", in: app)
     try performChooseMovieJourney(app: app, root: root, main: main)
   }
 
