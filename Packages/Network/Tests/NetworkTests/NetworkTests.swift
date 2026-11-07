@@ -490,7 +490,7 @@ private func controlledTransport() -> URLSessionTransport {
 @Test func urlSessionTransportBoundsResponseAndStopsTask() async throws {
   let transport = controlledTransport()
   let request = URLRequest(url: requiredURL("https://transport.test/oversized"))
-  await #expect(throws: TMDbError.responseTooLarge) { try await transport.send(request) }
+  await #expect(throws: HTTPTransportError.responseTooLarge) { try await transport.send(request) }
   ControlledURLProtocol.waitForStop(path: "/oversized")
   #expect(ControlledURLProtocol.recordedStoppedPaths().contains("/oversized"))
 }

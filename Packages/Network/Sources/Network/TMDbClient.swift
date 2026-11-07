@@ -353,6 +353,22 @@ extension TMDbClient {
     } catch let error as URLError where error.code == .cancelled {
       await completeRequest(purpose: purpose, result: .cancelled, recordingTicket: recordingTicket)
       throw CancellationError()
+    } catch let error as HTTPTransportError {
+      let failure: TMDbError
+      let result: TMDbRequestCompletionResult
+      switch error {
+      case .nonHTTPResponse:
+        failure = .malformedResponse
+        result = .transportFailure
+      case .responseTooLarge:
+        failure = .responseTooLarge
+        result = .responseTooLarge
+      case .transport(let code):
+        failure = .transport(code: code)
+        result = .transportFailure
+      }
+      await completeRequest(purpose: purpose, result: result, recordingTicket: recordingTicket)
+      throw failure
     } catch let error as TMDbError where error == .responseTooLarge {
       await completeRequest(
         purpose: purpose, result: .responseTooLarge, recordingTicket: recordingTicket)

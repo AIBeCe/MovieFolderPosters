@@ -118,6 +118,30 @@ func observesHTTPAndTransportFailures(
   #expect(observations.completed.first?.1 == expected)
 }
 
+/// Translates generic transport failures and records their completion against the original request ticket.
+@Test(arguments: [
+  (HTTPTransportError.nonHTTPResponse, TMDbError.malformedResponse, TMDbRequestCompletionResult.transportFailure),
+  (.responseTooLarge, .responseTooLarge, .responseTooLarge),
+  (.transport(code: -1009), .transport(code: -1009), .transportFailure)
+])
+func translatesHTTPTransportFailures(
+  error: HTTPTransportError, expectedError: TMDbError, expectedResult: TMDbRequestCompletionResult
+) async throws {
+  let ticket = UUID()
+  let delegate = TMDbRequestObservationRecorderDelegate(recordingTicket: ticket)
+  let transport = ScriptedHTTPTransport([.failure(error)])
+  let tmdbClient = try TMDbClient(
+    token: TMDbAccessToken("token"), transport: transport, requestDelegate: delegate)
+
+  await #expect(throws: expectedError) { try await tmdbClient.validateCredential() }
+
+  let observations = await delegate.captured()
+  #expect(observations.completed.count == 1)
+  #expect(observations.completed.first?.0 == .credentialValidation)
+  #expect(observations.completed.first?.1 == expectedResult)
+  #expect(observations.completed.first?.2 == ticket)
+}
+
 /// Records response-size rejection at the HTTP boundary.
 @Test func observesOversizedResponse() async throws {
   let delegate = TMDbRequestObservationRecorderDelegate()

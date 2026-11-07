@@ -12,7 +12,14 @@ public protocol HTTPTransport: Sendable {
   func send(_ request: URLRequest) async throws -> HTTPTransportResponse
 }
 
-/// The response data and HTTP metadata needed by the TMDb client.
+/// Failures produced while reading an HTTP response.
+public enum HTTPTransportError: Error, Equatable, Sendable {
+  case nonHTTPResponse
+  case responseTooLarge
+  case transport(code: Int)
+}
+
+/// The response data and selected HTTP metadata returned by a transport.
 public struct HTTPTransportResponse: Sendable {
   /// The response body, limited by the transport's configured maximum size.
   public let data: Data
@@ -175,20 +182,20 @@ public final class URLSessionTransport: HTTPTransport {
   ///
   /// - Parameter request: The request to send.
   /// - Returns: The response body and HTTP metadata.
-  /// - Throws: ``TMDbError`` for transport and response-limit failures, or cancellation.
+  /// - Throws: ``HTTPTransportError`` for transport and response-limit failures, or cancellation.
   public func send(_ request: URLRequest) async throws -> HTTPTransportResponse {
     do {
       let (bytes, response) = try await session.bytes(for: request)
       defer { bytes.task.cancel() }
       try Task.checkCancellation()
-      guard let http = response as? HTTPURLResponse else { throw TMDbError.malformedResponse }
+      guard let http = response as? HTTPURLResponse else { throw HTTPTransportError.nonHTTPResponse }
       if http.expectedContentLength > Int64(Self.maximumResponseBytes) {
-        throw TMDbError.responseTooLarge
+        throw HTTPTransportError.responseTooLarge
       }
       var data = Data()
       for try await byte in bytes {
         try Task.checkCancellation()
-        guard data.count < Self.maximumResponseBytes else { throw TMDbError.responseTooLarge }
+        guard data.count < Self.maximumResponseBytes else { throw HTTPTransportError.responseTooLarge }
         data.append(byte)
       }
       return HTTPTransportResponse(
@@ -197,14 +204,14 @@ public final class URLSessionTransport: HTTPTransport {
         retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
     } catch is CancellationError {
       throw CancellationError()
-    } catch let error as TMDbError {
+    } catch let error as HTTPTransportError {
       throw error
     } catch let error as URLError where error.code == .cancelled {
       throw CancellationError()
     } catch let error as URLError {
-      throw TMDbError.transport(code: error.code.rawValue)
+      throw HTTPTransportError.transport(code: error.code.rawValue)
     } catch {
-      throw TMDbError.transport(code: (error as NSError).code)
+      throw HTTPTransportError.transport(code: (error as NSError).code)
     }
   }
 }
