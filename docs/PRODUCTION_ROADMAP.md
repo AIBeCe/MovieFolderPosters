@@ -418,13 +418,15 @@ GitHub issue: [#17](https://github.com/AIBeCe/MovieFolderPosters/issues/17); mil
 
 GitHub issue: [#18](https://github.com/AIBeCe/MovieFolderPosters/issues/18); milestone: [1.2.0](https://github.com/AIBeCe/MovieFolderPosters/milestone/4).
 
-- [ ] Scope: Validate labelled TMDb/IMDb identifiers and support explicitly enabled read-only NFO and immediate video-name evidence. Define precedence and conflicts before combining evidence sources.
-- Dependencies: Previous deliverable in this release; previous release baseline.
-- Acceptance: Conflicting IDs, malformed NFO, uninformative names, symlinks, and replaced files remain safe. No recursive media scan or sidecar write is introduced; reading movie-adjacent data requires the approved scoped workflow.
-- Source ideas: E18, N11, N12, N13, N19.
+Status: **Implemented, acceptance-tested, validated, and integrated into `develop` on 2026-11-07** by
+fast-forward from `feature/explicit-identifiers-local-information` to `3d75e7f`. Implementation, persistent
+BDD/UI acceptance coverage, and Validation changes are committed. See the [acceptance and validation report](R120-04_ACCEPTANCE_REPORT.md)
+for per-scenario results and execution limits.
 
-The earlier parser fix recognizes bracketed database codes only as suffix metadata. This issue still
-owns provider-validated identifier matching and any use of NFO or video-name evidence.
+- [x] Scope: Validate labelled TMDb/IMDb identifiers and support explicitly enabled read-only NFO, immediate video-name, and immediate image-name information. Define precedence and conflicts before combining information sources.
+- Dependencies: Previous deliverable in this release; previous release baseline.
+- Acceptance: Persistent BDD and full-app UI tests cover explicit identifiers, local-source settings and precedence, conflict/manual resolution, freshness, cancellation, persistence, NFO safety, symlinks, replacements, and scope limits. All 22 scenarios and 34 behavioral test methods have passing latest results. One full UI run had a direct-identifier menu failure; its focused rerun passed. The host test target remains blocked by unrelated actor-isolation compile errors, and repository-wide SwiftLint retains three baseline warnings in an unchanged helper; issue-scoped strict lint is clean. Details and evidence are in the acceptance report.
+- Source ideas: E18, N11, N12, N13, N19.
 
 <a id="r120-05"></a>
 

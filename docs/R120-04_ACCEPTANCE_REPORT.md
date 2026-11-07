@@ -4,7 +4,8 @@ Issue: [R120-04, explicit identifiers and opt-in local information](https://gith
 
 Scenario BDD definitions and requirement mappings are in [R120-04_ACCEPTANCE_TESTS.md](R120-04_ACCEPTANCE_TESTS.md).
 This report preserves each executed result. Validation reran the complete issue BDD and UI suites; the previously
-untested standalone IMDb-only UI journey now passes. Acceptance Testing remains incomplete pending phase review.
+untested standalone IMDb-only UI journey now passes. The user approved the completed Acceptance Testing and
+Validation phases; limitations and the failed-then-passing focused UI rerun remain recorded below.
 
 ## Execution summary
 

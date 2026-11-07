@@ -6,9 +6,9 @@ Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/18
 
 All six proposal points and the subsequent eight naming points were individually approved.
 The user approved the Implementation Phase; its changes were committed as `04019a5`.
-Acceptance Testing and the AT-01–AT-22 scenario/test additions are now explicitly approved.
-Acceptance changes must remain uncommitted until the user approves the completed phase.
-Formal Validation, merge, and push are not authorized. Preserve unrelated Xcode user data and parser SwiftPM state.
+Acceptance Testing was approved and committed as `76d2820`; Validation was approved and committed as `3d75e7f`.
+The user authorized feature completion. The feature was fast-forwarded into `develop` on 2026-11-07, and
+documentation was updated there. Preserve unrelated Xcode user data and parser SwiftPM state.
 
 Baseline: current develop, tracked tree clean at start. Work on feature/explicit-identifiers-local-information.
 Use Information terminology throughout new code, documentation, and UI. Existing unrelated Evidence APIs
@@ -93,25 +93,39 @@ need not be renamed. No new module, dependency, watcher, polling, recursion, or 
 - [x] Point 2 implemented and focused checks recorded.
 - [x] Point 3 implemented and focused checks recorded; independent review PASS after I2/I3.
 - [x] Point 4 implemented and focused checks recorded; scoped independent review PASS.
-- [ ] Point 5 implemented and focused checks recorded.
+- [x] Point 5 implemented and focused checks recorded.
 - [x] Point 6 format/budget checks integrated and recorded with point 3.
-- [ ] Independent whole-issue review PASS; no open Critical/Important findings.
+- [x] Scoped independent reviews completed for implementation points and Validation cleanup; no open
+  Critical/Important findings were reported in those reviews.
 - [x] Implementation approved and committed as `04019a5`.
 
-Use Swift Testing for unit/integration tests and installed swift-style-guide for Swift edits/review. Run only
-issue-relevant focused coherence checks during implementation, with raw logs in /private/tmp/R120-04-*.log.
-No SwiftLint until separately authorized Validation. Acceptance permits isolated test-app launches and icon
-operations only on disposable test folders. No Finder registration, live credentials, or user movie-folder
-mutation. Formal four-part Validation still requires separate authorization. Existing R120-03 acceptance
-limitations are historical, not this issue's PASS.
+## Acceptance, Validation, and integration outcome
+
+- All 22 BDD scenarios and 34 acceptance/full-app UI test methods have passing latest results. A post-cleanup
+  complete UI execution recorded 10 passing methods and one direct-identifier context-menu failure; the failed
+  method then passed in isolation against the final build. The report retains both outcomes.
+- Validation evidence and limitations are recorded in [R120-04 acceptance and validation](R120-04_ACCEPTANCE_REPORT.md).
+  Issue-scoped strict SwiftLint found zero violations across 35 changed/new Swift files. The configured
+  repository-wide lint reported three existing warnings in the unchanged shared UI test helper. The host test
+  target could not compile because unrelated actor-isolation errors in three other host test types block it.
+- Implementation commit: `04019a5`; Acceptance commit: `76d2820`; Validation commit: `3d75e7f`.
+- Fast-forward integration commit on `develop`: `3d75e7f`. No Finder registration, live credentials, or live
+  movie-folder modifications were performed. The feature is integrated; release publication is not implied.
+
+Implementation used Swift Testing for unit/integration tests and the installed swift-style-guide. Focused
+implementation logs are in `/private/tmp/R120-04-*.log`; final Validation included issue-scoped SwiftLint and
+the other checks documented in the report. Acceptance used isolated test-app launches and disposable test
+folders. No Finder registration, live credentials, or user movie-folder mutation occurred. Existing R120-03
+acceptance limitations are historical and are not counted as this issue's results.
 
 ## Findings, decisions, and results
 
-Implementation checks and review findings are recorded below. Formal Validation has not started.
-Acceptance Testing is in progress: the dedicated acceptance scheme builds, and the existing isolated native
-window smoke test passed (one test, zero failures; `/private/tmp/R120-04-acceptance-native-main.log`).
-This readiness result does not establish R120-04 scenario coverage. No Finder registration or live-user-data
-runtime checks have been performed. Detailed BDD coverage/results belong to the acceptance specifications/report.
+The following checks and review findings preserve the implementation and acceptance history. At that point,
+Formal Validation had not started and Acceptance Testing was still in progress. The dedicated acceptance scheme
+built, and the existing isolated native-window smoke test passed (one test, zero failures;
+`/private/tmp/R120-04-acceptance-native-main.log`). That readiness result did not establish R120-04 scenario
+coverage. No Finder registration or live-user-data runtime checks were performed. The final phase outcomes are
+recorded in the Acceptance, Validation, and integration section above.
 
 - Branch created from develop; unrelated untracked files preserved. One implementation worker owns source
   and tests across the points; Root owns documentation and design decisions. Independent final review follows.
