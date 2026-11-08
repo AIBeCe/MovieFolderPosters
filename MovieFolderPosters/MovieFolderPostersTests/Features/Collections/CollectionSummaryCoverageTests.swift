@@ -1,6 +1,6 @@
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -84,7 +84,7 @@ struct CollectionSummaryCoverageTests {
     withExtendedLifetime(persistenceAccess) {}
   }
 
-  /// Old credentials invalidate headline counts without deleting historical folder evidence.
+  /// Old access tokens invalidate headline counts without deleting historical folder evidence.
   @Test(arguments: [false, true])
   func staleResultsKeepEvidenceButHideCounts(holdsAccess: Bool) async throws {
     let fixture = try SummaryStorageFixture()

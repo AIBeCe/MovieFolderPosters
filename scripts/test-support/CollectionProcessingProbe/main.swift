@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 
 /// Failures detected while observing collection-state consistency across processes.

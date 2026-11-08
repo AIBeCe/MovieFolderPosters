@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 
 /// One saved outcome processing state and the freshness state used to present it.
@@ -85,15 +85,11 @@ nonisolated struct CollectionSummaryService: CollectionSummaryServicing {
   private let processingLockStore: PersistenceStore
 
   /// Opens shared host read dependencies without exposing UI services to the Finder target.
-  static func shared() throws -> CollectionSummaryService {
-    let locations = MovieFolderSystemStorageLocations()
-    let sharedContainer = try locations.appGroupContainerURL()
-
-    return CollectionSummaryService(
-      configuration: try MovieFolderEnvironment.makeConfigurationRepository(),
-      processingStore: try MovieFolderEnvironment.makeCollectionProcessingStore(),
-      processingLockStore: try locations.makePersistenceStore(
-        directory: sharedContainer.appendingPathComponent("ProcessingLocks")))
+  static func shared(services: MovieFolderServiceFactory) throws -> CollectionSummaryService {
+    try CollectionSummaryService(
+      configuration: services.makeConfigurationRepository(),
+      processingStore: services.makeCollectionProcessingStore(),
+      processingLockStore: services.makeProcessingLockStore())
   }
 
   /// Creates a summary reader from the stores shared by the host and Finder extension.

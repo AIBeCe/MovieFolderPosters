@@ -1,6 +1,5 @@
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Testing
 
 @testable import MovieFolderPosters
@@ -84,7 +83,7 @@ struct MoviePosterActionViewModelCoverageTests {
 
 /// Literal recovery expectations independent of the production message formatter.
 enum ActionFailureCase: CaseIterable, Sendable {
-  case busy, unresolved, foreignIcon, changedIdentity, noPoster, settingsBusy, noCredential, unavailable,
+  case busy, unresolved, foreignIcon, changedIdentity, noPoster, settingsBusy, noAccessToken, unavailable,
     removedCollection, changedConfiguration, changedChild, invalidSelection, invalidQuery, provider, other
 
   /// Failure delivered at the external service boundary.
@@ -96,14 +95,14 @@ enum ActionFailureCase: CaseIterable, Sendable {
     case .changedIdentity: PosterActionError.changedIdentity
     case .noPoster: PosterActionError.noPoster
     case .settingsBusy: ConfigurationError.busy
-    case .noCredential: MoviePosterActionServiceError.credentialUnavailable
+    case .noAccessToken: MoviePosterActionServiceError.accessTokenUnavailable
     case .unavailable: MoviePosterActionServiceError.directoryUnavailable
     case .removedCollection: MoviePosterActionServiceError.directoryNotConfigured
     case .changedConfiguration: MoviePosterActionServiceError.configurationChanged
     case .changedChild: MoviePosterActionServiceError.childChanged
     case .invalidSelection: MoviePosterActionServiceError.invalidSelection
     case .invalidQuery: MoviePosterActionServiceError.invalidQuery
-    case .provider: TMDbError.authentication
+    case .provider: MovieMetadataError.authentication
     case .other: NSError(domain: "Fixture", code: 42, userInfo: [NSLocalizedDescriptionKey: "Fixture unavailable"])
     }
   }
@@ -117,7 +116,7 @@ enum ActionFailureCase: CaseIterable, Sendable {
     case .changedIdentity, .changedChild: "This movie folder changed. Reopen the action and try again."
     case .noPoster: "TMDb does not have a usable poster for this movie."
     case .settingsBusy: "Settings are being updated. Try this action again shortly."
-    case .noCredential: "Add a TMDb read access token in Settings to use this action."
+    case .noAccessToken: "Add a TMDb read access token in Settings to use this action."
     case .unavailable: "Could not access the configured movie folder."
     case .removedCollection: "This folder is no longer configured."
     case .changedConfiguration: "Directory configuration changed. Please try again."
@@ -146,10 +145,10 @@ private actor CoverageActionService: MoviePosterActionServicing {
   }
 
   /// Provides the authorized default language in this isolated service fixture.
-  func searchLanguage(for request: MoviePosterRequest) throws -> TMDbLanguage { .english }
+  func searchLanguage(for request: MoviePosterRequest) throws -> MovieSearchLanguage { .english }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
-                    language: TMDbLanguage = .english) throws -> MovieSearchResult {
+                    language: MovieSearchLanguage = .english) throws -> MovieSearchResult {
     MovieSearchResult(movies: [], hasMorePages: false)
   }
   func refreshPoster(for request: MoviePosterRequest) throws -> Int {

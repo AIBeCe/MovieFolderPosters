@@ -1,6 +1,6 @@
 import AppKit
 import FileSystem
-import MovieFolderCommon
+import Common
 import Persistence
 import XCTest
 

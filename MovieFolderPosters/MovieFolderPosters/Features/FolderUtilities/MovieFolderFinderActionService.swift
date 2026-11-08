@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 
 /// The immediate platform effects, invoked only after explicit host confirmation.
@@ -24,7 +24,7 @@ final class SystemMovieFolderUtilityPlatform: MovieFolderFinderUtilityPlatform {
   func reveal(_ urls: [URL]) { NSWorkspace.shared.activateFileViewerSelecting(urls) }
 }
 
-/// Safe failures without copied metadata, credentials, or filesystem paths.
+/// Safe failures without copied metadata, access tokens, or filesystem paths.
 nonisolated enum MovieFolderUtilityError: Error, LocalizedError {
   case unavailable, changed, unverified, invalidSelection, clipboard
 
@@ -65,7 +65,7 @@ nonisolated struct PreparedMovieFolderUtility: Sendable {
   }
 }
 
-/// Read-only utility admission independent of provider credentials and processing recovery policy.
+/// Read-only utility admission independent of provider access tokens and processing recovery policy.
 nonisolated protocol MovieFolderFinderActionServicing: Sendable {
   /// Reads current configuration separately from saved outcome evidence and verifies the live target.
   @concurrent func inspectionStatus(_ request: MovieFolderContextMenuRequest) async throws -> String

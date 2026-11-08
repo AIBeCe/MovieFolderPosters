@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -13,8 +13,8 @@ enum ConfigurationServiceCall: Equatable {
   case add(URL)
   case remove(UUID)
   case reauthorize(UUID, URL)
-  case saveCredential(String)
-  case removeCredential
+  case saveAccessToken(String)
+  case removeAccessToken
   case setPosterAppearance(PosterAppearance)
 }
 
@@ -25,7 +25,7 @@ struct TestServiceError: Error, Sendable {
 }
 
 /// Thread-safe configuration fake with controllable failures and operation gating.
-final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendable {
+final class ConfigurationServiceFake: TestConfigurationServicing, @unchecked Sendable {
   /// Protects mutable fake state accessed across service calls.
   private let lock = NSLock()
   /// Summary returned by configuration reads and updated by fake mutations.
@@ -42,7 +42,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
   /// Creates a fake with an initial summary and optional operation gate.
   init(
     summary: ConfigurationSummary = ConfigurationSummary(
-      directories: [], credentialConfigured: false, posterAppearance: .softFinish
+      directories: [], accessTokenConfigured: false, posterAppearance: .softFinish
     ),
     gate: AsyncTaskGate? = .none, failsSummaryAfterRemoval: Bool = false
   ) {
@@ -75,7 +75,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
       )
       currentSummary = ConfigurationSummary(
         directories: currentSummary.directories + [status],
-        credentialConfigured: currentSummary.credentialConfigured,
+        accessTokenConfigured: currentSummary.accessTokenConfigured,
         posterAppearance: currentSummary.posterAppearance
       )
     }
@@ -86,7 +86,7 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
     lock.withLock {
       currentSummary = ConfigurationSummary(
         directories: currentSummary.directories.filter { $0.id != identifier },
-        credentialConfigured: currentSummary.credentialConfigured,
+        accessTokenConfigured: currentSummary.accessTokenConfigured,
         posterAppearance: currentSummary.posterAppearance
       )
       if failsSummaryAfterRemoval { nextError = TestServiceError(message: "Refresh unavailable") }
@@ -101,29 +101,29 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
       )
       currentSummary = ConfigurationSummary(
         directories: currentSummary.directories.map { $0.id == identifier ? status : $0 },
-        credentialConfigured: currentSummary.credentialConfigured,
+        accessTokenConfigured: currentSummary.accessTokenConfigured,
         posterAppearance: currentSummary.posterAppearance
       )
     }
   }
 
-  /// Reads credential presence without recording a collection-summary operation.
-  func credentialState() -> CredentialState {
-    lock.withLock { CredentialState(isConfigured: currentSummary.credentialConfigured, revision: .none) }
+  /// Reads access token presence without recording a collection-summary operation.
+  func accessTokenState() -> AccessTokenState {
+    lock.withLock { AccessTokenState(isConfigured: currentSummary.accessTokenConfigured, revision: .none) }
   }
 
   /// Supplies a deterministic diagnostic result without external requests.
-  func testCredential(expectedRevision: UUID?) async throws {
+  func testAccessToken(expectedRevision: UUID?) async throws {
     await gate?.block()
     try Task.checkCancellation()
   }
 
-  func saveCredential(_ value: String, expectedRevision: UUID?) async throws {
-    try await prepare(.saveCredential(value))
+  func saveAccessToken(_ value: String, expectedRevision: UUID?) async throws {
+    try await prepare(.saveAccessToken(value))
     lock.withLock {
       currentSummary = ConfigurationSummary(
         directories: currentSummary.directories,
-        credentialConfigured: true,
+        accessTokenConfigured: true,
         posterAppearance: currentSummary.posterAppearance
       )
     }
@@ -134,18 +134,18 @@ final class ConfigurationServiceFake: ConfigurationServicing, @unchecked Sendabl
     lock.withLock {
       currentSummary = ConfigurationSummary(
         directories: currentSummary.directories,
-        credentialConfigured: currentSummary.credentialConfigured,
+        accessTokenConfigured: currentSummary.accessTokenConfigured,
         posterAppearance: appearance
       )
     }
   }
 
-  func removeCredential(expectedRevision: UUID?) async throws {
-    try await prepare(.removeCredential)
+  func removeAccessToken(expectedRevision: UUID?) async throws {
+    try await prepare(.removeAccessToken)
     lock.withLock {
       currentSummary = ConfigurationSummary(
         directories: currentSummary.directories,
-        credentialConfigured: false,
+        accessTokenConfigured: false,
         posterAppearance: currentSummary.posterAppearance
       )
     }

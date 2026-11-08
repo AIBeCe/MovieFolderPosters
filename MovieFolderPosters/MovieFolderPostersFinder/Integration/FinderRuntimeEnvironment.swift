@@ -1,13 +1,12 @@
 import FileSystem
 import FinderSync
-import MovieFolderCommon
-import Network
+import Common
 import Persistence
 
 /// Supplies signed-process boundaries while the runtime retains authorization and processing configuration.
 nonisolated protocol FinderRuntimeEnvironment: Sendable {
   /// Best-effort activity service retained independently of authorization.
-  var activity: any MovieFolderActivityServicing { get }
+  var activityRecorder: any MovieFolderActivityRecording { get }
   /// Optional signed build evidence written on activation.
   var buildVersion: (String, String)? { get }
   /// Opens the current settings source.
@@ -16,13 +15,13 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   func authorizationStore() throws -> PersistenceStore
   /// Resolves the process's shared storage location.
   func containerURL() throws -> URL
-  /// Reads the shared credential without exposing it to diagnostics.
-  func credential() throws -> String?
+  /// Reads the shared access token without exposing it to diagnostics.
+  func accessToken() throws -> String?
   /// Builds the metadata provider using the same captured settings generation.
   func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider
   /// Builds a provider whose optional HTTP history is scoped to exactly one configured collection.
   /// - Parameters:
-  ///   - token: Saved credential used only by the provider.
+  ///   - token: Saved access token used only by the provider.
   ///   - configuration: Settings captured for this processing generation.
   ///   - collectionID: Stable root identity used for current history eligibility.
   func movieMetadataProvider(
@@ -59,7 +58,18 @@ extension FinderRuntimeEnvironment {
 /// Adapts the signed extension's system services without adding processing configuration.
 nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
   /// Shared recorder used by Finder configuration and processing events.
-  var activity: any MovieFolderActivityServicing { MovieFolderEnvironment.makeActivityRecorder() }
+  let activityRecorder: any MovieFolderActivityRecording
+  private let services: MovieFolderServiceFactory
+  private let networkHistory: any MovieFolderNetworkHistoryRecording
+  private let accessTokenStore: any ProviderAccessTokenStoring
+
+  init(services: MovieFolderServiceFactory) {
+    self.services = services
+    activityRecorder = services.makeActivityRecorder()
+    networkHistory = services.makeNetworkHistoryService()
+    accessTokenStore = services.makeProviderAccessTokenStore()
+  }
+
   /// Host version and build recorded with activation evidence when both are available.
   var buildVersion: (String, String)? {
     guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
@@ -69,13 +79,13 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
   }
 
   func configurationRepository() throws -> ConfigurationRepository {
-    try MovieFolderEnvironment.makeConfigurationRepository()
+    try services.makeConfigurationRepository()
   }
 
-  func authorizationStore() throws -> PersistenceStore { try MovieFolderEnvironment.makePrivateAuthorizationStore() }
-  func containerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
-  func credential() throws -> String? {
-    try MovieFolderEnvironment.makeCredentialStore().read()
+  func authorizationStore() throws -> PersistenceStore { try services.makePrivateAuthorizationStore() }
+  func containerURL() throws -> URL { try services.appGroupContainerURL() }
+  func accessToken() throws -> String? {
+    try accessTokenStore.read()
   }
 
   func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
@@ -98,24 +108,25 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
           throw FolderPosterError.invalidImage
         }
 
-        return TMDbClient(token: try TMDbAccessToken(token), transport: StubTMDbTransport(
-          posterData: try Data(contentsOf: image)))
+        try NetworkAccessTokenValidator().validateAccessToken(token)
+
+        return try NetworkClient(token: token, fixturePosterData: Data(contentsOf: image))
       }
     #endif
 
     let requestDelegate = collectionID.map {
       MovieFolderNetworkRequestRecorder(
-        networkHistoryService: MovieFolderEnvironment.makeNetworkHistoryService(), collectionID: $0)
+        networkHistoryService: networkHistory, collectionID: $0)
     }
 
-    return TMDbClient(token: try TMDbAccessToken(token), requestDelegate: requestDelegate)
+    return try NetworkClient(token: token, requestDelegate: requestDelegate)
   }
 
   func processingStore() throws -> CollectionProcessingStore {
-    try MovieFolderEnvironment.makeCollectionProcessingStore()
+    try services.makeCollectionProcessingStore()
   }
   func processingRecoveryService() throws -> ProcessingRecoveryService {
-    try MovieFolderEnvironment.makeProcessingRecoveryService()
+    try services.makeProcessingRecoveryService()
   }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?

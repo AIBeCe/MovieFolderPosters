@@ -7,7 +7,7 @@ trap 'rtk proxy rm -rf "$recovery_probe"' EXIT
 rtk proxy mkdir -p "$recovery_probe/Sources/RecoveryProcessProbe"
 rtk proxy cp "$common_repository/scripts/test-support/RecoveryProcessProbe/main.swift" \
   "$recovery_probe/Sources/RecoveryProcessProbe/"
-for recovery_package in MovieFolderCommon MovieFolderParsing Network FileSystem Persistence Log; do
+for recovery_package in Common MovieFolderParsing Network FileSystem Persistence Log Contracts HTTPTransport TMDb; do
   rtk proxy ln -s "$common_repository/Packages/$recovery_package" "$recovery_probe/$recovery_package"
 done
 rtk proxy tee "$recovery_probe/Package.swift" >/dev/null <<'SWIFT'
@@ -16,8 +16,8 @@ import PackageDescription
 let package = Package(
   name: "RecoveryProcessProbe",
   platforms: [.macOS("26.5")],
-  dependencies: [.package(path: "MovieFolderCommon"), .package(path: "Persistence")],
-  targets: [.executableTarget(name: "RecoveryProcessProbe", dependencies: ["MovieFolderCommon", "Persistence"])],
+  dependencies: [.package(path: "Common"), .package(path: "Persistence")],
+  targets: [.executableTarget(name: "RecoveryProcessProbe", dependencies: ["Common", "Persistence"])],
   swiftLanguageModes: [.v6])
 SWIFT
 SWIFTPM_MODULECACHE_OVERRIDE="$common_cache/module-cache" \

@@ -1,12 +1,30 @@
 import AppKit
 import Foundation
-import MovieFolderCommon
+import Common
 import Testing
 
 @testable import MovieFolderPosters
 
 /// Verifies selection, encoding, privacy, exact previews, and native export controls.
 struct LocalDataExportTests {
+  /// Export can load committed entries through read-only history interfaces.
+  @Test func exportLoadsReadOnlyHistorySources() async {
+    let date = Date(timeIntervalSince1970: 100_000)
+    let activity = MovieFolderActivityLogEntry(
+      id: UUID(), sequence: 1, occurredAt: date, event: .init(action: .collectionAdded, status: .succeeded))
+    let network = MovieFolderNetworkHistoryEntry(
+      id: UUID(), sequence: 2, occurredAt: date,
+      event: .init(purpose: .movieSearch, result: .response(statusCode: 200)))
+    let service = LocalDataExportService(
+      activity: ReadOnlyExportActivity(entry: activity), network: ReadOnlyExportNetwork(entry: network),
+      makeRepository: { throw ConfigurationError.unavailableContainer })
+
+    let inputs = await service.load()
+    #expect(inputs.activity?.map(\.id) == [activity.id])
+    #expect(inputs.network?.map(\.id) == [network.id])
+    #expect(inputs.privacy == .none)
+  }
+
   /// Verifies deliberate selection defaults for a new export.
   @Test func defaultsRequireDeliberateSelection() {
     let model = LocalDataExportOptions(now: Date(timeIntervalSince1970: 100000))
@@ -98,6 +116,16 @@ struct LocalDataExportTests {
     #expect(throws: LocalDataExportFailure.self) { try document.encode() }
   }
 
+}
+
+private struct ReadOnlyExportActivity: MovieFolderActivityReading {
+  let entry: MovieFolderActivityLogEntry
+  func entries() async throws -> [MovieFolderActivityLogEntry] { [entry] }
+}
+
+private struct ReadOnlyExportNetwork: MovieFolderNetworkHistoryReading {
+  let entry: MovieFolderNetworkHistoryEntry
+  func entries() async throws -> [MovieFolderNetworkHistoryEntry] { [entry] }
 }
 
 /// Controlled finite source for stale-preview and availability behavior.
@@ -240,6 +268,79 @@ struct LocalDataExportViewModelTests {
     }
   }
 
+  /// Keeps a late encoding result from publishing after its presentation state changes.
+  @Test(arguments: PreviewInvalidation.allCases)
+  func previewPreparationDiscardsStaleResults(invalidation: PreviewInvalidation) async throws {
+    let source = LocalDataExportSourcesFake(.init(activity: [], network: [], privacy: Data([1])))
+    let preparer = ControlledPreviewPreparer()
+    let model = LocalDataExportViewModel(service: source, readiness: .none, preparer: preparer)
+    await model.reload()
+    model.selection.includesStorage = false
+
+    let firstPreview = Task { try await model.preparePreview() }
+    await preparer.waitUntilHeld()
+    var expectedPreview: Data?
+    switch invalidation {
+    case .selection: model.selection.networkEnabled = true
+    case .reload, .lateError: await model.reload()
+    case .dismissal: model.close()
+    case .cancellation: firstPreview.cancel()
+    case .newerPreview:
+      try await model.preparePreview()
+      expectedPreview = Data([2])
+    }
+    await preparer.release(fails: invalidation == .lateError)
+
+    do {
+      try await firstPreview.value
+      Issue.record("A stale preview completed successfully")
+    } catch LocalDataExportFailure.stale {
+      #expect(model.preview == expectedPreview)
+    }
+  }
+}
+
+/// Presentation changes that can invalidate an in-flight preview.
+nonisolated enum PreviewInvalidation: CaseIterable, Sendable {
+  case selection, reload, dismissal, cancellation, newerPreview, lateError
+}
+
+/// Holds the first preview at the preparation boundary and lets a newer preview finish independently.
+private actor ControlledPreviewPreparer: LocalDataExportPreparing {
+  private var didStart = false
+  private var result: CheckedContinuation<Data, any Error>?
+  private var waiter: CheckedContinuation<Void, Never>?
+
+  func prepare(
+    selection: LocalDataExportOptions, evidence: LocalDataExportInputs,
+    readiness: InstallationReadinessReport?, storage: ApplicationLocalStorageReport?
+  ) async throws -> Data {
+    guard !didStart else { return Data([2]) }
+
+    didStart = true
+
+    return try await withCheckedThrowingContinuation { continuation in
+      result = continuation
+      waiter?.resume()
+      waiter = .none
+    }
+  }
+
+  func waitUntilHeld() async {
+    guard case .none = result else { return }
+
+    await withCheckedContinuation { waiter = $0 }
+  }
+
+  func release(fails: Bool) {
+    let continuation = result
+    result = .none
+    if fails {
+      continuation?.resume(throwing: LocalDataExportFailure.tooLarge)
+    } else {
+      continuation?.resume(returning: Data([1]))
+    }
+  }
 }
 
 /// Verifies native controls and storage presentation for the Local Data window.

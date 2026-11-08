@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -105,7 +105,8 @@ import Testing
     id: rootID, path: "/Movies", availability: .available)
   let viewModel = ConfigurationViewModel(
     service: ConfigurationServiceFake(
-      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false)))
+      summary: ConfigurationSummary(directories: [directory], accessTokenConfigured: false)),
+        activity: MovieFolderActivityServiceFake())
   await viewModel.load()
   let summaryViewModel = CollectionSummaryViewModel(
     service: FixedCollectionSummaryService(summaries: [rootID: summary]))
@@ -180,7 +181,7 @@ func failedOrphanRereadRemainsUnverified(error: CollectionProcessingError) async
   let activity = MovieFolderActivityServiceFake()
   await activity.setFailures(write: true)
   let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: activity)
-  await model.saveCredential("private-test-token")
-  #expect(model.credentialConfigured)
+  await model.saveAccessToken("private-test-token")
+  #expect(model.accessTokenConfigured)
   #expect(model.errorMessage == .none)
 }

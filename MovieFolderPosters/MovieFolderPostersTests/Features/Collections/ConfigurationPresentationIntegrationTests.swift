@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -10,8 +10,8 @@ import Testing
 /// Verifies that main and settings receive shared model updates across visibility changes.
 @MainActor
 @Test func mainAndSettingsReceiveSharedModelUpdatesAcrossVisibilityChanges() async throws {
-  let model = ConfigurationViewModel(service: ConfigurationServiceFake())
-  await model.reloadCredentialState()
+  let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake())
+  await model.reloadAccessTokenState()
   let main = ConfigurationViewController(viewModel: model)
   let table = try #require(nativeViews(in: main.view).compactMap { $0 as? NSTableView }.first)
   let settings = SettingsViewController(
@@ -24,15 +24,15 @@ import Testing
   settings.viewWillAppear()
   settings.viewWillAppear()
   await model.addDirectory(URL(fileURLWithPath: "/Movies"))
-  await model.saveCredential("fake-secret")
+  await model.saveAccessToken("fake-secret")
   #expect(table.numberOfRows == 1)
   #expect(status.stringValue == "Saved token present. Use Test Saved Token to verify access.")
   settings.viewDidDisappear()
-  await model.removeCredential()
+  await model.removeAccessToken()
   #expect(status.stringValue == "Saved token present. Use Test Saved Token to verify access.")
   settings.viewWillAppear()
-  await model.saveCredential("another-fake-secret")
-  await model.removeCredential()
+  await model.saveAccessToken("another-fake-secret")
+  await model.removeAccessToken()
   #expect(status.stringValue == "No token saved.")
 }
 
@@ -64,9 +64,9 @@ import Testing
   let second = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies/B", availability: .available)
   let service = ConfigurationServiceFake(
     summary: ConfigurationSummary(
-      directories: [first, second], credentialConfigured: false
+      directories: [first, second], accessTokenConfigured: false
     ))
-  let model = ConfigurationViewModel(service: service)
+  let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
   await model.load()
   let controller = ConfigurationViewController(viewModel: model)
   let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)

@@ -1,9 +1,8 @@
 import FileSystem
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 
-/// Receives changes to collection and credential presentation state.
+/// Receives changes to collection and access token presentation state.
 @MainActor
 protocol ConfigurationViewModelDelegate: AnyObject {
   /// Reports that one or more view-model properties changed.
@@ -23,12 +22,16 @@ protocol ConfigurationViewModelActivityDelegate: AnyObject {
 @MainActor
 final class ConfigurationViewModel {
   /// Reads and changes collection settings outside the view layer.
-  private let service: any ConfigurationServicing
+  private let collections: any CollectionConfigurationServicing
+  /// Persists application-wide settings from presentation actions.
+  private let preferences: any ConfigurationPreferencesWriting
+  /// Reads and changes the provider access token through revision-checked operations.
+  private let accessTokens: any AccessTokenManaging
   /// Dedicated durable gate, independent of configuration generation and processing results.
   private let recovery: ProcessingRecoveryService?
 
   /// Required retained best-effort recorder; weak observers never control persistence.
-  private let activity: any MovieFolderActivityServicing
+  private let activity: any MovieFolderActivityRecording
 
   /// Weakly retains one view-model observer without extending its lifetime.
   private struct WeakDelegate {
@@ -59,30 +62,30 @@ final class ConfigurationViewModel {
 
   /// Current configured collection rows and their latest availability evidence.
   private(set) var directories: [ConfiguredDirectoryStatus] = []
-  /// Whether a TMDb credential was present at the last successful load.
-  private(set) var credentialConfigured = false
-  /// Last explicitly loaded credential presence and generation; never contains token text.
-  private(set) var credentialState: CredentialState?
-  /// Safe status of the latest credential action, independent of unrelated settings errors.
-  private(set) var credentialMessage: String?
-  /// Whether the credential status represents a failed operation.
-  private(set) var isCredentialError = false
-  /// Whether a credential service operation is still running or draining cancellation.
-  private(set) var isCredentialActionRunning = false
-  /// Whether cancellation has been requested for the current credential operation.
-  private(set) var isCancellingCredentialAction = false
+  /// Whether a TMDb access token was present at the last successful load.
+  private(set) var accessTokenConfigured = false
+  /// Last explicitly loaded access token presence and generation; never contains token text.
+  private(set) var accessTokenState: AccessTokenState?
+  /// Safe status of the latest access token action, independent of unrelated settings errors.
+  private(set) var accessTokenMessage: String?
+  /// Whether the access token status represents a failed operation.
+  private(set) var isAccessTokenError = false
+  /// Whether an access token service operation is still running or draining cancellation.
+  private(set) var isAccessTokenActionRunning = false
+  /// Whether cancellation has been requested for the current access token operation.
+  private(set) var isCancellingAccessTokenAction = false
   /// Retains the actual service call until it has finished, including cancellation cleanup.
-  private var credentialTask: Task<Void, any Error>?
-  /// Whether the active credential operation only tests the saved token.
-  private var isTestingSavedCredential = false
+  private var accessTokenTask: Task<Void, any Error>?
+  /// Whether the active access token operation only tests the saved token.
+  private var isTestingSavedAccessToken = false
   /// Rejects success presentation after configuration invalidated an outstanding test.
-  private var isCredentialTestInvalidated = false
+  private var isAccessTokenTestInvalidated = false
   /// Identifies the latest presence read so older responses cannot overwrite newer state.
-  private var credentialReadID = UUID()
+  private var accessTokenReadID = UUID()
   /// Distinguishes temporary diagnostic evidence from a change's completion feedback.
-  private var hasCredentialDiagnosticResult = false
+  private var hasAccessTokenDiagnosticResult = false
   /// Associates change feedback with the generation read after its operation returned.
-  private var credentialResultState: CredentialState?
+  private var accessTokenResultState: AccessTokenState?
   /// The appearance used when processing posters.
   private(set) var posterAppearance: PosterAppearance = .softFinish
   /// Application defaults shown by Settings and copied into new setup drafts.
@@ -115,7 +118,7 @@ final class ConfigurationViewModel {
     }
     let accessible = directories.filter { $0.availability == .available }.count
     let token =
-      credentialConfigured
+      accessTokenConfigured
       ? "Configured; provider validation was not performed."
       : "Not configured. Save a read access token in Settings."
 
@@ -128,13 +131,22 @@ final class ConfigurationViewModel {
 
   /// Creates a model backed by the supplied configuration service.
   ///
-  /// - Parameter service: The service used for configuration operations.
+  /// - Parameters:
+  ///   - collections: Summary and collection changes.
+  ///   - preferences: Application-wide preferences.
+  ///   - accessTokens: Provider access token management.
+  ///   - activity: Records the results of configuration operations.
+  ///   - recovery: Shared processing admission.
   init(
-    service: any ConfigurationServicing,
-    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
+    collections: any CollectionConfigurationServicing,
+    preferences: any ConfigurationPreferencesWriting,
+    accessTokens: any AccessTokenManaging,
+    activity: any MovieFolderActivityRecording,
     recovery: ProcessingRecoveryService? = .none
   ) {
-    self.service = service
+    self.collections = collections
+    self.preferences = preferences
+    self.accessTokens = accessTokens
     self.activity = activity
     self.recovery = recovery
   }
@@ -150,9 +162,9 @@ final class ConfigurationViewModel {
     }
     let task = Task {
       await perform(action: .configurationLoaded, failureMessage: "Could not load configuration.") {
-        try await self.service.configurationSummary()
+        try await self.collections.configurationSummary()
       }
-      await reloadCredentialState()
+      await reloadAccessTokenState()
       await reloadRecoveryMode()
     }
     configurationLoadTask = task
@@ -198,9 +210,9 @@ final class ConfigurationViewModel {
   /// - Parameter directory: The folder selected by the user.
   func addDirectory(_ directory: URL) async {
     await perform(action: .collectionAdded, failureMessage: "Could not add this folder.") {
-      try await self.service.addDirectory(directory)
+      try await self.collections.addDirectory(directory)
 
-      return try await self.service.configurationSummary()
+      return try await self.collections.configurationSummary()
     }
   }
 
@@ -216,7 +228,7 @@ final class ConfigurationViewModel {
     errorMessage = .none
     publish()
     do {
-      try await service.removeDirectory(identifier)
+      try await collections.removeDirectory(identifier)
     } catch {
       errorMessage = "Could not remove this folder."
       await recordActivity(action: .collectionRemoved, status: .failed,
@@ -228,7 +240,7 @@ final class ConfigurationViewModel {
     }
 
     // The service records committed removal before cleanup or presentation refresh can fail.
-    do { apply(try await service.configurationSummary()) } catch {
+    do { apply(try await collections.configurationSummary()) } catch {
       errorMessage = "The collection was removed, but its displayed status could not be refreshed. Try Refresh Status."
     }
     isBusy = false
@@ -245,9 +257,9 @@ final class ConfigurationViewModel {
       action: .collectionAccessRestored, collectionID: identifier,
       failureMessage: "Could not restore access to this folder."
     ) {
-      try await self.service.reauthorizeDirectory(identifier, directory)
+      try await self.collections.reauthorizeDirectory(identifier, directory)
 
-      return try await self.service.configurationSummary()
+      return try await self.collections.configurationSummary()
     }
   }
 
@@ -262,9 +274,9 @@ final class ConfigurationViewModel {
       action: .posterAppearanceSaved, failureMessage: "Could not save the poster appearance.",
       onFailure: { self.posterAppearance = previousAppearance },
       operation: {
-        try await self.service.setPosterAppearance(appearance)
+        try await self.preferences.setPosterAppearance(appearance)
 
-        return try await self.service.configurationSummary()
+        return try await self.collections.configurationSummary()
       }
     )
   }
@@ -273,9 +285,9 @@ final class ConfigurationViewModel {
   /// - Parameter limit: Maximum provider search pages, one through five.
   func setSearchPageLimit(_ limit: Int) async {
     await perform(action: .movieMatchingConfigurationSaved, failureMessage: "Could not save matching settings.") {
-      try await self.service.setSearchPageLimit(limit)
+      try await self.preferences.setSearchPageLimit(limit)
 
-      return try await self.service.configurationSummary()
+      return try await self.collections.configurationSummary()
     }
   }
 
@@ -283,9 +295,9 @@ final class ConfigurationViewModel {
   /// - Parameter configuration: Current matching choices, including the selected search language.
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) async {
     await perform(action: .movieMatchingConfigurationSaved, failureMessage: "Could not save matching settings.") {
-      try await self.service.setMovieMatchingConfiguration(configuration)
+      try await self.preferences.setMovieMatchingConfiguration(configuration)
 
-      return try await self.service.configurationSummary()
+      return try await self.collections.configurationSummary()
     }
   }
 
@@ -296,21 +308,10 @@ final class ConfigurationViewModel {
   func renameCollection(_ identifier: UUID, displayName: String) async {
     await perform(action: .collectionRenamed, collectionID: identifier,
       failureMessage: "Could not rename this collection.") {
-      try await self.service.renameCollection(identifier, displayName: displayName)
+      try await self.collections.renameCollection(identifier, displayName: displayName)
 
-      return try await self.service.configurationSummary()
+      return try await self.collections.configurationSummary()
     }
-  }
-
-  /// Creates an independent setup draft; changing it does not alter persisted application preferences.
-  /// - Returns: A new uncommitted setup model initialized from the currently loaded defaults.
-  func makeCollectionSetupViewModel() -> CollectionSetupViewModel {
-    CollectionSetupViewModel(service: service, applicationConfiguration: movieMatchingConfiguration)
-  }
-
-  /// Creates a finite edit draft sharing Main's serialized persistence boundary.
-  func makeCollectionEditViewModel(identifier: UUID) -> CollectionEditViewModel {
-    CollectionEditViewModel(identifier: identifier, service: service)
   }
 
   /// Serializes an operation, updates presentation state, and records its outcome.
@@ -387,7 +388,7 @@ final class ConfigurationViewModel {
   private func apply(_ summary: ConfigurationSummary) {
     hasLoadedSummary = true
     directories = summary.directories
-    credentialConfigured = summary.credentialConfigured
+    accessTokenConfigured = summary.accessTokenConfigured
     posterAppearance = summary.posterAppearance
     movieMatchingConfiguration = summary.movieMatchingConfiguration
     searchPageLimit = summary.searchPageLimit
@@ -402,178 +403,178 @@ final class ConfigurationViewModel {
 }
 
 extension ConfigurationViewModel {
-  /// Reloads only credential presence, without refreshing folder authorization or processing.
+  /// Reloads only access token presence, without refreshing folder authorization or processing.
   /// - Parameter clearResult: Whether an earlier diagnostic result should be discarded.
-  func reloadCredentialState(clearResult: Bool = true) async {
-    guard !isCredentialActionRunning else { return }
+  func reloadAccessTokenState(clearResult: Bool = true) async {
+    guard !isAccessTokenActionRunning else { return }
     let readID = UUID()
-    credentialReadID = readID
+    accessTokenReadID = readID
     if clearResult {
-      credentialMessage = .none
-      credentialResultState = .none
-      isCredentialError = false
+      accessTokenMessage = .none
+      accessTokenResultState = .none
+      isAccessTokenError = false
     }
     do {
-      let state = try await service.credentialState()
-      guard credentialReadID == readID, !isCredentialActionRunning else { return }
-      if let resultState = credentialResultState, resultState != state {
-        credentialMessage = .none
-        credentialResultState = .none
+      let state = try await accessTokens.accessTokenState()
+      guard accessTokenReadID == readID, !isAccessTokenActionRunning else { return }
+      if let resultState = accessTokenResultState, resultState != state {
+        accessTokenMessage = .none
+        accessTokenResultState = .none
       }
-      credentialState = state
-      credentialConfigured = state.isConfigured
+      accessTokenState = state
+      accessTokenConfigured = state.isConfigured
     } catch {
-      guard credentialReadID == readID, !isCredentialActionRunning else { return }
-      credentialState = .none
+      guard accessTokenReadID == readID, !isAccessTokenActionRunning else { return }
+      accessTokenState = .none
       if clearResult {
-        credentialMessage = "Could not read credential state. Reopen Settings to try again."
-        isCredentialError = true
+        accessTokenMessage = "Could not read access token state. Reopen Settings to try again."
+        isAccessTokenError = true
       }
     }
     publish()
   }
 
   /// Invalidates temporary test evidence after a shared configuration notification.
-  func invalidateCredentialState() {
-    credentialReadID = UUID()
-    credentialState = .none
-    if hasCredentialDiagnosticResult { credentialMessage = .none }
-    if isTestingSavedCredential {
-      isCredentialTestInvalidated = true
-      cancelCredentialAction()
+  func invalidateAccessTokenState() {
+    accessTokenReadID = UUID()
+    accessTokenState = .none
+    if hasAccessTokenDiagnosticResult { accessTokenMessage = .none }
+    if isTestingSavedAccessToken {
+      isAccessTokenTestInvalidated = true
+      cancelAccessTokenAction()
     }
     publish()
   }
 
-  /// Explicitly tests the last-loaded saved credential without refreshing collections.
-  func testSavedCredential() async {
-    guard let state = credentialState, state.isConfigured else { return }
-    let service = service
-    await performCredentialAction(
+  /// Explicitly tests the last-loaded saved access token without refreshing collections.
+  func testSavedAccessToken() async {
+    guard let state = accessTokenState, state.isConfigured else { return }
+    let accessTokens = accessTokens
+    await performAccessTokenAction(
       status: "Testing saved token…", success: "TMDb accepted the saved token.", action: .none,
-      operation: { try await service.testCredential(expectedRevision: state.revision) })
+      operation: { try await accessTokens.testAccessToken(expectedRevision: state.revision) })
   }
 
   /// Tests the candidate before saving it against the generation approved by the user.
   /// - Parameters:
-  ///   - credential: The operation-local candidate entered in the secure field.
+  ///   - access token: The operation-local candidate entered in the secure field.
   ///   - expectedState: The generation captured before confirmation, or the last-loaded state.
-  func saveCredential(_ credential: String, expectedState: CredentialState? = .none) async {
+  func saveAccessToken(_ accessToken: String, expectedState: AccessTokenState? = .none) async {
     guard !isBusy else { return }
-    if credentialState == .none, expectedState == .none { await reloadCredentialState() }
-    guard let state = expectedState ?? credentialState else { return }
-    let service = service
-    await performCredentialAction(
-      status: "Testing candidate token…", success: "Token saved after a successful test.", action: .credentialSaved,
-      operation: { try await service.saveCredential(credential, expectedRevision: state.revision) })
+    if accessTokenState == .none, expectedState == .none { await reloadAccessTokenState() }
+    guard let state = expectedState ?? accessTokenState else { return }
+    let accessTokens = accessTokens
+    await performAccessTokenAction(
+      status: "Testing candidate token…", success: "Token saved after a successful test.", action: .accessTokenSaved,
+      operation: { try await accessTokens.saveAccessToken(accessToken, expectedRevision: state.revision) })
   }
 
-  /// Removes the credential against the state captured before the user's confirmation.
+  /// Removes the access token against the state captured before the user's confirmation.
   /// - Parameter expectedState: The generation approved for removal, or the last-loaded state.
-  func removeCredential(expectedState: CredentialState? = .none) async {
+  func removeAccessToken(expectedState: AccessTokenState? = .none) async {
     guard !isBusy else { return }
-    if credentialState == .none, expectedState == .none { await reloadCredentialState() }
-    guard let state = expectedState ?? credentialState else { return }
-    let service = service
-    await performCredentialAction(
-      status: "Removing saved token…", success: "Saved token removed.", action: .credentialRemoved,
-      operation: { try await service.removeCredential(expectedRevision: state.revision) })
+    if accessTokenState == .none, expectedState == .none { await reloadAccessTokenState() }
+    guard let state = expectedState ?? accessTokenState else { return }
+    let accessTokens = accessTokens
+    await performAccessTokenAction(
+      status: "Removing saved token…", success: "Saved token removed.", action: .accessTokenRemoved,
+      operation: { try await accessTokens.removeAccessToken(expectedRevision: state.revision) })
   }
 
   /// Requests cancellation while retaining admission until the service call actually returns.
-  func cancelCredentialAction() {
-    guard isCredentialActionRunning else { return }
-    isCancellingCredentialAction = true
-    credentialTask?.cancel()
-    credentialMessage = "Cancelling…"
+  func cancelAccessTokenAction() {
+    guard isAccessTokenActionRunning else { return }
+    isCancellingAccessTokenAction = true
+    accessTokenTask?.cancel()
+    accessTokenMessage = "Cancelling…"
     publish()
   }
 
-  /// Serializes credential actions and publishes only fixed, credential-free presentation state.
+  /// Serializes access token actions and publishes only fixed, access token-free presentation state.
   /// - Parameters:
   ///   - status: Safe progress copy shown before the service call.
-  ///   - success: Safe completion copy, independent of credential contents.
+  ///   - success: Safe completion copy, independent of access token contents.
   ///   - action: Change activity to record, or no activity for a diagnostic.
   ///   - operation: The service call owned and cancelled by this finite action.
-  private func performCredentialAction(
+  private func performAccessTokenAction(
     status: String, success: String, action: MovieFolderActivityLogEvent.Action?,
     operation: @escaping @Sendable () async throws -> Void
   ) async {
     guard !isBusy else { return }
     isBusy = true
-    isCredentialActionRunning = true
-    isCancellingCredentialAction = false
-    isTestingSavedCredential = action == .none
-    isCredentialTestInvalidated = false
-    credentialReadID = UUID()
-    hasCredentialDiagnosticResult = action == .none
-    credentialResultState = .none
-    isCredentialError = false
+    isAccessTokenActionRunning = true
+    isCancellingAccessTokenAction = false
+    isTestingSavedAccessToken = action == .none
+    isAccessTokenTestInvalidated = false
+    accessTokenReadID = UUID()
+    hasAccessTokenDiagnosticResult = action == .none
+    accessTokenResultState = .none
+    isAccessTokenError = false
     errorMessage = .none
-    credentialMessage = status
+    accessTokenMessage = status
     publish()
     let task = Task { try await operation() }
-    credentialTask = task
+    accessTokenTask = task
     do {
       try await task.value
-      if isCredentialTestInvalidated {
-        credentialMessage = "Credential state changed. Test the current token again."
+      if isAccessTokenTestInvalidated {
+        accessTokenMessage = "Access token state changed. Test the current token again."
       } else {
-        credentialMessage = success
+        accessTokenMessage = success
       }
       if let action { await recordActivity(action: action, status: .succeeded) }
     } catch is CancellationError {
-      credentialMessage = action == .none
-        ? "Credential test cancelled." : "Credential action cancelled before completion. Reloaded current state."
+      accessTokenMessage = action == .none
+        ? "Access token test cancelled." : "Access token action cancelled before completion. Reloaded current state."
       if let action {
         await recordActivity(action: action, status: .cancelled,
           failure: MovieFolderActivityLogEvent.failureEvidence(for: CancellationError()))
       }
     } catch {
-      isCredentialError = true
-      credentialMessage = credentialFailureMessage(error, action: action)
-      errorMessage = credentialMessage
+      isAccessTokenError = true
+      accessTokenMessage = accessTokenFailureMessage(error, action: action)
+      errorMessage = accessTokenMessage
       if let action {
         await recordActivity(action: action, status: .failed,
           failure: MovieFolderActivityLogEvent.failureEvidence(for: error))
       }
     }
-    credentialTask = .none
-    isCredentialActionRunning = false
-    isTestingSavedCredential = false
-    isCancellingCredentialAction = false
-    await reloadCredentialState(clearResult: false)
-    if action != .none { credentialResultState = credentialState }
+    accessTokenTask = .none
+    isAccessTokenActionRunning = false
+    isTestingSavedAccessToken = false
+    isCancellingAccessTokenAction = false
+    await reloadAccessTokenState(clearResult: false)
+    if action != .none { accessTokenResultState = accessTokenState }
     isBusy = false
     publish()
   }
 
-  /// Maps credential failures to fixed corrective guidance without rendering underlying error content.
-  private func credentialFailureMessage(_ error: any Error, action: MovieFolderActivityLogEvent.Action?) -> String {
+  /// Maps access token failures to fixed corrective guidance without rendering underlying error content.
+  private func accessTokenFailureMessage(_ error: any Error, action: MovieFolderActivityLogEvent.Action?) -> String {
     switch error {
-    case TMDbError.authentication:
+    case MovieMetadataError.authentication:
       return "TMDb rejected the token. Check the API Read Access Token and try again."
-    case TMDbError.missingToken, ConfigurationError.invalidCredential:
+    case MovieMetadataError.missingToken, ConfigurationError.invalidAccessToken:
       return "Enter a valid API Read Access Token without the Bearer prefix."
-    case TMDbError.transport(let code) where code == URLError.notConnectedToInternet.rawValue:
+    case MovieMetadataError.transport(let code) where code == URLError.notConnectedToInternet.rawValue:
       return "You appear to be offline. The token was not verified."
-    case TMDbError.transport:
+    case MovieMetadataError.transport:
       return "Could not reach TMDb. The token was not verified."
-    case TMDbError.rateLimited, ProcessingRecoveryError.providerBackoff:
+    case MovieMetadataError.rateLimited, ProcessingRecoveryError.providerBackoff:
       return "TMDb requests are temporarily deferred. Try again after the provider retry time."
     case ConfigurationError.configurationChanged:
-      return "Credential state changed. Review the current state and try again."
+      return "Access token state changed. Review the current state and try again."
     case ConfigurationError.credentialStorage:
-      return "Could not access secure credential storage. The current state has been reloaded."
+      return "Could not access secure access token storage. The current state has been reloaded."
     case ConfigurationError.busy, ProcessingRecoveryError.busy:
       return "Settings or recovery state is busy. Try again shortly."
     case ProcessingRecoveryError.unavailable:
-      return "Credential testing is unavailable because recovery state could not be read."
-    case TMDbError.httpStatus, TMDbError.malformedResponse, TMDbError.responseTooLarge:
+      return "Access token testing is unavailable because recovery state could not be read."
+    case MovieMetadataError.httpStatus, MovieMetadataError.malformedResponse, MovieMetadataError.responseTooLarge:
       return "TMDb did not return a usable response. The token was not verified."
     default:
-      return action == .credentialRemoved ? "Could not remove the API credential."
-        : action == .credentialSaved ? "Could not save the API credential." : "Could not test the token. Try again."
+      return action == .accessTokenRemoved ? "Could not remove the API access token."
+        : action == .accessTokenSaved ? "Could not save the API access token." : "Could not test the token. Try again."
     }
   }
 }

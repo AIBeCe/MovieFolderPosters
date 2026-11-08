@@ -1,8 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Testing
 
 @testable import MovieFolderPosters
@@ -275,7 +274,7 @@ private struct DelegateConfigurationBuilder: ConfigurationFlowBuilding {
   /// Failure delivered by dependency construction without inspecting live storage.
   let failure: Failure?
 
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     if let failure {
@@ -289,24 +288,25 @@ private struct DelegateConfigurationBuilder: ConfigurationFlowBuilding {
 
     return ConfigurationCoordinator(
       service: DelegateConfigurationService(), activity: activity,
-      appearance: appearance, retryService: retryService)
+      appearance: appearance,
+      localDataExportService: TestLocalDataExportService(), retryService: retryService)
   }
 }
 
 /// Supplies empty configuration to exercise real lifecycle and window behavior.
-private actor DelegateConfigurationService: ConfigurationServicing {
+private actor DelegateConfigurationService: TestConfigurationServicing {
   func configurationSummary() throws -> ConfigurationSummary {
-    ConfigurationSummary(directories: [], credentialConfigured: false)
+    ConfigurationSummary(directories: [], accessTokenConfigured: false)
   }
   func addDirectory(_ directory: URL) throws {}
   func removeDirectory(_ identifier: UUID) throws {}
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {}
-  /// Returns the isolated fixture's non-secret credential state.
-  func credentialState() -> CredentialState { CredentialState(isConfigured: false, revision: .none) }
+  /// Returns the isolated fixture's non-secret access token state.
+  func accessTokenState() -> AccessTokenState { AccessTokenState(isConfigured: false, revision: .none) }
   /// Accepts explicit tests without contacting the provider.
-  func testCredential(expectedRevision: UUID?) throws {}
-  func saveCredential(_ value: String, expectedRevision: UUID?) throws {}
-  func removeCredential(expectedRevision: UUID?) throws {}
+  func testAccessToken(expectedRevision: UUID?) throws {}
+  func saveAccessToken(_ value: String, expectedRevision: UUID?) throws {}
+  func removeAccessToken(expectedRevision: UUID?) throws {}
   func setPosterAppearance(_ appearance: PosterAppearance) throws {}
 }
 
@@ -315,10 +315,10 @@ private actor DelegatePosterService: MoviePosterActionServicing, CollectionRetry
   /// Supplies no eligible selected work in isolated lifecycle tests.
   func retryFolder(for request: MoviePosterRequest) -> FolderRetryResult { .notEligible }
   /// Provides the authorized default language in this isolated service fixture.
-  func searchLanguage(for request: MoviePosterRequest) throws -> TMDbLanguage { .english }
+  func searchLanguage(for request: MoviePosterRequest) throws -> MovieSearchLanguage { .english }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
-                    language: TMDbLanguage = .english) throws -> MovieSearchResult {
+                    language: MovieSearchLanguage = .english) throws -> MovieSearchResult {
     MovieSearchResult(movies: [], hasMorePages: false)
   }
   func refreshPoster(for request: MoviePosterRequest) throws -> Int { 7 }

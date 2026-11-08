@@ -1,6 +1,5 @@
 import AppKit
-import MovieFolderCommon
-import Network
+import Common
 
 /// Connects completed poster operations to independent saved-results presentation.
 @MainActor
@@ -36,7 +35,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
 
   /// Creates the coordinator and subscribes to shared configuration changes.
   /// - Parameter service: The service used by newly opened action windows.
-  init(service: any MoviePosterActionServicing = MoviePosterActionService()) {
+  init(service: any MoviePosterActionServicing) {
     self.service = service
     super.init()
     DistributedNotificationCenter.default().addObserver(

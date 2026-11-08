@@ -1,6 +1,5 @@
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 
 /// Allowlisted product evidence; rich events are never serialized.
 nonisolated struct LocalDataExportActivityRecord: Encodable {
@@ -49,9 +48,9 @@ nonisolated struct LocalDataExportNetworkRecord: Encodable {
   /// Finite terminal timestamp.
   let occurredAt: Date
   /// Closed request-purpose vocabulary.
-  let purpose: TMDbRequestCategory
+  let purpose: MovieNetworkRequestCategory
   /// Typed terminal HTTP evidence, distinct from product success.
-  let result: TMDbRequestCompletionResult
+  let result: MovieNetworkRequestResult
 }
 
 /// Versioned bounded JSON document; encoded bytes are frozen for exact preview and save.

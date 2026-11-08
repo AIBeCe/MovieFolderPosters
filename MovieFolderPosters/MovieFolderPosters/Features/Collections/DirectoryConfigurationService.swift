@@ -1,11 +1,11 @@
 import FileSystem
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Persistence
 
-/// Coordinates persisted collection settings, folder authorization, and credential storage.
-actor DirectoryConfigurationService: ConfigurationServicing {
+/// Coordinates persisted collection settings, folder authorization, and access token storage.
+actor DirectoryConfigurationService: CollectionConfigurationServicing, ConfigurationPreferencesWriting,
+  AccessTokenManaging, CollectionSetupServicing, CollectionEditing, CollectionInclusionApplying {
   /// Stores collection and poster-appearance configuration.
   private let repository: ConfigurationRepository
   /// Creates keys for collection authorization bookmark records.
@@ -13,7 +13,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// Stores security-scoped authorization bookmarks under cross-process persistence access.
   private let authorizations: PersistenceStore
   /// Stores the TMDb token outside of shared configuration data.
-  private let credentials: any CredentialStoring
+  private let accessTokenStore: any ProviderAccessTokenStoring
   /// Inspects collection identities and creates transfer bookmarks.
   private let fileSystem = FileSystemService()
   /// Notifies shared components after committed configuration changes.
@@ -24,46 +24,42 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   /// Outcome cleanup retained independently of presentation and summary reads.
   private let processingCleanup: (any CollectionProcessingCleaning)?
   /// Records cleanup failures without changing committed configuration results.
-  private let activity: any MovieFolderActivityServicing
+  private let activity: any MovieFolderActivityRecording
 
-  /// Always authenticates credentials against an explicit HTTP boundary, independent of movie fixtures.
-  private let credentialTransport: any HTTPTransport
-  /// Optional scoped observer of actual credential HTTP attempts.
-  private let requestDelegate: (any TMDbClientRequestDelegate)?
-  /// Shared diagnostic admission; absence fails closed for credential networking.
+  /// Authenticates access tokens independently of movie fixture selection.
+  private let accessTokenValidator: any ProviderAccessTokenValidating
+  /// Shared diagnostic admission; absence fails closed for access token networking.
   private let recovery: ProcessingRecoveryService?
 
-  /// Creates the service from its configuration, authorization, and credential stores.
+  /// Creates the service from its configuration, authorization, and access token stores.
   ///
   /// - Parameters:
   ///   - repository: Persistent collection and appearance configuration.
   ///   - authorizations: Store for security bookmark persistence access.
-  ///   - credentials: Secure provider for the TMDb token.
+  ///   - access tokens: Secure provider for the TMDb token.
   ///   - notifier: Notifier invoked after persisted changes.
   ///   - authorization: Provider for resolving and creating security bookmarks.
   ///   - processingCleanup: Retained outcome cleaner; omit only when the caller owns no outcome storage.
   ///   - activity: Recorder for cleanup failures independent of committed configuration changes.
-  ///   - requestDelegate: Optional observer of actual credential HTTP attempts; fixture requests are omitted.
+  ///   - access token validator: Performs access token verification after the service admits the diagnostic.
   init(
     repository: ConfigurationRepository, authorizations: PersistenceStore,
-    credentials: any CredentialStoring = MovieFolderEnvironment.makeCredentialStore(),
+    accessTokenStore: any ProviderAccessTokenStoring,
     notifier: any ConfigurationChangeNotifying = SharedConfigurationChangeNotifier(),
     authorization: any DirectoryAuthorizationProviding = SecurityScopedDirectoryAuthorization(),
     processingCleanup: (any CollectionProcessingCleaning)? = .none,
-    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
-    credentialTransport: any HTTPTransport = URLSessionTransport(),
-    requestDelegate: (any TMDbClientRequestDelegate)? = .none,
+    activity: any MovieFolderActivityRecording,
+    accessTokenValidator: any ProviderAccessTokenValidating = NetworkAccessTokenValidator(),
     recovery: ProcessingRecoveryService? = .none
   ) {
     self.repository = repository
     self.authorizations = authorizations
-    self.credentials = credentials
+    self.accessTokenStore = accessTokenStore
     self.notifier = notifier
     self.authorization = authorization
     self.processingCleanup = processingCleanup
     self.activity = activity
-    self.credentialTransport = credentialTransport
-    self.requestDelegate = requestDelegate
+    self.accessTokenValidator = accessTokenValidator
     self.recovery = recovery
   }
 
@@ -71,10 +67,10 @@ actor DirectoryConfigurationService: ConfigurationServicing {
   ///
   /// Refreshes saved path and bookmark details only when folder identity is established.
   ///
-  /// - Returns: Collection statuses, credential presence, and poster appearance.
-  /// - Throws: A persistence or credential-store error when the summary cannot be read.
+  /// - Returns: Collection statuses, access token presence, and poster appearance.
+  /// - Throws: A persistence or access token-store error when the summary cannot be read.
   func configurationSummary() async throws -> ConfigurationSummary {
-    let snapshot = try await credentialSnapshotWhenAvailable()
+    let snapshot = try await accessTokenSnapshotWhenAvailable()
     let configuration = snapshot.configuration ?? DirectoryConfiguration()
     var statuses: [ConfiguredDirectoryStatus] = []
     var refreshed: [UUID: MonitoredDirectory] = [:]
@@ -108,7 +104,7 @@ actor DirectoryConfigurationService: ConfigurationServicing {
     try persistRefreshedDirectories(refreshed, original: configuration)
 
     return ConfigurationSummary(
-      directories: statuses, credentialConfigured: snapshot.token != .none,
+      directories: statuses, accessTokenConfigured: snapshot.token != .none,
       posterAppearance: configuration.posterAppearance,
       movieMatchingConfiguration: configuration.movieMatchingConfiguration,
       searchPageLimit: configuration.searchPageLimit)
@@ -163,7 +159,7 @@ extension DirectoryConfigurationService {
     let privacyChanged: Bool
   }
 
-  /// Revalidates a confirmed Finder request without provider credentials or processing admission.
+  /// Revalidates a confirmed Finder request without provider access tokens or processing admission.
   func applyInclusionRequest(_ request: MovieFolderInclusionRequest) async throws {
     let savedState = try savedCollectionState(request.collectionID)
     let directory = savedState.directory
@@ -200,7 +196,7 @@ extension DirectoryConfigurationService {
     await publishCommittedCollectionUpdate(committedUpdate)
   }
 
-  /// Captures an edit draft without requiring provider credentials or unpausing processing.
+  /// Captures an edit draft without requiring provider access tokens or unpausing processing.
   func savedCollectionState(_ identifier: UUID) throws -> SavedCollectionState {
     let configuration = try repository.read()
 
@@ -338,7 +334,7 @@ extension DirectoryConfigurationService {
     notifier.configurationDidChange(scheduleObservedCollections: false)
   }
 
-  /// Persists automatic matching defaults without modifying explicit overrides or credentials.
+  /// Persists automatic matching defaults without modifying explicit overrides or access tokens.
   func setMovieMatchingConfiguration(_ configuration: MovieMatchingConfiguration) throws {
     var scheduleObservedCollections = false
     try repository.update {
@@ -508,56 +504,56 @@ extension DirectoryConfigurationService {
     }
   }
 
-  /// Reads credential presence and its persisted generation under the same short settings access.
+  /// Reads access token presence and its persisted generation under the same short settings access.
   /// - Returns: Non-secret availability and first-run-aware revision.
   /// - Throws: Safe storage or configuration errors.
-  func credentialState() throws -> CredentialState {
-    let snapshot = try credentialSnapshot()
+  func accessTokenState() throws -> AccessTokenState {
+    let snapshot = try accessTokenSnapshot()
 
-    return CredentialState(isConfigured: snapshot.token != .none, revision: snapshot.revision)
+    return AccessTokenState(isConfigured: snapshot.token != .none, revision: snapshot.revision)
   }
 
   /// Tests the saved token without mutating settings, Keychain, or processing authentication restrictions.
   /// - Parameter expectedRevision: Generation captured before the user's explicit request.
   /// - Throws: Safe stale-state, provider, or storage failures.
-  func testCredential(expectedRevision: UUID?) async throws {
-    let snapshot = try credentialSnapshot()
+  func testAccessToken(expectedRevision: UUID?) async throws {
+    let snapshot = try accessTokenSnapshot()
     guard snapshot.revision == expectedRevision else { throw ConfigurationError.configurationChanged }
-    guard let token = snapshot.token else { throw TMDbError.missingToken }
+    guard let token = snapshot.token else { throw MovieMetadataError.missingToken }
     let outcome: Result<Void, any Error>
     do {
-      try await validateCredential(token)
+      try await validateAccessToken(token)
       outcome = .success(())
     } catch {
       outcome = .failure(error)
     }
     try Task.checkCancellation()
-    let current = try credentialSnapshot()
+    let current = try accessTokenSnapshot()
     guard current.revision == expectedRevision, current.token == snapshot.token else {
       throw ConfigurationError.configurationChanged
     }
     try outcome.get()
   }
 
-  /// Validates a candidate remotely before conditionally committing its new credential generation.
+  /// Validates a candidate remotely before conditionally committing its new access token generation.
   /// - Parameters:
   ///   - value: Candidate token; surrounding whitespace is discarded.
   ///   - expectedRevision: Persisted generation captured before confirmation, or first-run absence.
   /// - Throws: Safe input, provider, cancellation, stale-state, or storage errors.
-  func saveCredential(_ value: String, expectedRevision: UUID?) async throws {
-    let token = try normalizedCredential(value)
-    guard try credentialSnapshot().revision == expectedRevision else { throw ConfigurationError.configurationChanged }
-    try await validateCredential(token)
+  func saveAccessToken(_ value: String, expectedRevision: UUID?) async throws {
+    let token = try normalizedAccessToken(value)
+    guard try accessTokenSnapshot().revision == expectedRevision else { throw ConfigurationError.configurationChanged }
+    try await validateAccessToken(token)
     try Task.checkCancellation()
-    try commitCredential(expectedRevision: expectedRevision) { try credentials.save(token) }
+    try commitAccessToken(expectedRevision: expectedRevision) { try accessTokenStore.save(token) }
   }
 
   /// Removes the saved token under the revision captured before confirmation.
   /// - Parameter expectedRevision: Generation whose removal the user confirmed.
   /// - Throws: Safe cancellation, stale-state, or storage errors.
-  func removeCredential(expectedRevision: UUID?) throws {
+  func removeAccessToken(expectedRevision: UUID?) throws {
     try Task.checkCancellation()
-    try commitCredential(expectedRevision: expectedRevision) { try credentials.remove() }
+    try commitAccessToken(expectedRevision: expectedRevision) { try accessTokenStore.remove() }
   }
 
   #if DEBUG
@@ -613,28 +609,28 @@ extension DirectoryConfigurationService {
 private extension DirectoryConfigurationService {
   /// Reads Keychain while the settings generation remains exclusively accessed.
   /// - Returns: Only the token and revision needed after the access has been released.
-  /// - Throws: Safe configuration or credential-store failures.
-  func credentialSnapshot() throws -> (token: String?, revision: UUID?, configuration: DirectoryConfiguration?) {
+  /// - Throws: Safe configuration or access token-store failures.
+  func accessTokenSnapshot() throws -> (token: String?, revision: UUID?, configuration: DirectoryConfiguration?) {
     do {
       let (configuration, persistenceAccess) = try repository.readIfPresentHoldingAccess()
-      let token = try withExtendedLifetime(persistenceAccess) { try credentials.read() }
+      let token = try withExtendedLifetime(persistenceAccess) { try accessTokenStore.read() }
 
       return (token, configuration?.credentialRevision, configuration)
     } catch {
-      throw safeCredentialError(error)
+      throw safeAccessTokenError(error)
     }
   }
 
   /// Preserves the existing bounded startup retry without retaining persistence access during any wait.
-  /// - Returns: A coherent credential/configuration read within eight attempts.
+  /// - Returns: A coherent access token/configuration read within eight attempts.
   /// - Throws: Cancellation, sustained contention, or the original non-contention storage failure.
-  func credentialSnapshotWhenAvailable() async throws -> (
+  func accessTokenSnapshotWhenAvailable() async throws -> (
     token: String?, revision: UUID?, configuration: DirectoryConfiguration?
   ) {
     for attempt in 0..<8 {
       try Task.checkCancellation()
       do {
-        return try credentialSnapshot()
+        return try accessTokenSnapshot()
       } catch ConfigurationError.busy {
         if attempt == 7 { throw ConfigurationError.busy }
         try await Task.sleep(for: .milliseconds(20))
@@ -646,11 +642,11 @@ private extension DirectoryConfigurationService {
   /// Rejects unsafe or oversized bearer input before any external work.
   /// - Parameter value: User-entered candidate token.
   /// - Returns: Printable ASCII token without whitespace.
-  /// - Throws: Invalid credential for empty, oversized, or non-header-safe input.
-  func normalizedCredential(_ value: String) throws -> String {
+  /// - Throws: Invalid access token for empty, oversized, or non-header-safe input.
+  func normalizedAccessToken(_ value: String) throws -> String {
     let token = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !token.isEmpty, token.utf8.count <= 4_096,
-      token.utf8.allSatisfy({ (33...126).contains($0) }) else { throw ConfigurationError.invalidCredential }
+      token.utf8.allSatisfy({ (33...126).contains($0) }) else { throw ConfigurationError.invalidAccessToken }
 
     return token
   }
@@ -658,22 +654,15 @@ private extension DirectoryConfigurationService {
   /// Performs admission and HTTP outside settings access; authentication diagnostics never poison processing.
   /// - Parameter token: Locally validated or previously saved bearer token.
   /// - Throws: Safe admission, provider, or cancellation failures.
-  func validateCredential(_ token: String) async throws {
+  func validateAccessToken(_ token: String) async throws {
     guard let recovery else { throw ProcessingRecoveryError.unavailable }
     try Task.checkCancellation()
-    try recovery.validateCredentialTestAllowed()
+    try recovery.validateAccessTokenTestAllowed()
     do {
-      let accessToken = try TMDbAccessToken(normalizedCredential(token))
-      #if DEBUG
-        let observer = credentialTransport is StubTMDbTransport ? .none : requestDelegate
-      #else
-        let observer = requestDelegate
-      #endif
-      try await TMDbClient(token: accessToken, transport: credentialTransport,
-        requestDelegate: observer).validateCredential()
+      try await accessTokenValidator.validateAccessToken(normalizedAccessToken(token))
     } catch {
-      let safeError = safeCredentialError(error)
-      if !(safeError is CancellationError) { try recovery.recordCredentialTestFailure(safeError) }
+      let safeError = safeAccessTokenError(error)
+      if !(safeError is CancellationError) { try recovery.recordAccessTokenTestFailure(safeError) }
       throw safeError
     }
   }
@@ -682,17 +671,17 @@ private extension DirectoryConfigurationService {
   /// - Parameters:
   ///   - expectedRevision: Generation confirmed by the user.
   ///   - change: Synchronous Keychain operation after the durable revision write.
-  /// - Throws: Safe configuration or credential-storage failures.
-  func commitCredential(expectedRevision: UUID?, change: () throws -> Void) throws {
+  /// - Throws: Safe configuration or access token-storage failures.
+  func commitAccessToken(expectedRevision: UUID?, change: () throws -> Void) throws {
     var committed = false
     defer { if committed { notifier.configurationDidChange() } }
     do {
-      try repository.updateCredential(expectedRevision: expectedRevision) {
+      try repository.updateAccessToken(expectedRevision: expectedRevision) {
         committed = true
         try change()
       }
     } catch {
-      throw safeCredentialError(error)
+      throw safeAccessTokenError(error)
     }
   }
 

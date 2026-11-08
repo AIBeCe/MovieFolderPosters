@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Receives presentation changes from a finite collection setup draft.
 @MainActor protocol CollectionSetupViewModelDelegate: AnyObject {
@@ -11,7 +11,7 @@ import MovieFolderCommon
 /// Owns an uncommitted collection candidate and local setup choices.
 @MainActor final class CollectionSetupViewModel {
   /// Service retaining bookmark creation and persistence ownership.
-  private let service: any ConfigurationServicing
+  private let service: any CollectionSetupServicing
   /// Current application choices displayed while the draft inherits.
   private let applicationConfiguration: MovieMatchingConfiguration
   /// Current uncommitted authorization; absence means no folder has been chosen.
@@ -47,7 +47,7 @@ import MovieFolderCommon
   /// - Parameters:
   ///   - service: Retained preparation and persistence boundary for the draft.
   ///   - applicationConfiguration: Defaults displayed while inheriting and used to initialize an explicit override.
-  init(service: any ConfigurationServicing, applicationConfiguration: MovieMatchingConfiguration) {
+  init(service: any CollectionSetupServicing, applicationConfiguration: MovieMatchingConfiguration) {
     self.service = service
     self.applicationConfiguration = applicationConfiguration
     overrideConfiguration = applicationConfiguration

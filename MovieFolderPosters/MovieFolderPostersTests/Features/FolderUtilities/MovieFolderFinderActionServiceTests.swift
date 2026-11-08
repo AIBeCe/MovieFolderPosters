@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 @testable import MovieFolderPosters
 import Persistence
 import Testing

@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Gives the coordinator ownership of sheet dismissal and saving.
 @MainActor protocol CollectionEditViewControllerDelegate: AnyObject {

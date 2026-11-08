@@ -1,6 +1,6 @@
 import AppKit
 import FileSystem
-import MovieFolderCommon
+import Common
 
 /// Routes deliberate local data export preparation through the owning configuration flow.
 @MainActor

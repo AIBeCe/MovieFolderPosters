@@ -1,34 +1,34 @@
 import AppKit
-import MovieFolderCommon
+import Common
 import MovieFolderParsing
 
 /// Submits only the entry still held by a live secure field after confirmation.
 @MainActor
-protocol CredentialSettingsSubmitting: AnyObject {
+protocol AccessTokenSettingsSubmitting: AnyObject {
   /// Clears the entry and tests it against the generation confirmed by the user.
-  func saveEnteredCredential(expectedState: CredentialState)
-  /// Removes only the credential generation confirmed by the user.
-  func removeSavedCredential(expectedState: CredentialState)
+  func saveEnteredAccessToken(expectedState: AccessTokenState)
+  /// Removes only the access token generation confirmed by the user.
+  func removeSavedAccessToken(expectedState: AccessTokenState)
 }
 
-/// Routes credential confirmations and navigation to the Settings flow owner.
+/// Routes access token confirmations and navigation to the Settings flow owner.
 @MainActor
-protocol CredentialSettingsDelegate: AnyObject {
+protocol AccessTokenSettingsDelegate: AnyObject {
   /// Requests deliberate replacement without including the candidate token in navigation state.
-  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState)
-  /// Requests deliberate removal of the captured saved credential generation.
-  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestRemoval state: CredentialState)
+  func accessTokenSettings(_ sender: any AccessTokenSettingsSubmitting, requestReplacement state: AccessTokenState)
+  /// Requests deliberate removal of the captured saved access token generation.
+  func accessTokenSettings(_ sender: any AccessTokenSettingsSubmitting, requestRemoval state: AccessTokenState)
   /// Requests navigation to the fixed public token-setup page.
-  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController)
+  func accessTokenSettingsDidRequestTokenHelp(_ sender: NSViewController)
 }
 
-/// Presents secure credential actions and a local matching-data preview.
+/// Presents secure access token actions and a local matching-data preview.
 @MainActor
-final class TMDbPane: SettingsTabViewController, CredentialSettingsSubmitting, NSTextFieldDelegate {
-  /// Model retaining finite credential operations and non-secret presentation state.
+final class TMDbPane: SettingsTabViewController, AccessTokenSettingsSubmitting, NSTextFieldDelegate {
+  /// Model retaining finite access token operations and non-secret presentation state.
   private let viewModel: ConfigurationViewModel
   /// Coordinator owning confirmation sheets and external navigation.
-  weak var delegate: (any CredentialSettingsDelegate)?
+  weak var delegate: (any AccessTokenSettingsDelegate)?
   /// The only view state that holds the candidate until submission.
   private let tokenField = NSSecureTextField()
   /// Tests the entered candidate before saving it.
@@ -37,10 +37,10 @@ final class TMDbPane: SettingsTabViewController, CredentialSettingsSubmitting, N
   private let testButton = NSButton(title: "Test Saved Token", target: .none, action: .none)
   /// Requests confirmation before deleting the saved token.
   private let removeButton = NSButton(title: "Remove Token…", target: .none, action: .none)
-  /// Requests cooperative cancellation of the finite credential operation.
+  /// Requests cooperative cancellation of the finite access token operation.
   private let cancelButton = NSButton(title: "Cancel", target: .none, action: .none)
   /// Reports presence separately from provider validation.
-  private let stateLabel = NSTextField(wrappingLabelWithString: "Credential state not loaded.")
+  private let stateLabel = NSTextField(wrappingLabelWithString: "Access token state not loaded.")
   /// Displays only fixed, allowlisted operation feedback.
   private let resultLabel = NSTextField(wrappingLabelWithString: " ")
   /// Unpersisted sample folder name, independent of configured collection authorization.
@@ -50,8 +50,8 @@ final class TMDbPane: SettingsTabViewController, CredentialSettingsSubmitting, N
   /// Existing production parser; previewing does not enumerate folders or contact TMDb.
   private let parser = ReleaseNameParser()
 
-  /// Creates the credential pane backed by the shared configuration model.
-  /// - Parameter viewModel: Owner of credential actions and safe status.
+  /// Creates the access token pane backed by the shared configuration model.
+  /// - Parameter viewModel: Owner of access token actions and safe status.
   init(viewModel: ConfigurationViewModel) {
     self.viewModel = viewModel
     super.init(nibName: .none, bundle: .none)
@@ -78,7 +78,7 @@ final class TMDbPane: SettingsTabViewController, CredentialSettingsSubmitting, N
     removeButton.target = self
     removeButton.action = #selector(requestRemoval)
     cancelButton.target = self
-    cancelButton.action = #selector(cancelCredentialAction)
+    cancelButton.action = #selector(cancelAccessTokenAction)
     let actions = NSStackView(views: [saveButton, testButton, removeButton, cancelButton])
     actions.orientation = .horizontal
     actions.spacing = 8
@@ -114,60 +114,60 @@ final class TMDbPane: SettingsTabViewController, CredentialSettingsSubmitting, N
 
   /// Renders safe status and disables overlapping actions while cancellation drains.
   override func updatePresentation() {
-    let state = viewModel.credentialState
+    let state = viewModel.accessTokenState
     stateLabel.stringValue = state.map {
       $0.isConfigured ? "Saved token present. Use Test Saved Token to verify access." : "No token saved."
-    } ?? "Credential state unavailable. Reopen Settings to try again."
+    } ?? "Access token state unavailable. Reopen Settings to try again."
     let available = !viewModel.isBusy && state != .none
     saveButton.title = state?.isConfigured == true ? "Test and Replace Token…" : "Test and Save Token"
     tokenField.isEnabled = available
     saveButton.isEnabled = available
     testButton.isEnabled = available && state?.isConfigured == true
     removeButton.isEnabled = available && state?.isConfigured == true
-    cancelButton.isEnabled = viewModel.isCredentialActionRunning && !viewModel.isCancellingCredentialAction
-    cancelButton.title = viewModel.isCancellingCredentialAction ? "Cancelling…" : "Cancel"
-    resultLabel.stringValue = viewModel.credentialMessage ?? " "
-    resultLabel.textColor = viewModel.isCredentialError ? .systemRed : .secondaryLabelColor
+    cancelButton.isEnabled = viewModel.isAccessTokenActionRunning && !viewModel.isCancellingAccessTokenAction
+    cancelButton.title = viewModel.isCancellingAccessTokenAction ? "Cancelling…" : "Cancel"
+    resultLabel.stringValue = viewModel.accessTokenMessage ?? " "
+    resultLabel.textColor = viewModel.isAccessTokenError ? .systemRed : .secondaryLabelColor
   }
 
   /// Copies the current entry once, clears it, and starts the approved test-before-save operation.
   /// - Parameter expectedState: Generation frozen before confirmation.
-  func saveEnteredCredential(expectedState: CredentialState) {
+  func saveEnteredAccessToken(expectedState: AccessTokenState) {
     guard !viewModel.isBusy else { return }
     let candidate = tokenField.stringValue
     guard !candidate.isEmpty else { return }
     tokenField.stringValue = ""
-    Task { await viewModel.saveCredential(candidate, expectedState: expectedState) }
+    Task { await viewModel.saveAccessToken(candidate, expectedState: expectedState) }
   }
 
   /// Starts the removal confirmed for the captured generation.
   /// - Parameter expectedState: Generation frozen before confirmation.
-  func removeSavedCredential(expectedState: CredentialState) {
-    Task { await viewModel.removeCredential(expectedState: expectedState) }
+  func removeSavedAccessToken(expectedState: AccessTokenState) {
+    Task { await viewModel.removeAccessToken(expectedState: expectedState) }
   }
 
   /// Sends replacement through the coordinator while allowing explicit first-time setup directly.
   @objc private func requestSave() {
-    guard !viewModel.isBusy, !tokenField.stringValue.isEmpty, let state = viewModel.credentialState else { return }
+    guard !viewModel.isBusy, !tokenField.stringValue.isEmpty, let state = viewModel.accessTokenState else { return }
     if state.isConfigured {
-      delegate?.credentialSettings(self, requestReplacement: state)
+      delegate?.accessTokenSettings(self, requestReplacement: state)
     } else {
-      saveEnteredCredential(expectedState: state)
+      saveEnteredAccessToken(expectedState: state)
     }
   }
 
-  /// Requests deliberate removal without placing credential text in the event.
+  /// Requests deliberate removal without placing access token text in the event.
   @objc private func requestRemoval() {
-    guard !viewModel.isBusy, let state = viewModel.credentialState, state.isConfigured else { return }
-    delegate?.credentialSettings(self, requestRemoval: state)
+    guard !viewModel.isBusy, let state = viewModel.accessTokenState, state.isConfigured else { return }
+    delegate?.accessTokenSettings(self, requestRemoval: state)
   }
 
   /// Starts only an explicit saved-token diagnostic.
-  @objc private func testSavedToken() { Task { await viewModel.testSavedCredential() } }
+  @objc private func testSavedToken() { Task { await viewModel.testSavedAccessToken() } }
   /// Cancels the active operation while leaving its model admission held until completion.
-  @objc private func cancelCredentialAction() { viewModel.cancelCredentialAction() }
+  @objc private func cancelAccessTokenAction() { viewModel.cancelAccessTokenAction() }
   /// Requests the coordinator-owned public help navigation.
-  @objc private func openTokenHelp() { delegate?.credentialSettingsDidRequestTokenHelp(self) }
+  @objc private func openTokenHelp() { delegate?.accessTokenSettingsDidRequestTokenHelp(self) }
 
   /// Updates the local preview on each edit without initiating a search.
   func controlTextDidChange(_ notification: Notification) {

@@ -18,7 +18,7 @@ trap 'rtk proxy rm -rf "$maintenance_package"' EXIT
 rtk proxy mkdir -p "$maintenance_package/Sources/CollectionProcessingNamespaceMaintenance"
 rtk proxy cp "$common_repository/scripts/test-support/CollectionProcessingNamespaceMaintenance/main.swift" \
   "$maintenance_package/Sources/CollectionProcessingNamespaceMaintenance/"
-for package in MovieFolderCommon MovieFolderParsing Network FileSystem Persistence Log; do
+for package in Common MovieFolderParsing Network FileSystem Persistence Log Contracts HTTPTransport TMDb; do
   rtk proxy ln -s "$common_repository/Packages/$package" "$maintenance_package/$package"
 done
 rtk proxy tee "$maintenance_package/Package.swift" >/dev/null <<'SWIFT'
@@ -27,8 +27,8 @@ import PackageDescription
 let package = Package(
   name: "CollectionProcessingNamespaceMaintenance",
   platforms: [.macOS("26.5")],
-  dependencies: [.package(path: "MovieFolderCommon")],
-  targets: [.executableTarget(name: "CollectionProcessingNamespaceMaintenance", dependencies: ["MovieFolderCommon"])],
+  dependencies: [.package(path: "Common")],
+  targets: [.executableTarget(name: "CollectionProcessingNamespaceMaintenance", dependencies: ["Common"])],
   swiftLanguageModes: [.v6])
 SWIFT
 SWIFTPM_MODULECACHE_OVERRIDE="$common_cache/module-cache" \

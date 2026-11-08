@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Receives explicit results-sheet navigation and lifetime requests.
 @MainActor

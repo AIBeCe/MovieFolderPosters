@@ -74,6 +74,44 @@ class CoverageReportTests(unittest.TestCase):
             self.assertEqual(result["declaration_only_sources"], [str(enum)])
             self.assertEqual(result["executable_lines"], 0)
 
+    def test_protocol_requirements_and_enum_declarations_have_no_executable_lines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "Provider.swift"
+            source.write_text('''import Foundation
+            public enum LookupKind: Sendable {
+              case explicit
+            }
+
+            public protocol MovieProviding: AnyObject, Sendable {
+              func validateCredential() async throws
+              func movie(
+                identifiedBy identifier: String,
+                kind: LookupKind
+              ) async throws -> Movie?
+              func titles() async throws -> [String]
+              func didFinish()
+            }
+            ''')
+            export = root / "coverage.json"
+            export.write_text('{"data":[{"files":[]}]}')
+            result = self.report.component_coverage(export, root, root)
+            self.assertTrue(result["complete"])
+            self.assertEqual(result["declaration_only_sources"], [str(source)])
+            self.assertEqual(result["executable_lines"], 0)
+
+    def test_protocol_source_with_executable_code_cannot_be_omitted(self):
+        sources = [
+            "protocol Service { func perform() { print(1) } }",
+            "protocol Service { func perform(value: Int = calculate()) }",
+            "protocol Service { var value: Int { calculate() } }",
+            "protocol Service { func perform() } extension Service { func perform() { print(1) } }",
+            "protocol Service { func perform() } let result = calculate()"
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertFalse(self.report.declaration_only(source))
+
     def test_notification_name_constants_are_accounted_for_as_declarations(self):
         source = '''import Foundation
         public extension Notification.Name {
@@ -160,13 +198,14 @@ class CoverageReportTests(unittest.TestCase):
             self.assertFalse(report["passed"])
 
     def test_required_package_cannot_be_omitted_from_manifest_to_pass(self):
-        with tempfile.TemporaryDirectory() as directory:
-            manifest = self.fixture_manifest(Path(directory).resolve())
-            manifest["components"] = [item for item in manifest["components"] if item["name"] != "Network"]
-            manifest["required_components"] = []
-            report = self.report.create_report(manifest)
-            self.assertFalse(report["passed"])
-            self.assertTrue(any("Network" in message for message in report["failures"]))
+        for package in ("Network", "Contracts", "HTTPTransport", "TMDb"):
+            with self.subTest(package=package), tempfile.TemporaryDirectory() as directory:
+                manifest = self.fixture_manifest(Path(directory).resolve())
+                manifest["components"] = [item for item in manifest["components"] if item["name"] != package]
+                manifest["required_components"] = []
+                report = self.report.create_report(manifest)
+                self.assertFalse(report["passed"])
+                self.assertIn(f"{package}: complete coverage data is missing", report["failures"])
 
     def test_failed_test_run_cannot_supply_passing_coverage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -195,8 +234,8 @@ class CoverageReportTests(unittest.TestCase):
     @classmethod
     def fixture_manifest(cls, root):
         components = []
-        for name in ["Host", "Finder", "Network", "FileSystem", "Persistence", "Log", "MovieFolderCommon",
-                     "MovieFolderParsing"]:
+        for name in ["Host", "Finder", "Network", "Contracts", "HTTPTransport", "TMDb",
+                     "FileSystem", "Persistence", "Log", "Common", "MovieFolderParsing"]:
             source_root = root / name
             source_root.mkdir()
             source = source_root / "Service.swift"
@@ -205,9 +244,10 @@ class CoverageReportTests(unittest.TestCase):
             export.write_text(json.dumps({"data": [{"files": [cls.file_record(source, 91, 100)]}]}))
             components.append({"name": name, "source_root": str(source_root), "compiled_root": str(source_root),
                                "export": str(export), "test_exit_code": 0})
-        return {"components": components, "required_components": ["Project", "Network", "FileSystem",
-                                                                 "Persistence", "Log", "MovieFolderCommon",
-                                                                 "MovieFolderParsing"]}
+        return {
+            "components": components,
+            "required_components": ["Project"] + [item["name"] for item in components if item["name"] not in {"Host", "Finder"}]
+        }
 
     @staticmethod
     def file_record(path, covered, total):

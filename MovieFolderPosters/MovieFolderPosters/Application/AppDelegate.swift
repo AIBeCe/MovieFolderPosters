@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 import OSLog
 
 /// Presents startup failures without coupling their safe content to a modal run loop.
@@ -40,7 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidat
   private var savedDataMigrationTask: Task<Void, Never>?
 
   /// Builds the live root for AppKit's normal launch path.
-  override convenience init() { self.init(coordinator: AppCoordinator()) }
+  override convenience init() {
+    let services = MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations())
+    self.init(coordinator: AppCoordinator(services: services))
+  }
 
   /// Retains the application root before any lifecycle event is delivered.
   /// - Parameters:

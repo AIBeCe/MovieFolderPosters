@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Displays the host activity history in a table with a clear action.
 @MainActor

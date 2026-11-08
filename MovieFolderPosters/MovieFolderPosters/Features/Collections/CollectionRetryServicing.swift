@@ -1,4 +1,4 @@
-import MovieFolderCommon
+import Common
 
 /// Revalidates and retries one explicitly selected immediate child through the shared action service.
 nonisolated protocol CollectionRetryServicing: Sendable {
@@ -11,7 +11,7 @@ nonisolated protocol CollectionRetryServicing: Sendable {
 
 /// Disables poster retries for isolated configuration UI without constructing production storage.
 nonisolated struct UnavailableCollectionRetryService: CollectionRetryServicing {
-  /// Rejects a retry without reading directories, configuration, credentials, or saved processing state.
+  /// Rejects a retry without reading directories, configuration, access tokens, or saved processing state.
   func retryFolder(for request: MoviePosterRequest) throws -> FolderRetryResult {
     throw MoviePosterActionServiceError.directoryUnavailable
   }

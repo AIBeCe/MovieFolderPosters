@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 import UniformTypeIdentifiers
 
 /// Receives navigation requests from the collection configuration window.
@@ -310,7 +310,7 @@ extension ConfigurationViewController {
   /// Returns the explanation shown for a directory availability state.
   /// - Parameter availability: The latest directory readiness state.
   /// - Returns: User-facing text describing that state.
-  private func availabilityDescription(_ availability: MovieFolderCommon.DirectoryAvailability) -> String {
+  private func availabilityDescription(_ availability: Common.DirectoryAvailability) -> String {
     availability.explanation
   }
 

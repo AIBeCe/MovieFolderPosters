@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Establishes explicit launch recovery before processing routes become available.
 @MainActor
@@ -7,7 +7,7 @@ final class ProcessingRecoveryLaunchController {
   /// Launch arguments captured independently of later configuration actions.
   private let arguments: [String]
   /// Isolated service supplied by tests, or opened lazily for a recovery launch.
-  private let recovery: ProcessingRecoveryService?
+  private let makeRecovery: () throws -> ProcessingRecoveryService
   /// Prevents a later route from undoing an explicit Resume Processing action.
   private var isPrepared = false
 
@@ -15,9 +15,13 @@ final class ProcessingRecoveryLaunchController {
   /// - Parameters:
   ///   - arguments: Process launch arguments, including an optional recovery flag.
   ///   - recovery: Dedicated gate service for an isolated environment.
-  init(arguments: [String] = ProcessInfo.processInfo.arguments, recovery: ProcessingRecoveryService? = .none) {
+  init(
+    arguments: [String] = ProcessInfo.processInfo.arguments, recovery: ProcessingRecoveryService? = .none,
+    makeRecovery: @escaping () throws -> ProcessingRecoveryService =
+      MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations()).makeProcessingRecoveryService
+  ) {
     self.arguments = arguments
-    self.recovery = recovery
+    self.makeRecovery = { try recovery ?? makeRecovery() }
   }
 
   /// Persists recovery before the caller composes or routes processing.
@@ -25,7 +29,7 @@ final class ProcessingRecoveryLaunchController {
   func prepare() throws {
     guard !isPrepared else { return }
     if arguments.contains("--recovery-mode") {
-      let service = try recovery ?? MovieFolderEnvironment.makeProcessingRecoveryService()
+      let service = try makeRecovery()
       try service.setRecoveryModeEnabled(true)
     }
     isPrepared = true

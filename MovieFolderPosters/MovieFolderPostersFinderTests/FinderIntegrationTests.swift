@@ -1,9 +1,8 @@
 import FileSystem
 import FinderSync
 import Foundation
-import MovieFolderCommon
+import Common
 @testable import MovieFolderFinder
-import Network
 import Persistence
 import Synchronization
 import Testing
@@ -48,7 +47,7 @@ struct FinderIntegrationTests {
     #expect(recordedMessages.contains { $0.contains("Arrival (2016)") })
   }
 
-  /// Pausing keeps Finder registration and a credential-free Include action available.
+  /// Pausing keeps Finder registration and an access token-free Include action available.
   @Test @MainActor func pausedExcludedFolderOffersIncludeWithoutMutatingConfiguration() throws {
     let testEnvironment = try FinderTestEnvironment()
     defer { testEnvironment.remove() }
@@ -65,6 +64,7 @@ struct FinderIntegrationTests {
     let contextMenuHandler = MovieFolderContextMenuHandler(environment: environment)
     let target = ContextMenuActionTarget(contextMenuHandler: contextMenuHandler)
     let outer = try #require(contextMenuHandler.contextMenu(for: .contextualMenuForItems, actionTarget: target))
+    #expect(environment.configurationReadCount == 1)
     let menu = try #require(outer.items.first?.submenu)
     let include = try #require(menu.items.first(where: { $0.title == "Include Folder…" }))
     contextMenuHandler.openContextMenuInclusionAction(include)
@@ -249,8 +249,8 @@ extension FinderIntegrationTests {
       $0.event.activityGroupID == .none || $0.event.collectionID == testEnvironment.directory.id
     })
   }
-  /// Keeps authorized roots registered while coalescing missing-credential diagnostics.
-  @Test @MainActor func missingCredentialRetainsRootsAndSuppressesRepeatedUnavailableEvents() async throws {
+  /// Keeps authorized roots registered while coalescing missing-access token diagnostics.
+  @Test @MainActor func missingAccessTokenRetainsRootsAndSuppressesRepeatedUnavailableEvents() async throws {
     let testEnvironment = try FinderTestEnvironment()
     defer { testEnvironment.remove() }
     var environment = IsolatedFinderEnvironment(testEnvironment)
@@ -478,8 +478,8 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().last?.event.status == .cancelled)
   }
 
-  /// Prevents an older metadata request from committing after credential replacement.
-  @Test @MainActor func lateProviderResponseCannotCommitUnderNewCredentialGeneration() async throws {
+  /// Prevents an older metadata request from committing after access token replacement.
+  @Test @MainActor func lateProviderResponseCannotCommitUnderNewAccessTokenGeneration() async throws {
     let testEnvironment = try FinderTestEnvironment()
     defer { testEnvironment.remove() }
     _ = try testEnvironment.movie()
@@ -500,13 +500,18 @@ extension FinderIntegrationTests {
     #expect(try await environment.activity.entries().last?.event.status == .failed)
   }
 
-  /// Checks live provider credential validation without contacting the metadata service.
-  @Test func systemProviderCompositionValidatesCredentialsWithoutSendingNetworkRequests() throws {
-    let system = SystemFinderRuntimeEnvironment()
+  /// Checks live provider access token validation without contacting the metadata service.
+  @Test func systemProviderCompositionValidatesAccessTokenStoreWithoutSendingNetworkRequests() throws {
+    let fixture = try FinderTestEnvironment()
+    defer { fixture.remove() }
+    let services = MovieFolderServiceFactory(locations: FinderCompositionTestLocations(root: fixture.container))
+    let system = SystemFinderRuntimeEnvironment(services: services)
     let settings = DirectoryConfiguration()
-    #expect(throws: TMDbError.missingToken) { try system.movieMetadataProvider(token: "", configuration: settings) }
+    #expect(throws: MovieMetadataError.missingToken) {
+      try system.movieMetadataProvider(token: "", configuration: settings)
+    }
     #expect(try system.movieMetadataProvider(
-      token: "isolated-composition-token", configuration: settings) is TMDbClient)
+      token: "isolated-composition-token", configuration: settings) is NetworkClient)
     var debugSettings = settings
     debugSettings.usesStubTMDbResponses = true
     // This standalone test bundle intentionally has no signed extension TestPoster resource.
@@ -535,7 +540,8 @@ extension FinderIntegrationTests {
   @Test func systemAuthorizationAdapterPreservesTemporaryRootIdentity() throws {
     let testEnvironment = try FinderTestEnvironment()
     defer { testEnvironment.remove() }
-    let system = SystemFinderRuntimeEnvironment()
+    let services = MovieFolderServiceFactory(locations: FinderCompositionTestLocations(root: testEnvironment.container))
+    let system = SystemFinderRuntimeEnvironment(services: services)
     let bookmark = testEnvironment.directory.transferBookmark
     let access = try system.acquireDirectoryAccess(bookmark: bookmark, securityScoped: false,
       expectedIdentity: testEnvironment.directory.identity)
@@ -546,4 +552,12 @@ extension FinderIntegrationTests {
     }
   }
 
+}
+
+/// Supplies isolated storage for the system composition adapter.
+private struct FinderCompositionTestLocations: MovieFolderApplicationStorageLocations {
+  let root: URL
+
+  func appGroupContainerURL() throws -> URL { root }
+  func applicationSupportURL() throws -> URL { root.appendingPathComponent("Private") }
 }

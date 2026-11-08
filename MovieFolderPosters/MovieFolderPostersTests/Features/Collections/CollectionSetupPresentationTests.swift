@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Synchronization
 import Testing
 
@@ -36,7 +36,8 @@ import Testing
 /// Matching help is an anchored transient popover without confirmation buttons or a modal sheet.
 @Test @MainActor func matchingHelpUsesReplacingTransientPopover() throws {
   _ = NSApplication.shared
-  let settings = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),
+  let settings = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake(),
+    activity: MovieFolderActivityServiceFake()),
     appearanceSettings: AppAppearanceSettings())
   let pane = try #require(settings.tabViewItems.first(where: { $0.label == "Matching Defaults" })?.viewController)
   let window = NSWindow(contentViewController: pane)
@@ -146,7 +147,8 @@ import Testing
 
 /// The native settings toolbar must retain its established layout and insert Matching in order.
 @Test @MainActor func matchingPaneUsesNativeToolbarPosition() throws {
-  let controller = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),
+  let controller = SettingsViewController(viewModel: ConfigurationViewModel(service: ConfigurationServiceFake(),
+    activity: MovieFolderActivityServiceFake()),
     appearanceSettings: AppAppearanceSettings())
   #expect(controller.tabStyle == .toolbar)
   #expect(controller.tabViewItems.map(\.label) == ["Poster Layout", "Matching Defaults", "TMDb", "Appearance"])
@@ -201,7 +203,7 @@ import Testing
 }
 
 /// Supplies prepared in-memory authorization without filesystem access to presentation tests.
-private final class SetupServiceProbe: ConfigurationServicing, Sendable {
+private final class SetupServiceProbe: CollectionSetupServicing {
   /// Last privacy choice submitted only when the complete draft is committed.
   private let privacy = Mutex(false)
   /// Saved privacy evidence for the setup draft contract.
@@ -223,15 +225,4 @@ private final class SetupServiceProbe: ConfigurationServicing, Sendable {
     policies.withLock { $0.append(movieMatchingConfiguration) }
     privacy.withLock { $0 = usesPrivateHistory }
   }
-  func configurationSummary() throws -> ConfigurationSummary {
-    ConfigurationSummary(directories: [], credentialConfigured: false)
-  }
-  func addDirectory(_ directory: URL) throws {}
-  func removeDirectory(_ identifier: UUID) throws {}
-  func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {}
-  func credentialState() throws -> CredentialState { CredentialState(isConfigured: false, revision: .none) }
-  func testCredential(expectedRevision: UUID?) throws {}
-  func saveCredential(_ value: String, expectedRevision: UUID?) throws {}
-  func removeCredential(expectedRevision: UUID?) throws {}
-  func setPosterAppearance(_ appearance: PosterAppearance) throws {}
 }

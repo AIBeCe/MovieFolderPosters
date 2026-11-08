@@ -1,5 +1,5 @@
 import FileSystem
-import MovieFolderCommon
+import Common
 import Persistence
 import XCTest
 
@@ -29,7 +29,7 @@ class MovieFolderPostersUITestCase: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [setupClosed], timeout: 10), .completed)
   }
 
-  /// Enables deterministic metadata responses without configuring a real credential.
+  /// Enables deterministic metadata responses without configuring a real access token.
   func seedFixtureMode(sharedRoot: URL) throws {
     let storageRoot = sharedRoot.standardizedFileURL
     let storeFactory = PersistenceStoreFactory(trustedRoot: storageRoot)

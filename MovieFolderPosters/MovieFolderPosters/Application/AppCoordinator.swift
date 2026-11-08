@@ -1,5 +1,8 @@
 import AppKit
-import MovieFolderCommon
+import Common
+
+/// Activity capabilities needed to assemble the configuration and export flows.
+typealias ConfigurationActivityServices = MovieFolderActivityRecording & MovieFolderActivityReading
 
 /// Builds configuration independently of the root's operational and poster-action flows.
 @MainActor
@@ -11,7 +14,7 @@ protocol ConfigurationFlowBuilding {
   ///   - retryService: The same host action service used by Choose Movie.
   /// - Returns: A configuration flow ready to start.
   /// - Throws: Required configuration or processing storage initialization failures.
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator
 }
@@ -19,19 +22,23 @@ protocol ConfigurationFlowBuilding {
 /// Composes the live configuration workflow, including service-owned removal cleanup.
 @MainActor
 struct ConfigurationFlowBuilder: ConfigurationFlowBuilding {
+  let services: MovieFolderServiceFactory
+  let networkHistory: any MovieFolderNetworkHistoryRecording & MovieFolderNetworkHistoryReading
+
   /// Opens the host flow, starts best-effort orphan cleanup, and honors explicit Debug fixture arguments.
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
-    let repository = try MovieFolderEnvironment.makeConfigurationRepository()
-    let processingStore = try MovieFolderEnvironment.makeCollectionProcessingStore()
-    let recovery = try? MovieFolderEnvironment.makeProcessingRecoveryService()
+    let repository = try services.makeConfigurationRepository()
+    let processingStore = try services.makeCollectionProcessingStore()
+    let recovery = try? services.makeProcessingRecoveryService()
     let service = try DirectoryConfigurationService(
       repository: repository,
-      authorizations: MovieFolderEnvironment.makePrivateAuthorizationStore(),
+      authorizations: services.makePrivateAuthorizationStore(),
+      accessTokenStore: services.makeProviderAccessTokenStore(),
       processingCleanup: processingStore, activity: activity,
-      requestDelegate: MovieFolderNetworkRequestRecorder(
-        networkHistoryService: MovieFolderEnvironment.makeNetworkHistoryService()),
+      accessTokenValidator: NetworkAccessTokenValidator(requestDelegate: MovieFolderNetworkRequestRecorder(
+        networkHistoryService: networkHistory)),
       recovery: recovery)
     Task.detached {
       do {
@@ -49,8 +56,12 @@ struct ConfigurationFlowBuilder: ConfigurationFlowBuilding {
     #endif
 
     return try ConfigurationCoordinator(
-      service: service, activity: activity, summaryService: CollectionSummaryService.shared(), appearance: appearance,
-      recovery: recovery, retryService: retryService)
+      service: service, activity: activity, summaryService: CollectionSummaryService.shared(services: services),
+      appearance: appearance,
+      localDataExportService: LocalDataExportService(
+        activity: activity, network: networkHistory, makeRepository: services.makeConfigurationRepository),
+      recovery: recovery, retryService: retryService,
+      utilityService: MovieFolderFinderActionService(environment: LiveMoviePosterActionEnvironment(services: services)))
   }
 }
 
@@ -65,7 +76,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// Poster-action presentation independent of configuration startup.
   let posterActionCoordinator: MoviePosterActionCoordinator
   /// Records product events without depending on a Log presentation model.
-  private let activity: any MovieFolderActivityServicing
+  private let activity: any ConfigurationActivityServices
   /// Creates configuration dependencies on demand.
   private let configurationBuilder: any ConfigurationFlowBuilding
   /// Shared preferences applied to current and future windows through AppKit inheritance.
@@ -87,20 +98,26 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   ///   - appearance: Preferences exposed by Settings and applied by this root.
   ///   - recoveryLaunch: Launch recovery preparation completed before configuration starts.
   ///   - savedDataMigrationService: Explicit migration command independent of readable configuration.
-  init(activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
-       configurationBuilder: any ConfigurationFlowBuilding = ConfigurationFlowBuilder(),
+  init(services: MovieFolderServiceFactory = MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations()),
+       activity: (any MovieFolderActivityServicing)? = .none,
+       configurationBuilder: (any ConfigurationFlowBuilding)? = .none,
        posterService: (any MoviePosterActionServicing & CollectionRetryServicing)? = .none,
        appearance: AppAppearanceSettings = AppAppearanceSettings(),
-       recoveryLaunch: ProcessingRecoveryLaunchController = ProcessingRecoveryLaunchController(),
-       savedDataMigrationService: any SavedDataMigrationServicing = SavedApplicationDataMigrationService()) {
+       recoveryLaunch: ProcessingRecoveryLaunchController? = .none,
+       savedDataMigrationService: (any SavedDataMigrationServicing)? = .none) {
+    let activity = activity ?? services.makeActivityRecorder()
+    let networkHistory = services.makeNetworkHistoryService()
     self.activity = activity
     self.configurationBuilder = configurationBuilder
+      ?? ConfigurationFlowBuilder(services: services, networkHistory: networkHistory)
     self.appearance = appearance
     self.recoveryLaunch = recoveryLaunch
+      ?? ProcessingRecoveryLaunchController(makeRecovery: services.makeProcessingRecoveryService)
     self.savedDataMigrationService = savedDataMigrationService
-    let networkHistory = MovieFolderEnvironment.makeNetworkHistoryService()
+      ?? SavedApplicationDataMigrationService(makeMigrator: services.makeStorageMigrator)
     let sharedPosterService = posterService ?? MoviePosterActionService(
-      activity: activity, networkHistory: networkHistory)
+      accessTokenStore: services.makeProviderAccessTokenStore(), activity: activity,
+      environment: LiveMoviePosterActionEnvironment(services: services), networkHistory: networkHistory)
     self.posterService = sharedPosterService
     logCoordinator = LogCoordinator(activityHistoryService: activity, networkHistoryService: networkHistory)
     posterActionCoordinator = MoviePosterActionCoordinator(
@@ -135,7 +152,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
   /// Routes history directly to its independent owner.
   func showLog() { logCoordinator.show() }
 
-  /// Runs the independent explicit migration without requiring readable configuration or credentials.
+  /// Runs the independent explicit migration without requiring readable configuration or access tokens.
   /// - Returns: Actual committed and unchanged record counts.
   /// - Throws: Busy, cancellation or typed migration failures, preserving earlier completed upgrades.
   func migrateSavedData() async throws -> MovieFolderStorageMigrationReport {
@@ -170,7 +187,7 @@ final class AppCoordinator: ConfigurationCoordinatorDelegate, AppAppearanceSetti
     do { try presentConfiguration { $0.showProcessingDetails(for: request) } } catch { return }
   }
 
-  /// Routes inclusion independently from processing recovery and provider credentials.
+  /// Routes inclusion independently from processing recovery and provider access tokens.
   func openInclusionAction(_ request: MovieFolderInclusionRequest) {
     do { try presentConfiguration { $0.openInclusionAction(request) } } catch { return }
   }

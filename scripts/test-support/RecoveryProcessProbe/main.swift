@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 
 /// Explicit failures in the disposable, separate-process recovery qualification.

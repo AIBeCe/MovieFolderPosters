@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Receives the user's request to dismiss the processing-details sheet.
 @MainActor
@@ -364,7 +364,7 @@ private extension FolderProcessingFailureReason {
     case .authorizationDenied: "Folder access denied"
     case .invalidSelection: "Invalid movie or folder selection"
     case .invalidQuery: "Invalid movie search"
-    case .credentialStorage: "Credential storage unavailable"
+    case .credentialStorage: "Access token storage unavailable"
     case .invalidConfiguration: "Invalid configuration"
     case .busy: "Another operation is in progress"
     case .collectionPaused: "Collection paused"

@@ -1,13 +1,12 @@
 import FileSystem
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Persistence
 
 /// Performs authorized searches, poster icon changes, and assignment lookups for Finder actions.
 nonisolated protocol MoviePosterActionServicing: Sendable {
   /// Captures the effective search language using the same authorization checks as provider work.
-  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage
+  func searchLanguage(for request: MoviePosterRequest) async throws -> MovieSearchLanguage
 
   /// Searches for movie metadata using a title and optional release year.
   ///
@@ -15,10 +14,12 @@ nonisolated protocol MoviePosterActionServicing: Sendable {
   ///   - request: The folder action whose authorization scope is used.
   ///   - query: The movie title to search for.
   ///   - year: An optional release year in the supported range.
-  /// - Returns: The matching TMDb results and pagination state.
+  ///   - language: The effective search language captured for the request.
+  /// - Returns: The matching results and pagination state.
   /// - Throws: An action or provider error when the request cannot be completed.
-  func searchMovies(for request: MoviePosterRequest, query: String, year: Int?, language: TMDbLanguage) async throws
-    -> MovieSearchResult
+  func searchMovies(
+    for request: MoviePosterRequest, query: String, year: Int?, language: MovieSearchLanguage
+  ) async throws -> MovieSearchResult
   /// Downloads a fresh poster for the movie currently assigned to the folder.
   ///
   /// Preserves a saved selection when it remains current and establishes an automatic match only
@@ -60,8 +61,8 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
   case configurationChanged
   /// The requested child folder no longer has the expected identity.
   case childChanged
-  /// No TMDb credential is available for the requested operation.
-  case credentialUnavailable
+  /// No TMDb access token is available for the requested operation.
+  case accessTokenUnavailable
   /// The chosen result is not a valid poster-bearing movie.
   case invalidSelection
   /// The title or release year does not satisfy the search contract.
@@ -74,7 +75,7 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
     case .directoryUnavailable: "Could not access the configured movie folder."
     case .configurationChanged: "Directory configuration changed. Please try again."
     case .childChanged: "This movie folder changed. Reopen the action and try again."
-    case .credentialUnavailable: "Add a TMDb read access token in Settings to use this action."
+    case .accessTokenUnavailable: "Add a TMDb read access token in Settings to use this action."
     case .invalidSelection: "Choose a movie with a poster before applying it."
     case .invalidQuery: "Enter a movie title and a valid optional release year."
     }
@@ -116,25 +117,32 @@ extension MoviePosterActionEnvironment {
 nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironment {
   /// Resolves the same process-specific store authorization as configuration and history services.
   private let storageLocations = MovieFolderSystemStorageLocations()
+  let services: MovieFolderServiceFactory
+
+  init(
+    services: MovieFolderServiceFactory = MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations())
+  ) {
+    self.services = services
+  }
 
   func makeDirectoryBookmark(for directory: URL) throws -> Data {
     try FileSystemService().makeDirectoryBookmark(for: directory)
   }
   func appGroupContainerURL() throws -> URL { try MovieFolderEnvironment.appGroupContainerURL() }
   func makeConfigurationRepository() throws -> ConfigurationRepository {
-    try MovieFolderEnvironment.makeConfigurationRepository()
+    try services.makeConfigurationRepository()
   }
   func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore {
     try storageLocations.makePersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
   }
   func makePrivateAuthorizationStore() throws -> PersistenceStore {
-    try MovieFolderEnvironment.makePrivateAuthorizationStore()
+    try services.makePrivateAuthorizationStore()
   }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
-    try MovieFolderEnvironment.makeCollectionProcessingStore()
+    try services.makeCollectionProcessingStore()
   }
   func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
-    try MovieFolderEnvironment.makeProcessingRecoveryService()
+    try services.makeProcessingRecoveryService()
   }
 }
 
@@ -143,7 +151,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// Performs identity checks and reads the current folder state.
   private let fileSystem = FileSystemService()
   /// Reads the TMDb token without retaining its value in configuration state.
-  private let credentials: any CredentialStoring
+  private let accessTokenStore: any ProviderAccessTokenStoring
 
   /// Storage boundaries retain the same live authorization checks for isolated consumers.
   private let environment: any MoviePosterActionEnvironment
@@ -151,28 +159,28 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   private let movieMetadataProvider: (any MovieMetadataProvider)?
 
   /// Retained best-effort recorder whose failure never changes a poster result.
-  private let activity: any MovieFolderActivityServicing
-  /// Optional injected history boundary; the live boundary opens lazily only for real HTTP work.
-  private let networkHistory: (any MovieFolderNetworkHistoryServicing)?
+  private let activity: any MovieFolderActivityRecording
+  /// Retained history boundary used only for live HTTP requests.
+  private let networkHistory: any MovieFolderNetworkHistoryRecording
   /// Holds admission through asynchronous suspension and cancellation unwinding.
   private var isConfigurationActionRunning = false
 
-  /// Creates the service with a credential provider.
+  /// Creates the service with an access token provider.
   ///
   /// - Parameters:
-  ///   - credentials: The secure credential store used for TMDb access.
+  ///   - access tokens: The secure access token store used for TMDb access.
   ///   - activity: Best-effort operation recorder independent of action success.
   ///   - environment: Storage locations preserving the host authorization configuration.
-  ///   - movieMetadataProvider: Optional metadata provider used after credential validation.
-  ///   - networkHistory: Optional history service supplied by application composition or an isolated consumer.
+  ///   - movieMetadataProvider: Optional metadata provider used after access token validation.
+  ///   - networkHistory: History service supplied by application composition or an isolated consumer.
   init(
-    credentials: any CredentialStoring = MovieFolderEnvironment.makeCredentialStore(),
-    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
+    accessTokenStore: any ProviderAccessTokenStoring,
+    activity: any MovieFolderActivityRecording,
     environment: any MoviePosterActionEnvironment = LiveMoviePosterActionEnvironment(),
     movieMetadataProvider: (any MovieMetadataProvider)? = .none,
-    networkHistory: (any MovieFolderNetworkHistoryServicing)? = .none
+    networkHistory: any MovieFolderNetworkHistoryRecording
   ) {
-    self.credentials = credentials
+    self.accessTokenStore = accessTokenStore
     self.activity = activity
     self.environment = environment
     self.movieMetadataProvider = movieMetadataProvider
@@ -317,7 +325,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     case .directoryNotConfigured, .configurationChanged: .configurationChanged
     case .directoryUnavailable: .authorizationDenied
     case .childChanged: .ownershipChanged
-    case .credentialUnavailable: .authentication
+    case .accessTokenUnavailable: .authentication
     case .invalidSelection: .invalidSelection
     case .invalidQuery: .invalidQuery
     }
@@ -333,7 +341,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - year: The optional release year.
   /// - Returns: Matching movie metadata and pagination state.
   /// - Throws: An action, configuration, or TMDb error if validation or search fails.
-  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage {
+  func searchLanguage(for request: MoviePosterRequest) async throws -> MovieSearchLanguage {
     try await withExclusiveAction {
       try await withAuthorizedRoot(request) { context in
         context.configuration.effectiveMovieMatchingConfiguration(for: context.directory).searchLanguage
@@ -342,7 +350,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
-                    language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+                    language: MovieSearchLanguage = .english) async throws -> MovieSearchResult {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanQuery.isEmpty, !cleanQuery.contains("\r"), !cleanQuery.contains("\n"),
       year.map({ (1888...2099).contains($0) }) ?? true
@@ -442,7 +450,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     }
   }
 
-  /// Reads the existing movie assignment without requiring a TMDb credential.
+  /// Reads the existing movie assignment without requiring a TMDb access token.
   ///
   /// - Parameter request: The folder identity and collection authorization scope.
   /// - Returns: The saved movie identifier, or `nil` when no assignment exists.
@@ -522,39 +530,39 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// - Parameters:
   ///   - configuration: The configuration processing state that controls fixture use.
   ///   - collectionID: The authorized collection used only for optional history eligibility.
-  /// - Returns: A provider configured with the saved credential.
-  /// - Throws: A credential or fixture error when no usable provider can be created.
+  /// - Returns: A provider configured with the saved access token.
+  /// - Throws: A access token or fixture error when no usable provider can be created.
   private func makeMovieMetadataProvider(
     for configuration: DirectoryConfiguration, collectionID: UUID
   ) throws -> any MovieMetadataProvider {
-    guard let token = try credentials.read() else {
-      throw MoviePosterActionServiceError.credentialUnavailable
+    guard let token = try accessTokenStore.read() else {
+      throw MoviePosterActionServiceError.accessTokenUnavailable
     }
-    let accessToken = try TMDbAccessToken(token)
+    try NetworkAccessTokenValidator().validateAccessToken(token)
     let recovery = try environment.makeProcessingRecoveryService()
     if let movieMetadataProvider {
-      return RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, credential: token)
+      return RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider, recovery: recovery, accessToken: token)
     }
 
     #if DEBUG
       if configuration.usesStubTMDbResponses {
         guard let posterURL = Bundle.main.url(forResource: "TestPoster", withExtension: "png")
         else {
-          throw TMDbError.invalidImage
+          throw MovieMetadataError.invalidImage
         }
-        let transport = StubTMDbTransport(posterData: try Data(contentsOf: posterURL))
+        let client = try NetworkClient(token: token, fixturePosterData: Data(contentsOf: posterURL))
 
-        return RecoveryAwareMovieMetadataProvider(
-          provider: TMDbClient(token: accessToken, transport: transport), recovery: recovery, credential: token)
+        return RecoveryAwareMovieMetadataProvider(provider: client, recovery: recovery, accessToken: token)
       }
     #endif
 
     let requestRecorder = MovieFolderNetworkRequestRecorder(
-      networkHistoryService: networkHistory ?? MovieFolderEnvironment.makeNetworkHistoryService(),
+      networkHistoryService: networkHistory,
       collectionID: collectionID)
 
-    return RecoveryAwareMovieMetadataProvider(
-      provider: TMDbClient(token: accessToken, requestDelegate: requestRecorder), recovery: recovery, credential: token)
+    let client = try NetworkClient(token: token, requestDelegate: requestRecorder)
+
+    return RecoveryAwareMovieMetadataProvider(provider: client, recovery: recovery, accessToken: token)
   }
 
   /// Captures the already authorized collection generation for authoritative action results.
@@ -599,9 +607,10 @@ private extension MoviePosterActionService {
     #endif
 
     return MovieFolderProcessor(
+      inventoryReader: fileSystem, informationReader: fileSystem, posterCache: fileSystem, ownedPosters: fileSystem,
       persistence: try environment.makePersistenceStore(directory: recordDirectory, maximumRecordBytes: .none),
       provider: movieMetadataProvider,
-      cacheDirectory: container.appendingPathComponent("Posters"),
+      cacheDirectory: container.appendingPathComponent("Posters"), posterAssigner: fileSystem,
       processingLockStore: try environment.makePersistenceStore(
         directory: coordinationDirectory, maximumRecordBytes: .none),
       processingVerifier: processingVerifier,
@@ -681,18 +690,18 @@ private struct MissingTMDbTokenProvider: MovieMetadataProvider {
   /// - Parameters:
   ///   - title: The requested movie title.
   ///   - year: The optional release year.
-  /// - Throws: `TMDbError.missingToken` for every search request.
-  /// Refuses release evidence when no credential is configured.
-  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { throw TMDbError.missingToken }
-  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { throw TMDbError.missingToken }
+  /// - Throws: `MovieMetadataError.missingToken` for every search request.
+  /// Refuses release evidence when no access token is configured.
+  func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { throw MovieMetadataError.missingToken }
+  func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { throw MovieMetadataError.missingToken }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws -> MovieSearchPage {
-    throw TMDbError.missingToken
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) throws -> MovieSearchPage {
+    throw MovieMetadataError.missingToken
   }
 
   /// Rejects poster downloads because this provider intentionally has no token.
   ///
   /// - Parameter path: The remote poster path requested by the processor.
-  /// - Throws: `TMDbError.missingToken` for every download request.
-  func downloadPoster(path: String) throws -> Data { throw TMDbError.missingToken }
+  /// - Throws: `MovieMetadataError.missingToken` for every download request.
+  func downloadPoster(path: String) throws -> Data { throw MovieMetadataError.missingToken }
 }

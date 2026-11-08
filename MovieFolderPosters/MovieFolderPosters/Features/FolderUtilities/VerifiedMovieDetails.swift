@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Saved verified identity independent of artwork success or poster ownership.
 nonisolated struct VerifiedMovieDetails: Sendable, Equatable {

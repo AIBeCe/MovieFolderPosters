@@ -1,8 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-@testable import MovieFolderCommon
-import Network
+@testable import Common
 import Persistence
 import Synchronization
 import Testing
@@ -47,7 +46,7 @@ struct DirectoryConfigurationEditTests {
       authorizations: fixture.authorizations, directory: directory, childIdentity: identity,
       authorization: authorization)
     let service = DirectoryConfigurationService(repository: fixture.repository,
-      authorizations: fixture.authorizations, credentials: fixture.credentials,
+      authorizations: fixture.authorizations, accessTokenStore: fixture.accessTokenStore,
       notifier: SilentConfigurationNotifier(), authorization: authorization, activity: activity)
     let request = MovieFolderInclusionRequest(action: .exclude, collectionID: directory.id,
       folderURL: child, folderIdentity: identity,
@@ -179,7 +178,7 @@ struct DirectoryConfigurationEditTests {
     #expect(saved.movieMatchingConfiguration == .none)
   }
 
-  /// Pause and include preserve authorization and do not require a credential.
+  /// Pause and include preserve authorization and do not require an access token.
   @Test func inclusionEditsPreserveAuthorizationAndFenceStaleRevisions() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
@@ -221,8 +220,8 @@ struct DirectoryConfigurationEditTests {
     let limited = ConfigurationRepository(store: try PersistenceStore(
       directory: fixture.root.appendingPathComponent("Shared"), maximumRecordBytes: 1_500))
     let service = DirectoryConfigurationService(repository: limited, authorizations: fixture.authorizations,
-      credentials: fixture.credentials, notifier: notifications,
-      authorization: TestDirectoryAuthorization(mode: .implicit))
+      accessTokenStore: fixture.accessTokenStore, notifier: notifications,
+      authorization: TestDirectoryAuthorization(mode: .implicit), activity: MovieFolderActivityServiceFake())
     do {
       try await service.commitCollection(candidate, displayName: .none,
         movieMatchingConfiguration: .none)
@@ -262,8 +261,8 @@ struct DirectoryConfigurationEditTests {
     #expect(try limitedRepository.read() == before)
     let notifications = CollectionSetupNotificationProbe()
     let service = DirectoryConfigurationService(repository: limitedRepository, authorizations: fixture.authorizations,
-      credentials: fixture.credentials, notifier: notifications,
-      authorization: TestDirectoryAuthorization(mode: .implicit))
+      accessTokenStore: fixture.accessTokenStore, notifier: notifications,
+      authorization: TestDirectoryAuthorization(mode: .implicit), activity: MovieFolderActivityServiceFake())
     if reauthorizing {
       do {
         try await service.reauthorizeDirectory(old.id, replacement)
@@ -301,8 +300,8 @@ extension DirectoryConfigurationEditTests {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let notifications = CollectionSetupNotificationProbe()
     let service = DirectoryConfigurationService(repository: fixture.repository, authorizations: fixture.authorizations,
-      credentials: fixture.credentials, notifier: notifications,
-      authorization: TestDirectoryAuthorization(mode: .implicit))
+      accessTokenStore: fixture.accessTokenStore, notifier: notifications,
+      authorization: TestDirectoryAuthorization(mode: .implicit), activity: MovieFolderActivityServiceFake())
     let candidate = try await service.prepareCollection(folder)
     #expect(notifications.configurationCount == .zero)
     try await service.commitCollection(candidate, displayName: "Original",

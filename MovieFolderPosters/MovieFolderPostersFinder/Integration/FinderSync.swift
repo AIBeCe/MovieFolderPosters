@@ -1,7 +1,6 @@
 import FileSystem
 import FinderSync
-import MovieFolderCommon
-import Network
+import Common
 import OSLog
 import Persistence
 
@@ -26,7 +25,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   /// The adapter used for directory evidence, cache access, and owned-icon operations.
   private let fileSystem = FileSystemService()
   /// Retained best-effort recorder; logging never controls processing authorization.
-  private let activity: any MovieFolderActivityServicing
+  private let activity: any MovieFolderActivityRecording
   /// Signed-process services replaced together by an isolated integration environment.
   private let environment: any FinderRuntimeEnvironment
 
@@ -38,9 +37,9 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
   private let logger = Logger(subsystem: "dag.fikios.MovieFolderPosters", category: "DirectoryConfiguration")
 
   /// Retains the required environment and best-effort activity service.
-  init(environment: any FinderRuntimeEnvironment = SystemFinderRuntimeEnvironment()) {
+  init(environment: any FinderRuntimeEnvironment) {
     self.environment = environment
-    activity = environment.activity
+    activity = environment.activityRecorder
   }
 
   /// Loads authorized roots while retaining the access needed by subsequent visits.
@@ -57,14 +56,14 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       processors = [:]
       var configurationFailure: AutomaticFolderProcessingFailure?
       do {
-        if let token = try environment.credential() {
+        if let token = try environment.accessToken() {
           try configureProcessors(token: token, configuration: configuration, roots: updated)
         } else {
-          logger.notice("TMDb credential is not configured")
-          configurationFailure = MovieFolderActivityLogEvent.failureEvidence(for: TMDbError.missingToken)
+          logger.notice("TMDb access token is not configured")
+          configurationFailure = MovieFolderActivityLogEvent.failureEvidence(for: MovieMetadataError.missingToken)
         }
       } catch {
-        logger.error("Secure credential or processing storage unavailable")
+        logger.error("Secure access token or processing storage unavailable")
         configurationFailure = MovieFolderActivityLogEvent.failureEvidence(for: error)
       }
       let registered = Set(updated.keys)
@@ -87,7 +86,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
 
   /// Composes configuration-bound processors using the saved settings and authorized roots.
   /// - Parameters:
-  ///   - token: Saved credential used only at the provider boundary.
+  ///   - token: Saved access token used only at the provider boundary.
   ///   - configuration: Settings captured alongside the provider and processing verifier.
   ///   - roots: Authorized roots retaining security-scoped directory access.
   /// - Throws: Provider, recovery, container, or persistence setup errors.
@@ -109,10 +108,11 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
       let movieMetadataProvider = try environment.movieMetadataProvider(
         token: token, configuration: configuration, collectionID: root.directory.id)
       processors[url] = MovieFolderProcessor(
+        inventoryReader: fileSystem, informationReader: fileSystem, posterCache: fileSystem, ownedPosters: fileSystem,
         persistence: try PersistenceStore(directory: records),
         provider: RecoveryAwareMovieMetadataProvider(provider: movieMetadataProvider,
-          recovery: recovery, credential: token),
-        cacheDirectory: container.appendingPathComponent("Posters"),
+          recovery: recovery, accessToken: token),
+        cacheDirectory: container.appendingPathComponent("Posters"), posterAssigner: fileSystem,
         processingLockStore: try PersistenceStore(directory: container.appendingPathComponent("ProcessingLocks")),
         processingVerifier: processingVerifier, appearance: configuration.posterAppearance,
         processingStore: try environment.processingStore(), recovery: recovery,
@@ -124,7 +124,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: root.directory))
     }
     processingConfiguration = configuration
-    logger.notice("Shared Keychain credential available")
+    logger.notice("Shared Keychain access token available")
   }
 
   /// Authorizes nonoverlapping roots and excludes aliases sharing a persistent identity.
@@ -338,11 +338,15 @@ final class FinderSync: FIFinderSync {
   /// Serializes observation and configuration work for the extension lifetime.
   private let scheduler: FinderDirectoryObservationScheduler
   /// Retains captured, validated menu requests until an action is selected.
-  private let contextMenuHandler = MovieFolderContextMenuHandler(environment: LiveMovieFolderContextMenuEnvironment())
+  private let contextMenuHandler: MovieFolderContextMenuHandler
 
   /// Creates Finder scheduling and observes configuration changes for this extension process.
   override init() {
-    scheduler = FinderDirectoryObservationScheduler(delegate: FinderConfigurationRuntime())
+    let services = MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations())
+    let runtime = FinderConfigurationRuntime(environment: SystemFinderRuntimeEnvironment(services: services))
+    scheduler = FinderDirectoryObservationScheduler(delegate: runtime)
+    contextMenuHandler = MovieFolderContextMenuHandler(
+      environment: LiveMovieFolderContextMenuEnvironment(services: services))
     super.init()
     DistributedNotificationCenter.default().addObserver(
       self, selector: #selector(configurationChanged), name: .movieFolderConfigurationChanged, object: .none)

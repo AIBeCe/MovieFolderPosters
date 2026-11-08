@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Testing
 
 @testable import MovieFolderPosters
@@ -15,7 +15,7 @@ struct ConfigurationCoordinatorCoverageTests {
     let directory = ConfiguredDirectoryStatus(
       id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
     let service = ConfigurationCoverageService(
-      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false))
+      summary: ConfigurationSummary(directories: [directory], accessTokenConfigured: false))
     let activity = ConfigurationCoverageActivity()
     let coordinator = try makeCoordinator(service: service, activity: activity)
     coordinator.start()
@@ -43,7 +43,7 @@ struct ConfigurationCoordinatorCoverageTests {
     let directory = ConfiguredDirectoryStatus(
       id: rootID, path: "/tmp/CoordinatorFixture/Movies", availability: .available)
     let service = ConfigurationCoverageService(
-      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false))
+      summary: ConfigurationSummary(directories: [directory], accessTokenConfigured: false))
     let activity = ConfigurationCoverageActivity()
     let coordinator = try makeCoordinator(service: service, activity: activity)
     let request = try MovieFolderContextMenuRequest(rootID: rootID,
@@ -103,7 +103,7 @@ struct ConfigurationCoordinatorCoverageTests {
       displayState: .unavailable)
     let summaryService = ConfigurationCoverageSummary(summaries: [rootID: summary])
     let service = ConfigurationCoverageService(
-      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false))
+      summary: ConfigurationSummary(directories: [directory], accessTokenConfigured: false))
     let activity = ConfigurationCoverageActivity()
     let coordinator = try makeCoordinator(service: service, activity: activity, summary: summaryService)
     coordinator.start()
@@ -167,7 +167,7 @@ struct ConfigurationCoordinatorCoverageTests {
     #expect(delegate.lastActivityCoordinator === coordinator)
   }
 
-  /// Creates the coordinator with collaborators that cannot reach user stores or credentials.
+  /// Creates the coordinator with collaborators that cannot reach user stores or access tokens.
   private func makeCoordinator(
     service: ConfigurationCoverageService? = .none,
     activity: ConfigurationCoverageActivity? = .none,
@@ -181,7 +181,8 @@ struct ConfigurationCoordinatorCoverageTests {
       activity: activity ?? ConfigurationCoverageActivity(),
       summaryService: summary ?? ConfigurationCoverageSummary(),
       appearance: AppAppearanceSettings(defaults: try isolatedDefaults()),
-      installationService: installation ?? ConfigurationCoverageInstallation())
+      installationService: installation ?? ConfigurationCoverageInstallation(),
+      localDataExportService: TestLocalDataExportService())
   }
 
   /// Creates a private preference domain for the coordinator's appearance setting.
@@ -220,7 +221,7 @@ struct ConfigurationCoordinatorCoverageTests {
 }
 
 /// Provides a deterministic configuration summary and counts initial reads.
-private actor ConfigurationCoverageService: ConfigurationServicing {
+private actor ConfigurationCoverageService: TestConfigurationServicing {
   /// Summary returned to the configuration view model.
   private let summary: ConfigurationSummary
   /// Number of summary reads completed by this service.
@@ -229,7 +230,7 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   private(set) var configurationChangeCount = Int.zero
 
   /// Creates a service with the fixed state shown by the coordinator.
-  init(summary: ConfigurationSummary = ConfigurationSummary(directories: [], credentialConfigured: false)) {
+  init(summary: ConfigurationSummary = ConfigurationSummary(directories: [], accessTokenConfigured: false)) {
     self.summary = summary
   }
 
@@ -243,14 +244,14 @@ private actor ConfigurationCoverageService: ConfigurationServicing {
   func addDirectory(_ directory: URL) throws { configurationChangeCount += 1 }
   func removeDirectory(_ identifier: UUID) throws { configurationChangeCount += 1 }
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws { configurationChangeCount += 1 }
-  /// Returns the isolated fixture's non-secret credential state.
-  func credentialState() -> CredentialState {
-    CredentialState(isConfigured: summary.credentialConfigured, revision: .none)
+  /// Returns the isolated fixture's non-secret access token state.
+  func accessTokenState() -> AccessTokenState {
+    AccessTokenState(isConfigured: summary.accessTokenConfigured, revision: .none)
   }
   /// Accepts explicit tests without contacting the provider.
-  func testCredential(expectedRevision: UUID?) throws {}
-  func saveCredential(_ value: String, expectedRevision: UUID?) throws { configurationChangeCount += 1 }
-  func removeCredential(expectedRevision: UUID?) throws { configurationChangeCount += 1 }
+  func testAccessToken(expectedRevision: UUID?) throws {}
+  func saveAccessToken(_ value: String, expectedRevision: UUID?) throws { configurationChangeCount += 1 }
+  func removeAccessToken(expectedRevision: UUID?) throws { configurationChangeCount += 1 }
   func setPosterAppearance(_ appearance: PosterAppearance) throws { configurationChangeCount += 1 }
 
   /// Yields until the requested number of configuration reads has completed.

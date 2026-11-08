@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 extension ConfigurationCoordinator {
   /// Confirms the captured Finder action before its identity and revision are revalidated by the service.
@@ -68,7 +68,7 @@ extension ConfigurationCoordinator {
   func configurationViewController(_ controller: ConfigurationViewController, didRequestRename identifier: UUID) {
     guard !viewModel.isBusy, let window = mainWindow?.window, window.attachedSheet == .none else { return }
 
-    let model = viewModel.makeCollectionEditViewModel(identifier: identifier)
+    let model = CollectionEditViewModel(identifier: identifier, service: service)
     let controller = CollectionEditViewController(viewModel: model)
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)
@@ -106,7 +106,8 @@ extension ConfigurationCoordinator {
   fileprivate func showCollectionSetup(preparing directory: URL? = .none) {
     guard !viewModel.isBusy, let parent = mainWindow?.window, parent.attachedSheet == .none else { return }
 
-    let model = viewModel.makeCollectionSetupViewModel()
+    let model = CollectionSetupViewModel(
+      service: service, applicationConfiguration: viewModel.movieMatchingConfiguration)
     let controller = CollectionSetupViewController(viewModel: model)
     controller.delegate = self
     let sheet = NSWindow(contentViewController: controller)

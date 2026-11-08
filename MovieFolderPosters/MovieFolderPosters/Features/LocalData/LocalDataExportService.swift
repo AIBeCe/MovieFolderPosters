@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 
 /// Read-only local data export sources captured independently of UI lifetime.
@@ -23,20 +23,23 @@ nonisolated protocol LocalDataExportServicing: Sendable {
 /// Reads histories and configuration away from UI callbacks; never records new events.
 actor LocalDataExportService: LocalDataExportServicing {
   /// Required sources retained for the service lifetime.
-  private let activity: any MovieFolderActivityServicing
+  private let activity: any MovieFolderActivityReading
   /// Retained HTTP history service used to load committed entries.
-  private let network: any MovieFolderNetworkHistoryServicing
+  private let network: any MovieFolderNetworkHistoryReading
+  private let makeRepository: @Sendable () throws -> ConfigurationRepository
 
   /// Composes existing bounded histories without changing their recording choices.
   /// - Parameters:
   ///   - activity: Retained Activity history service.
   ///   - network: Retained HTTP history service used to load committed entries.
   init(
-    activity: any MovieFolderActivityServicing,
-    network: any MovieFolderNetworkHistoryServicing = MovieFolderEnvironment.makeNetworkHistoryService()
+    activity: any MovieFolderActivityReading,
+    network: any MovieFolderNetworkHistoryReading,
+    makeRepository: @escaping @Sendable () throws -> ConfigurationRepository
   ) {
     self.activity = activity
     self.network = network
+    self.makeRepository = makeRepository
   }
 
   /// Loads current retained histories and memory-only privacy evidence.
@@ -44,7 +47,7 @@ actor LocalDataExportService: LocalDataExportServicing {
   func load() async -> LocalDataExportInputs {
     let activityEntries = try? await activity.entries()
     let networkEntries = try? await network.entries()
-    let privacy = try? Self.historyPrivacyFingerprint(in: MovieFolderEnvironment.makeConfigurationRepository())
+    let privacy = try? Self.historyPrivacyFingerprint(in: makeRepository())
 
     return LocalDataExportInputs(activity: activityEntries, network: networkEntries, privacy: privacy)
   }

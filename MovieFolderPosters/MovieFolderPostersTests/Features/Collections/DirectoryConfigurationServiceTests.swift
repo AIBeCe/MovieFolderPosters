@@ -1,15 +1,14 @@
 import AppKit
 import FileSystem
 import Foundation
-@testable import MovieFolderCommon
-import Network
+@testable import Common
 import Persistence
 import Synchronization
 import Testing
 
 @testable import MovieFolderPosters
 
-/// Covers persistence, folder-access, overlap, and credential behavior in the host service.
+/// Covers persistence, folder-access, overlap, and access token behavior in the host service.
 struct DirectoryConfigurationServiceTests {
   /// The global limit persists independently of overrides and failed saves restore visible state.
   @Test @MainActor func searchPageLimitPersistsAndRestoresAfterFailure() async throws {
@@ -210,8 +209,8 @@ struct ConfigurationServiceFixture {
   let repository: ConfigurationRepository
   /// Store holding security bookmark records.
   let authorizations: PersistenceStore
-  /// In-memory credential provider used by the test service.
-  let credentials = ConfigurationCredentialProbe()
+  /// In-memory access token provider used by the test service.
+  let accessTokenStore = ConfigurationAccessTokenProbe()
   /// Service configured with the fixture's dependencies.
   let service: DirectoryConfigurationService
 
@@ -231,9 +230,9 @@ struct ConfigurationServiceFixture {
     service = DirectoryConfigurationService(
       repository: repository,
       authorizations: authorizations,
-      credentials: credentials, notifier: notifier ?? SilentConfigurationNotifier(),
+      accessTokenStore: accessTokenStore, notifier: notifier ?? SilentConfigurationNotifier(),
       authorization: authorization, activity: activity ?? MovieFolderActivityServiceFake(),
-      credentialTransport: CredentialTestTransport(),
+      accessTokenValidator: AccessTokenTestValidator(),
       recovery: ProcessingRecoveryService(
         store: try PersistenceStore(directory: root.appendingPathComponent("Recovery"))))
   }
@@ -242,8 +241,8 @@ struct ConfigurationServiceFixture {
   func cleanup() { try? FileManager.default.removeItem(at: root) }
 }
 
-/// Thread-safe in-memory credential store for service tests.
-final class ConfigurationCredentialProbe: CredentialStoring {
+/// Thread-safe in-memory access token store for service tests.
+final class ConfigurationAccessTokenProbe: ProviderAccessTokenStoring {
   /// Stores the token while supporting the service's Sendable contract.
   private let value = Mutex<String?>(.none)
   /// Returns the currently saved test token.
@@ -300,13 +299,13 @@ final class ConfigurationNotifierProbe: ConfigurationChangeNotifying, Sendable {
   var observedAppearance: PosterAppearance? { appearance.withLock { $0 } }
 }
 
-/// Forces the post-change summary to fail at the credential boundary.
-struct FailingSummaryCredentials: CredentialStoring {
-  /// Rejects summary credential lookup independently of configuration change.
+/// Forces the post-change summary to fail at the access token boundary.
+struct FailingSummaryAccessTokenStore: ProviderAccessTokenStoring {
+  /// Rejects summary access token lookup independently of configuration change.
   func read() throws -> String? { throw CocoaError(.fileReadUnknown) }
-  /// No credential writes are needed by these removal tests.
+  /// No access token writes are needed by these removal tests.
   func save(_ value: String) {}
-  /// No credential removals are needed by these removal tests.
+  /// No access token removals are needed by these removal tests.
   func remove() {}
 }
 

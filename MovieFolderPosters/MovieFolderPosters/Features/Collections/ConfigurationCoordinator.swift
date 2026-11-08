@@ -1,7 +1,11 @@
 import AppKit
 import FinderSync
-import MovieFolderCommon
+import Common
 import UniformTypeIdentifiers
+
+/// The configuration capabilities assembled for the main and child flows.
+typealias ConfigurationFlowServices = CollectionConfigurationServicing & ConfigurationPreferencesWriting
+  & AccessTokenManaging & CollectionSetupServicing & CollectionEditing & CollectionInclusionApplying
 
 /// Requests routing to an independent sibling flow.
 @MainActor
@@ -37,7 +41,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Supplies configuration state and operations to the host's views.
   let viewModel: ConfigurationViewModel
   /// Retains the persistence boundary for confirmed Finder inclusion actions.
-  let service: any ConfigurationServicing
+  let service: any ConfigurationFlowServices
   /// Independently reads saved processing summaries for the main window.
   let summaryViewModel: CollectionSummaryViewModel
   /// Shared appearance selection owned and applied by the application root.
@@ -57,9 +61,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   /// Window that owns the current finite export sheet, if any.
   private(set) weak var localDataExportParent: NSWindow?
   /// Creates a read-only source for Local Data display and export.
-  private var localDataExportService: any LocalDataExportServicing { LocalDataExportService(activity: activity) }
-  /// Retained history provider used only after an explicit diagnostic export request.
-  private let activity: any MovieFolderActivityServicing
+  private let localDataExportService: any LocalDataExportServicing
   /// Checks installation evidence when the user requests a readiness report.
   private let installationService: any InstallationReadinessServicing
   /// Whether processing invalidations are registered for this presented flow.
@@ -104,11 +106,12 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   ///   - utilityService: Admission and verification for explicit Finder utilities.
   ///   - utilityPlatform: Platform adapter that performs admitted Finder effects.
   init(
-    service: any ConfigurationServicing,
-    activity: any MovieFolderActivityServicing = MovieFolderEnvironment.makeActivityRecorder(),
+    service: any ConfigurationFlowServices,
+    activity: any MovieFolderActivityRecording,
     summaryService: any CollectionSummaryServicing = EmptyCollectionSummaryService(),
     appearance: AppAppearanceSettings = AppAppearanceSettings(),
     installationService: any InstallationReadinessServicing = InstallationReadinessService(),
+    localDataExportService: any LocalDataExportServicing,
     recovery: ProcessingRecoveryService? = .none,
     retryService: any CollectionRetryServicing = UnavailableCollectionRetryService(),
     utilityService: any MovieFolderFinderActionServicing = MovieFolderFinderActionService(),
@@ -116,12 +119,13 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
   ) {
     self.service = service
     self.installationService = installationService
-    self.activity = activity
+    self.localDataExportService = localDataExportService
     self.appearance = appearance
     self.retryService = retryService
     self.utilityService = utilityService
     self.utilityPlatform = utilityPlatform
-    viewModel = ConfigurationViewModel(service: service, activity: activity, recovery: recovery)
+    viewModel = ConfigurationViewModel(
+      collections: service, preferences: service, accessTokens: service, activity: activity, recovery: recovery)
     summaryViewModel = CollectionSummaryViewModel(service: summaryService)
     super.init()
     viewModel.activityDelegate = self
@@ -183,7 +187,7 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       show(settingsWindow)
     } else {
       let controller = SettingsViewController(viewModel: viewModel, appearanceSettings: appearance)
-      controller.credentialDelegate = self
+      controller.accessTokenDelegate = self
       let window = makeWindow(
         title: "Settings", controller: controller,
         size: NSSize(width: 700, height: 650), minimum: NSSize(width: 700, height: 650))
@@ -430,8 +434,8 @@ final class ConfigurationCoordinator: NSObject, ConfigurationViewControllerDeleg
       self?.detailsViewModel?.invalidate()
       self?.resultsViewModel?.configurationDidChange()
       self?.summaryViewModel.reload()
-      self?.viewModel.invalidateCredentialState()
-      await self?.viewModel.reloadCredentialState(clearResult: false)
+      self?.viewModel.invalidateAccessTokenState()
+      await self?.viewModel.reloadAccessTokenState(clearResult: false)
     }
   }
 
@@ -498,11 +502,11 @@ extension ConfigurationCoordinator {
     updateProcessingObservation(excluding: window)
   }
 
-  /// Cancels Settings-owned export preparation and credential work.
+  /// Cancels Settings-owned export preparation and access token work.
   /// - Parameter window: Settings window that is closing.
   private func settingsWindowWillClose(_ window: NSWindow) {
     cancelLocalDataExport(attachedTo: window)
-    viewModel.cancelCredentialAction()
+    viewModel.cancelAccessTokenAction()
     updateProcessingObservation(excluding: window)
   }
 
@@ -635,39 +639,39 @@ extension ConfigurationCoordinator {
   }
 }
 
-extension ConfigurationCoordinator: CredentialSettingsDelegate {
+extension ConfigurationCoordinator: AccessTokenSettingsDelegate {
   /// Confirms replacement while the candidate stays exclusively in the pane's secure field.
-  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestReplacement state: CredentialState) {
+  func accessTokenSettings(_ sender: any AccessTokenSettingsSubmitting, requestReplacement state: AccessTokenState) {
     guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
     let alert = NSAlert()
     alert.messageText = "Replace the saved TMDb token?"
     alert.informativeText = "The candidate will be tested first. The saved token changes only if testing succeeds "
-      + "and credential state is still current. Collections, confirmed movie decisions, and posters are preserved."
+      + "and access token state is still current. Collections, confirmed movie decisions, and posters are preserved."
     alert.addButton(withTitle: "Test and Replace")
     alert.addButton(withTitle: "Cancel")
     alert.beginSheetModal(for: window) { [weak self, weak sender] response in
       guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
-      sender?.saveEnteredCredential(expectedState: state)
+      sender?.saveEnteredAccessToken(expectedState: state)
     }
   }
 
   /// Confirms removal against a frozen generation without changing roots or installed icons.
-  func credentialSettings(_ sender: any CredentialSettingsSubmitting, requestRemoval state: CredentialState) {
+  func accessTokenSettings(_ sender: any AccessTokenSettingsSubmitting, requestRemoval state: AccessTokenState) {
     guard !viewModel.isBusy, let window = settingsWindow?.window, window.attachedSheet == .none else { return }
     let alert = NSAlert()
     alert.messageText = "Remove the saved TMDb token?"
     alert.informativeText = "Movie lookups need a token. Collections, saved movie decisions, and installed posters "
-      + "remain. A changed credential will not be removed using this confirmation."
+      + "remain. A changed access token will not be removed using this confirmation."
     alert.addButton(withTitle: "Remove Token")
     alert.addButton(withTitle: "Cancel")
     alert.beginSheetModal(for: window) { [weak self, weak sender] response in
       guard response == .alertFirstButtonReturn, self?.settingsWindow?.window?.isVisible == true else { return }
-      sender?.removeSavedCredential(expectedState: state)
+      sender?.removeSavedAccessToken(expectedState: state)
     }
   }
 
-  /// Opens only the fixed public setup page, never a credential-bearing URL.
-  func credentialSettingsDidRequestTokenHelp(_ sender: NSViewController) {
+  /// Opens only the fixed public setup page, never an access token-bearing URL.
+  func accessTokenSettingsDidRequestTokenHelp(_ sender: NSViewController) {
     guard let url = URL(string: "https://www.themoviedb.org/settings/api") else { return }
     NSWorkspace.shared.open(url)
   }

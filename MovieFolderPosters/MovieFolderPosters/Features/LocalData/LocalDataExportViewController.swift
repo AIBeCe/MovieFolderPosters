@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Routes only finite local data export flow actions to its retained coordinator.
 @MainActor
@@ -62,7 +62,7 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
     let note = NSTextField(wrappingLabelWithString:
       "Only selected retained evidence is exported (up to 500 entries per source). Private history omissions "
         + "cannot be reconstructed. HTTP results do not establish product success or complete processing runs; "
-        + "network entries have no operation linkage. Paths, names, identifiers, credentials "
+        + "network entries have no operation linkage. Paths, names, identifiers, access tokens "
         + "and raw errors are excluded.")
     note.textColor = .secondaryLabelColor
     let entries = makeEntriesView()
@@ -267,10 +267,17 @@ final class LocalDataExportViewController: NSViewController, NSTableViewDataSour
 
       do {
         try await model.preparePreview()
+
+        guard !Task.isCancelled else { return }
+
         previewText.string = model.preview.flatMap { String(bytes: $0, encoding: .utf8) } ?? ""
         save.isEnabled = model.preview != nil
         status.stringValue = "Exact JSON preview. Review before saving."
+      } catch LocalDataExportFailure.stale {
+        return
       } catch {
+        guard !Task.isCancelled else { return }
+
         status.stringValue =
           "Preview unavailable. Refresh evidence and check the date range. "
           + "Exports larger than 2 MiB cannot be saved."

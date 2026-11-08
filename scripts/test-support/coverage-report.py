@@ -8,8 +8,8 @@ import re
 import sys
 
 
-REQUIRED_COMPONENTS = {"Project", "Network", "FileSystem", "Persistence", "Log", "MovieFolderCommon",
-                       "MovieFolderParsing"}
+REQUIRED_COMPONENTS = {"Project", "Network", "Contracts", "HTTPTransport", "TMDb",
+                       "FileSystem", "Persistence", "Log", "Common", "MovieFolderParsing"}
 
 
 def coverage_failures(results, required_components):
@@ -45,7 +45,14 @@ def declaration_only(source):
     stored_property = modifiers + r"(?:let|var)\s+\w+\s*:\s*[\w.?]+\s*"
     record = (modifiers + r"struct\s+\w+(?:\s*<[\w\s:,&]+>)?(?:\s*:\s*[\w,\s]+)?\s*\{\s*"
               + "(?:" + stored_property + ")+" + r"\}\s*")
-    return re.fullmatch(imports + "(?:" + enum + "|" + record + "|" + notification_names + ")+", text.strip()) is not None
+    # A protocol requirement has a signature and no body. Keep this recognizer conservative
+    # so missing coverage for a default implementation or an initializer cannot pass.
+    requirement = (r"func\s+\w+\s*\([\w\s:,.?<>\[\]&]*\)"
+                   r"(?:[ \t]+async)?(?:[ \t]+throws)?"
+                   r"(?:[ \t]*->[ \t]*[\w.\[\]?:<>, &]+)?\s*")
+    protocol = modifiers + r"protocol\s+\w+(?:\s*:\s*[\w,\s]+)?\s*\{\s*(?:" + requirement + r")+\}\s*"
+    alternatives = "|".join((enum, record, notification_names, protocol))
+    return re.fullmatch(imports + "(?:" + alternatives + ")+", text.strip()) is not None
 
 
 def component_coverage(export_path, source_root, compiled_root):

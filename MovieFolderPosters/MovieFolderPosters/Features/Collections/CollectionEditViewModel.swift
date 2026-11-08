@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Observes finite collection edit state without retaining its presentation owner.
 @MainActor protocol CollectionEditViewModelDelegate: AnyObject {
@@ -12,7 +12,7 @@ import MovieFolderCommon
   /// Stable collection being edited.
   private let identifier: UUID
   /// Serialized persistence boundary shared with Main.
-  private let service: any ConfigurationServicing
+  private let service: any CollectionEditing
   /// Original persisted evidence required by the atomic save.
   private(set) var savedCollectionState: SavedCollectionState?
   /// Friendly name edited locally until Save.
@@ -40,7 +40,7 @@ import MovieFolderCommon
   var canSave: Bool { savedCollectionState != .none && !isBusy && displayName.count <= 120 }
 
   /// Creates a local draft without starting any provider work.
-  init(identifier: UUID, service: any ConfigurationServicing) {
+  init(identifier: UUID, service: any CollectionEditing) {
     self.identifier = identifier
     self.service = service
   }

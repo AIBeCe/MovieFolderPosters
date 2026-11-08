@@ -1,11 +1,13 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Finite local data export selection and immutable preview state; all writes require current retained evidence.
 @MainActor
 final class LocalDataExportViewModel {
   /// Narrow source boundary retained through dismissal.
   private let service: any LocalDataExportServicing
+  /// Filters and encodes the captured preview away from presentation state.
+  private let preparer: any LocalDataExportPreparing
   /// Current user choices; replacing choices invalidates the exact preview.
   var selection = LocalDataExportOptions() {
     didSet {
@@ -28,9 +30,14 @@ final class LocalDataExportViewModel {
   /// - Parameters:
   ///   - service: Read-only sources retained for this session.
   ///   - readiness: Fixed readiness evidence supplied by the opening route.
-  init(service: any LocalDataExportServicing, readiness: InstallationReadinessReport?) {
+  ///   - preparer: Encodes the captured selection and evidence for review.
+  init(
+    service: any LocalDataExportServicing, readiness: InstallationReadinessReport?,
+    preparer: any LocalDataExportPreparing = LocalDataExportPreparer()
+  ) {
     self.service = service
     self.readiness = readiness
+    self.preparer = preparer
   }
 
   /// Refreshes retained evidence, removing hidden selections and invalidating old previews.
@@ -61,12 +68,20 @@ final class LocalDataExportViewModel {
 
     guard !Task.isCancelled, !isClosed, current == generation else { throw LocalDataExportFailure.stale }
 
-    preview = try LocalDataExportContents(
-      activity: choices.shownActivity(evidence.activity ?? []).filter { choices.selectedActivity.contains($0.id) },
-      network: choices.shownNetwork(evidence.network ?? []).filter { choices.selectedNetwork.contains($0.id) },
-      readiness: choices.includesReadiness ? readiness : .none, storage: report, start: choices.start, end: choices.end,
-      activityAvailable: evidence.activity != nil, networkAvailable: evidence.network != nil
-    ).encode()
+    let bytes: Data
+    do {
+      bytes = try await preparer.prepare(
+        selection: choices, evidence: evidence,
+        readiness: choices.includesReadiness ? readiness : .none, storage: report)
+    } catch {
+      guard !Task.isCancelled, !isClosed, current == generation else { throw LocalDataExportFailure.stale }
+
+      throw error
+    }
+
+    guard !Task.isCancelled, !isClosed, current == generation else { throw LocalDataExportFailure.stale }
+
+    preview = bytes
   }
 
   /// Rechecks after destination selection; new entries are never silently included.

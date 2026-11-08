@@ -1,0 +1,192 @@
+import FileSystem
+import Foundation
+import Persistence
+import Testing
+
+@testable import Common
+
+/// access token changes preserve durable decisions while comparing the persisted generation.
+struct CredentialRevisionTests {
+  /// The active decision namespace keeps explicit lookups usable across repeated access token changes.
+  @Test func confirmedLookupSurvivesRepeatedAccessTokenChanges() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appendingPathComponent("Movies")
+    let child = "Explicit.Movie.2020"
+    try FileManager.default.createDirectory(at: root.appendingPathComponent(child), withIntermediateDirectories: true)
+    let repository = ConfigurationRepository(store: try PersistenceStore(directory:
+      directory.appendingPathComponent("Settings")))
+    let configured = MonitoredDirectory(id: UUID(), path: root.path,
+      transferBookmark: Data([1]), authorizationVersion: UUID())
+    try repository.update { $0.directories = [configured] }
+    let original = try repository.read()
+    let candidate = try FileSystemService().readCurrentFolderCandidate(ofChild: child, in: root)
+    let store = try PersistenceStore(directory:
+      directory.appendingPathComponent("Processing/\(original.processingCacheRevision)"))
+    let provider = CountingProvider()
+    let initial = MovieFolderProcessor(persistence: store, provider: provider, cacheDirectory: directory,
+      credentialRevision: original.credentialRevision)
+    do {
+      let persistenceAccess = try #require(
+        try store.acquireAccess(for: MovieFolderProcessor.processingStateKey(for: root)))
+      let explicit = FolderProcessingCacheRecord(fingerprint: candidate.fingerprint, status: .processed,
+        matchedMovieID: 4242, posterPath: "/explicit.jpg", movieIdentitySource: .explicitSelection)
+      try await initial.saveState(CollectionProcessingCache(folders: [child: explicit]), to: persistenceAccess)
+    }
+    for _ in 0..<3 {
+      let before = try repository.read()
+      try repository.updateAccessToken(expectedRevision: before.credentialRevision)
+      let current = try repository.read()
+      #expect(current.processingCacheRevision == original.processingCacheRevision)
+      #expect(current.directories == [configured])
+      let processor = MovieFolderProcessor(persistence: store, provider: provider, cacheDirectory: directory,
+        credentialRevision: current.credentialRevision)
+      #expect(try await processor.matchedMovieID(
+        root: root, child: child, expectedIdentity: candidate.identity) == 4242)
+    }
+    #expect(await provider.searchCount == 0)
+    #expect(await provider.posterCount == 0)
+  }
+
+  /// A missing record differs from a freshly manufactured default generation.
+  @Test func absentRecordAndRepeatedAccessTokenChangesUseCompareAndSwap() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let repository = ConfigurationRepository(store: try PersistenceStore(directory: directory))
+    do {
+      let (configuration, persistenceAccess) = try repository.readIfPresentHoldingAccess()
+      #expect(configuration == .none)
+      withExtendedLifetime(persistenceAccess) {}
+    }
+    try repository.updateAccessToken(expectedRevision: .none)
+    let first = try repository.read()
+    #expect(first.version == 8)
+    #expect(throws: ConfigurationError.self) { try repository.updateAccessToken(expectedRevision: .none) }
+    try repository.updateAccessToken(expectedRevision: first.credentialRevision)
+    let second = try repository.read()
+    #expect(second.credentialRevision != first.credentialRevision)
+    #expect(second.processingCacheRevision == first.processingCacheRevision)
+    #expect(throws: ConfigurationError.self) {
+      try repository.updateAccessToken(expectedRevision: first.credentialRevision)
+    }
+  }
+
+  /// Legacy cache namespaces remain accessible; modern payloads require an explicit namespace.
+  @Test func migrationAnchorsCacheAndRejectsMalformedModernSchemas() throws {
+    let revision = UUID()
+    let json = """
+      {"version":1,"directories":[],"credentialRevision":"\(revision)","developmentFixtures":false}
+      """
+    let legacy = try convertLegacySettingsFixture(Data(json.utf8))
+    #expect(legacy.processingCacheRevision == revision)
+    for version in [2, 3, 4] {
+      let malformed = json.replacingOccurrences(of: "\"version\":1", with: "\"version\":\(version)")
+      #expect(throws: (any Error).self) {
+        try convertLegacySettingsFixture(Data(malformed.utf8))
+      }
+    }
+  }
+  /// Epoch reconciliation preserves explicit identity, unresolved decisions, and provider throttling.
+  @Test func cacheReconciliationPreservesDecisionsAndDropsOnlyAuthenticationEvidence() throws {
+    let deadline = Date().addingTimeInterval(600)
+    let explicit = FolderProcessingCacheRecord(
+      fingerprint: "identity", status: .transientFailure, retryDate: deadline,
+      matchedMovieID: 42, posterPath: "/saved.jpg", processingReason: .authentication,
+      movieTitle: "Saved", movieYear: 2021,
+      lastFailure: AutomaticFolderProcessingFailure(reason: .authentication, stage: .artwork, occurredAt: Date()),
+      movieIdentitySource: .explicitSelection)
+    var manual = explicit
+    manual.processingReason = .ambiguousMovie
+    var state = CollectionProcessingCache(folders: ["explicit": explicit, "manual": manual],
+      queries: ["query": CachedMovieSearch(result: MovieSearchResult(movies: [],
+        hasMorePages: false), createdAt: Date())],
+      providerRetryAt: deadline, credentialRevision: UUID())
+    let current = UUID()
+    state.reconcileCredentialRevision(current)
+    #expect(state.queries.isEmpty)
+    #expect(state.folders["explicit"]?.matchedMovieID == 42)
+    #expect(state.folders["explicit"]?.posterPath == "/saved.jpg")
+    #expect(state.folders["explicit"]?.fingerprint == "identity")
+    #expect(state.folders["explicit"]?.movieIdentitySource == .explicitSelection)
+    #expect(state.folders["explicit"]?.processingReason == .none)
+    #expect(state.folders["explicit"]?.lastFailure == .none)
+    #expect(state.folders["explicit"]?.retryDate == .none)
+    #expect(state.folders["manual"]?.processingReason == .ambiguousMovie)
+    #expect(state.providerRetryAt == deadline)
+    state.credentialRevision = current
+    state.queries["query"] = CachedMovieSearch(
+      result: MovieSearchResult(movies: [], hasMorePages: false), createdAt: Date())
+    state.reconcileCredentialRevision(current)
+    #expect(!state.queries.isEmpty)
+  }
+
+  /// Diagnostics ignore processing mode and rejected tokens without altering that ledger.
+  @Test func diagnosticsRespectBackoffAndPreserveRecoveryLedger() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PersistenceStore(directory: directory)
+    let recovery = ProcessingRecoveryService(store: store)
+    try recovery.recordProviderFailure(
+      MovieMetadataError.authentication, accessTokenDigest: String(repeating: "a", count: 64))
+    try recovery.setRecoveryModeEnabled(true)
+    func payload() throws -> Data? {
+      let persistenceAccess = try #require(try store.acquireAccess(for: ProcessingRecoveryService.recordKey))
+
+      return try persistenceAccess.read()
+    }
+    let before = try payload()
+    try recovery.validateAccessTokenTestAllowed()
+    try recovery.recordAccessTokenTestFailure(MovieMetadataError.authentication)
+    #expect(try payload() == before)
+    try recovery.recordAccessTokenTestFailure(MovieMetadataError.rateLimited(retryAfter: "600"))
+    #expect(throws: ProcessingRecoveryError.self) { try recovery.validateAccessTokenTestAllowed() }
+    #expect(try recovery.read().isRecoveryModeEnabled)
+  }
+
+  /// A late old-generation write remains stamped old, so a newer reader discards its auth failure.
+  @Test func oldInFlightCacheWritesCannotBecomeCurrentAccessTokenEvidence() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PersistenceStore(directory: directory)
+    let oldRevision = UUID()
+    let currentRevision = UUID()
+    let old = MovieFolderProcessor(persistence: store, provider: CountingProvider(),
+      cacheDirectory: directory, credentialRevision: oldRevision)
+    let current = MovieFolderProcessor(persistence: store, provider: CountingProvider(),
+      cacheDirectory: directory, credentialRevision: currentRevision)
+    let persistenceAccess = try #require(try store.acquireAccess(for: "state"))
+    let record = FolderProcessingCacheRecord(fingerprint: "identity", status: .transientFailure,
+      matchedMovieID: 42, posterPath: "/saved.jpg", processingReason: .authentication,
+      movieIdentitySource: .explicitSelection)
+    try await old.saveState(CollectionProcessingCache(folders: ["Movie": record]), to: persistenceAccess)
+    let persisted = try #require(try persistenceAccess.read())
+    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from: persisted).credentialRevision == oldRevision)
+    let reconciled = try await current.loadState(from: persistenceAccess)
+    #expect(reconciled.folders["Movie"]?.processingReason == .none)
+    #expect(reconciled.folders["Movie"]?.matchedMovieID == 42)
+    try await current.saveState(reconciled, to: persistenceAccess)
+    let updated = try #require(try persistenceAccess.read())
+    #expect(try JSONDecoder().decode(CollectionProcessingCache.self, from:
+      updated).credentialRevision == currentRevision)
+  }
+
+  /// Cancellation before the commit leaves persisted generation and Keychain callback untouched.
+  @Test func cancelledAccessTokenUpdateDoesNotCommitOrCallKeychain() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let repository = ConfigurationRepository(store: try PersistenceStore(directory: directory))
+    let operation = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      #expect(throws: CancellationError.self) {
+        try repository.updateAccessToken(expectedRevision: .none, afterCommit: {
+          Issue.record("Cancelled access token update reached Keychain")
+        })
+      }
+    }
+    await operation.value
+    let (saved, persistenceAccess) = try repository.readIfPresentHoldingAccess()
+    #expect(saved == .none)
+    withExtendedLifetime(persistenceAccess) {}
+  }
+
+}

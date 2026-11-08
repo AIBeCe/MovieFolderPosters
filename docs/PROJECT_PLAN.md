@@ -28,7 +28,7 @@ Assigned icons must persist independently of the application and extension.
 R100-02 is implemented, reviewed, verified, committed as `049b74b`, integrated into `develop`, and pushed to
 GitHub on 2026-10-18. Issue #2 is closed and the feature branch is deleted. The current scope and verification
 ledger live in [Processing results](COLLECTION_PROCESSING.md). R100-03 was separately approved on 2026-10-18,
-including the MovieFolderCommon migration and Log service package. See
+including the Common migration and Log service package. See
 [Common and Log migration](COMMON_AND_LOG_MIGRATION.md). Its implementation commit `e7d404b` is now in
 `develop`; GitHub issue #3 remains open. R100-04 / issue #4 is implemented and verified locally; see
 [Processing recovery](PROCESSING_RECOVERY.md). Recovery commit `008a6f3` was fast-forwarded into local `develop`
@@ -47,6 +47,8 @@ on 2026-10-20. Completion documentation is committed separately on `develop`. No
 - Approval of this plan does not authorize further product implementation.
 
 ## Architecture
+
+[Application architecture](ARCHITECTURE.md) records the current target module boundaries and contracts.
 
 Physical source ownership follows [Project structure](PROJECT_STRUCTURE.md): feature folders in the host,
 responsibility folders in Shared, mirrored test folders, and unchanged local SPM service modules.

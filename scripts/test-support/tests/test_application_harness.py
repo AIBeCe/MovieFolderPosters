@@ -33,6 +33,19 @@ class ApplicationHarnessTests(unittest.TestCase):
             self.harness.prepare(repository, output)
             self.assertFalse((output / "Sources/MovieFolderFinder/Stale.swift").exists())
 
+    def test_resolves_transitive_network_packages_without_direct_manifest_dependencies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repository = self.fixture_repository(root)
+            output = root / "harness"
+            self.harness.prepare(repository, output)
+            manifest = (output / "Package.swift").read_text()
+            for package in ("Contracts", "HTTPTransport", "TMDb"):
+                with self.subTest(package=package):
+                    self.assertTrue((output / package).is_symlink())
+                    self.assertEqual((output / package).resolve(), repository / "Packages" / package)
+                    self.assertNotIn(f'"{package}"', manifest)
+
     def test_refuses_to_replace_an_unowned_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -61,7 +74,8 @@ class ApplicationHarnessTests(unittest.TestCase):
         finder_tests = repository / "MovieFolderPosters/MovieFolderPostersFinderTests"
         finder_tests.mkdir(parents=True)
         (finder_tests / "FinderTests.swift").write_text("import Testing\n")
-        for name in ["MovieFolderCommon", "MovieFolderParsing", "Network", "FileSystem", "Persistence", "Log"]:
+        for name in ["Common", "MovieFolderParsing", "Network", "FileSystem", "Persistence", "Log",
+                     "Contracts", "HTTPTransport", "TMDb"]:
             (repository / "Packages" / name).mkdir(parents=True)
         return repository
 

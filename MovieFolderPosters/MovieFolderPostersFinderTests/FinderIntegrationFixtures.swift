@@ -1,9 +1,8 @@
 import FileSystem
 import FinderSync
 import Foundation
-import MovieFolderCommon
+import Common
 @testable import MovieFolderFinder
-import Network
 import Persistence
 import Synchronization
 import Testing
@@ -65,9 +64,9 @@ struct NoMatchesProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) throws
     -> MovieSearchPage {
-    guard page == 1 else { throw TMDbError.invalidQuery }
+    guard page == 1 else { throw MovieMetadataError.invalidQuery }
 
     let result = try testSearchData(title: title, year: year, language: language)
 
@@ -75,12 +74,12 @@ struct NoMatchesProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page test data independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func testSearchData(title: String, year: Int?, language: MovieSearchLanguage = .english) throws -> MovieSearchResult {
     try Task.checkCancellation()
 
     return MovieSearchResult(movies: [], hasMorePages: false)
   }
-  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+  func downloadPoster(path: String) throws -> Data { throw MovieMetadataError.invalidPosterPath }
 }
 
 /// Counts actual provider admission for a cached Finder runtime across gate changes.
@@ -93,9 +92,9 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) throws
     -> MovieSearchPage {
-    guard page == 1 else { throw TMDbError.invalidQuery }
+    guard page == 1 else { throw MovieMetadataError.invalidQuery }
 
     let result = try testSearchData(title: title, year: year, language: language)
 
@@ -103,13 +102,13 @@ actor CountingNoMatchesProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page test data independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func testSearchData(title: String, year: Int?, language: MovieSearchLanguage = .english) throws -> MovieSearchResult {
     searchCount += 1
 
     return MovieSearchResult(movies: [], hasMorePages: false)
   }
 
-  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+  func downloadPoster(path: String) throws -> Data { throw MovieMetadataError.invalidPosterPath }
 }
 
 /// Suspends an external response so cancellation and settings changes occur at a known boundary.
@@ -126,9 +125,9 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) async throws
     -> MovieSearchPage {
-    guard page == 1 else { throw TMDbError.invalidQuery }
+    guard page == 1 else { throw MovieMetadataError.invalidQuery }
 
     let result = try await testSearchData(title: title, year: year, language: language)
 
@@ -136,7 +135,9 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page test data independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+  func testSearchData(
+    title: String, year: Int?, language: MovieSearchLanguage = .english
+  ) async throws -> MovieSearchResult {
     hasStarted = true
     started?.resume()
     started = .none
@@ -144,7 +145,7 @@ actor SuspendedFinderProvider: MovieMetadataProvider {
     return await withCheckedContinuation { response = $0 }
   }
 
-  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+  func downloadPoster(path: String) throws -> Data { throw MovieMetadataError.invalidPosterPath }
 
   /// Waits deterministically until processing has crossed into provider work.
   func waitUntilStarted() async {
@@ -183,9 +184,9 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) throws
     -> MovieSearchPage {
-    guard page == 1 else { throw TMDbError.invalidQuery }
+    guard page == 1 else { throw MovieMetadataError.invalidQuery }
 
     let result = try testSearchData(title: title, year: year, language: language)
 
@@ -193,14 +194,14 @@ struct PublicHistoryRestoringProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page test data independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func testSearchData(title: String, year: Int?, language: MovieSearchLanguage = .english) throws -> MovieSearchResult {
     try repository.update { $0.directories[0].usesPrivateHistory = false }
     configurationReadControl.failsCurrentRead.withLock { $0 = false }
 
     return MovieSearchResult(movies: [], hasMorePages: false)
   }
 
-  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidImage }
+  func downloadPoster(path: String) throws -> Data { throw MovieMetadataError.invalidImage }
 }
 
 /// Redirects system boundaries into one test-owned container while retaining runtime configuration.
@@ -211,7 +212,8 @@ struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
   let registrations: FinderRegistrations
   /// Activity history used to verify terminal behavior.
   let activity: any MovieFolderActivityServicing
-  /// Simulates absent credentials without opening Keychain.
+  var activityRecorder: any MovieFolderActivityRecording { activity }
+  /// Simulates absent access tokens without opening Keychain.
   var token: String? = "fixture-token"
   /// Allows explicit build-evidence absence and access failures.
   var buildVersion: (String, String)? = ("1.2.3", "45")
@@ -242,9 +244,9 @@ struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
     try PersistenceStore(directory: testEnvironment.container.appendingPathComponent("Authorization"))
   }
   func containerURL() throws -> URL { testEnvironment.container }
-  func credential() throws -> String? { token }
+  func accessToken() throws -> String? { token }
   func movieMetadataProvider(token: String, configuration: DirectoryConfiguration) throws -> any MovieMetadataProvider {
-    if providerFailure { throw TMDbError.authentication }
+    if providerFailure { throw MovieMetadataError.authentication }
 
     return movieMetadataProvider
   }
@@ -285,6 +287,7 @@ final class IsolatedContextMenuEnvironment: MovieFolderContextMenuEnvironment {
   var selection: [URL]?
   /// Real isolated configuration repository.
   let repository: ConfigurationRepository
+  private(set) var configurationReadCount = 0
   /// Captured host requests, proving menu generation isolation.
   var opened: [MoviePosterRequest] = []
   /// Captures the isolated configuration and Finder selection used by menu tests.
@@ -296,7 +299,11 @@ final class IsolatedContextMenuEnvironment: MovieFolderContextMenuEnvironment {
     self.selection = selection
   }
   func selectedItemURLs() -> [URL]? { selection }
-  func configurationRepository() throws -> ConfigurationRepository { repository }
+  func configurationRepository() throws -> ConfigurationRepository {
+    configurationReadCount += 1
+
+    return repository
+  }
   func open(_ request: MoviePosterRequest) { opened.append(request) }
 }
 

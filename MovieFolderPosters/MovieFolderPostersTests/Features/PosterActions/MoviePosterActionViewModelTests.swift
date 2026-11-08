@@ -1,6 +1,5 @@
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Testing
 
 @testable import MovieFolderPosters
@@ -488,19 +487,19 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   func failSearch() { searchShouldFail = true }
 
   /// Provides the authorized default language in this isolated service fixture.
-  func searchLanguage(for request: MoviePosterRequest) async throws -> TMDbLanguage {
-    if languageShouldFail { throw TMDbError.authentication }
+  func searchLanguage(for request: MoviePosterRequest) async throws -> MovieSearchLanguage {
+    if languageShouldFail { throw MovieMetadataError.authentication }
     try await Task.sleep(for: languageDelay)
 
     return .english
   }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
-                    language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+                    language: MovieSearchLanguage = .english) async throws -> MovieSearchResult {
     callCounts.search += 1
     lastSearchTitle = query
     lastSearchYear = year
-    if searchShouldFail { throw TMDbError.authentication }
+    if searchShouldFail { throw MovieMetadataError.authentication }
     if suspendsNextSearch {
       suspendsNextSearch = false
       suspendedSearchStarted = true

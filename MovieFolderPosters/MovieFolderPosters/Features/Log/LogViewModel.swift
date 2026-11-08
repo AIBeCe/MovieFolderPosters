@@ -1,5 +1,13 @@
 import Foundation
-import MovieFolderCommon
+import Common
+
+/// The activity operations available from the Log window.
+typealias ActivityLogPresentationServices = MovieFolderActivityRecording & MovieFolderActivityReading
+  & MovieFolderHistoryClearing & MovieFolderHistoryWriteFailureReporting
+
+/// The network history operations available from the Log window.
+typealias NetworkLogPresentationServices = MovieFolderNetworkHistoryReading & MovieFolderHistoryClearing
+  & MovieFolderNetworkHistorySettings & MovieFolderHistoryWriteFailureReporting
 
 /// Receives main-actor presentation updates from the retained history model.
 @MainActor
@@ -31,7 +39,7 @@ final class LogViewModel {
   /// Selected history namespace.
   private(set) var historySource = HistorySource.activity
   /// Optional network history boundary; absent only in isolated activity fixtures.
-  private let networkHistoryService: (any MovieFolderNetworkHistoryServicing)?
+  private let networkHistoryService: (any NetworkLogPresentationServices)?
   /// Network rows loaded from their independent namespace.
   private var networkHistoryRows: [HistoryEntryRow] = []
   /// Current safe message/category search.
@@ -127,7 +135,7 @@ final class LogViewModel {
     set { historyOperationFailures[historySource, default: HistoryOperationFailures()].hasWriteFailure = newValue }
   }
   /// Required strongly retained activity history service.
-  private let activityHistoryService: any MovieFolderActivityServicing
+  private let activityHistoryService: any ActivityLogPresentationServices
   /// Monotonically increasing fence invalidated by Clear.
   private var historyReadGeneration = UInt64.zero
   /// Records a hint arriving while a read or Clear is already active.
@@ -169,8 +177,8 @@ final class LogViewModel {
 
   /// Creates presentation state backed by a real or explicitly injected test service.
   init(
-    activityHistoryService: any MovieFolderActivityServicing,
-    networkHistoryService: (any MovieFolderNetworkHistoryServicing)? = .none
+    activityHistoryService: any ActivityLogPresentationServices,
+    networkHistoryService: (any NetworkLogPresentationServices)? = .none
   ) {
     self.activityHistoryService = activityHistoryService
     self.networkHistoryService = networkHistoryService

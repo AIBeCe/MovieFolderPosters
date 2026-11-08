@@ -1,4 +1,4 @@
-import Network
+import Common
 import Testing
 
 @testable import MovieFolderPosters

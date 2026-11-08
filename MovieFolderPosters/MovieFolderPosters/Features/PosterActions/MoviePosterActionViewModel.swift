@@ -1,7 +1,6 @@
 import Foundation
-import MovieFolderCommon
+import Common
 import MovieFolderParsing
-import Network
 
 /// Receives presentation-state changes from a poster action.
 @MainActor
@@ -60,7 +59,7 @@ final class MoviePosterActionViewModel {
   /// Release year text currently shown to the user.
   private(set) var yearText: String
   /// Effective language captured through the authorized action service.
-  private(set) var searchLanguage: TMDbLanguage?
+  private(set) var searchLanguage: MovieSearchLanguage?
   /// Latest search response, if a search has completed.
   private(set) var searchResult: MovieSearchResult?
   /// Title submitted by the successful search that produced the current results.
@@ -442,7 +441,7 @@ extension MoviePosterActionViewModel {
       }
     } else if let error = error as? ProcessingRecoveryError {
       error.localizedDescription
-    } else if let error = error as? TMDbError {
+    } else if let error = error as? MovieMetadataError {
       error.description
     } else if let error = error as? MoviePosterActionServiceError {
       error.localizedDescription

@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Owns reusable operational history presentation and its committed-activity subscription.
 @MainActor
@@ -16,8 +16,8 @@ final class LogCoordinator: NSObject {
   ///   - activityHistoryService: Activity history shared with product event producers.
   ///   - networkHistoryService: Optional network history and its persisted recording preference.
   init(
-    activityHistoryService: any MovieFolderActivityServicing,
-    networkHistoryService: (any MovieFolderNetworkHistoryServicing)? = .none
+    activityHistoryService: any ActivityLogPresentationServices,
+    networkHistoryService: (any NetworkLogPresentationServices)? = .none
   ) {
     viewModel = LogViewModel(activityHistoryService: activityHistoryService,
       networkHistoryService: networkHistoryService)

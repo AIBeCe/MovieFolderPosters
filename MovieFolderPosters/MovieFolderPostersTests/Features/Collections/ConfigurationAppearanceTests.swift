@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -12,9 +12,9 @@ import Testing
 func settingsShowsThreeLabeledPosterExamplesWithSavedSelection() async throws {
   let service = ConfigurationServiceFake(
     summary: ConfigurationSummary(
-      directories: [], credentialConfigured: false, posterAppearance: .matteFrame
+      directories: [], accessTokenConfigured: false, posterAppearance: .matteFrame
     ))
-  let model = ConfigurationViewModel(service: service)
+  let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
   await model.load()
   let settings = SettingsViewController(
     viewModel: model, appearanceSettings: AppAppearanceSettings())
@@ -36,7 +36,7 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   defer { defaults.removePersistentDomain(forName: suite) }
   let appearance = AppAppearanceSettings(defaults: defaults)
   let settings = SettingsViewController(
-    viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()),
+    viewModel: ConfigurationViewModel(service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake()),
     appearanceSettings: appearance
   )
   let pane = try #require(settings.tabViewItems.first(where: { $0.label == "Appearance" })?.viewController)
@@ -55,7 +55,7 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
 @MainActor
 @Test func navigationRequestsUseAWeakDelegate() throws {
   let controller = ConfigurationViewController(
-    viewModel: ConfigurationViewModel(service: ConfigurationServiceFake()))
+    viewModel: ConfigurationViewModel(service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake()))
   var delegate: NavigationDelegateProbe? = NavigationDelegateProbe()
   controller.delegate = delegate
   let buttons = nativeViews(in: controller.view).compactMap { $0 as? NSButton }

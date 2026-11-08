@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Fail-closed preflight failures for the developer-only offline maintenance executable.
 private enum MaintenanceError: Error {

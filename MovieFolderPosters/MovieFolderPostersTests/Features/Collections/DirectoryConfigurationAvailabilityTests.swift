@@ -1,8 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-@testable import MovieFolderCommon
-import Network
+@testable import Common
 import Persistence
 import Synchronization
 import Testing
@@ -27,8 +26,8 @@ struct DirectoryConfigurationAvailabilityTests {
     }
     let service = DirectoryConfigurationService(
       repository: fixture.repository, authorizations: fixture.authorizations,
-      credentials: FailingSummaryCredentials(), notifier: SilentConfigurationNotifier(),
-      processingCleanup: processing)
+      accessTokenStore: FailingSummaryAccessTokenStore(), notifier: SilentConfigurationNotifier(),
+      processingCleanup: processing, activity: MovieFolderActivityServiceFake())
     try await service.removeDirectory(directory.id)
     #expect(try fixture.repository.read().directories.isEmpty)
     do {
@@ -49,7 +48,7 @@ struct DirectoryConfigurationAvailabilityTests {
     let activity = MovieFolderActivityServiceFake()
     let service = DirectoryConfigurationService(
       repository: fixture.repository, authorizations: fixture.authorizations,
-      credentials: fixture.credentials, notifier: SilentConfigurationNotifier(),
+      accessTokenStore: fixture.accessTokenStore, notifier: SilentConfigurationNotifier(),
       processingCleanup: FailingProcessingCleanup(), activity: activity)
     try await service.removeDirectory(directory.id)
     #expect(try fixture.repository.read().directories.isEmpty)
@@ -68,7 +67,8 @@ struct DirectoryConfigurationAvailabilityTests {
     let retained = try #require(notifier)
     let service = DirectoryConfigurationService(
       repository: fixture.repository,
-      authorizations: fixture.authorizations, credentials: fixture.credentials, notifier: retained)
+      authorizations: fixture.authorizations, accessTokenStore: fixture.accessTokenStore, notifier: retained,
+        activity: MovieFolderActivityServiceFake())
     notifier = .none
     try await service.setPosterAppearance(.raw)
     #expect(retainedNotifier?.observedAppearance == .raw)
@@ -201,19 +201,19 @@ struct DirectoryConfigurationAvailabilityTests {
         == .reauthorizationRequired)
   }
 
-  /// Verifies that appearance updates summary without changing credentials or folders.
-  @Test func appearanceUpdatesSummaryWithoutChangingCredentialsOrFolders() async throws {
+  /// Verifies that appearance updates summary without changing access tokens or folders.
+  @Test func appearanceUpdatesSummaryWithoutChangingAccessTokenStoreOrFolders() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
-    fixture.credentials.save("appearance-fixture")
+    fixture.accessTokenStore.save("appearance-fixture")
     try fixture.repository.update { $0.directories = [] }
     let before = try fixture.repository.read()
     try await fixture.service.setPosterAppearance(.matteFrame)
     let summary = try await fixture.service.configurationSummary()
     #expect(summary.posterAppearance == .matteFrame)
-    #expect(summary.credentialConfigured)
+    #expect(summary.accessTokenConfigured)
     #expect(summary.directories.isEmpty)
-    #expect(fixture.credentials.read() == "appearance-fixture")
+    #expect(fixture.accessTokenStore.read() == "appearance-fixture")
     #expect(try fixture.repository.read().credentialRevision == before.credentialRevision)
   }
 
@@ -237,27 +237,27 @@ struct DirectoryConfigurationAvailabilityTests {
     #expect(try fixture.repository.read().directories == [directory])
   }
 
-  /// Verifies that credential contention leaves the previous credential untouched.
-  @Test func credentialContentionLeavesThePreviousCredentialUntouched() async throws {
+  /// Verifies that access token contention leaves the previous access token untouched.
+  @Test func accessTokenContentionLeavesThePreviousAccessTokenUntouched() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
-    fixture.credentials.save("existing-fixture")
+    fixture.accessTokenStore.save("existing-fixture")
     let held = try #require(
       try fixture.repository.store.acquireAccess(for: ConfigurationRepository.recordKey))
     do {
-      try await fixture.service.saveCredential("new-fixture", expectedRevision: .none)
-      Issue.record("A contended settings access must prevent credential change")
+      try await fixture.service.saveAccessToken("new-fixture", expectedRevision: .none)
+      Issue.record("A contended settings access must prevent access token change")
     } catch ConfigurationError.busy {}
-    #expect(fixture.credentials.read() == "existing-fixture")
+    #expect(fixture.accessTokenStore.read() == "existing-fixture")
     withExtendedLifetime(held) {}
   }
 
-  /// Verifies that credential operations use secure storage and update configuration state.
-  @Test func savesAndRemovesCredentialWithoutStoringItInSettings() async throws {
+  /// Verifies that access token operations use secure storage and update configuration state.
+  @Test func savesAndRemovesAccessTokenWithoutStoringItInSettings() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
-    try await fixture.service.saveCredential("fixture-secret-value", expectedRevision: .none)
-    #expect(try await fixture.service.configurationSummary().credentialConfigured)
+    try await fixture.service.saveAccessToken("fixture-secret-value", expectedRevision: .none)
+    #expect(try await fixture.service.configurationSummary().accessTokenConfigured)
     let settings = try #require(
       try fixture.repository.store.acquireAccess(for: ConfigurationRepository.recordKey))
     let bytes = try #require(try settings.read())
@@ -266,14 +266,14 @@ struct DirectoryConfigurationAvailabilityTests {
     withExtendedLifetime(settings) {}
   }
 
-  /// Verifies that removing credential updates state and revision.
-  @Test func removingCredentialUpdatesStateAndRevision() async throws {
+  /// Verifies that removing access token updates state and revision.
+  @Test func removingAccessTokenUpdatesStateAndRevision() async throws {
     let fixture = try ConfigurationServiceFixture()
     defer { fixture.cleanup() }
-    try await fixture.service.saveCredential("fixture-value", expectedRevision: .none)
+    try await fixture.service.saveAccessToken("fixture-value", expectedRevision: .none)
     let previous = try fixture.repository.read().credentialRevision
-    try await fixture.service.removeCredential(expectedRevision: previous)
-    #expect(!(try await fixture.service.configurationSummary().credentialConfigured))
+    try await fixture.service.removeAccessToken(expectedRevision: previous)
+    #expect(!(try await fixture.service.configurationSummary().accessTokenConfigured))
     #expect(try fixture.repository.read().credentialRevision != previous)
   }
 }

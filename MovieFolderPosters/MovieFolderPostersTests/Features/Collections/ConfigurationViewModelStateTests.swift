@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -14,7 +14,8 @@ struct ConfigurationViewModelTests {
   func installationDiagnosticDoesNotRefreshOrMutateCollectionConfiguration() async {
     let service = ConfigurationServiceFake()
     let coordinator = ConfigurationCoordinator(
-      service: service, installationService: InstallationServiceFake())
+      service: service, activity: MovieFolderActivityServiceFake(), installationService: InstallationServiceFake(),
+      localDataExportService: TestLocalDataExportService())
     let report = await coordinator.installationReport()
     #expect(service.calls.isEmpty)
     #expect(report.text.contains("Controlled installation evidence"))
@@ -28,8 +29,8 @@ struct ConfigurationViewModelTests {
       service: ConfigurationServiceFake(
         summary: ConfigurationSummary(
           directories: [.init(id: UUID(), path: "/Movies", availability: .checkUnavailable)],
-          credentialConfigured: false
-        )))
+          accessTokenConfigured: false
+        )), activity: MovieFolderActivityServiceFake())
     await model.load()
     let controller = ConfigurationViewController(viewModel: model)
     /// Collects the view and all descendants for native control assertions.
@@ -52,26 +53,27 @@ struct ConfigurationViewModelTests {
   /// Verifies the configuration view constructs its native layout.
   @Test @MainActor
   func configurationViewLoadsWithoutLayoutExceptions() {
-    let viewModel = ConfigurationViewModel(service: ConfigurationServiceFake())
+    let viewModel = ConfigurationViewModel(service: ConfigurationServiceFake(),
+      activity: MovieFolderActivityServiceFake())
     let controller = ConfigurationViewController(viewModel: viewModel)
 
     #expect(!controller.view.subviews.isEmpty)
   }
 
-  /// Verifies loading publishes configured roots, credential status, and poster appearance.
+  /// Verifies loading publishes configured roots, access token status, and poster appearance.
   @Test @MainActor
-  func loadPublishesConfiguredDirectoriesAndCredentialState() async {
+  func loadPublishesConfiguredDirectoriesAndAccessTokenState() async {
     let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
     let service = ConfigurationServiceFake(
       summary: ConfigurationSummary(
-        directories: [directory], credentialConfigured: true, posterAppearance: .matteFrame
+        directories: [directory], accessTokenConfigured: true, posterAppearance: .matteFrame
       ))
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
 
     await viewModel.load()
 
     #expect(viewModel.directories == [directory])
-    #expect(viewModel.credentialConfigured)
+    #expect(viewModel.accessTokenConfigured)
     #expect(viewModel.posterAppearance == .matteFrame)
     #expect(!viewModel.isBusy)
     #expect(viewModel.errorMessage == .none)
@@ -81,7 +83,7 @@ struct ConfigurationViewModelTests {
   @Test @MainActor
   func changingAppearancePersistsAndRefreshesTheVisibleSummary() async {
     let service = ConfigurationServiceFake()
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
 
     await viewModel.load()
     #expect(viewModel.posterAppearance == .softFinish)
@@ -98,9 +100,9 @@ struct ConfigurationViewModelTests {
   func failedAppearanceChangeRevertsToLastSavedChoice() async {
     let service = ConfigurationServiceFake(
       summary: ConfigurationSummary(
-        directories: [], credentialConfigured: false, posterAppearance: .raw
+        directories: [], accessTokenConfigured: false, posterAppearance: .raw
       ))
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     await viewModel.load()
     service.failNextAction(with: TestServiceError(message: "write failed"))
 
@@ -116,7 +118,7 @@ struct ConfigurationViewModelTests {
   func appearanceChangeIsSerializedWithOtherConfigurationChanges() async {
     let gate = AsyncTaskGate()
     let service = ConfigurationServiceFake(gate: gate)
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     let change = Task { await viewModel.setPosterAppearance(.raw) }
     await gate.waitUntilEntered()
     #expect(viewModel.isBusy)
@@ -131,22 +133,22 @@ struct ConfigurationViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
-  /// Verifies successful root and credential changes refresh the displayed configuration.
+  /// Verifies successful root and access token changes refresh the displayed configuration.
   @Test @MainActor
-  func successfulDirectoryAndCredentialActionsRefreshTheVisibleSummary() async {
+  func successfulDirectoryAndAccessTokenActionsRefreshTheVisibleSummary() async {
     let service = ConfigurationServiceFake()
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     let directory = URL(fileURLWithPath: "/Movies/Drama", isDirectory: true)
 
     await viewModel.addDirectory(directory)
-    await viewModel.saveCredential("private-token")
-    await viewModel.removeCredential()
+    await viewModel.saveAccessToken("private-token")
+    await viewModel.removeAccessToken()
 
     #expect(viewModel.directories.map(\.path) == ["/Movies/Drama"])
-    #expect(!viewModel.credentialConfigured)
+    #expect(!viewModel.accessTokenConfigured)
     #expect(service.calls.contains(.add(directory)))
-    #expect(service.calls.contains(.saveCredential("private-token")))
-    #expect(service.calls.contains(.removeCredential))
+    #expect(service.calls.contains(.saveAccessToken("private-token")))
+    #expect(service.calls.contains(.removeAccessToken))
   }
 
   /// Verifies reauthorization restores access and removal clears the configured row.
@@ -158,9 +160,9 @@ struct ConfigurationViewModelTests {
     )
     let service = ConfigurationServiceFake(
       summary: ConfigurationSummary(
-        directories: [directory], credentialConfigured: false, posterAppearance: .softFinish
+        directories: [directory], accessTokenConfigured: false, posterAppearance: .softFinish
       ))
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     let replacementURL = URL(fileURLWithPath: "/Volumes/Movies", isDirectory: true)
 
     await viewModel.load()
@@ -189,7 +191,7 @@ struct ConfigurationViewModelTests {
   func removalRefreshFailureDoesNotRecordFalseFailureOrDuplicateSuccess() async throws {
     let directory = ConfiguredDirectoryStatus(id: UUID(), path: "/Movies", availability: .available)
     let service = ConfigurationServiceFake(
-      summary: ConfigurationSummary(directories: [directory], credentialConfigured: false),
+      summary: ConfigurationSummary(directories: [directory], accessTokenConfigured: false),
       failsSummaryAfterRemoval: true)
     let activityHistoryService = MovieFolderActivityServiceFake()
     let viewModel = ConfigurationViewModel(service: service, activity: activityHistoryService)
@@ -202,17 +204,17 @@ struct ConfigurationViewModelTests {
     #expect(!viewModel.isBusy)
   }
 
-  /// Verifies operation failures expose a safe message without repeating credential text.
+  /// Verifies operation failures expose a safe message without repeating access token text.
   @Test @MainActor
-  func failedCredentialActionShowsSafeMessageWithoutEchoingCredential() async {
+  func failedAccessTokenActionShowsSafeMessageWithoutEchoingAccessToken() async {
     let service = ConfigurationServiceFake()
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     let secret = "private-token"
     service.failNextAction(with: TestServiceError(message: "Rejected \(secret)"))
 
-    await viewModel.saveCredential(secret)
+    await viewModel.saveAccessToken(secret)
 
-    #expect(viewModel.errorMessage == "Could not save the API credential.")
+    #expect(viewModel.errorMessage == "Could not save the API access token.")
     #expect(!(viewModel.errorMessage?.contains(secret) ?? false))
     #expect(!viewModel.isBusy)
   }
@@ -222,7 +224,7 @@ struct ConfigurationViewModelTests {
   func busyActionRejectsAnotherChangeUntilTheFirstCompletes() async {
     let gate = AsyncTaskGate()
     let service = ConfigurationServiceFake(gate: gate)
-    let viewModel = ConfigurationViewModel(service: service)
+    let viewModel = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
     let first = URL(fileURLWithPath: "/Movies/First", isDirectory: true)
     let second = URL(fileURLWithPath: "/Movies/Second", isDirectory: true)
 

@@ -1,8 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Persistence
 import Testing
 
@@ -14,7 +13,7 @@ struct MoviePosterActionServiceTests {
   @Test func movieSelectionSearchUsesSavedLanguage() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
-    let language = try TMDbLanguage("pt-BR")
+    let language = try MovieSearchLanguage("pt-BR")
     try fixture.repository.update { $0.movieMatchingConfiguration.searchLanguage = language }
     let provider = ActionProvider(changesDuringDownload: true)
     let result = try await fixture.service(movieMetadataProvider: provider).searchMovies(
@@ -175,16 +174,17 @@ struct MoviePosterActionServiceTests {
     #expect(await movieMetadataProvider.searches == ["Dune:none"])
   }
 
-  /// An authorized empty assignment must remain readable without a credential.
-  @Test func readsUnassignedFolderWithoutCredential() async throws {
+  /// An authorized empty assignment must remain readable without an access token.
+  @Test func readsUnassignedFolderWithoutAccessToken() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let service = MoviePosterActionService(
-      credentials: ActionCredentials(token: .none), activity: MovieFolderActivityServiceFake(), environment: fixture)
+      accessTokenStore: ActionAccessTokenStore(token: .none), activity: MovieFolderActivityServiceFake(),
+      environment: fixture, networkHistory: NetworkHistoryPresentationFake())
     #expect(try await service.matchedMovieID(for: fixture.request) == .none)
   }
 
-  /// Rejects malformed searches before configuration or credentials can be consulted.
+  /// Rejects malformed searches before configuration or access tokens can be consulted.
   @Test(arguments: ["", "  ", "Dune\nArrival", "Dune\rArrival"])
   func rejectsInvalidQuery(_ query: String) async throws {
     let fixture = try PosterActionFixture()
@@ -253,22 +253,22 @@ struct MoviePosterActionServiceTests {
     withExtendedLifetime(persistenceAccess) {}
   }
 
-  /// Credentials remain mandatory even when the network provider is injected.
-  @Test func missingCredentialPreventsSearch() async throws {
+  /// access tokenStore remain mandatory even when the network provider is injected.
+  @Test func missingAccessTokenPreventsSearch() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let service = fixture.service(token: .none)
-    await #expect(throws: MoviePosterActionServiceError.credentialUnavailable) {
+    await #expect(throws: MoviePosterActionServiceError.accessTokenUnavailable) {
       try await service.searchMovies(for: fixture.request, query: "Dune", year: .none)
     }
   }
 
-  /// Injected providers cannot bypass validation of malformed nonempty credentials.
-  @Test func malformedCredentialPreventsProviderSearch() async throws {
+  /// Injected providers cannot bypass validation of malformed nonempty access tokens.
+  @Test func malformedAccessTokenPreventsProviderSearch() async throws {
     let fixture = try PosterActionFixture()
     defer { fixture.cleanup() }
     let movieMetadataProvider = ActionProvider()
-    await #expect(throws: TMDbError.self) {
+    await #expect(throws: MovieMetadataError.self) {
       try await fixture.service(token: "invalid\ntoken", movieMetadataProvider: movieMetadataProvider).searchMovies(
         for: fixture.request, query: "Dune", year: .none)
     }
@@ -374,8 +374,7 @@ extension MoviePosterActionServiceTests {
     _ = try fixture.processing.commit(state, expectedRevision: state.revision)
     let image = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/TestPoster.png")
-    let client = TMDbClient(token: try TMDbAccessToken("fixture-token"),
-      transport: StubTMDbTransport(posterData: try Data(contentsOf: image)))
+    let client = try NetworkClient(token: "fixture-token", fixturePosterData: Data(contentsOf: image))
     _ = try await fixture.service(movieMetadataProvider: client).retryFolder(for: fixture.request)
     let saved = try #require(try fixture.processing.read(rootID: directory.id))
     let outcome = try #require(saved.folders.first)
@@ -437,20 +436,21 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
     ProcessingRecoveryService(store: try makePersistenceStore(
       directory: container.appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
   }
-  /// Composes the real action service without external storage, credentials, or networking.
+  /// Composes the real action service without external storage, access tokens, or networking.
   func service(token: String? = "fixture-token", movieMetadataProvider: (any MovieMetadataProvider)? = .none,
                activity: (any MovieFolderActivityServicing)? = .none) -> MoviePosterActionService {
-    MoviePosterActionService(credentials: ActionCredentials(token: token), activity:
+    MoviePosterActionService(accessTokenStore: ActionAccessTokenStore(token: token), activity:
       activity ?? MovieFolderActivityServiceFake(),
-      environment: self, movieMetadataProvider: movieMetadataProvider ?? ActionProvider())
+      environment: self, movieMetadataProvider: movieMetadataProvider ?? ActionProvider(),
+      networkHistory: NetworkHistoryPresentationFake())
   }
 
   /// Removes all test-owned resources after leases and operations finish.
   func cleanup() { try? FileManager.default.removeItem(at: container) }
 }
 
-/// Replaces only the external credential lookup.
-private struct ActionCredentials: CredentialStoring {
+/// Replaces only the external access token lookup.
+private struct ActionAccessTokenStore: ProviderAccessTokenStoring {
   /// Optional synthetic token.
   let token: String?
   func read() throws -> String? { token }
@@ -485,9 +485,9 @@ private actor ActionProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) throws
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) throws
     -> MovieSearchPage {
-    guard page == 1 else { throw TMDbError.invalidQuery }
+    guard page == 1 else { throw MovieMetadataError.invalidQuery }
 
     let result = try testSearchData(title: title, year: year, language: language)
 
@@ -495,7 +495,7 @@ private actor ActionProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page fixture independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) throws -> MovieSearchResult {
+  func testSearchData(title: String, year: Int?, language: MovieSearchLanguage = .english) throws -> MovieSearchResult {
     searches.append("\(title):\(year.map(String.init) ?? "none")")
     searchLanguages.append(language.rawValue)
     if cancels { throw CancellationError() }
@@ -541,9 +541,9 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
   func releaseDates(movieID: Int) throws -> MovieReleaseDatesByID { [movieID: []] }
   func alternativeTitles(movieID: Int) throws -> MovieAlternativeTitlesByID { [movieID: []] }
 
-  func searchMoviePage(title: String, year: Int?, language: TMDbLanguage, page: Int) async throws
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) async throws
     -> MovieSearchPage {
-    guard page == 1 else { throw TMDbError.invalidQuery }
+    guard page == 1 else { throw MovieMetadataError.invalidQuery }
 
     let result = await testSearchData(title: title, year: year, language: language)
 
@@ -551,7 +551,7 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
   }
 
   /// Supplies the existing first-page fixture independently of pagination transport.
-  func testSearchData(title: String, year: Int?, language: TMDbLanguage = .english) async -> MovieSearchResult {
+  func testSearchData(title: String, year: Int?, language: MovieSearchLanguage = .english) async -> MovieSearchResult {
     hasStarted = true
     startedWaiter?.resume()
     startedWaiter = .none
@@ -559,7 +559,7 @@ private actor SuspendedActionProvider: MovieMetadataProvider {
     return await withCheckedContinuation { responseWaiter = $0 }
   }
 
-  func downloadPoster(path: String) throws -> Data { throw TMDbError.invalidPosterPath }
+  func downloadPoster(path: String) throws -> Data { throw MovieMetadataError.invalidPosterPath }
 }
 
 /// Covers stale provider results across search and artwork suspension points.

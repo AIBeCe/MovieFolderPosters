@@ -1,0 +1,127 @@
+import FileSystem
+import Foundation
+import MovieFolderParsing
+import Persistence
+
+/// Serializes movie-folder processing, caches results, and validates identity before icon writes.
+public actor MovieFolderProcessor {
+  /// Immutable timing configuration captured for this processor instance.
+  let configuration: MovieFolderProcessorConfiguration
+  /// Enumerates collection members and validates their current identities.
+  let inventoryReader: any CollectionInventoryReading
+  /// Reads opted-in local evidence, including checks before assignment.
+  let informationReader: any MovieFolderInformationReading
+  /// Stores and loads validated artwork bytes.
+  let posterCache: any PosterCacheAccessing
+  /// Inspects and changes icons owned by the application.
+  let ownedPosters: any OwnedPosterAccessing
+  /// The store holding this root generation's processing records.
+  let persistence: PersistenceStore
+  /// Optional stable locks shared across processing-record generations.
+  let processingLockStore: PersistenceStore?
+  /// The metadata source used only when cached decisions or posters are insufficient.
+  let provider: any MovieMetadataProvider
+  /// The directory containing validated source poster bytes keyed by provider path.
+  let cacheDirectory: URL
+  /// The adapter performing automatic poster assignment after identity checks.
+  let posterAssigner: any PosterAssigner
+  /// The clock used to evaluate cache age and retry boundaries.
+  let now: @Sendable () -> Date
+  /// The retained collaborator that must approve configured change boundaries.
+  let processingVerifier: (any MovieFolderProcessingVerifier)?
+  /// The selected finish used for poster rendering.
+  let appearance: PosterAppearance
+  /// Effective automatic matching choices captured when this processor is composed.
+  let movieMatchingConfiguration: MovieMatchingConfiguration
+  /// Global page budget captured at processor creation.
+  let searchPageLimit: Int
+  /// Collection pause and identity-based exclusion choices captured for this operation.
+  let processingConfiguration: CollectionProcessingConfiguration
+  /// Commits authoritative results independently of operational caches.
+  let processingStore: CollectionProcessingStore?
+  /// Shared recovery admission and change fencing, when supplied by production composition.
+  let recovery: ProcessingRecoveryService?
+  /// Explicit fixture context captured by production composition.
+  let usesStubTMDbResponses: Bool
+  /// access token generation captured at composition, never refreshed by an in-flight operation.
+  let credentialRevision: UUID?
+  /// Optional retained reporting service; logging never participates in processing authorization.
+  let activityHistoryService: (any MovieFolderActivityRecording)?
+  /// Immutable collection provenance and privacy captured when this processor is composed.
+  let activityLogContext: MovieFolderActivityLogContext?
+  /// The conservative folder-name parser used before metadata searches.
+  let parser = ReleaseNameParser()
+  /// The conservative movie matcher used after a complete provider response.
+  let matcher = MovieMatcher()
+
+  /// Connects the processing stores, metadata source, clock, icon adapter, and optional processing verifier.
+  ///
+  /// - Parameters:
+  ///   - inventoryReader: Collection inventory and folder identity checks.
+  ///   - informationReader: Local source evidence and freshness checks.
+  ///   - posterCache: Cached artwork bytes.
+  ///   - ownedPosters: Icon ownership checks and changes.
+  ///   - persistence: The per-generation store of folder decisions and query results.
+  ///   - provider: The source of movie metadata and poster images.
+  ///   - cacheDirectory: The directory used for validated source image caching.
+  ///   - posterAssigner: The synchronous adapter performing final automatic icon assignment.
+  ///   - now: The clock used for retry and cache expiry decisions.
+  ///   - processingLockStore: Optional stable locks shared across processing generations.
+  ///   - processingVerifier: Optional retained collaborator enforcing live settings authorization.
+  ///   - appearance: The rendering finish selected for the assigned poster.
+  ///   - processingStore: Dedicated result storage; production supplies it with a current context for each operation.
+  ///   - recovery: Shared recovery gate rechecked at entry and held through each synchronous icon change.
+  ///   - credentialRevision: Production access token generation stamped on every saved operational state.
+  ///   - configuration: Validated retry and cache timings for this processor instance.
+  ///   - activityHistoryService: Optional retained best-effort activity writer.
+  ///   - activityLogContext: Trusted root-bound names and capture-time privacy for this processor.
+  ///   - movieMatchingConfiguration: Effective choices captured for this collection's automatic matching.
+  ///   - searchPageLimit: Global captured search budget; aggregation rejects values outside one through five.
+  public init(
+    inventoryReader: any CollectionInventoryReading = FileSystemService(),
+    informationReader: any MovieFolderInformationReading = FileSystemService(),
+    posterCache: any PosterCacheAccessing = FileSystemService(),
+    ownedPosters: any OwnedPosterAccessing = FileSystemService(),
+    persistence: PersistenceStore,
+    provider: any MovieMetadataProvider,
+    cacheDirectory: URL,
+    posterAssigner: any PosterAssigner = FileSystemService(),
+    now: @escaping @Sendable () -> Date = Date.init,
+    processingLockStore: PersistenceStore? = .none,
+    processingVerifier: (any MovieFolderProcessingVerifier)? = .none,
+    appearance: PosterAppearance = .softFinish,
+    processingStore: CollectionProcessingStore? = .none,
+    recovery: ProcessingRecoveryService? = .none,
+    credentialRevision: UUID? = .none,
+    usesStubTMDbResponses: Bool = false,
+    configuration: MovieFolderProcessorConfiguration = .standard,
+    movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration(),
+    searchPageLimit: Int = 3,
+    processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
+    activityHistoryService: (any MovieFolderActivityRecording)? = .none,
+    activityLogContext: MovieFolderActivityLogContext? = .none
+  ) {
+    self.activityHistoryService = activityHistoryService
+    self.activityLogContext = activityLogContext
+    self.credentialRevision = credentialRevision
+    self.usesStubTMDbResponses = usesStubTMDbResponses
+    self.configuration = configuration
+    self.inventoryReader = inventoryReader
+    self.informationReader = informationReader
+    self.posterCache = posterCache
+    self.ownedPosters = ownedPosters
+    self.persistence = persistence
+    self.processingLockStore = processingLockStore
+    self.provider = provider
+    self.cacheDirectory = cacheDirectory
+    self.posterAssigner = posterAssigner
+    self.now = now
+    self.processingVerifier = processingVerifier
+    self.appearance = appearance
+    self.movieMatchingConfiguration = movieMatchingConfiguration
+    self.searchPageLimit = searchPageLimit
+    self.processingConfiguration = processingConfiguration
+    self.processingStore = processingStore
+    self.recovery = recovery
+  }
+}

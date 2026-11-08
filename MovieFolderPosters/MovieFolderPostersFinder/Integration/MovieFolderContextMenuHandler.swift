@@ -1,6 +1,6 @@
 import FileSystem
 import FinderSync
-import MovieFolderCommon
+import Common
 import OSLog
 
 /// Supplies Finder contextual-menu selection, configuration access, and host request dispatch.
@@ -19,17 +19,19 @@ protocol MovieFolderContextMenuEnvironment {
 
 /// Adapts Finder selection and host launch without owning selection configuration.
 struct LiveMovieFolderContextMenuEnvironment: MovieFolderContextMenuEnvironment {
+  let services: MovieFolderServiceFactory
+
   func open(_ request: MovieFolderContextMenuRequest) {
     guard let url = try? request.makeURL() else { return }
 
     openURL(url)
   }
 
-  /// Launches the host with the typed inclusion route, independent of provider credentials.
+  /// Launches the host with the typed inclusion route, independent of provider access tokens.
   func open(_ request: MovieFolderInclusionRequest) { openURL(request.url) }
   func selectedItemURLs() -> [URL]? { FIFinderSyncController.default().selectedItemURLs() }
   func configurationRepository() throws -> ConfigurationRepository {
-    try MovieFolderEnvironment.makeConfigurationRepository()
+    try services.makeConfigurationRepository()
   }
 
   /// Opens the captured action in the containing host app and logs a sanitized launch failure.
@@ -93,9 +95,9 @@ final class MovieFolderContextMenuHandler: NSObject {
     let group = NSMenuItem(title: "Movie Folder Posters", action: .none, keyEquivalent: "")
     group.submenu = submenu
     menu.addItem(group)
-    addContextMenuRequestItems(for: selection, actionTarget: actionTarget, to: submenu)
-    if case .child(let name, let identity) = selection.target {
-      addChildContextMenuItems(rootID: selection.rootID, name: name, identity: identity,
+    addContextMenuRequestItems(for: selection.request, actionTarget: actionTarget, to: submenu)
+    if case .child(let name, let identity) = selection.request.target {
+      addChildContextMenuItems(directory: selection.directory, name: name, identity: identity,
         actionTarget: actionTarget, to: submenu)
     }
 
@@ -126,7 +128,7 @@ final class MovieFolderContextMenuHandler: NSObject {
 
   /// Adds existing poster and inclusion commands for one captured immediate child.
   private func addChildContextMenuItems(
-    rootID: UUID, name: String, identity: String, actionTarget: AnyObject, to submenu: NSMenu
+    directory: MonitoredDirectory, name: String, identity: String, actionTarget: AnyObject, to submenu: NSMenu
   ) {
     submenu.addItem(.separator())
     for action in MoviePosterAction.allCases {
@@ -136,13 +138,9 @@ final class MovieFolderContextMenuHandler: NSObject {
       item.tag = nextContextMenuTag
       nextContextMenuTag += 1
       contextMenuPosterRequests[item.tag] = MoviePosterRequest(
-        rootID: rootID, childName: name, identity: identity, action: action)
+        rootID: directory.id, childName: name, identity: identity, action: action)
       submenu.addItem(item)
     }
-
-    guard let directory = try? environment.configurationRepository().read().directories.first(where: {
-      $0.id == rootID
-    }) else { return }
 
     submenu.addItem(.separator())
     let excluded = directory.processingConfiguration.excludesFolder(identity: identity)
@@ -191,31 +189,36 @@ final class MovieFolderContextMenuHandler: NSObject {
 
   /// Builds a request only for one visible immediate child of a configured collection.
   /// - Returns: A validated request for the selected immediate folder, or no request for unsupported selections.
-  private func selectedContextMenuTarget() -> MovieFolderContextMenuRequest? {
+  private func selectedContextMenuTarget() -> (request: MovieFolderContextMenuRequest, directory: MonitoredDirectory)? {
     guard let selected = environment.selectedItemURLs(), selected.count == 1,
       let url = selected.first, !url.lastPathComponent.hasPrefix("."),
       let configuration = try? environment.configurationRepository().read()
     else { return .none }
 
     let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+    let selectedURL = url.resolvingSymlinksInPath().standardizedFileURL
+    let overlappingIDs = configuration.findOverlappingDirectoryIDs()
+    let fileSystem = FileSystemService()
     for directory in configuration.directories {
-      guard !configuration.findOverlappingDirectoryIDs().contains(directory.id) else { continue }
+      guard !overlappingIDs.contains(directory.id) else { continue }
 
       let root = URL(fileURLWithPath: directory.path, isDirectory: true)
         .resolvingSymlinksInPath().standardizedFileURL
-      if root == url.resolvingSymlinksInPath().standardizedFileURL,
-        (try? FileSystemService().persistentDirectoryIdentity(at: root)) == directory.identity {
-        return try? MovieFolderContextMenuRequest(rootID: directory.id, target: .collection, action: .inspect)
+      if root == selectedURL, let identity = try? fileSystem.persistentDirectoryIdentity(at: root),
+        identity == directory.identity,
+        let request = try? MovieFolderContextMenuRequest(rootID: directory.id, target: .collection, action: .inspect) {
+        return (request, directory)
       }
 
       guard root == parent,
-        let candidate = try? FileSystemService().readCurrentFolderCandidate(ofChild: url.lastPathComponent, in: root)
+        let candidate = try? fileSystem.readCurrentFolderCandidate(ofChild: url.lastPathComponent, in: root),
+        let request = try? MovieFolderContextMenuRequest(rootID: directory.id,
+          target: .child(name: candidate.name, identity: candidate.identity), action: .inspect)
       else {
         continue
       }
 
-      return try? MovieFolderContextMenuRequest(rootID: directory.id,
-        target: .child(name: candidate.name, identity: candidate.identity), action: .inspect)
+      return (request, directory)
     }
 
     return .none

@@ -1,6 +1,6 @@
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -106,8 +106,9 @@ struct DirectoryConfigurationServiceCoverageTests {
     defer { fixture.cleanup() }
     let directory = try fixture.makeDirectory("Movies")
     let authorizing = DirectoryConfigurationService(repository: fixture.repository,
-      authorizations: fixture.authorizations, credentials: CoverageCredentials(),
-      notifier: CoverageConfigurationNotifier(), authorization: CoverageAuthorization(mode: .accessible))
+      authorizations: fixture.authorizations, accessTokenStore: CoverageAccessTokenStore(),
+      notifier: CoverageConfigurationNotifier(), authorization: CoverageAuthorization(mode: .accessible),
+        activity: MovieFolderActivityServiceFake())
     try await authorizing.addDirectory(directory)
     let summary = try await fixture.service.configurationSummary()
     switch mode {
@@ -138,7 +139,7 @@ private struct DirectoryServiceCoverageFixture {
     authorizations = try PersistenceStore(directory: root.appendingPathComponent("Authorization"))
     service = DirectoryConfigurationService(repository: repository,
       authorizations: authorizations,
-      credentials: CoverageCredentials(), notifier: CoverageConfigurationNotifier(),
+      accessTokenStore: CoverageAccessTokenStore(), notifier: CoverageConfigurationNotifier(),
       authorization: CoverageAuthorization(mode: mode), activity: MovieFolderActivityServiceFake())
   }
 
@@ -179,8 +180,8 @@ private struct CoverageConfigurationNotifier: ConfigurationChangeNotifying {
   func configurationDidChange(scheduleObservedCollections: Bool) {}
 }
 
-/// Supplies no credential without consulting Keychain.
-private struct CoverageCredentials: CredentialStoring {
+/// Supplies no access token without consulting Keychain.
+private struct CoverageAccessTokenStore: ProviderAccessTokenStoring {
   func read() throws -> String? { .none }
   func save(_ value: String) throws {}
   func remove() throws {}

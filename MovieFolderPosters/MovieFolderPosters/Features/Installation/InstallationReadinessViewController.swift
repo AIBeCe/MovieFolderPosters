@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Renders a read-only report without owning diagnostics or navigation configuration.
 @MainActor
@@ -8,7 +8,7 @@ final class InstallationReadinessViewController: NSViewController {
   private let report: InstallationReadinessReport
 
   /// Creates a renderer for one bounded result.
-  /// - Parameter report: Safe diagnostics without credentials or bookmark payloads.
+  /// - Parameter report: Safe diagnostics without access tokens or bookmark payloads.
   init(report: InstallationReadinessReport) {
     self.report = report
     super.init(nibName: .none, bundle: .none)

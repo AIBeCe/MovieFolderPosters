@@ -1,29 +1,29 @@
 import AppKit
 import FileSystem
-import MovieFolderCommon
+import Common
 
-/// Presents poster layout, TMDb credential, and app appearance settings.
+/// Presents poster layout, TMDb access token, and app appearance settings.
 @MainActor
 final class SettingsViewController: NSTabViewController, ConfigurationViewModelDelegate {
-  /// Supplies persisted poster and credential state to settings panes.
+  /// Supplies persisted poster and access token state to settings panes.
   private let viewModel: ConfigurationViewModel
   /// Supplies the host app's independent color appearance choice.
   private let appearanceSettings: AppAppearanceSettings
-  /// Credential pane whose confirmations are routed by the owning coordinator.
-  private let credentialPane: TMDbPane
-  /// Owns external navigation and deliberate credential confirmations.
-  weak var credentialDelegate: (any CredentialSettingsDelegate)? {
-    didSet { credentialPane.delegate = credentialDelegate }
+  /// access token pane whose confirmations are routed by the owning coordinator.
+  private let accessTokenPane: TMDbPane
+  /// Owns external navigation and deliberate access token confirmations.
+  weak var accessTokenDelegate: (any AccessTokenSettingsDelegate)? {
+    didSet { accessTokenPane.delegate = accessTokenDelegate }
   }
 
   /// Creates the settings tabs using the supplied state collaborators.
   /// - Parameters:
-  ///   - viewModel: Model for poster layout and credential settings.
+  ///   - viewModel: Model for poster layout and access token settings.
   ///   - appearanceSettings: Store for the app color appearance.
   init(viewModel: ConfigurationViewModel, appearanceSettings: AppAppearanceSettings) {
     self.viewModel = viewModel
     self.appearanceSettings = appearanceSettings
-    credentialPane = TMDbPane(viewModel: viewModel)
+    accessTokenPane = TMDbPane(viewModel: viewModel)
     super.init(nibName: .none, bundle: .none)
     tabStyle = .toolbar
     addTab(
@@ -33,7 +33,7 @@ final class SettingsViewController: NSTabViewController, ConfigurationViewModelD
     addTab(label: "Matching Defaults", image: NSImage(systemSymbolName: "text.magnifyingglass",
       accessibilityDescription: .none)) { MatchingPane(viewModel: viewModel) }
     addTab(label: "TMDb", image: NSImage(systemSymbolName: "key", accessibilityDescription: .none)) {
-      self.credentialPane
+      self.accessTokenPane
     }
     addTab(
       label: "Appearance",

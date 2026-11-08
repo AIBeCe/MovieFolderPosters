@@ -1,6 +1,5 @@
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Testing
 
 @testable import MovieFolderPosters
@@ -188,7 +187,7 @@ struct LogViewModelTests {
     let service = MovieFolderActivityServiceFake()
     let log = LogViewModel(activityHistoryService: service)
     await service.setFailures(write: true)
-    await log.record(MovieFolderActivityLogEvent(action: .credentialSaved, status: .succeeded))
+    await log.record(MovieFolderActivityLogEvent(action: .accessTokenSaved, status: .succeeded))
     #expect(log.hasObservedWriteFailure)
     #expect(!log.hasLoadFailure)
     await service.setFailures(read: true)
@@ -256,7 +255,10 @@ struct LogViewModelTests {
   /// Unverified collection context retains failure evidence while omitting names and correlation identifiers.
   @Test func actualManualProducerRetainsFailureWithoutUnverifiedCollectionContext() async throws {
     let activity = MovieFolderActivityServiceFake()
-    let service = MoviePosterActionService(activity: activity)
+    let services = MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations())
+    let service = MoviePosterActionService(
+      accessTokenStore: services.makeProviderAccessTokenStore(), activity: activity,
+      networkHistory: NetworkHistoryPresentationFake())
     let rootID = UUID()
     let request = MoviePosterRequest(
       rootID: rootID, childName: "private-title", identity: "private-identity", action: .change)
@@ -285,7 +287,7 @@ private struct IgnoredActivityChangeNotifier: MovieFolderActivityChangeNotifying
 }
 
 /// Isolated network source with explicit saved preference and failure controls.
-private actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing {
+actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing {
   /// Retained entries independent of activity storage.
   private var history: [MovieFolderNetworkHistoryEntry] = []
   /// Saved opt-in preference defaults off.
@@ -312,7 +314,7 @@ private actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing
   }
   func prepareNetworkHistoryRecording(collectionID: UUID?) -> UUID? { .none }
   func recordCompletedNetworkRequest(
-    purpose: TMDbRequestCategory, result: TMDbRequestCompletionResult, completedAt: Date,
+    purpose: MovieNetworkRequestCategory, result: MovieNetworkRequestResult, completedAt: Date,
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) {}
 }

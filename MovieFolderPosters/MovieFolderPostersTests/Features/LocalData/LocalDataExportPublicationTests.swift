@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 import Testing
 
 @testable import MovieFolderPosters

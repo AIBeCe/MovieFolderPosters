@@ -1,7 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 
@@ -10,7 +10,7 @@ import Testing
 /// Verifies that presentation delegates are deduplicated removable and weak.
 @MainActor
 @Test func presentationDelegatesAreDeduplicatedRemovableAndWeak() async {
-  let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+  let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake())
   let main = ConfigurationDelegateProbe()
   let settings = ConfigurationDelegateProbe()
   model.addDelegate(main)
@@ -21,7 +21,7 @@ import Testing
   #expect(initialUpdates > 0)
   #expect(settings.updates == main.updates)
   model.removeDelegate(main)
-  await model.saveCredential("fake-secret")
+  await model.saveAccessToken("fake-secret")
   #expect(main.updates == initialUpdates)
   #expect(settings.updates > initialUpdates)
   let updatesAfterSaving = settings.updates
@@ -42,7 +42,8 @@ import Testing
 /// Verifies that an actionable empty state appears only when no collection is configured.
 @MainActor
 @Test func mainShowsAccessibleEmptyStateOnlyForAnEmptyCollectionList() async throws {
-  let emptyModel = ConfigurationViewModel(service: ConfigurationServiceFake())
+  let emptyModel = ConfigurationViewModel(service: ConfigurationServiceFake(),
+    activity: MovieFolderActivityServiceFake())
   await emptyModel.load()
   let emptyController = ConfigurationViewController(viewModel: emptyModel)
   let emptyViews = nativeViews(in: emptyController.view)
@@ -57,8 +58,8 @@ import Testing
     service: ConfigurationServiceFake(
       summary: ConfigurationSummary(
         directories: [.init(id: UUID(), path: "/Movies/Comedy", availability: .available)],
-        credentialConfigured: false
-      )))
+        accessTokenConfigured: false
+      )), activity: MovieFolderActivityServiceFake())
   await populatedModel.load()
   let populatedController = ConfigurationViewController(viewModel: populatedModel)
   let populatedLabel = try #require(nativeViews(in: populatedController.view).compactMap {
@@ -74,8 +75,8 @@ import Testing
     service: ConfigurationServiceFake(
       summary: ConfigurationSummary(
         directories: [.init(id: UUID(), path: "/Movies/Comedy", availability: .available)],
-        credentialConfigured: false
-      )))
+        accessTokenConfigured: false
+      )), activity: MovieFolderActivityServiceFake())
   await model.load()
   let controller = ConfigurationViewController(viewModel: model)
   /// Collects the view hierarchy for native control and accessibility assertions.
@@ -101,27 +102,27 @@ import Testing
 /// Verifies that log is bounded and clear does not change configuration.
 @MainActor
 @Test func logIsBoundedAndClearDoesNotChangeConfiguration() async {
-  let model = ConfigurationViewModel(service: ConfigurationServiceFake())
-  await model.saveCredential("fake-secret")
+  let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake())
+  await model.saveAccessToken("fake-secret")
   let log = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
   for _ in 0..<510 { await log.record(MovieFolderActivityLogEvent(action: .configurationLoaded, status: .succeeded)) }
   #expect(log.activityEntries.count == 500)
   #expect(log.activityEntries.first?.sequence == 11)
   await log.clear()
   #expect(log.activityEntries.isEmpty)
-  #expect(model.credentialConfigured)
+  #expect(model.accessTokenConfigured)
 }
 
-/// Verifies that activity messages do not expose credentials or underlying errors.
+/// Verifies that activity messages do not expose access tokens or underlying errors.
 @MainActor
-@Test func activityMessagesDoNotExposeCredentialsOrUnderlyingErrors() async {
+@Test func activityMessagesDoNotExposeAccessTokenStoreOrUnderlyingErrors() async {
   let service = ConfigurationServiceFake()
-  let model = ConfigurationViewModel(service: service)
+  let model = ConfigurationViewModel(service: service, activity: MovieFolderActivityServiceFake())
   let probe = ConfigurationDelegateProbe()
   model.activityDelegate = probe
   let secret = "fake-sensitive-token"
   service.failNextAction(with: TestServiceError(message: secret))
-  await model.saveCredential(secret)
+  await model.saveAccessToken(secret)
   #expect(!probe.events.isEmpty)
   #expect(probe.events.allSatisfy { !$0.text.contains(secret) })
   #expect(probe.events.last?.category == "Configuration")
@@ -137,8 +138,8 @@ import Testing
   let model = ConfigurationViewModel(
     service: ConfigurationServiceFake(
       summary: ConfigurationSummary(
-        directories: [first, second, third], credentialConfigured: false
-      )))
+        directories: [first, second, third], accessTokenConfigured: false
+      )), activity: MovieFolderActivityServiceFake())
   await model.load()
   let controller = ConfigurationViewController(viewModel: model)
   let table = try #require(nativeViews(in: controller.view).compactMap { $0 as? NSTableView }.first)
@@ -153,7 +154,7 @@ import Testing
 @MainActor
 @Test func trailingColumnsFitWithLegacyScrollbars() throws {
   for width in [680.0, 780.0] {
-    let model = ConfigurationViewModel(service: ConfigurationServiceFake())
+    let model = ConfigurationViewModel(service: ConfigurationServiceFake(), activity: MovieFolderActivityServiceFake())
     let controller = ConfigurationViewController(viewModel: model)
     let window = NSWindow(contentViewController: controller)
     window.setContentSize(NSSize(width: width, height: 310))

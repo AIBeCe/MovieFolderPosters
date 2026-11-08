@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 import Testing
 

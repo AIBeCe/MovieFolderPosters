@@ -6,7 +6,7 @@ trap 'rtk proxy rm -rf "$collection_probe"' EXIT
 rtk proxy mkdir -p "$collection_probe/Sources/CollectionProcessingProbe"
 rtk proxy cp "$common_repository/scripts/test-support/CollectionProcessingProbe/main.swift" \
   "$collection_probe/Sources/CollectionProcessingProbe/"
-for package in MovieFolderCommon MovieFolderParsing Network FileSystem Persistence Log; do
+for package in Common MovieFolderParsing Network FileSystem Persistence Log Contracts HTTPTransport TMDb; do
   rtk proxy ln -s "$common_repository/Packages/$package" "$collection_probe/$package"
 done
 rtk proxy tee "$collection_probe/Package.swift" >/dev/null <<'SWIFT'
@@ -15,8 +15,8 @@ import PackageDescription
 let package = Package(
   name: "CollectionProcessingProbe",
   platforms: [.macOS("26.5")],
-  dependencies: [.package(path: "MovieFolderCommon"), .package(path: "Persistence")],
-  targets: [.executableTarget(name: "CollectionProcessingProbe", dependencies: ["MovieFolderCommon", "Persistence"])],
+  dependencies: [.package(path: "Common"), .package(path: "Persistence")],
+  targets: [.executableTarget(name: "CollectionProcessingProbe", dependencies: ["Common", "Persistence"])],
   swiftLanguageModes: [.v6])
 SWIFT
 SWIFTPM_MODULECACHE_OVERRIDE="$common_cache/module-cache" \

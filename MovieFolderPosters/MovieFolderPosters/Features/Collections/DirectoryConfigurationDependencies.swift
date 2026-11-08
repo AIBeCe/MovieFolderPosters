@@ -1,6 +1,6 @@
 import FileSystem
 import Foundation
-import MovieFolderCommon
+import Common
 import Persistence
 
 /// Notifies shared components after configuration has been persisted.
@@ -105,9 +105,9 @@ nonisolated struct ConfiguredDirectoryInspector {
   /// - Returns: Availability and any safely refreshed path or bookmark metadata.
   func inspect(
     _ directory: MonitoredDirectory
-  ) -> (availability: MovieFolderCommon.DirectoryAvailability, refreshed: MonitoredDirectory?) {
+  ) -> (availability: Common.DirectoryAvailability, refreshed: MonitoredDirectory?) {
     var refreshed: MonitoredDirectory?
-    let availability: MovieFolderCommon.DirectoryAvailability
+    let availability: Common.DirectoryAvailability
     do {
       let inspection = try inspectAuthorizedDirectory(directory)
       availability = inspection.availability
@@ -145,7 +145,7 @@ nonisolated struct ConfiguredDirectoryInspector {
   /// - Throws: Authorization, identity, bookmark, or persistence errors.
   private func inspectAuthorizedDirectory(
     _ directory: MonitoredDirectory
-  ) throws -> (availability: MovieFolderCommon.DirectoryAvailability, refreshed: MonitoredDirectory?) {
+  ) throws -> (availability: Common.DirectoryAvailability, refreshed: MonitoredDirectory?) {
     var refreshed: MonitoredDirectory?
     guard let persistenceAccess = try authorizations.acquireAccess(
       for: authorizationKeys.key(for: directory)) else {
@@ -175,7 +175,7 @@ nonisolated struct ConfiguredDirectoryInspector {
   /// Maps filesystem readiness evidence to the collection's displayed availability.
   private func directoryAvailability(
     for state: FileSystem.DirectoryAvailability
-  ) -> MovieFolderCommon.DirectoryAvailability {
+  ) -> Common.DirectoryAvailability {
     switch state {
     case .accessible: .available
     case .disconnected: .disconnected

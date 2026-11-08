@@ -1,5 +1,8 @@
 # Project structure
 
+See [Application architecture](ARCHITECTURE.md) for the target module boundaries, public contracts,
+and provider composition.
+
 The user approved the original feature organization on 2026-10-17 and the Common/Log package extraction on
 2026-10-18. These are real filesystem folders and local package modules. The extraction is implemented and reviewed;
 see [Common and Log migration](COMMON_AND_LOG_MIGRATION.md) for current scope and verification.
@@ -38,15 +41,15 @@ Packages/
 ├── Log/
 │   ├── Sources/Log/Activity/
 │   └── Tests/LogTests/Activity/
-└── MovieFolderCommon/
-    ├── Sources/MovieFolderCommon/
+└── Common/
+    ├── Sources/Common/
     │   ├── Activity/
     │   ├── Configuration/
     │   ├── Development/               # Debug-only deterministic TMDb transport
     │   ├── Processing/Collections/
     │   ├── FinderIntegration/
     │   └── Security/
-    └── Tests/MovieFolderCommonTests/    # Mirrors source responsibility folders
+    └── Tests/CommonTests/    # Mirrors source responsibility folders
 ```
 
 ## Ownership and dependencies
@@ -62,7 +65,7 @@ invalidation subscription independently of configuration startup. Root-owned app
 windows. Required collection cleanup belongs to the configuration service after a committed removal, not to
 view rendering. See [Host coordinator architecture](COORDINATOR_ARCHITECTURE.md) for decisions and verification.
 
-MovieFolderCommon contains application logic consumed by both executables through a public module API. It owns
+Common contains application logic consumed by both executables through a public module API. It owns
 parsing, matching, processing, collection state, configuration records, reusable security/request support,
 typed movie activity, shared environment setup, and the Debug-only stub transport. MovieFolderEnvironment runs
 in its caller's process; moving it into a package does not change App Group or process-private storage lookup.
@@ -74,8 +77,8 @@ responses in Debug. Configuration owns the shared environment and explicit proce
 The former HostActivityLog presentation model is LogViewModel under the host Log feature. R110-03 renamed the
 intermediate ActivityLogViewModel because the model now presents activity and network history.
 
-Log owns generic bounded activity storage and depends on Persistence. MovieFolderCommon depends on Log,
-Network, FileSystem, and Persistence; those services do not depend on MovieFolderCommon or either executable.
+Log owns generic bounded activity storage and depends on Persistence. Common depends on Log,
+Network, FileSystem, and Persistence; those services do not depend on Common or either executable.
 Folders express ownership within one module per package; modules enforce dependency boundaries.
 
 MovieFolderProcessor remains one actor with cohesive source files for automatic processing, manual actions,
@@ -86,7 +89,7 @@ suite identities. See [SwiftLint validation](SWIFTLINT_VALIDATION.md) for the re
 ## Xcode and verification scripts
 
 The host and test directories retain Xcode's folder-synchronized groups. Both executable targets link
-MovieFolderCommon instead of compiling its sources directly. Finder integration sources retain explicit
+Common instead of compiling its sources directly. Finder integration sources retain explicit
 membership. Host plist/entitlements remain excluded from automatic resource membership.
 
 Verification scripts consume the Common package. Package-owned tests exercise the actual module.
@@ -118,7 +121,7 @@ Later native evidence is recorded in [Native qualification](NATIVE_READINESS_QUA
 ## Protocol-based communication
 
 R100-02 introduced application models/repository in `Shared/Processing/Collections`; the package extraction moves
-them into MovieFolderCommon/Processing/Collections with mirrored test ownership. Host-only summary reading, presentation, and read-only details
+them into Common/Processing/Collections with mirrored test ownership. Host-only summary reading, presentation, and read-only details
 remain in `Features/Collections`. FileSystem owns read-only inventory and icon assessment; Persistence owns
 generic bounded record access and pruning. The test-only child-process probe is under `scripts/test-support`
 and never enters a synchronized application/test target. See [Processing results](COLLECTION_PROCESSING.md).

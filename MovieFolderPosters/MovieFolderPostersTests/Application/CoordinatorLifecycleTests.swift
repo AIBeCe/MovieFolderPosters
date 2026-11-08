@@ -1,8 +1,7 @@
 import AppKit
 import FileSystem
 import Foundation
-import MovieFolderCommon
-import Network
+import Common
 import Persistence
 import Testing
 
@@ -322,7 +321,8 @@ struct CoordinatorLifecycleTests {
     #expect(logIsReleased())
     var configuration: ConfigurationCoordinator? = ConfigurationCoordinator(
       service: CoordinatorConfigurationService(), activity: MovieFolderActivityServiceFake(),
-        appearance: try coordinatorLifecycleAppearance())
+        appearance: try coordinatorLifecycleAppearance(),
+      localDataExportService: TestLocalDataExportService())
     let configurationIsReleased = { [weak configuration] in configuration == .none }
     configuration?.start()
     configuration?.mainWindow?.close()
@@ -358,7 +358,7 @@ private final class RetryingConfigurationBuilder: ConfigurationFlowBuilding {
   /// Number of actual construction attempts rather than window presentations.
   private(set) var attemptCount = Int.zero
 
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     attemptCount += 1
@@ -366,41 +366,44 @@ private final class RetryingConfigurationBuilder: ConfigurationFlowBuilding {
 
     return ConfigurationCoordinator(
       service: CoordinatorConfigurationService(), activity: activity,
-      appearance: appearance, retryService: retryService)
+      appearance: appearance,
+      localDataExportService: TestLocalDataExportService(), retryService: retryService)
   }
 }
 
 /// Rejects configuration construction while other app services remain available.
 @MainActor
 private struct UnavailableConfigurationBuilder: ConfigurationFlowBuilding {
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     throw CocoaError(.fileReadUnknown)
   }
 }
 
-/// Constructs a configuration flow without reading live stores or credentials.
+/// Constructs a configuration flow without reading live stores or access tokens.
 @MainActor
 private struct AvailableConfigurationBuilder: ConfigurationFlowBuilding {
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     ConfigurationCoordinator(
       service: CoordinatorConfigurationService(), activity: activity,
-      appearance: appearance, retryService: retryService)
+      appearance: appearance,
+      localDataExportService: TestLocalDataExportService(), retryService: retryService)
   }
 }
 
 /// Supplies immediate readiness evidence for Local Data window lifetime coverage.
 @MainActor
 private struct LocalDataConfigurationBuilder: ConfigurationFlowBuilding {
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     ConfigurationCoordinator(
       service: CoordinatorConfigurationService(), activity: activity,
-      appearance: appearance, installationService: LocalDataInstallationServiceFake(), retryService: retryService)
+      appearance: appearance, installationService: LocalDataInstallationServiceFake(),
+      localDataExportService: TestLocalDataExportService(), retryService: retryService)
   }
 }
 
@@ -430,31 +433,32 @@ private final class RecoveryCheckingConfigurationBuilder: ConfigurationFlowBuild
   ///   - appearance: Root-owned appearance settings.
   /// - Returns: A configuration owner backed by isolated services.
   /// - Throws: Recovery state failures that make the observed ordering unavailable.
-  func makeCoordinator(activity: any MovieFolderActivityServicing,
+  func makeCoordinator(activity: any ConfigurationActivityServices,
                        appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     observedRecoveryMode = try recovery.read().isRecoveryModeEnabled
 
     return ConfigurationCoordinator(
-      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance, recovery: recovery,
+      service: CoordinatorConfigurationService(), activity: activity, appearance: appearance,
+      localDataExportService: TestLocalDataExportService(), recovery: recovery,
       retryService: retryService)
   }
 }
 
 /// Supplies empty saved configuration without user filesystem or Keychain access.
-private actor CoordinatorConfigurationService: ConfigurationServicing {
+private actor CoordinatorConfigurationService: TestConfigurationServicing {
   func configurationSummary() throws -> ConfigurationSummary {
-    ConfigurationSummary(directories: [], credentialConfigured: false)
+    ConfigurationSummary(directories: [], accessTokenConfigured: false)
   }
   func addDirectory(_ directory: URL) throws {}
   func removeDirectory(_ identifier: UUID) throws {}
   func reauthorizeDirectory(_ identifier: UUID, _ directory: URL) throws {}
-  /// Returns the isolated fixture's non-secret credential state.
-  func credentialState() -> CredentialState { CredentialState(isConfigured: false, revision: .none) }
+  /// Returns the isolated fixture's non-secret access token state.
+  func accessTokenState() -> AccessTokenState { AccessTokenState(isConfigured: false, revision: .none) }
   /// Accepts explicit tests without contacting the provider.
-  func testCredential(expectedRevision: UUID?) throws {}
-  func saveCredential(_ value: String, expectedRevision: UUID?) throws {}
-  func removeCredential(expectedRevision: UUID?) throws {}
+  func testAccessToken(expectedRevision: UUID?) throws {}
+  func saveAccessToken(_ value: String, expectedRevision: UUID?) throws {}
+  func removeAccessToken(expectedRevision: UUID?) throws {}
   func setPosterAppearance(_ appearance: PosterAppearance) throws {}
 }
 
@@ -484,10 +488,10 @@ private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRe
   }
 
   /// Provides the authorized default language in this isolated service fixture.
-  func searchLanguage(for request: MoviePosterRequest) throws -> TMDbLanguage { .english }
+  func searchLanguage(for request: MoviePosterRequest) throws -> MovieSearchLanguage { .english }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
-                    language: TMDbLanguage = .english) async throws -> MovieSearchResult {
+                    language: MovieSearchLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1
     if let waiter = searchWaiter, searchCount >= waiter.count {
       searchWaiter = .none
@@ -514,7 +518,7 @@ private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRe
 
 /// Simulates an old settings record without opening application data.
 private struct MigrationRequiredConfigurationBuilder: ConfigurationFlowBuilding {
-  func makeCoordinator(activity: any MovieFolderActivityServicing, appearance: AppAppearanceSettings,
+  func makeCoordinator(activity: any ConfigurationActivityServices, appearance: AppAppearanceSettings,
                        retryService: any CollectionRetryServicing) throws -> ConfigurationCoordinator {
     throw MovieFolderStorageMigrationError.migrationRequired(record: .settings, version: 3)
   }

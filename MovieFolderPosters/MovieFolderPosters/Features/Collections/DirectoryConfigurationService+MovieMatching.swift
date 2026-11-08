@@ -1,4 +1,4 @@
-import MovieFolderCommon
+import Common
 
 /// Scheduling decisions for changes to movie-matching configuration.
 extension DirectoryConfigurationService {

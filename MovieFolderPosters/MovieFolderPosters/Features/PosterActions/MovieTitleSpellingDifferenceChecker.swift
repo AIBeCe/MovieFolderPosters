@@ -1,5 +1,5 @@
 import Foundation
-import Network
+import Common
 
 /// Finds a conservative, presentation-only spelling suggestion among one movie's returned titles.
 nonisolated struct MovieTitleSpellingDifferenceChecker {

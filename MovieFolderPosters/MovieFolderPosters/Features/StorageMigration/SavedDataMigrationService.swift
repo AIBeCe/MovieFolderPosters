@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Runs an explicitly requested saved-data upgrade independently of configuration startup.
 nonisolated protocol SavedDataMigrationServicing: Sendable {
@@ -9,12 +9,19 @@ nonisolated protocol SavedDataMigrationServicing: Sendable {
   func migrateSavedData() async throws -> MovieFolderStorageMigrationReport
 }
 
-/// Uses the shared migration service on a utility task without opening credentials or movie folders.
+/// Uses the shared migration service on a utility task without opening access tokens or movie folders.
 nonisolated struct SavedApplicationDataMigrationService: SavedDataMigrationServicing {
+  let makeMigrator: @Sendable () throws -> MovieFolderStorageMigrator
+
+  init(makeMigrator: @escaping @Sendable () throws -> MovieFolderStorageMigrator =
+    MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations()).makeStorageMigrator) {
+    self.makeMigrator = makeMigrator
+  }
+
   func migrateSavedData() async throws -> MovieFolderStorageMigrationReport {
     let migrationTask = Task.detached(priority: .utility) {
       defer { MovieFolderEnvironment.notifyConfigurationChanged() }
-      let migrator = try MovieFolderEnvironment.makeStorageMigrator()
+      let migrator = try makeMigrator()
 
       return try migrator.migrate()
     }

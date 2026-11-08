@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-/// Supplies each host-app UI test with disposable shared, private, and credential storage.
+/// Supplies each host-app UI test with disposable shared, private, and access token storage.
 @MainActor
 final class MovieFolderPostersAcceptanceSupport {
   /// Isolated root accepted by the Debug host application's storage boundary.

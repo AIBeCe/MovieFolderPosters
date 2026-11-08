@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Receives live inspection evidence and action-state changes.
 @MainActor

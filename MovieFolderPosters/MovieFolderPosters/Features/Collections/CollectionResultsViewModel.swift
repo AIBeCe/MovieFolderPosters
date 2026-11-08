@@ -1,5 +1,5 @@
 import Foundation
-import MovieFolderCommon
+import Common
 
 /// Receives presentation changes and explicit requests to open movie selectedFolderIdentities.
 @MainActor

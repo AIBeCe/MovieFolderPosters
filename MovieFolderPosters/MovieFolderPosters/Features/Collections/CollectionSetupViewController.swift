@@ -1,5 +1,5 @@
 import AppKit
-import MovieFolderCommon
+import Common
 
 /// Routes finite setup navigation through the owning coordinator.
 @MainActor protocol CollectionSetupViewControllerDelegate: AnyObject {
