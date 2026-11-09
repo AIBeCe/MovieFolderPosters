@@ -37,6 +37,20 @@ extension FileSystemService {
   /// - Returns: A stable volume and directory identity.
   /// - Throws: ``DirectoryAccessError`` or a system error when identity cannot be established.
   public func persistentDirectoryIdentity(at directory: URL) throws -> String {
+    try folderIdentity(at: directory, expectedCurrentIdentity: .none)
+  }
+
+  /// Returns the folder identity for saved decisions after verifying the previously inspected directory.
+  /// - Parameters:
+  ///   - directory: The directory to verify.
+  ///   - expectedIdentity: The current filesystem identity captured during earlier inspection.
+  /// - Returns: The volume-stable identity of the verified directory.
+  /// - Throws: ``DirectoryAccessError`` or a system error when the directory cannot be verified.
+  public func verifiedFolderIdentity(at directory: URL, expectedIdentity: String) throws -> String {
+    try folderIdentity(at: directory, expectedCurrentIdentity: expectedIdentity)
+  }
+
+  private func folderIdentity(at directory: URL, expectedCurrentIdentity: String?) throws -> String {
     guard directory.isFileURL else { throw DirectoryAccessError.invalidDirectory }
     let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard descriptor >= 0 else { throw directoryIdentityOpenError() }
@@ -46,6 +60,9 @@ extension FileSystemService {
     guard fstat(descriptor, &info) == 0 else { throw posixDirectoryIdentityError() }
     guard (info.st_mode & S_IFMT) == S_IFDIR else {
       throw DirectoryAccessError.invalidDirectory
+    }
+    if let expectedCurrentIdentity, currentMountIdentity(from: info) != expectedCurrentIdentity {
+      throw DirectoryAccessError.identityChanged
     }
 
     return try persistentIdentity(at: directory, descriptor: descriptor, service: self)
@@ -76,7 +93,7 @@ extension FileSystemService {
       return DirectoryAvailabilityResult(state: .unsupported)
     }
 
-    let pathIdentity = volatileIdentity(from: pathInfo)
+    let pathIdentity = currentMountIdentity(from: pathInfo)
 
     let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard descriptor >= 0 else {
@@ -95,7 +112,7 @@ extension FileSystemService {
     guard fstat(descriptor, &descriptorInfo) == 0 else {
       return DirectoryAvailabilityResult(state: .unknown)
     }
-    let openedObjectIdentity = volatileIdentity(from: descriptorInfo)
+    let openedObjectIdentity = currentMountIdentity(from: descriptorInfo)
     guard (descriptorInfo.st_mode & S_IFMT) == S_IFDIR, openedObjectIdentity == pathIdentity else {
       return DirectoryAvailabilityResult(state: .identityChanged)
     }
@@ -157,7 +174,7 @@ extension FileSystemService {
 }
 
 /// Builds an identity from the current device, inode, and creation timestamp.
-private func volatileIdentity(from info: stat) -> String {
+private func currentMountIdentity(from info: stat) -> String {
   "\(info.st_dev):\(info.st_ino):\(info.st_birthtimespec.tv_sec):\(info.st_birthtimespec.tv_nsec)"
 }
 
@@ -165,7 +182,7 @@ private func volatileIdentity(from info: stat) -> String {
 func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSystemService) throws -> String {
   var before = stat()
   guard fstat(descriptor, &before) == 0 else { throw posixDirectoryIdentityError() }
-  let openedBefore = volatileIdentity(from: before)
+  let openedBefore = currentMountIdentity(from: before)
   let pathBefore = try service.fileIdentity(at: directory)
   guard openedBefore == pathBefore else { throw DirectoryAccessError.identityChanged }
 
@@ -176,7 +193,7 @@ func persistentIdentity(at directory: URL, descriptor: Int32, service: FileSyste
 
   var after = stat()
   guard fstat(descriptor, &after) == 0 else { throw posixDirectoryIdentityError() }
-  let openedAfter = volatileIdentity(from: after)
+  let openedAfter = currentMountIdentity(from: after)
   let pathAfter = try service.fileIdentity(at: directory)
   guard openedBefore == openedAfter, openedAfter == pathAfter else {
     throw DirectoryAccessError.identityChanged

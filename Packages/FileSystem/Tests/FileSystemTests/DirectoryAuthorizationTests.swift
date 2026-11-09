@@ -94,12 +94,19 @@ struct DirectoryAuthorizationTests {
     try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
     let service = FileSystemService()
     let identity = try service.persistentDirectoryIdentity(at: original)
+    let currentIdentity = try service.fileIdentity(at: original)
 
     try FileManager.default.moveItem(at: original, to: moved)
-    #expect(try service.persistentDirectoryIdentity(at: moved) == identity)
+    #expect(try service.verifiedFolderIdentity(at: moved, expectedIdentity: currentIdentity) == identity)
 
     try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
     #expect(try service.persistentDirectoryIdentity(at: original) != identity)
+    do {
+      _ = try service.verifiedFolderIdentity(at: original, expectedIdentity: currentIdentity)
+      Issue.record("Expected the replacement directory to be rejected.")
+    } catch DirectoryAccessError.identityChanged {
+      // The stale identity was rejected.
+    }
   }
 
   /// Scenario: moved directory bookmark rejects different expected identity.
