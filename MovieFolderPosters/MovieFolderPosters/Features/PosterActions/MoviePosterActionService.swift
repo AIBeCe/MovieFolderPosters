@@ -96,6 +96,8 @@ nonisolated protocol MoviePosterActionEnvironment: Sendable {
   func makePrivateAuthorizationStore() throws -> PersistenceStore
   /// Opens authoritative operation outcomes.
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore
+  /// Opens the correction store for the calling environment.
+  func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore
   /// Opens dedicated admission state in the same environment as the action's existing storage.
   func makeProcessingRecoveryService() throws -> ProcessingRecoveryService
 }
@@ -140,6 +142,10 @@ nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironmen
   }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore {
     try services.makeCollectionProcessingStore()
+  }
+  /// Opens the shared correction store using the live storage configuration.
+  func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore {
+    try services.makeFolderSearchCorrectionStore()
   }
   func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
     try services.makeProcessingRecoveryService()
@@ -349,6 +355,27 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     }
   }
 
+  /// Reads the correction for the folder selected in Choose Movie.
+  /// - Parameter request: The authorized collection and selected child.
+  /// - Returns: The saved correction, if present.
+  /// - Throws: Authorization, identity, cancellation, or storage errors.
+  func searchCorrection(for request: MoviePosterRequest) async throws -> FolderSearchCorrection? {
+    try await withAuthorizedSearchCorrections(for: request) { store, collectionID, folderIdentity in
+      try store.correction(for: folderIdentity, in: collectionID)
+    }
+  }
+
+  /// Saves the selected folder's correction, or clears it when given nil.
+  /// - Parameters:
+  ///   - correction: The fields to save, or nil to clear them.
+  ///   - request: The authorized collection and selected child.
+  /// - Throws: Authorization, identity, cancellation, or storage errors.
+  func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) async throws {
+    try await withAuthorizedSearchCorrections(for: request) { store, collectionID, folderIdentity in
+      try store.setCorrection(correction, for: folderIdentity, in: collectionID)
+    }
+  }
+
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
                     language: MovieSearchLanguage = .english) async throws -> MovieSearchResult {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -502,6 +529,50 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     try Task.checkCancellation()
 
     return try await operation(context)
+  }
+
+  /// Keeps the collection grant and current settings in force through the local store operation.
+  /// - Parameters:
+  ///   - request: The collection and child to verify.
+  ///   - operation: The synchronous operation using the verified collection and folder identities.
+  /// - Returns: The result of the store operation.
+  /// - Throws: Authorization, identity, cancellation, or storage errors.
+  private func withAuthorizedSearchCorrections<Value: Sendable>(
+    for request: MoviePosterRequest,
+    operation: (FolderSearchCorrectionStore, UUID, String) throws -> Value
+  ) async throws -> Value {
+    try await withExclusiveAction {
+      try await withAuthorizedRoot(request) { context in
+        let repository = try environment.makeConfigurationRepository()
+        let (configuration, settingsAccess) = try repository.readHoldingAccess()
+        defer { withExtendedLifetime(settingsAccess) {} }
+
+        guard configuration.directories.first(where: { $0.id == context.directory.id }) == context.directory,
+          !configuration.findOverlappingDirectoryIDs().contains(context.directory.id)
+        else {
+          throw MoviePosterActionServiceError.configurationChanged
+        }
+
+        guard try fileSystem.persistentDirectoryIdentity(at: context.root) == context.rootIdentity else {
+          throw MoviePosterActionServiceError.directoryUnavailable
+        }
+
+        let childURL = context.root.appendingPathComponent(context.child.name, isDirectory: true)
+        let folderIdentity: String
+        do {
+          folderIdentity = try fileSystem.verifiedFolderIdentity(
+            at: childURL, expectedIdentity: context.child.identity)
+        } catch DirectoryAccessError.identityChanged {
+          throw MoviePosterActionServiceError.childChanged
+        }
+
+        try Task.checkCancellation()
+        let store = try environment.makeFolderSearchCorrectionStore()
+        try Task.checkCancellation()
+
+        return try operation(store, context.directory.id, folderIdentity)
+      }
+    }
   }
 
   /// Ensures configuration and root identity still match before a manual change.

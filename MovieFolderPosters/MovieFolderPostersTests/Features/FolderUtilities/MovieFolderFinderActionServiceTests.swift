@@ -368,6 +368,11 @@ private struct MovieFolderFinderActionTestEnvironment: MoviePosterActionEnvironm
   func makeConfigurationRepository() throws -> ConfigurationRepository { repository }
   func makePrivateAuthorizationStore() throws -> PersistenceStore { authorizations }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore { processing }
+  /// Opens corrections in the same disposable container as the other test stores.
+  func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore {
+    FolderSearchCorrectionStore(store: try PersistenceStore(
+      directory: container.appendingPathComponent("FolderSearchCorrections")))
+  }
   /// Uses the test's disposable storage instead of actor-isolated protocol defaults.
   func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore {
     try PersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)

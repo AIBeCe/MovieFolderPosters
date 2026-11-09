@@ -9,6 +9,148 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// A local correction can be saved, reopened, and cleared without TMDb access.
+  @Test func searchCorrectionSurvivesReopeningWithoutAToken() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let provider = ActionProvider()
+    let writer = fixture.service(token: .none, movieMetadataProvider: provider)
+    let reader = fixture.service(token: .none, movieMetadataProvider: provider)
+    let correction = try FolderSearchCorrection(title: "Corrected title", year: 2021)
+    let fileSystem = FileSystemService()
+    let childBefore = try fileSystem.readCurrentFolderCandidate(ofChild: fixture.request.childName, in: fixture.movies)
+
+    try await writer.setSearchCorrection(correction, for: fixture.request)
+    #expect(try await reader.searchCorrection(for: fixture.request) == correction)
+
+    try await reader.setSearchCorrection(.none, for: fixture.request)
+    #expect(try await writer.searchCorrection(for: fixture.request) == .none)
+    #expect(await provider.searches.isEmpty)
+    #expect(await provider.downloads.isEmpty)
+    #expect(try fixture.processing.read(rootID: fixture.request.rootID) == .none)
+    #expect(try fileSystem.readCurrentFolderCandidate(
+      ofChild: fixture.request.childName, in: fixture.movies).hasCustomIcon == childBefore.hasCustomIcon)
+  }
+
+  /// A replacement folder receives no correction and stale requests cannot change the original record.
+  @Test func searchCorrectionRejectsAReplacedChild() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let service = fixture.service()
+    let request = fixture.request
+    let original = fixture.movies.appendingPathComponent(request.childName)
+    let moved = fixture.movies.appendingPathComponent("Renamed")
+    let correction = try FolderSearchCorrection(title: "Corrected title", year: .none)
+    try await service.setSearchCorrection(correction, for: request)
+    try FileManager.default.moveItem(at: original, to: moved)
+    try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
+
+    await #expect(throws: MoviePosterActionServiceError.childChanged) {
+      try await service.searchCorrection(for: request)
+    }
+    await #expect(throws: MoviePosterActionServiceError.childChanged) {
+      try await service.setSearchCorrection(correction, for: request)
+    }
+    await #expect(throws: MoviePosterActionServiceError.childChanged) {
+      try await service.setSearchCorrection(.none, for: request)
+    }
+    let replacement = try FileSystemService().readCurrentFolderCandidate(ofChild: request.childName, in: fixture.movies)
+    let replacementRequest = MoviePosterRequest(rootID: request.rootID, childName: replacement.name,
+      identity: replacement.identity, action: .change)
+    let movedRequest = MoviePosterRequest(rootID: request.rootID, childName: moved.lastPathComponent,
+      identity: request.identity, action: .change)
+    #expect(try await service.searchCorrection(for: replacementRequest) == .none)
+    #expect(try await service.searchCorrection(for: movedRequest) == correction)
+  }
+
+  /// A collection removed during bookmark acquisition cannot receive a correction.
+  @Test func searchCorrectionRejectsRevokedCollectionDuringAuthorization() async throws {
+    let fixture = try PosterActionFixture(onBookmarkCreation: { repository in
+      try repository.update { $0.directories.removeAll() }
+    })
+    defer { fixture.cleanup() }
+    let service = fixture.service()
+    let correction = try FolderSearchCorrection(title: "Corrected title", year: .none)
+
+    await #expect(throws: MoviePosterActionServiceError.configurationChanged) {
+      try await service.setSearchCorrection(correction, for: fixture.request)
+    }
+    await #expect(throws: MoviePosterActionServiceError.directoryNotConfigured) {
+      try await service.searchCorrection(for: fixture.request)
+    }
+    let child = fixture.movies.appendingPathComponent(fixture.request.childName)
+    let identity = try FileSystemService().verifiedFolderIdentity(at: child, expectedIdentity: fixture.request.identity)
+    #expect(try fixture.makeFolderSearchCorrectionStore().correction(
+      for: identity, in: fixture.request.rootID) == .none)
+  }
+
+  /// Pausing and excluding affect processing while leaving explicit local correction edits available.
+  @Test func searchCorrectionCanBeEditedForAPausedAndExcludedFolder() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let request = fixture.request
+    try fixture.repository.update {
+      _ = $0.directories[0].processingConfiguration.setPaused(true)
+      _ = $0.directories[0].processingConfiguration.excludeFolder(
+        identity: request.identity, lastKnownName: request.childName)
+    }
+    let service = fixture.service()
+    let correction = try FolderSearchCorrection(title: "Corrected title", year: .none)
+
+    try await service.setSearchCorrection(correction, for: request)
+    #expect(try await service.searchCorrection(for: request) == correction)
+    try await service.setSearchCorrection(.none, for: request)
+    #expect(try await service.searchCorrection(for: request) == .none)
+    let directory = try #require(try fixture.repository.read().directories.first)
+    #expect(directory.isPaused)
+    #expect(directory.excludesFolder(identity: request.identity))
+  }
+
+  /// Neither a busy store nor a cancelled action changes the previous correction.
+  @Test func searchCorrectionPreservesTheRecordOnContentionAndCancellation() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let service = fixture.service()
+    let request = fixture.request
+    let correction = try FolderSearchCorrection(title: "Corrected title", year: .none)
+    try await service.setSearchCorrection(correction, for: request)
+
+    do {
+      let directory = fixture.container.appendingPathComponent("FolderSearchCorrections")
+      let persistence = try PersistenceStore(directory: directory)
+      let access = try #require(try persistence.acquireAccess(
+        for: "folder-search-corrections:\(request.rootID.uuidString)"))
+      defer { withExtendedLifetime(access) {} }
+      await #expect(throws: FolderSearchCorrectionStore.StoreError.busy) {
+        try await service.setSearchCorrection(.none, for: request)
+      }
+    }
+
+    let cancelled = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      try await service.setSearchCorrection(.none, for: request)
+    }
+    await #expect(throws: CancellationError.self) { try await cancelled.value }
+    #expect(try await service.searchCorrection(for: request) == correction)
+  }
+
+  /// An unavailable correction namespace fails before changing the folder or its results.
+  @Test func searchCorrectionPropagatesStorageFailure() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let service = fixture.service()
+    let correction = try FolderSearchCorrection(title: "Corrected title", year: .none)
+    let storePath = fixture.container.appendingPathComponent("FolderSearchCorrections")
+    let marker = Data("Existing file".utf8)
+    try marker.write(to: storePath)
+
+    await #expect(throws: (any Error).self) {
+      try await service.setSearchCorrection(correction, for: fixture.request)
+    }
+    #expect(try Data(contentsOf: storePath) == marker)
+    #expect(try fixture.processing.read(rootID: fixture.request.rootID) == .none)
+  }
+
   /// Explicit movie search forwards the saved regional language through the authorized action service.
   @Test func movieSelectionSearchUsesSavedLanguage() async throws {
     let fixture = try PosterActionFixture()
@@ -399,9 +541,13 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   let processing: CollectionProcessingStore
   /// Request bound to the real child identity.
   let request: MoviePosterRequest
+  /// An optional configuration change during first-time bookmark recovery.
+  private let onBookmarkCreation: (@Sendable (ConfigurationRepository) throws -> Void)?
 
   /// Creates real stores and a child folder whose identity can authorize the request.
-  init(childName: String = "Dune (2021)") throws {
+  init(childName: String = "Dune (2021)",
+       onBookmarkCreation: (@Sendable (ConfigurationRepository) throws -> Void)? = .none) throws {
+    self.onBookmarkCreation = onBookmarkCreation
     container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     movies = container.appendingPathComponent("Movies")
     try FileManager.default.createDirectory(
@@ -422,12 +568,19 @@ private struct PosterActionFixture: MoviePosterActionEnvironment {
   }
 
   func makeDirectoryBookmark(for directory: URL) throws -> Data {
-    try directory.bookmarkData(options: [], includingResourceValuesForKeys: .none, relativeTo: .none)
+    try onBookmarkCreation?(repository)
+
+    return try directory.bookmarkData(options: [], includingResourceValuesForKeys: .none, relativeTo: .none)
   }
   func appGroupContainerURL() throws -> URL { container }
   func makeConfigurationRepository() throws -> ConfigurationRepository { repository }
   func makePrivateAuthorizationStore() throws -> PersistenceStore { authorizations }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore { processing }
+  /// Opens corrections in the same disposable container as the other test stores.
+  func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore {
+    FolderSearchCorrectionStore(store: try PersistenceStore(
+      directory: container.appendingPathComponent("FolderSearchCorrections")))
+  }
   /// Supplies nonisolated test implementations instead of inheriting the app module's actor-isolated defaults.
   func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore {
     try PersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
