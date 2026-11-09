@@ -23,13 +23,17 @@ nonisolated enum NFOInformationResult {
 nonisolated struct NFOInformationParser {
   /// Parses bounded Unicode XML; unsupported encodings, DTDs and entities are unusable information.
   func parse(_ contents: Data) -> NFOMovieInformation? {
-    guard case .parsed(let information) = interpret(contents) else { return .none }
+    guard case .parsed(let information) = decodeMovieInformation(from: contents) else { return .none }
 
     return information
   }
 
-  /// Interprets a complete document before reporting semantic contradictions.
-  func interpret(_ contents: Data) -> NFOInformationResult {
+  /// Decodes a complete document before reporting semantic contradictions.
+  /// - Parameters:
+  ///   - contents: The selected NFO bytes.
+  ///   - usesTitleAndYear: Whether to return inferred titles and year and enforce agreement between them.
+  /// - Returns: The decoded fields or the applicable conflict or validation failure.
+  func decodeMovieInformation(from contents: Data, usesTitleAndYear: Bool = true) -> NFOInformationResult {
     guard contents.count <= 256 * 1_024, let text = decodedXML(contents),
       !text.contains("\0"), text.range(of: "<!DOCTYPE", options: .caseInsensitive) == .none,
       text.range(of: "<!ENTITY", options: .caseInsensitive) == .none else { return .unusable }
@@ -41,9 +45,16 @@ nonisolated struct NFOInformationParser {
     parser.delegate = delegate
 
     guard parser.parse(), !delegate.isInvalid, delegate.rootWasMovie else { return .unusable }
-    if delegate.hasConflict { return .conflicting }
 
-    return .parsed(delegate.information)
+    if delegate.hasIdentifierConflict || (usesTitleAndYear && delegate.hasTitleOrYearConflict) {
+      return .conflicting
+    }
+
+    let information = delegate.information
+    if usesTitleAndYear { return .parsed(information) }
+
+    return .parsed(NFOMovieInformation(
+      identifiers: information.identifiers, title: .none, originalTitle: .none, year: .none))
   }
 
   /// Decodes UTF-8 or BOM-labelled UTF-16/32 for entity checks before invoking the XML parser.
@@ -81,8 +92,10 @@ nonisolated private final class NFOInformationXMLDelegate: NSObject, XMLParserDe
   private var identifiers: [MovieIdentifier] = []
   /// Whether any selected metadata violated the strict grammar.
   private(set) var isInvalid = false
-  /// Whether complete, syntactically valid fields contain a genuine contradiction.
-  private(set) var hasConflict = false
+  /// Whether distinct identifiers were found for the same provider.
+  private(set) var hasIdentifierConflict = false
+  /// Whether repeated title or year fields contain different values.
+  var hasTitleOrYearConflict: Bool { titles.count > 1 || originalTitles.count > 1 || years.count > 1 }
   /// Whether the document root was exactly movie.
   private(set) var rootWasMovie = false
   /// Complete movie information, including valid empty documents as absent metadata.
@@ -136,13 +149,11 @@ nonisolated private final class NFOInformationXMLDelegate: NSObject, XMLParserDe
     case "title", "originaltitle":
       if value.isEmpty || value.utf8.count > 1_024 { invalidate(parser); return }
       if field == "title" { titles.insert(value) } else { originalTitles.insert(value) }
-      if titles.count > 1 || originalTitles.count > 1 { hasConflict = true }
     case "year":
       guard value.count == 4, value.allSatisfy({ $0.isASCII && $0.isNumber }),
         let year = Int(value), (1...9999).contains(year) else { invalidate(parser); return }
 
       years.insert(year)
-      if years.count > 1 { hasConflict = true }
     case "uniqueid":
       guard let type = identifierType, type == "tmdb" || type == "imdb" else { return }
       let grammar = type == "tmdb" ? #"^[0-9]+$"# : #"^tt[0-9]{7,10}$"#
@@ -152,7 +163,9 @@ nonisolated private final class NFOInformationXMLDelegate: NSObject, XMLParserDe
         parsed.count == 1 else { invalidate(parser); return }
 
       for identifier in parsed where !identifiers.contains(identifier) { identifiers.append(identifier) }
-      if MovieIdentifierInformationParser().checkIdentifierConflicts(identifiers) == .conflicting { hasConflict = true }
+      if MovieIdentifierInformationParser().checkIdentifierConflicts(identifiers) == .conflicting {
+        hasIdentifierConflict = true
+      }
     default: break
     }
   }

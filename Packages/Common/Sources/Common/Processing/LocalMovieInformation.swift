@@ -16,6 +16,16 @@ nonisolated enum AutomaticMovieInformation {
   case unparseableFolder
 }
 
+/// Corrected search fields and the identifier evidence the provider must reconcile.
+nonisolated enum CorrectedMovieInformation: Equatable, Sendable {
+  /// The saved fields and selected, locally reconciled identifiers.
+  case search(FolderSearchCorrection, identifiers: [MovieIdentifier])
+  /// A selected source is incomplete, malformed, or unsafe.
+  case unusable
+  /// Selected explicit identifiers disagree.
+  case conflicting
+}
+
 /// Interprets read local information without filesystem access, persistence, or provider requests.
 nonisolated struct LocalMovieInformationResolver {
   /// Release grammar shared by folder and enabled media-name interpretation.
@@ -25,6 +35,53 @@ nonisolated struct LocalMovieInformationResolver {
 
   /// Reconciles all selected identifiers, then applies NFO, video, image and folder title precedence.
   func resolve(folderName: String, readResult: MovieFolderInformationReadResult) -> AutomaticMovieInformation {
+    switch readEvidence(folderName: folderName, readResult: readResult, usesTitleAndYear: true) {
+    case .available(let identifiers, let nfo):
+      if !identifiers.isEmpty { return .identifiers(identifiers) }
+
+      return resolveTitle(folderName: folderName, files: readResult.files, nfo: nfo)
+    case .unusable: return .unusable
+    case .conflicting: return .conflicting
+    }
+  }
+
+  /// Resolves a saved correction while retaining selected explicit identifiers.
+  /// - Parameters:
+  ///   - folderName: The immediate child name, which can carry explicit identifiers.
+  ///   - readResult: The bounded read of enabled local sources.
+  ///   - correction: The saved title and optional year for this folder.
+  /// - Returns: Corrected search inputs or the applicable conflict or validation failure.
+  func resolve(
+    folderName: String,
+    readResult: MovieFolderInformationReadResult,
+    correction: FolderSearchCorrection
+  ) -> CorrectedMovieInformation {
+    switch readEvidence(folderName: folderName, readResult: readResult, usesTitleAndYear: false) {
+    case .available(let identifiers, _): .search(correction, identifiers: identifiers)
+    case .unusable: .unusable
+    case .conflicting: .conflicting
+    }
+  }
+
+  /// Bounded local evidence shared by ordinary and corrected resolution.
+  private enum LocalEvidence {
+    /// Reconciled identifiers and the selected NFO fields.
+    case available(identifiers: [MovieIdentifier], nfo: [NFOMovieInformation])
+    /// A selected source is incomplete, malformed, or unsafe.
+    case unusable
+    /// Selected information disagrees.
+    case conflicting
+  }
+
+  /// Collects selected identifiers and any NFO fields needed for ordinary title resolution.
+  /// - Parameters:
+  ///   - folderName: The immediate child name.
+  ///   - readResult: The bounded read of enabled local sources.
+  ///   - usesTitleAndYear: Whether to keep and reconcile the inferred NFO titles and year.
+  /// - Returns: The reconciled local evidence or the applicable failure.
+  private func readEvidence(
+    folderName: String, readResult: MovieFolderInformationReadResult, usesTitleAndYear: Bool
+  ) -> LocalEvidence {
     guard readResult.isComplete else { return .unusable }
 
     var identifiers = [MovieIdentifier]()
@@ -36,7 +93,7 @@ nonisolated struct LocalMovieInformationResolver {
     var nfo = [NFOMovieInformation]()
     for file in readResult.files {
       if let contents = file.nfoContents {
-        switch NFOInformationParser().interpret(contents) {
+        switch NFOInformationParser().decodeMovieInformation(from: contents, usesTitleAndYear: usesTitleAndYear) {
         case .unusable: return .unusable
         case .conflicting: return .conflicting
         case .parsed(let information):
@@ -58,9 +115,10 @@ nonisolated struct LocalMovieInformationResolver {
         return .conflicting
       }
 
-      return .identifiers(unique)
+      identifiers = unique
     }
-    return resolveTitle(folderName: folderName, files: readResult.files, nfo: nfo)
+
+    return .available(identifiers: identifiers, nfo: nfo)
   }
 
   /// Applies NFO, video filename, image filename and folder title precedence after checking identifiers.

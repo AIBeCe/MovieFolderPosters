@@ -3,6 +3,116 @@ import Foundation
 @testable import Common
 import Testing
 
+/// A correction overrides inferred fields while retaining enabled identifiers and its blank year.
+@Test(arguments: ["none", "nfo", "mkv", "jpg"])
+func correctedInformationUsesSavedFieldsAndEnabledIdentifiers(enabledSource: String) throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  let folder = "Folder Movie (2000) [tmdb:348]"
+  try fixture.addFolder(folder)
+  let child = fixture.movies.appendingPathComponent(folder)
+  let xml = "<movie><title>NFO Movie</title><year>1979</year>"
+    + #"<uniqueid type="tmdb">348</uniqueid><uniqueid type="imdb">tt0078748</uniqueid></movie>"#
+  try Data(xml.utf8).write(to: child.appendingPathComponent("movie.nfo"))
+  for name in ["Video Movie (1980) [tmdb:348] [imdb:tt0078748].mkv",
+               "Image Movie (1981) [tmdb:348] [imdb:tt0078748].jpg"] {
+    try Data().write(to: child.appendingPathComponent(name))
+  }
+  let service = FileSystemService()
+  let readResult = try service.movieInformation(toChild: folder, in: fixture.movies,
+    expectedIdentity: service.fileIdentity(at: child), options: .init(readsNFOInformation: enabledSource == "nfo",
+      readsImmediateVideoNames: enabledSource == "mkv", readsImmediateImageNames: enabledSource == "jpg"))
+  let correction = try FolderSearchCorrection(title: "Corrected Movie", year: .none)
+  let identifiers: [MovieIdentifier] = enabledSource == "none" ? [.tmdb(348)] : [.tmdb(348), .imdb("tt0078748")]
+
+  #expect(LocalMovieInformationResolver().resolve(folderName: folder, readResult: readResult, correction: correction)
+    == .search(correction, identifiers: identifiers))
+}
+
+/// A correction replaces valid title or year disagreements without changing ordinary resolution.
+@Test(arguments: [true, false])
+func correctedInformationSupersedesContradictoryTitles(usesNFO: Bool) throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  let folder = "Folder Movie (2000)"
+  try fixture.addFolder(folder)
+  let child = fixture.movies.appendingPathComponent(folder)
+  if usesNFO {
+    let xml = "<movie><title>Alien</title><title>Dune</title><year>1979</year><year>2021</year></movie>"
+    try Data(xml.utf8).write(to: child.appendingPathComponent("movie.nfo"))
+  } else {
+    for name in ["Alien (1979).mkv", "Dune (2021).mp4"] { try Data().write(to: child.appendingPathComponent(name)) }
+  }
+  let service = FileSystemService()
+  let readResult = try service.movieInformation(toChild: folder, in: fixture.movies,
+    expectedIdentity: service.fileIdentity(at: child),
+    options: .init(readsNFOInformation: usesNFO, readsImmediateVideoNames: !usesNFO))
+  let resolver = LocalMovieInformationResolver()
+  let correction = try FolderSearchCorrection(title: "Corrected Movie", year: 1982)
+
+  guard case .conflicting = resolver.resolve(folderName: folder, readResult: readResult) else {
+    Issue.record("Expected ordinary resolution to report contradictory titles.")
+    return
+  }
+  #expect(resolver.resolve(folderName: folder, readResult: readResult, correction: correction)
+    == .search(correction, identifiers: []))
+}
+
+/// A corrected search still rejects distinct identifiers within or across sources.
+@Test(arguments: [true, false])
+func correctedInformationRejectsContradictoryIdentifiers(withinNFO: Bool) throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  let folder = withinNFO ? "Folder Movie" : "Folder Movie [tmdb:348]"
+  try fixture.addFolder(folder)
+  let child = fixture.movies.appendingPathComponent(folder)
+  let firstID = withinNFO ? #"<uniqueid type="tmdb">348</uniqueid>"# : ""
+  let xml = "<movie>" + firstID + #"<uniqueid type="tmdb">349</uniqueid></movie>"#
+  try Data(xml.utf8).write(to: child.appendingPathComponent("movie.nfo"))
+  let service = FileSystemService()
+  let readResult = try service.movieInformation(toChild: folder, in: fixture.movies,
+    expectedIdentity: service.fileIdentity(at: child), options: .init(readsNFOInformation: true))
+  let correction = try FolderSearchCorrection(title: "Corrected Movie", year: .none)
+
+  #expect(LocalMovieInformationResolver().resolve(folderName: folder, readResult: readResult, correction: correction)
+    == .conflicting)
+}
+
+/// Invalid selected information remains unusable even when the user provides corrected fields.
+@Test(arguments: [
+  "<!DOCTYPE movie><movie/>",
+  "<movie><title>Incomplete</movie>",
+  "<movie><year>unknown</year></movie>",
+  #"<movie><uniqueid type="tmdb">0</uniqueid></movie>"#
+])
+func correctedInformationRejectsMalformedSelectedNFO(xml: String) throws {
+  let fixture = try Fixture()
+  defer { try? FileManager.default.removeItem(at: fixture.base) }
+  let folder = "Folder Movie"
+  try fixture.addFolder(folder)
+  let child = fixture.movies.appendingPathComponent(folder)
+  try Data(xml.utf8).write(to: child.appendingPathComponent("movie.nfo"))
+  let service = FileSystemService()
+  let readResult = try service.movieInformation(toChild: folder, in: fixture.movies,
+    expectedIdentity: service.fileIdentity(at: child), options: .init(readsNFOInformation: true))
+  let correction = try FolderSearchCorrection(title: "Corrected Movie", year: .none)
+
+  #expect(LocalMovieInformationResolver().resolve(folderName: folder, readResult: readResult, correction: correction)
+    == .unusable)
+}
+
+/// Incomplete selected reads and invalid folder identifiers cannot provide partial corrected evidence.
+@Test func correctedInformationRejectsIncompleteReadsAndInvalidFolderIdentifiers() throws {
+  let correction = try FolderSearchCorrection(title: "Corrected Movie", year: .none)
+  let resolver = LocalMovieInformationResolver()
+  let incomplete = MovieFolderInformationReadResult(files: [], isComplete: false, sha256: "fixture")
+  let complete = MovieFolderInformationReadResult(files: [], isComplete: true, sha256: "fixture")
+
+  #expect(resolver.resolve(folderName: "Folder Movie", readResult: incomplete, correction: correction) == .unusable)
+  let malformed = resolver.resolve(folderName: "Folder Movie [tmdb:0]", readResult: complete, correction: correction)
+  #expect(malformed == .unusable)
+}
+
 /// NFO interpretation is movie-specific and accepts bounded labelled identifiers with title/year metadata.
 @Test func nfoInformationParsesMovieMetadata() {
   let xml = "<movie><title>Alien</title><originaltitle>Alien</originaltitle><year>1979</year>"
