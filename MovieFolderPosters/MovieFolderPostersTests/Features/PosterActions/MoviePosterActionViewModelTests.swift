@@ -7,6 +7,136 @@ import Testing
 /// Exercises poster-action state, validation, cancellation, and delegation.
 @MainActor
 struct MoviePosterActionViewModelTests {
+  /// Saved fields load locally and become the inputs for an explicit search.
+  @Test func savedCorrectionPrefillsChooseMovieWithoutSearching() async throws {
+    let service = ActionServiceStub()
+    let correction = try FolderSearchCorrection(title: "Alien", year: .none)
+    await service.configureCorrection(correction)
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+
+    #expect(model.query == "Alien")
+    #expect(model.yearText.isEmpty)
+    #expect(model.canClearSearchCorrection)
+    #expect(await service.callCounts.search == 0)
+    model.search()
+    await waitForIdle(model)
+    #expect(await service.lastSearchTitle == "Alien")
+    #expect(await service.lastSearchYear == .none)
+  }
+
+  /// Draft edits remain local until saved, and clearing restores the parsed defaults.
+  @Test func savesNormalizedCorrectionAndClearsToFolderDefaults() async throws {
+    let service = ActionServiceStub()
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    let defaultTitle = model.query
+    let defaultYear = model.yearText
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    #expect(!model.canClearSearchCorrection)
+
+    model.setQuery("  Alien  ")
+    model.setYear(" 1979 ")
+    #expect(await service.storedCorrection == .none)
+    model.saveSearchCorrection()
+    await waitForIdle(model)
+    #expect(await service.storedCorrection == (try FolderSearchCorrection(title: "Alien", year: 1979)))
+    #expect(model.query == "Alien")
+    #expect(model.yearText == "1979")
+
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/chosen.jpg")],
+      hasMorePages: false))
+    model.search()
+    await waitForIdle(model)
+    #expect(model.selectMovie(id: 7))
+    model.clearSearchCorrection()
+    await waitForIdle(model)
+    #expect(model.query == defaultTitle)
+    #expect(model.yearText == defaultYear)
+    #expect(model.searchResult == .none)
+    #expect(model.selectedMovieID == .none)
+    #expect(await service.storedCorrection == .none)
+    #expect(await service.callCounts.apply == 0)
+  }
+
+  /// An unavailable correction read keeps ordinary search usable.
+  @Test func correctionLoadFailureDoesNotDisableManualSearch() async {
+    let service = ActionServiceStub()
+    await service.configureCorrection(.none, readFails: true)
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+
+    #expect(model.searchCorrectionStatus == "Saved correction unavailable.")
+    #expect(model.canSearch)
+    #expect(!model.canSaveSearchCorrection)
+    #expect(!model.canClearSearchCorrection)
+  }
+
+  /// Validation and write errors preserve the last saved correction and current draft.
+  @Test func invalidAndFailedCorrectionEditsPreserveTheSavedValue() async throws {
+    let service = ActionServiceStub()
+    let original = try FolderSearchCorrection(title: "Alien", year: 1979)
+    await service.configureCorrection(original, writeFails: true)
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+
+    model.setYear("1887")
+    model.saveSearchCorrection()
+    #expect(model.errorMessage?.contains("1888") == true)
+    #expect(await service.correctionWrites == 0)
+
+    model.setYear("1986")
+    model.saveSearchCorrection()
+    await waitForIdle(model)
+    #expect(model.errorMessage != .none)
+    #expect(model.yearText == "1986")
+    model.clearSearchCorrection()
+    await waitForIdle(model)
+    #expect(model.errorMessage != .none)
+    #expect(model.yearText == "1986")
+    #expect(model.canClearSearchCorrection)
+    #expect(await service.storedCorrection == original)
+  }
+
+  /// Invalidation cancels initial loading and prevents delayed fields from being displayed.
+  @Test func correctionLoadDoesNotPublishAfterConfigurationChanges() async throws {
+    let service = ActionServiceStub()
+    await service.configureCorrection(
+      try FolderSearchCorrection(title: "Alien", year: 1979), readDelay: .seconds(10))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    let defaultTitle = model.query
+    model.prepareSearchFields()
+    await service.waitForCorrectionRead()
+    #expect(model.isBusy)
+    #expect(!model.canSaveSearchCorrection)
+    model.configurationDidChange()
+    await waitForIdle(model)
+
+    #expect(model.query == defaultTitle)
+    #expect(!model.canStartAction)
+    #expect(!model.canClearSearchCorrection)
+  }
+
+  /// A late write failure cannot replace the instruction to reopen an invalidated action.
+  @Test func correctionWriteFailureDoesNotReplaceInvalidationGuidance() async {
+    let service = ActionServiceStub()
+    await service.configureCorrection(.none, writeFails: true, writeDelay: .seconds(10))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    model.saveSearchCorrection()
+    await service.waitForCorrectionWrite()
+    #expect(!model.allowsOperationCancellation)
+    model.configurationDidChange()
+    await waitForIdle(model)
+
+    #expect(model.errorMessage == "Directory configuration changed. Reopen this action to continue.")
+    #expect(await service.storedCorrection == .none)
+  }
+
   /// Verifies that creating the view model does not search or change a poster.
   @Test func creatingViewModelDoesNotSearchOrApplyAction() async {
     let service = ActionServiceStub()
@@ -24,13 +154,13 @@ struct MoviePosterActionViewModelTests {
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("  Alien  ")
     viewModel.setYear(" 1979 ")
-    viewModel.prepareSearchLanguage()
+    viewModel.prepareSearchFields()
     await waitForIdle(viewModel)
     #expect(viewModel.matchingPreview.hasPrefix("Sent to TMDb: title ‘Alien’; year: 1979."))
     #expect(viewModel.matchingPreview.contains("en-US"))
     #expect(await service.callCounts.search == 0)
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -50,7 +180,7 @@ struct MoviePosterActionViewModelTests {
     viewModel.setQuery("Dune")
 
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -74,7 +204,7 @@ struct MoviePosterActionViewModelTests {
     viewModel.setQuery("Dune")
 
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -114,7 +244,7 @@ struct MoviePosterActionViewModelTests {
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -136,7 +266,7 @@ struct MoviePosterActionViewModelTests {
     viewModel.setQuery("Dune")
 
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -180,7 +310,7 @@ struct MoviePosterActionViewModelTests {
     viewModel.setQuery("Updated title")
     viewModel.setYear("invalid")
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -232,7 +362,7 @@ struct MoviePosterActionViewModelTests {
     #expect(viewModel.navigationDelegate == nil)
     viewModel.setQuery("")
     if viewModel.searchLanguage == .none {
-      viewModel.prepareSearchLanguage()
+      viewModel.prepareSearchFields()
       await waitForIdle(viewModel)
     }
     viewModel.search()
@@ -245,7 +375,7 @@ struct MoviePosterActionViewModelTests {
     let service = ActionServiceStub()
     let model = MoviePosterActionViewModel(service: service, request: request(.change))
     await service.configureLanguageCapture(fails: !cancelled, delay: cancelled ? .seconds(60) : .zero)
-    model.prepareSearchLanguage()
+    model.prepareSearchFields()
     if cancelled { model.cancelRetryTask() }
     await waitForIdle(model)
     #expect(model.searchLanguage == .none)
@@ -253,7 +383,7 @@ struct MoviePosterActionViewModelTests {
     await waitForIdle(model)
     #expect(await service.callCounts.search == 0)
     await service.configureLanguageCapture(fails: false, delay: .zero)
-    model.prepareSearchLanguage()
+    model.prepareSearchFields()
     await waitForIdle(model)
     #expect(model.searchLanguage == .english)
     model.search()
@@ -276,7 +406,7 @@ struct MoviePosterActionSearchReviewTests {
         hasMorePages: false))
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
-    viewModel.prepareSearchLanguage()
+    viewModel.prepareSearchFields()
     await waitForIdle(viewModel)
     viewModel.search()
     await waitForIdle(viewModel)
@@ -306,7 +436,7 @@ struct MoviePosterActionSearchReviewTests {
     await service.setSearchResult(MovieSearchResult(movies: [suggested, secondCandidate], hasMorePages: false))
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("The Matirx")
-    viewModel.prepareSearchLanguage()
+    viewModel.prepareSearchFields()
     await waitForIdle(viewModel)
     viewModel.search()
     await waitForIdle(viewModel)
@@ -335,7 +465,7 @@ struct MoviePosterActionSearchReviewTests {
       MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")], hasMorePages: false))
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
     viewModel.setQuery("Dune")
-    viewModel.prepareSearchLanguage()
+    viewModel.prepareSearchFields()
     await waitForIdle(viewModel)
     viewModel.search()
     await service.waitUntilSearchStarts()
@@ -366,7 +496,7 @@ struct MoviePosterActionSearchReviewTests {
     await service.setSearchResult(
       MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")], hasMorePages: false))
     let viewModel = MoviePosterActionViewModel(service: service, request: request(.change))
-    viewModel.prepareSearchLanguage()
+    viewModel.prepareSearchFields()
     await waitForIdle(viewModel)
     viewModel.search()
     await service.waitUntilSearchStarts()
@@ -449,6 +579,71 @@ private actor ActionServiceStub: MoviePosterActionServicing {
   private var languageShouldFail = false
   /// Controlled language-capture suspension for cancellation tests.
   private var languageDelay = Duration.zero
+  /// In-memory saved correction for this service fixture.
+  private(set) var storedCorrection: FolderSearchCorrection?
+  /// Correction write attempts, including failures.
+  private(set) var correctionWrites = 0
+  /// Whether reading the correction should fail.
+  private var correctionReadFails = false
+  /// Delays a read so the test can invalidate the presentation before the result arrives.
+  private var correctionReadDelay = Duration.zero
+  /// Whether the first read has reached the fixture.
+  private var hasStartedCorrectionRead = false
+  /// Resumes when the first read reaches the fixture.
+  private var correctionReadWaiter: CheckedContinuation<Void, Never>?
+  /// Whether a correction write should fail.
+  private var correctionWriteFails = false
+  /// Delays a write so the test can invalidate the presentation while the request is active.
+  private var correctionWriteDelay = Duration.zero
+  /// Resumes when the first write reaches the fixture.
+  private var correctionWriteWaiter: CheckedContinuation<Void, Never>?
+
+  /// Seeds the correction and configures local storage failures.
+  func configureCorrection(
+    _ correction: FolderSearchCorrection?, readFails: Bool = false, writeFails: Bool = false,
+    readDelay: Duration = .zero, writeDelay: Duration = .zero
+  ) {
+    storedCorrection = correction
+    correctionReadFails = readFails
+    correctionReadDelay = readDelay
+    correctionWriteFails = writeFails
+    correctionWriteDelay = writeDelay
+  }
+
+  /// Waits for an authorized correction read to reach this fixture.
+  func waitForCorrectionRead() async {
+    if hasStartedCorrectionRead { return }
+    await withCheckedContinuation { correctionReadWaiter = $0 }
+  }
+
+  /// Waits for an explicit correction write to reach this fixture.
+  func waitForCorrectionWrite() async {
+    if correctionWrites > 0 { return }
+    await withCheckedContinuation { correctionWriteWaiter = $0 }
+  }
+
+  /// Returns the saved correction or a configured storage failure.
+  func searchCorrection(for request: MoviePosterRequest) async throws -> FolderSearchCorrection? {
+    hasStartedCorrectionRead = true
+    correctionReadWaiter?.resume()
+    correctionReadWaiter = .none
+    if correctionReadDelay > .zero { try? await Task.sleep(for: correctionReadDelay) }
+
+    guard !correctionReadFails else { throw FolderSearchCorrectionStore.StoreError.busy }
+
+    return storedCorrection
+  }
+
+  /// Records an explicit write and applies it when storage is available.
+  func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) async throws {
+    correctionWrites += 1
+    correctionWriteWaiter?.resume()
+    correctionWriteWaiter = .none
+    if correctionWriteDelay > .zero { try? await Task.sleep(for: correctionWriteDelay) }
+
+    guard !correctionWriteFails else { throw FolderSearchCorrectionStore.StoreError.busy }
+    storedCorrection = correction
+  }
 
   /// Configures the next explicit capture attempts without initiating work.
   func configureLanguageCapture(fails: Bool, delay: Duration) {

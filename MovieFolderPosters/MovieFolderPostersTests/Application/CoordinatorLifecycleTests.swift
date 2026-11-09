@@ -490,6 +490,13 @@ private actor CoordinatorPosterService: MoviePosterActionServicing, CollectionRe
   /// Provides the authorized default language in this isolated service fixture.
   func searchLanguage(for request: MoviePosterRequest) throws -> MovieSearchLanguage { .english }
 
+  /// Supplies no saved correction in this fixture.
+  func searchCorrection(for request: MoviePosterRequest) throws -> FolderSearchCorrection? { .none }
+
+  /// Discards correction writes in this fixture.
+  func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) throws {}
+
+
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
                     language: MovieSearchLanguage = .english) async throws -> MovieSearchResult {
     searchCount += 1

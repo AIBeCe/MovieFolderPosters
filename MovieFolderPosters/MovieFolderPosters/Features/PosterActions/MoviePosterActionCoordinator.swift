@@ -53,7 +53,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
   func start(_ request: MoviePosterRequest, attachedTo parent: NSWindow? = .none) {
     if activeRequest == request, let windowController,
       windowController.window?.sheetParent === parent, viewModel?.isConfigurationInvalidated != true {
-      if viewModel?.searchLanguage == .none { viewModel?.prepareSearchLanguage() }
+      viewModel?.prepareSearchFields()
       windowController.showWindow(.none)
       windowController.window?.makeKeyAndOrderFront(.none)
       return
@@ -65,7 +65,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     content.delegate = self
     let window = NSWindow(contentViewController: content)
     window.title = "\(request.action.title) — \(request.childName)"
-    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 400 : 260))
+    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 440 : 260))
     window.styleMask = parent == .none ? [.titled, .closable, .miniaturizable] : [.titled, .closable]
     window.isReleasedWhenClosed = false
     window.delegate = self
@@ -78,7 +78,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     windowController = controller
     if let parent { parent.beginSheet(window) } else { controller.showWindow(.none) }
     window.makeKeyAndOrderFront(.none)
-    viewModel.prepareSearchLanguage()
+    viewModel.prepareSearchFields()
   }
 
   /// Opens the movie page requested by the action view model.
@@ -152,6 +152,14 @@ private final class MoviePosterActionViewController: NSViewController,
   private let yearField = NSTextField()
   /// Discloses the current normalized search inputs before an explicit remote request.
   private let matchingLabel = NSTextField(wrappingLabelWithString: "")
+  /// Describes whether a correction is saved or its storage is unavailable.
+  private let correctionLabel = NSTextField(labelWithString: "")
+  /// Saves the currently displayed search fields.
+  private let saveCorrectionButton = NSButton(title: "Save Correction", target: .none, action: .none)
+  /// Removes the saved correction and restores folder-derived inputs.
+  private let clearCorrectionButton = NSButton(title: "Clear Saved Correction", target: .none, action: .none)
+  /// Tracks programmatic replacements independently of text editing.
+  private var renderedSearchFieldsRevision = 0
   /// Displays poster-bearing movie results.
   private let resultPicker = NSPopUpButton()
   /// Displays progress or success feedback.
@@ -204,6 +212,7 @@ private final class MoviePosterActionViewController: NSViewController,
     stack.addArrangedSubview(descriptionLabel)
     if viewModel.action == .change {
       stack.addArrangedSubview(makeSearchControls())
+      stack.addArrangedSubview(makeCorrectionControls())
       matchingLabel.textColor = .secondaryLabelColor
       matchingLabel.maximumNumberOfLines = 3
       stack.addArrangedSubview(matchingLabel)
@@ -286,6 +295,21 @@ private final class MoviePosterActionViewController: NSViewController,
     return row
   }
 
+  /// Configures the local correction actions and their saved-state label.
+  /// - Returns: The row placed immediately below the search fields.
+  private func makeCorrectionControls() -> NSView {
+    saveCorrectionButton.target = self
+    saveCorrectionButton.action = #selector(saveSearchCorrection)
+    clearCorrectionButton.target = self
+    clearCorrectionButton.action = #selector(clearSearchCorrection)
+    correctionLabel.textColor = .secondaryLabelColor
+    let row = NSStackView(views: [saveCorrectionButton, clearCorrectionButton, correctionLabel])
+    row.orientation = .horizontal
+    row.spacing = 8
+
+    return row
+  }
+
   /// Configures and returns the movie-result picker.
   /// - Returns: The picker used to select a search result.
   private func makeResultPicker() -> NSView {
@@ -307,7 +331,7 @@ private final class MoviePosterActionViewController: NSViewController,
     primaryButton.isEnabled = viewModel.canStartAction
     queryField.isEnabled = viewModel.canStartAction
     yearField.isEnabled = viewModel.canStartAction
-    cancelButton.isEnabled = busy && !viewModel.isCancelling
+    cancelButton.isEnabled = busy && viewModel.allowsOperationCancellation && !viewModel.isCancelling
     cancelButton.title = viewModel.isCancelling ? "Cancelling…" : "Cancel"
     statusLabel.stringValue = viewModel.statusMessage ?? ""
     statusLabel.isHidden = statusLabel.stringValue.isEmpty
@@ -320,6 +344,10 @@ private final class MoviePosterActionViewController: NSViewController,
       primaryButton.title = "Refresh Poster"
       primaryButton.action = #selector(refreshPoster)
     case .change:
+      renderSearchFields()
+      correctionLabel.stringValue = viewModel.searchCorrectionStatus
+      saveCorrectionButton.isEnabled = viewModel.canSaveSearchCorrection
+      clearCorrectionButton.isEnabled = viewModel.canClearSearchCorrection
       primaryButton.title = "Apply Selected Movie"
       primaryButton.action = #selector(applySelectedMovie)
       primaryButton.isEnabled = viewModel.canApplySelectedMovie
@@ -336,6 +364,17 @@ private final class MoviePosterActionViewController: NSViewController,
     }
     primaryButton.target = self
     primaryButton.keyEquivalent = "\r"
+  }
+
+  /// Renders replacements made by loading, saving, or clearing without interrupting ordinary typing.
+  private func renderSearchFields() {
+    guard renderedSearchFieldsRevision != viewModel.searchFieldsRevision else { return }
+
+    renderedSearchFieldsRevision = viewModel.searchFieldsRevision
+    queryField.stringValue = viewModel.query
+    yearField.stringValue = viewModel.yearText
+    queryField.currentEditor()?.string = viewModel.query
+    yearField.currentEditor()?.string = viewModel.yearText
   }
 
   /// Rebuilds the picker from the current results and restores its selection.
@@ -378,6 +417,14 @@ private final class MoviePosterActionViewController: NSViewController,
     viewModel.setYear(yearField.stringValue)
     viewModel.search()
   }
+  /// Saves the current field values without starting a search.
+  @objc private func saveSearchCorrection() {
+    viewModel.setQuery(queryField.currentEditor()?.string ?? queryField.stringValue)
+    viewModel.setYear(yearField.currentEditor()?.string ?? yearField.stringValue)
+    viewModel.saveSearchCorrection()
+  }
+  /// Clears the saved fields and restores the parsed folder defaults.
+  @objc private func clearSearchCorrection() { viewModel.clearSearchCorrection() }
   /// Selects the result currently chosen in the picker.
   @objc private func selectionChanged() {
     guard let item = resultPicker.selectedItem else { return }

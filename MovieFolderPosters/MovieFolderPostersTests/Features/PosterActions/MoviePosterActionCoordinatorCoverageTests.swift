@@ -8,6 +8,52 @@ import Testing
 /// Exercises real action-window controls against deterministic external operation results.
 @Suite(.serialized) @MainActor
 struct MoviePosterActionCoordinatorCoverageTests {
+  /// Native correction buttons load, save, and clear fields in both presentation modes.
+  @Test(arguments: [false, true])
+  func correctionControlsRenderAndRestoreFields(attached: Bool) async throws {
+    let service = WindowPosterService()
+    let coordinator = MoviePosterActionCoordinator(service: service)
+    let parent: NSWindow? = attached ? NSWindow(contentViewController: NSViewController()) : .none
+    parent?.makeKeyAndOrderFront(.none)
+    defer {
+      coordinator.windowController?.close()
+      parent?.close()
+    }
+    let request = request(.change)
+    let correction = try FolderSearchCorrection(title: "Alien", year: .none)
+    await service.setSearchCorrection(correction, for: request)
+    coordinator.start(request, attachedTo: parent)
+    let window = try #require(coordinator.windowController?.window)
+    let model = try #require(coordinator.viewModel)
+    await waitForSearchLanguage(model)
+    let controls = descendants(of: try #require(window.contentView))
+    let fields = controls.compactMap { $0 as? NSTextField }
+    let title = try #require(fields.first { $0.placeholderString == "Movie title" })
+    let year = try #require(fields.first { $0.placeholderString == "Year (optional)" })
+    let save = try button("Save Correction", in: controls)
+    let clear = try button("Clear Saved Correction", in: controls)
+    #expect(window.sheetParent === parent)
+    #expect(title.stringValue == "Alien")
+    #expect(year.stringValue.isEmpty)
+    #expect(save.keyEquivalent.isEmpty && clear.keyEquivalent.isEmpty)
+    #expect(save.isEnabled && clear.isEnabled)
+    #expect(try button("Done", in: controls).keyEquivalent == "\u{1b}")
+    #expect(try button("Apply Selected Movie", in: controls).keyEquivalent == "\r")
+
+    title.stringValue = "Arrival"
+    year.stringValue = "2016"
+    save.performClick(.none)
+    await waitForIdle(model)
+    #expect(await service.searchCorrection(for: request) == (try FolderSearchCorrection(title: "Arrival", year: 2016)))
+
+    clear.performClick(.none)
+    await waitForIdle(model)
+    #expect(title.stringValue == "Dune")
+    #expect(year.stringValue == "2021")
+    #expect(!clear.isEnabled)
+    #expect(model.searchResult == .none)
+  }
+
   /// Results reuse the real Choose Movie controls as a child sheet without starting a search.
   @Test func chooseMovieAttachesToResultsAndDismissesWithItsParent() async throws {
     let coordinator = MoviePosterActionCoordinator(service: WindowPosterService())
@@ -116,6 +162,7 @@ struct MoviePosterActionCoordinatorCoverageTests {
     case .change: throw CocoaError(.validationMissingMandatoryProperty)
     }
     let primary = try button(title, in: controls)
+    #expect(!controls.compactMap { $0 as? NSButton }.contains { $0.title == "Save Correction" })
     #expect(primary.keyEquivalent == "\r")
     primary.performClick(.none)
     await waitForIdle(model)
@@ -159,8 +206,20 @@ struct MoviePosterActionCoordinatorCoverageTests {
 
 /// Supplies external responses while the coordinator, controls and model remain real.
 private actor WindowPosterService: MoviePosterActionServicing {
+  /// Local correction returned by this fixture.
+  private var savedCorrection: FolderSearchCorrection?
+
   /// Provides the authorized default language in this isolated service fixture.
   func searchLanguage(for request: MoviePosterRequest) throws -> MovieSearchLanguage { .english }
+
+  /// Supplies the saved correction for the rendered window.
+  func searchCorrection(for request: MoviePosterRequest) -> FolderSearchCorrection? { savedCorrection }
+
+  /// Records a local correction edit from the rendered controls.
+  func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) {
+    savedCorrection = correction
+  }
+
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
                     language: MovieSearchLanguage = .english) throws -> MovieSearchResult {

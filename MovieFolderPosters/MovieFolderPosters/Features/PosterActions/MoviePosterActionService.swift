@@ -7,6 +7,10 @@ import Persistence
 nonisolated protocol MoviePosterActionServicing: Sendable {
   /// Captures the effective search language using the same authorization checks as provider work.
   func searchLanguage(for request: MoviePosterRequest) async throws -> MovieSearchLanguage
+  /// Reads the saved search correction for the selected folder.
+  func searchCorrection(for request: MoviePosterRequest) async throws -> FolderSearchCorrection?
+  /// Saves the selected folder's correction, or clears it when given nil.
+  func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) async throws
 
   /// Searches for movie metadata using a title and optional release year.
   ///

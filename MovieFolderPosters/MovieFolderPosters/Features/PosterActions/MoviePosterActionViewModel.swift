@@ -40,8 +40,14 @@ final class MoviePosterActionViewModel {
   private let service: any MoviePosterActionServicing
   /// Identifies the folder and action associated with this window.
   private let request: MoviePosterRequest
-  /// Extracts an initial title and year from the folder name.
-  private let parser = ReleaseNameParser()
+  /// Folder-derived title restored when a saved correction is cleared.
+  private let defaultQuery: String
+  /// Folder-derived optional year restored when a saved correction is cleared.
+  private let defaultYearText: String
+  /// Whether the authorized correction read succeeded.
+  private var hasLoadedSearchCorrection = false
+  /// The last correction read from or committed to storage.
+  private var savedSearchCorrection: FolderSearchCorrection?
   /// Retains the active operation so the window can cancel it.
   private var operationTask: Task<Void, Never>?
   /// Distinguishes current work from results arriving after cancellation.
@@ -58,6 +64,8 @@ final class MoviePosterActionViewModel {
   private(set) var query: String
   /// Release year text currently shown to the user.
   private(set) var yearText: String
+  /// Changes only when the model replaces the fields, so rendering preserves the active editor during typing.
+  private(set) var searchFieldsRevision = 0
   /// Effective language captured through the authorized action service.
   private(set) var searchLanguage: MovieSearchLanguage?
   /// Latest search response, if a search has completed.
@@ -70,12 +78,25 @@ final class MoviePosterActionViewModel {
   private(set) var isBusy = false
   /// Whether cancellation is requested while the actual service call is still unwinding.
   private(set) var isCancelling = false
+  /// Whether the visible Cancel button can interrupt the active operation.
+  private(set) var allowsOperationCancellation = true
   /// Prevents a changed configuration from silently reusing this action's old selection.
   private(set) var isConfigurationInvalidated = false
   /// Whether this presentation can admit another explicit operation.
   var canStartAction: Bool { !isBusy && !isConfigurationInvalidated }
   /// A provider search requires successfully captured and disclosed authorized language context.
   var canSearch: Bool { canStartAction && searchLanguage != .none }
+  /// Whether the authorized correction store is available for an explicit save.
+  var canSaveSearchCorrection: Bool { action == .change && canStartAction && hasLoadedSearchCorrection }
+  /// Whether an explicit clear is available for the saved correction.
+  var canClearSearchCorrection: Bool { canSaveSearchCorrection && savedSearchCorrection != .none }
+  /// Describes the saved correction independently of the current draft.
+  var searchCorrectionStatus: String {
+    if searchLanguage == .none { return "" }
+    if !hasLoadedSearchCorrection { return "Saved correction unavailable." }
+
+    return savedSearchCorrection == .none ? "No saved correction." : "Correction saved for this folder."
+  }
   /// Status text for the current or most recent operation.
   private(set) var statusMessage: String?
   /// A safe, user-facing error message, if the latest action failed.
@@ -124,26 +145,104 @@ final class MoviePosterActionViewModel {
   init(service: any MoviePosterActionServicing, request: MoviePosterRequest) {
     self.service = service
     self.request = request
-    if case .parsed(let parsed) = parser.parse(request.childName) {
-      query = parsed.title
-      yearText = parsed.year.map(String.init) ?? ""
+    if case .parsed(let parsed) = ReleaseNameParser().parse(request.childName) {
+      defaultQuery = parsed.title
+      defaultYearText = parsed.year.map(String.init) ?? ""
     } else {
-      query = request.childName
-      yearText = ""
+      defaultQuery = request.childName
+      defaultYearText = ""
     }
+    query = defaultQuery
+    yearText = defaultYearText
   }
 
-  /// Captures only authorized disclosure context; opening Choose Movie does not initiate a provider search.
-  func prepareSearchLanguage() {
-    guard request.action == .change else { return }
+  /// Loads search language and any saved correction without contacting TMDb.
+  func prepareSearchFields() {
+    guard request.action == .change, searchLanguage == .none else { return }
 
     let service = service
     let request = request
-    perform("Loading search language…", operation: { try await service.searchLanguage(for: request) },
-      completion: { [weak self] language in
-        self?.searchLanguage = language
-        self?.statusMessage = .none
+    perform("Loading search fields…", operation: {
+      let language = try await service.searchLanguage(for: request)
+      let correction: Result<FolderSearchCorrection?, any Error>
+      do {
+        correction = .success(try await service.searchCorrection(for: request))
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        correction = .failure(error)
+      }
+
+      return (language, correction)
+    }, completion: { [weak self] result in
+      guard let self else { return }
+
+      self.searchLanguage = result.0
+      self.statusMessage = .none
+      switch result.1 {
+      case .success(let correction):
+        self.hasLoadedSearchCorrection = true
+        self.savedSearchCorrection = correction
+        if let correction {
+          self.replaceSearchFields(title: correction.title, year: correction.year.map(String.init) ?? "")
+        }
+      case .failure:
+        self.hasLoadedSearchCorrection = false
+      }
+    })
+  }
+
+  /// Saves the current search fields after validation.
+  func saveSearchCorrection() {
+    guard canSaveSearchCorrection else { return }
+
+    do {
+      let fields = try MovieMatchingRequest(title: query, yearText: yearText)
+      try changeSearchCorrection(FolderSearchCorrection(title: fields.title, year: fields.year))
+    } catch {
+      setError((error as? MovieMatchingRequest.InputError)?.message ?? "Enter a movie title on one line.")
+    }
+  }
+
+  /// Removes the saved correction and restores the folder-derived fields on success.
+  func clearSearchCorrection() {
+    guard canClearSearchCorrection else { return }
+
+    changeSearchCorrection(.none)
+  }
+
+  /// Updates the saved and displayed fields only after the service commits the change.
+  /// - Parameter correction: The fields to save, or nil to clear them.
+  private func changeSearchCorrection(_ correction: FolderSearchCorrection?) {
+    let service = service
+    let request = request
+    perform(
+      correction == .none ? "Clearing saved correction…" : "Saving correction…",
+      allowsCancellation: false,
+      operation: { try await service.setSearchCorrection(correction, for: request) },
+      completion: { [weak self] _ in
+        guard let self else { return }
+
+        self.savedSearchCorrection = correction
+        if let correction {
+          self.replaceSearchFields(title: correction.title, year: correction.year.map(String.init) ?? "")
+        } else {
+          self.replaceSearchFields(title: self.defaultQuery, year: self.defaultYearText)
+        }
+        self.statusMessage = correction == .none ? "Saved correction cleared." : "Correction saved."
       })
+  }
+
+  /// Replaces both fields and drops results tied to the previous values without cancelling the current operation.
+  private func replaceSearchFields(title: String, year: String) {
+    guard title != query || year != yearText else { return }
+
+    query = title
+    yearText = year
+    searchFieldsRevision += 1
+    searchedTitle = .none
+    searchResult = .none
+    selectedMovieID = .none
   }
 
   /// Replaces the search title and notifies the view.
@@ -364,16 +463,19 @@ extension MoviePosterActionViewModel {
   ///
   /// - Parameters:
   ///   - status: Progress text shown while the operation runs.
+  ///   - allowsCancellation: Whether the sheet's Cancel button is enabled during this operation.
   ///   - operation: The sendable asynchronous service request.
   ///   - completion: Main-actor state updates for a successful result.
   private func perform<Value: Sendable>(
     _ status: String,
+    allowsCancellation: Bool = true,
     operation: @escaping @Sendable () async throws -> Value,
     completion: @escaping @MainActor (Value) -> Void
   ) {
     guard canStartAction else { return }
     isBusy = true
     isCancelling = false
+    allowsOperationCancellation = allowsCancellation
     statusMessage = status
     errorMessage = .none
     let currentActivityGroupID = UUID()
@@ -392,13 +494,16 @@ extension MoviePosterActionViewModel {
         self.statusMessage = .none
       } catch {
         guard let self, self.activityGroupID == currentActivityGroupID else { return }
-        self.errorMessage = self.userMessage(for: error)
+        if !Task.isCancelled && !self.isConfigurationInvalidated {
+          self.errorMessage = self.userMessage(for: error)
+        }
         self.statusMessage = .none
       }
 
       guard let self, self.activityGroupID == currentActivityGroupID else { return }
       self.isBusy = false
       self.isCancelling = false
+      self.allowsOperationCancellation = true
       self.operationTask = .none
       self.publish()
       self.completionDelegate?.moviePosterActionViewModelDidFinishAction(self)
