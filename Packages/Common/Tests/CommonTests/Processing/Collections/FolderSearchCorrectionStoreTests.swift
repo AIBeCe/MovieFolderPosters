@@ -5,6 +5,83 @@ import Testing
 
 /// Exercises saved corrections using real persistence records and independent store instances.
 struct FolderSearchCorrectionStoreTests {
+  /// A legacy record keeps its correction and gains a revision on the first real edit.
+  @Test func legacyCorrectionGainsARevisionAfterEditing() throws {
+    try withStoreDirectory { directory in
+      let persistence = try PersistenceStore(directory: directory)
+      let store = FolderSearchCorrectionStore(store: persistence)
+      let collectionID = UUID()
+      let original = try FolderSearchCorrection(title: "Movie", year: 1999)
+      let updated = try FolderSearchCorrection(title: "Movie", year: 2000)
+      do {
+        let access = try #require(try persistence.acquireAccess(for: recordKey(for: collectionID)))
+        try access.write(Data(#"{"version":1,"corrections":{"folder":{"title":"Movie","year":1999}}}"#.utf8))
+      }
+      let legacy = try store.versionedCorrection(for: "folder", in: collectionID)
+      #expect(legacy.correction == original)
+      #expect(legacy.revision == .none)
+
+      try store.setCorrection(updated, for: "folder", in: collectionID)
+      let reopened = FolderSearchCorrectionStore(store: try PersistenceStore(directory: directory))
+      let current = try reopened.versionedCorrection(for: "folder", in: collectionID)
+      #expect(current.correction == updated)
+      #expect(current.revision != .none)
+      #expect(try store.versionedCorrection(for: "folder", in: collectionID) == current)
+    }
+  }
+
+  /// Restoring a prior value or clearing the last entry still records every intervening edit.
+  @Test func revisionDetectsEditsThatRestorePreviousFields() throws {
+    try withStoreDirectory { directory in
+      let store = FolderSearchCorrectionStore(store: try PersistenceStore(directory: directory))
+      let collectionID = UUID()
+      let original = try FolderSearchCorrection(title: "First", year: 1999)
+      let updated = try FolderSearchCorrection(title: "Second", year: .none)
+      let empty = try store.versionedCorrection(for: "folder", in: collectionID)
+      #expect(empty.correction == .none)
+      #expect(empty.revision == .none)
+
+      try store.setCorrection(original, for: "folder", in: collectionID)
+      let first = try store.versionedCorrection(for: "folder", in: collectionID)
+      try store.setCorrection(updated, for: "folder", in: collectionID)
+      let second = try store.versionedCorrection(for: "folder", in: collectionID)
+      try store.setCorrection(original, for: "folder", in: collectionID)
+      let restored = try store.versionedCorrection(for: "folder", in: collectionID)
+      try store.setCorrection(.none, for: "folder", in: collectionID)
+      let reopened = FolderSearchCorrectionStore(store: try PersistenceStore(directory: directory))
+      let cleared = try reopened.versionedCorrection(for: "folder", in: collectionID)
+
+      #expect(first.correction == original)
+      #expect(second.correction == updated)
+      #expect(restored.correction == first.correction)
+      #expect(cleared.correction == empty.correction)
+      let revisions = [first.revision, second.revision, restored.revision, cleared.revision].compactMap { $0 }
+      #expect(Set(revisions).count == 4)
+    }
+  }
+
+  /// No-op edits keep the revision, while sibling edits advance it only within the collection.
+  @Test func revisionChangesOnlyForRealEditsInTheSameCollection() throws {
+    try withStoreDirectory { directory in
+      let store = FolderSearchCorrectionStore(store: try PersistenceStore(directory: directory))
+      let collectionID = UUID()
+      let correction = try FolderSearchCorrection(title: "Movie", year: .none)
+      try store.setCorrection(correction, for: "folder", in: collectionID)
+      let saved = try store.versionedCorrection(for: "folder", in: collectionID)
+
+      try store.setCorrection(correction, for: "folder", in: collectionID)
+      try store.setCorrection(.none, for: "missing", in: collectionID)
+      try store.setCorrection(correction, for: "folder", in: UUID())
+      #expect(try store.versionedCorrection(for: "folder", in: collectionID) == saved)
+
+      try store.setCorrection(correction, for: "sibling", in: collectionID)
+      let current = try store.versionedCorrection(for: "folder", in: collectionID)
+      #expect(current.correction == saved.correction)
+      #expect(current.revision != saved.revision)
+      #expect(try store.versionedCorrection(for: "sibling", in: collectionID).revision == current.revision)
+    }
+  }
+
   /// Reopening, replacing, and clearing preserve other folders' corrections.
   @Test func savesReplacesAndClearsOnlyTheSelectedFolderAcrossStoreInstances() throws {
     try withStoreDirectory { directory in
@@ -79,18 +156,22 @@ struct FolderSearchCorrectionStoreTests {
       let collectionID = UUID()
       let otherCollectionID = UUID()
       let correction = try FolderSearchCorrection(title: "Movie", year: .none)
-      let access = try #require(try persistence.acquireAccess(for: recordKey(for: collectionID)))
+      try store.setCorrection(correction, for: "folder", in: collectionID)
+      let saved = try store.versionedCorrection(for: "folder", in: collectionID)
 
-      try withExtendedLifetime(access) {
+      do {
+        let access = try #require(try persistence.acquireAccess(for: recordKey(for: collectionID)))
+        defer { withExtendedLifetime(access) {} }
         #expect(throws: FolderSearchCorrectionStore.StoreError.busy) {
-          try store.correction(for: "folder", in: collectionID)
+          try store.versionedCorrection(for: "folder", in: collectionID)
         }
         #expect(throws: FolderSearchCorrectionStore.StoreError.busy) {
-          try store.setCorrection(correction, for: "folder", in: collectionID)
+          try store.setCorrection(.none, for: "folder", in: collectionID)
         }
         try store.setCorrection(correction, for: "folder", in: otherCollectionID)
         #expect(try store.correction(for: "folder", in: otherCollectionID) == correction)
       }
+      #expect(try store.versionedCorrection(for: "folder", in: collectionID) == saved)
     }
   }
 
@@ -103,11 +184,13 @@ struct FolderSearchCorrectionStoreTests {
       let original = try FolderSearchCorrection(title: "Movie", year: .none)
       let oversized = try FolderSearchCorrection(title: String(repeating: "a", count: 1_024), year: .none)
       try store.setCorrection(original, for: "folder", in: collectionID)
+      let saved = try store.versionedCorrection(for: "folder", in: collectionID)
 
       #expect(throws: (any Error).self) {
         try store.setCorrection(oversized, for: "folder", in: collectionID)
       }
-      #expect(try store.correction(for: "folder", in: collectionID) == original)
+      #expect(saved.correction == original)
+      #expect(try store.versionedCorrection(for: "folder", in: collectionID) == saved)
     }
   }
 

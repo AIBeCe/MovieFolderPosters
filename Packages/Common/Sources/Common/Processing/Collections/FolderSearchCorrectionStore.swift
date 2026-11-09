@@ -13,16 +13,26 @@ nonisolated public struct FolderSearchCorrectionStore: Sendable {
     case unsupportedVersion
   }
 
+  /// A folder's correction and the collection revision read under the same lock.
+  public struct VersionedCorrection: Equatable, Sendable {
+    /// The saved search fields, if present.
+    public let correction: FolderSearchCorrection?
+    /// The latest edit to the collection's corrections, if tracked.
+    public let revision: UUID?
+  }
+
   /// The stored corrections for one collection.
   private struct Record: Codable {
     /// The format version of the encoded record.
     var version = 1
+    /// Changes whenever a correction in this collection changes.
+    var revision: UUID?
     /// Corrections indexed by verified folder identity.
     var corrections: [String: Fields] = [:]
   }
 
   /// The encoded search fields for one folder.
-  private struct Fields: Codable {
+  private struct Fields: Codable, Equatable {
     /// The saved search title.
     let title: String
     /// The saved release year, if supplied.
@@ -45,11 +55,22 @@ nonisolated public struct FolderSearchCorrectionStore: Sendable {
   /// - Returns: The saved correction, if present.
   /// - Throws: A validation, decoding, lock, or persistence error.
   public func correction(for folderIdentity: String, in collectionID: UUID) throws -> FolderSearchCorrection? {
+    try versionedCorrection(for: folderIdentity, in: collectionID).correction
+  }
+
+  /// Reads the correction and the revision that must still be current when assigning artwork.
+  /// - Parameters:
+  ///   - folderIdentity: The verified identity of the folder.
+  ///   - collectionID: The configured collection identifier.
+  /// - Returns: The saved fields and collection revision from the same record.
+  /// - Throws: A validation, decoding, lock, or persistence error.
+  public func versionedCorrection(for folderIdentity: String, in collectionID: UUID) throws -> VersionedCorrection {
     let access = try lockCorrectionRecord(in: collectionID, for: folderIdentity)
+    let record = try readRecord(from: access)
+    let fields = record.corrections[folderIdentity]
+    let correction = try fields.map { try FolderSearchCorrection(title: $0.title, year: $0.year) }
 
-    guard let fields = try readRecord(from: access).corrections[folderIdentity] else { return .none }
-
-    return try FolderSearchCorrection(title: fields.title, year: fields.year)
+    return VersionedCorrection(correction: correction, revision: record.revision)
   }
 
   /// Saves a correction, or clears the folder's correction when given nil.
@@ -63,12 +84,12 @@ nonisolated public struct FolderSearchCorrectionStore: Sendable {
   ) throws {
     let access = try lockCorrectionRecord(in: collectionID, for: folderIdentity)
     var record = try readRecord(from: access)
-    if let correction {
-      record.corrections[folderIdentity] = Fields(title: correction.title, year: correction.year)
-    } else {
-      guard case .some = record.corrections.removeValue(forKey: folderIdentity) else { return }
-    }
+    let fields = correction.map { Fields(title: $0.title, year: $0.year) }
 
+    guard fields != record.corrections[folderIdentity] else { return }
+
+    record.corrections[folderIdentity] = fields
+    record.revision = UUID()
     try access.write(JSONEncoder().encode(record))
   }
 
