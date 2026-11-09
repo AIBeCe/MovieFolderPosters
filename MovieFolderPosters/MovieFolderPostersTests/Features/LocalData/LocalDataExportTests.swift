@@ -1,7 +1,7 @@
 import AppKit
-import Foundation
 import Common
 import FileSystem
+import Foundation
 import Testing
 
 @testable import MovieFolderPosters
@@ -121,11 +121,15 @@ struct LocalDataExportTests {
 
 private struct ReadOnlyExportActivity: MovieFolderActivityReading {
   let entry: MovieFolderActivityLogEntry
+  // The protocol requires an async read; this fixture returns immediately.
+  // swiftlint:disable:next async_without_await
   func entries() async throws -> [MovieFolderActivityLogEntry] { [entry] }
 }
 
 private struct ReadOnlyExportNetwork: MovieFolderNetworkHistoryReading {
   let entry: MovieFolderNetworkHistoryEntry
+  // The protocol requires an async read; this fixture returns immediately.
+  // swiftlint:disable:next async_without_await
   func entries() async throws -> [MovieFolderNetworkHistoryEntry] { [entry] }
 }
 

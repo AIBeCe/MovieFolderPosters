@@ -1,5 +1,5 @@
-import Foundation
 import Common
+import Foundation
 import Persistence
 import XCTest
 
@@ -70,6 +70,7 @@ final class MovieFolderPostersAcceptanceSupport {
   }
 }
 
+/// Reports unavailable deterministic test history setup.
 private enum AcceptanceStorageError: Error {
   case networkHistoryUnavailable
 }

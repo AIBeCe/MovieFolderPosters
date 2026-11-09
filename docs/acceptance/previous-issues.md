@@ -29,7 +29,7 @@ report, then it shows `Folders (2)` and both visible folder names and omits the
 hidden directory, file, and symlink.
 
 Full-app coverage: `testSavedInventoryReportShowsExactVisibleFolderTotalAfterRelaunch`
-in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+in `MovieFolderPosters/MovieFolderPostersUITests/R100ProcessingAcceptanceUITests.swift`.
 The XCUITest seeds the configured collection and complete saved result only in
 its disposable acceptance store, launches and relaunches the host app, then
 checks the report's exact folder count and names.
@@ -43,7 +43,7 @@ partial, interrupted, or stale evidence without substituting zero counts.
 Coverage: `CollectionSummaryCoverageTests` and processing-store tests.
 Execution level: host integration tests. Full-app relaunch and details
 verification: `testSavedProcessingOutcomeAppearsInCollectionSummaryAfterRelaunch`
-in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+in `MovieFolderPosters/MovieFolderPostersUITests/R100ProcessingAcceptanceUITests.swift`.
 It seeds an unresolved saved outcome, relaunches the isolated host, and asserts
 that the details report remains Partial and does not report unknown evidence.
 
@@ -58,7 +58,7 @@ appear in sequence and retention bounds are respected.
 Coverage: `ActivityLogTests` and Common activity tests. Execution level: service
 tests. Full-app populated Log ordering after relaunch:
 `testActivityEntriesRemainOrderedAfterRelaunch` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/ActivityLogAcceptanceUITests.swift`.
 The test creates two collections through the host UI, relaunches, and verifies
 their committed Activity entries remain in order. Retention-boundary behavior
 remains covered at the service level.
@@ -71,7 +71,7 @@ outcomes, matches, configuration, and folder icons remain unchanged.
 
 Coverage: Log service isolation tests and
 `testClearingActivityPreservesCollectionAcrossRelaunch` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/ActivityLogAcceptanceUITests.swift`.
 The full app journey checks activity removal, full configuration equality,
 processing-record equality including a confirmed movie identity, and continued
 ownership of an installed icon in the isolated collection after clearing and
@@ -86,7 +86,7 @@ the fixed safe event description is retained.
 
 Coverage: Common activity redaction tests and
 `testPrivateCollectionActivityDoesNotExposeNameOrPath` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/ActivityLogAcceptanceUITests.swift`.
 The full-app test clears prior public history in its isolated store, enables
 private collection history, saves a collection change, and verifies the Log
 shows the safe omission message without the collection name or path. Broader
@@ -157,7 +157,7 @@ for R100-04-A1.
 
 Coverage: recovery admission and mutation-boundary integration tests, plus
 `testRecoveryModePersistsAndLeavesSettingsAndLogAvailable` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/R100ProcessingAcceptanceUITests.swift`.
 The full-app test verifies the host gate survives relaunch and keeps Settings
 and Log available. Cross-process mutation fencing remains covered at the
 Finder/runtime integration level; a signed host-plus-Finder full-app journey
@@ -240,7 +240,7 @@ Coverage: `AccessTokenServiceTests` and presentation tests. Execution level:
 service/presentation tests plus full-app acceptance tests
 `testCanceledReplacementDoesNotValidateOrPersistCandidate` and
 `testValidReplacementIsConfirmedAndPreservesCollectionAndMatch` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/R100ProcessingAcceptanceUITests.swift`.
 These are full-app XCUITest journeys providing combined acceptance and E2E
 coverage.
 The UI tests use the existing isolated Debug acceptance launch and a disposable
@@ -257,7 +257,7 @@ Coverage: service and export redaction tests. Execution level: integration
 tests plus full-app acceptance tests
 `testRejectedReplacementPreservesExistingTokenAndRedactsCandidate` and
 `testOfflineReplacementShowsSafeOutcomeWithoutSavingCandidate` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/R100ProcessingAcceptanceUITests.swift`.
 These are full-app XCUITest journeys providing combined acceptance and E2E
 coverage.
 The UI tests assert the distinct fixed result, candidate absence from accessible
@@ -273,7 +273,7 @@ are opened, **then** Main explains how to add a collection and the primary Add
 and Log controls expose useful accessible names.
 
 Full-app XCUITest: `testEmptyStateAndLogControlsExposeAccessibleDescriptions`
-in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+in `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
 
 ### R100-07-A1b — Settings is reachable from the keyboard
 
@@ -281,7 +281,7 @@ in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift
 existing Settings window opens and its TMDb controls are reachable.
 
 Full-app XCUITest: `testCommandCommaOpensSettingsFromMain` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
 
 ### R100-07-A1c — Keyboard removal does not modify the movie folder
 
@@ -290,7 +290,7 @@ Full-app XCUITest: `testCommandCommaOpensSettingsFromMain` in
 relaunch, and its actual folder remains on disk.
 
 Full-app XCUITest: `testDeleteRemovesSelectedCollectionButKeepsFolder` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
 
 ### R100-07-A1d1 — Light and Dark choices persist and apply to app windows
 
@@ -299,7 +299,7 @@ user selects Light or Dark, closes and reopens Settings, and relaunches the app,
 **then** the selected choice remains visible and app windows use the chosen mode.
 
 Full-app XCUITest: `testAppAppearanceSelectionPersistsAcrossWindowCloseAndRelaunch`
-in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+in `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
 The acceptance launch stores the choice under the disposable shared test root;
 normal launches continue using standard user defaults. Existing
 `appearanceAndWindowReuseCoverEveryHostFlow` in
@@ -320,7 +320,7 @@ Scenario execution:
   then the explanatory status remains visible and Log's source and search
   controls remain usable. Coverage: full-app XCUITest
   `testCollectionStatusAndCoreWindowsRemainUsableAfterLogReopen` in
-  `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+  `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
   **PASS** — the test found the full status text, confirmed Add collection and
   Log controls were hittable, closed Log, reopened it, and found the history
   source and search controls. Evidence:
@@ -330,7 +330,7 @@ Scenario execution:
 - **A1d2-S2 — Resize.** Given the Main window is open, when its size changes,
   then its frame changes and its collection controls remain usable. Coverage:
   full-app XCUITest `testCollectionStatusAndCoreWindowsRemainUsableAfterLogReopen`
-  in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+  in `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
   **PASS** — the test resized Main through the macOS Accessibility API, verified
   the frame changed, confirmed Add collection remained hittable, and restored
   the initial size. Log resizing remains unverified: macOS did not expose its
@@ -342,7 +342,7 @@ Scenario execution:
   reload, then the updated retained-entry count appears and subsequent keyboard
   input still edits the search field. Coverage: full-app XCUITest
   `testLogAsyncSourceReloadKeepsKeyboardFocus` in
-  `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+  `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
   **PASS** — an activity event was written under the disposable test root; Log
   displayed the incremented count and accepted further typing without another
   click. Evidence: `/private/tmp/mfp-r10007-point7-retry4.log`.
@@ -350,7 +350,7 @@ Scenario execution:
   when status and controls are displayed, then text and controls remain
   distinguishable. Coverage: full-app XCUITest
   `testCollectionStatusAndControlsRemainUsableWithIncreasedContrast` in
-  `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+  `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
   **PASS** — with the actual macOS setting temporarily enabled through System
   Settings, the test found the explanatory status and confirmed Add collection
   and Log were hittable. The setting was restored to off, its initial state.
@@ -360,7 +360,7 @@ Scenario execution:
   update, then reading order, announcements, and focus remain understandable.
   Coverage: full-app XCUITest
   `testVoiceOverSpeaksLogSearchAfterAsyncActivityReload` in
-  `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+  `MovieFolderPosters/MovieFolderPostersUITests/AppAccessibilityAcceptanceUITests.swift`.
   **PASS** — with VoiceOver temporarily enabled through System Settings, the
   test captured the search-field announcement, waited for a committed isolated
   activity event and async reload, then confirmed VoiceOver spoke subsequent
@@ -455,7 +455,7 @@ volume as disconnected, offers the enabled **Locate Folder…** action, and
 preserves the collection ID, path, and identity.
 
 Full-app coverage: `testDisconnectedCollectionRetainsIdentityAndOffersLocateFolder`
-in `MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+in `MovieFolderPosters/MovieFolderPostersUITests/R110CollectionAcceptanceUITests.swift`.
 The test seeds a nonexistent mount path and saved identity in its disposable
 acceptance store; no real volume is mounted or unmounted. It checks the host
 row's accessible disconnected status, the recovery action, and configuration
@@ -471,7 +471,7 @@ own path, stable filesystem identity, default matching and processing choices,
 and private-history setting.
 
 Full-app XCUITest: `testFolderDropMatchesPickerCollectionSetup` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/R110CollectionAcceptanceUITests.swift`.
 The Acceptance scheme builds a test-only AppKit drag-source app. The test posts
 a native mouse drag of one local file URL, checks AppKit reports a copy drop,
 then verifies the selected folder in the setup form and compares the persisted
@@ -571,8 +571,10 @@ BDD detail:
   the user selects Network and combines Movie Search, Information and the
   response-message search, then only the matching structured request appears.
 
-Automated coverage for S1–S5: `structuredFiltersCombineAndControlsRemainKeyboardTraversable`
-in `MovieFolderPosters/MovieFolderPostersTests/Features/Log/LogTableCoverageTests.swift`.
+Automated coverage: S1–S4 use
+`structuredFiltersCombineAndControlsRemainKeyboardTraversable`; S5 uses
+`networkFiltersShowOnlyMatchingRequest`, both in
+`MovieFolderPosters/MovieFolderPostersTests/Features/Log/LogTableCoverageTests.swift`.
 S5 also has full-app coverage in
 `testStructuredNetworkLogFiltersShowOnlyMatchingRequest`.
 
@@ -587,7 +589,7 @@ user enables Private and relaunches, then the earlier event remains unchanged
 and the new settings event contains no collection name or path.
 
 Full-app coverage: `testPrivateCollectionHistoryPersistsAcrossRelaunch` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/ActivityLogAcceptanceUITests.swift`.
 The isolated XCUITest verifies the public event before the change, compares the
 same entry after relaunch, and checks that the new private settings event is
 redacted. The configuration/history unit tests continue to cover the
@@ -691,7 +693,7 @@ disabled, **when** the user generates a JSON preview and then toggles storage
 estimates, **then** the previous preview clears and Save is disabled again.
 
 Automated coverage: `testLocalDataMeasurementAndPreviewInvalidation` in
-`MovieFolderPosters/MovieFolderPostersUITests/MovieFolderPostersUITests.swift`.
+`MovieFolderPosters/MovieFolderPostersUITests/R11005LocalDataAcceptanceUITests.swift`.
 The test checks that the preview parses as JSON and excludes the isolated
 storage path. It generates a fresh preview before exercising publication.
 
@@ -760,10 +762,10 @@ The passing rerun queried both label and value. Evidence is in
 | R100-07-A1d1, isolated preference-file behavior | `acceptanceAppearanceStoragePersistsWithoutReadingOrWritingUserDefaults` | PASS: `/private/tmp/mfp-r10007-appearance-storage-unit-final.log` |
 | R100-07-A1d1, effective appearance across existing and reopened windows | `appearanceAndWindowReuseCoverEveryHostFlow` | PASS: `/private/tmp/mfp-r10007-coordinator-lifecycle-suite.log` |
 | R100-07-A1d2-S1, status remains visible and Log controls work after reopen | `testCollectionStatusAndCoreWindowsRemainUsableAfterLogReopen` | PASS: `/private/tmp/mfp-r10007-point7-reopen-final2.log` |
-| R100-07-A1d2-S2, Main remains usable after resize and original size is restored | `testCollectionStatusAndCoreWindowsRemainUsableAfterLogReopen` | PASS: `/private/tmp/mfp-r10007-point7-resize-accessibility-final.log`; Log resize remains unverified because macOS did not expose the utility window |
+| R100-07-A1d2-S2, Main remains usable after resize and original size is restored | `testCollectionStatusAndCoreWindowsRemainUsableAfterLogReopen` | PASS: native corner-drag full-app rerun `/private/tmp/mfp-validation-window-journey2.log`; exact original frame restored. Log resize remains unverified because macOS did not expose the utility window |
 | R100-07-A1d2-S3, async history reload preserves keyboard search focus | `testLogAsyncSourceReloadKeepsKeyboardFocus` | PASS: `/private/tmp/mfp-r10007-point7-retry4.log` |
 | R100-07-A1d2-S4, status and controls remain distinguishable with Increased Contrast | `testCollectionStatusAndControlsRemainUsableWithIncreasedContrast` | PASS: `/private/tmp/mfp-r10007-point7-high-contrast.log`; system setting restored |
-| R100-07-A1d2-S5, VoiceOver announces search after async reload | `testVoiceOverSpeaksLogSearchAfterAsyncActivityReload` | PASS: `/private/tmp/mfp-r10007-point7-voiceover-restoration.log`; VoiceOver restored |
+| R100-07-A1d2-S5, VoiceOver announces search after async reload | `testVoiceOverSpeaksLogSearchAfterAsyncActivityReload` | Prior Acceptance run: PASS in `/private/tmp/mfp-r10007-point7-voiceover-restoration.log`. Validation rerun: FAIL in `/private/tmp/mfp-validation-voiceover.log`; VoiceOver was enabled but XCTest returned `No speech available`. VoiceOver restored to its prior off state. |
 | R100-06-A1, cancel leaves saved access token unchanged | `testCanceledReplacementDoesNotValidateOrPersistCandidate` | PASS |
 | R100-06-A1, valid confirmed replacement preserves collection/match after relaunch | `testValidReplacementIsConfirmedAndPreservesCollectionAndMatch` | PASS |
 | R100-06-A2, invalid token is rejected safely and old token remains usable | `testRejectedReplacementPreservesExistingTokenAndRedactsCandidate` | PASS |
@@ -774,7 +776,7 @@ The passing rerun queried both label and value. Evidence is in
 | R110-03-A1-S2, nonmatching category/severity intersection shows no rows | `structuredFiltersCombineAndControlsRemainKeyboardTraversable` | PASS: `/private/tmp/mfp-r11003-a1-final.log` |
 | R110-03-A1-S3, information severity and message search show the application row | `structuredFiltersCombineAndControlsRemainKeyboardTraversable` | PASS: `/private/tmp/mfp-r11003-a1-final.log` |
 | R110-03-A1-S4, keyboard advances to Search and the Log key-view loop is configured | `structuredFiltersCombineAndControlsRemainKeyboardTraversable` | PASS: `/private/tmp/mfp-r11003-a1-final.log` |
-| R110-03-A1-S5, Network source category/severity/search shows the matching request | `structuredFiltersCombineAndControlsRemainKeyboardTraversable` | PASS: `/private/tmp/mfp-r11003-a1-final.log` |
+| R110-03-A1-S5, Network source category/severity/search shows the matching request | `networkFiltersShowOnlyMatchingRequest` | PASS: `/private/tmp/mfp-r11003-a1-final.log` |
 | R110-03-A2-S1, prior public event remains unchanged while new private settings event is redacted after relaunch | `testPrivateCollectionHistoryPersistsAcrossRelaunch` | PASS: `/private/tmp/mfp-r11003-a2-final.log` (1 XCUITest, 0 failures) |
 
 ### Acceptance status summary
@@ -788,7 +790,7 @@ R100-08-A1, R110-02-A1, and R110-04-A1–A3, plus R100-09 release qualification.
 There are no FAIL or NOT TESTED records. Acceptance remains incomplete until
 the blocked Finder/signing and release prerequisites can be satisfied.
 
-R110-03-A1 execution detail: the host AppKit acceptance test covers five
+R110-03-A1 execution detail: two host AppKit acceptance tests cover five
 BDD scenarios; all five passed. The full-app Activity test passed, showing
 only the matching Activity event after applying three filters. The five-test
 `LogTableCoverageTests` suite passed with zero failures in
@@ -854,3 +856,37 @@ All three R100-07 scenarios therefore have passing final executions.
 This file records scenario specifications and maps existing coverage. During
 the acceptance phase, execute each listed automated test and update results
 with actual output. A mapped unit/integration test is not a full-app E2E pass.
+
+## Validation phase — 2026-11-09
+
+Validation was run on `feature/refactor-architecture` after acceptance-test
+implementation. The following coverage limitations are recorded for feature
+closure; their statuses remain visible and are not reported as passing.
+
+| Activity | Result | Evidence and limits |
+| --- | --- | --- |
+| Common package focused unit tests | PASS | 15 tests passed in 2 suites: `/private/tmp/mfp-validation-common-tests-final.log`. |
+| Host focused unit/integration tests | PASS | 96 tests passed, 0 failed: `/private/tmp/mfp-validation-unit.log`. |
+| Full-app acceptance/UI journeys | INCOMPLETE | The 40-test grouped run had 3 assertion failures across 2 cases and 2 skips. The two failed cases passed when rerun after test-only corrections; the resize journey passed after moving resize assertions to the accessibility journey. Increased Contrast passed when enabled for the test, then was restored. Final VoiceOver test failed because XCTest reported `No speech available` despite VoiceOver being enabled. See `/private/tmp/mfp-validation-ui5.log`, `/private/tmp/mfp-validation-ui-fixes.log`, `/private/tmp/mfp-validation-token-replacement.log`, `/private/tmp/mfp-validation-window-journey2.log`, `/private/tmp/mfp-validation-contrast.log`, and `/private/tmp/mfp-validation-voiceover.log`. |
+| Finder extension E2E | BLOCKED | No signing is available for the isolated Finder test host; no Finder extension registration was attempted. This remains the documented limitation. |
+| SwiftLint | PASS with existing warnings | Full configured lint exited 0, reporting 122 warnings in `/private/tmp/mfp-validation-lint-final4.txt`. No warnings remain in the newly added/changed validation test helpers. Two findings remain in retained pagination test code in `MovieFolderPostersUITests.swift` (function length and line length); unrelated pre-existing warnings remain elsewhere in the project. |
+| Swift style and architecture review | PASS for scoped changes | Changed Swift files follow the style guide. Changes are test-only; no production module boundary or runtime architecture changed. |
+| Diff whitespace check | PASS | `git diff --check` completed without findings. |
+
+Overall Validation is **INCOMPLETE**: the VoiceOver UI scenario executed and
+failed to obtain speech from XCTest, and Finder extension E2E remains blocked
+by unavailable signing. The VoiceOver failure is preserved as a failure; it
+has not been converted to a skip or pass. Increased Contrast was tested with
+the system preference temporarily enabled and restored to its original off
+state. No test used live provider credentials or user data.
+
+### Coverage limitations carried into feature closure
+
+- **VoiceOver announcement:** The full-app test exists, but this validation run
+  failed when XCTest's VoiceOver service returned `No speech available`, even
+  with VoiceOver enabled. The prior Acceptance run passed; the conflicting
+  results are both retained above. The current outcome is unresolved and is not
+  counted as a Validation pass.
+- **Finder extension E2E:** Cross-process Finder coverage remains blocked until
+  a signed isolated Finder test host is available. No Finder extension
+  registration was attempted. This scenario is not counted as executed.

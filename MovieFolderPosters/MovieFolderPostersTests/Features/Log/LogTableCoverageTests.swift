@@ -23,22 +23,7 @@ struct LogTableCoverageTests {
     let category = try control(NSPopUpButton.self, label: "History category", in: controls)
     let severity = try control(NSPopUpButton.self, label: "History severity", in: controls)
     let table = try control(NSTableView.self, label: "History entries", in: controls)
-    let recording = try #require(controls.compactMap { $0 as? NSButton }
-      .first { $0.title == "Record network history" })
-    let copy = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Copy" })
-    let clear = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Clear Activity" })
-    let keyViewOrder: [NSView] = [source, search, category, severity, recording, table, copy, clear]
-    for (current, next) in zip(keyViewOrder, keyViewOrder.dropFirst() + [source]) {
-      #expect(current.nextKeyView === next)
-    }
-
-    let window = NSWindow(contentViewController: controller)
-    window.makeKeyAndOrderFront(.none)
-    defer { window.orderOut(.none) }
-    #expect(window.makeFirstResponder(source))
-    window.selectNextKeyView(source)
-    let firstResponder = window.firstResponder
-    #expect(firstResponder === search || firstResponder === search.currentEditor())
+    try verifyKeyboardNavigation(controller, controls: controls)
 
     #expect(controller.numberOfRows(in: table) == 3)
     category.selectItem(withTitle: "Poster Actions")
@@ -73,7 +58,10 @@ struct LogTableCoverageTests {
     #expect(controller.numberOfRows(in: table) == 1)
     #expect(model.filteredHistoryRows().first?.category == "Application")
     #expect(model.filteredHistoryRows().first?.severity == "Information")
+  }
 
+  /// Network filters retain only the request matching category, severity and safe message search.
+  @Test func networkFiltersShowOnlyMatchingRequest() async throws {
     let network = NetworkHistoryPresentationFake()
     await network.append(.init(purpose: .movieSearch, result: .response(statusCode: 200)))
     await network.append(.init(purpose: .posterDownload, result: .transportFailure))
@@ -103,7 +91,35 @@ struct LogTableCoverageTests {
     #expect(networkController.numberOfRows(in: networkTable) == 1)
     #expect(networkModel.filteredHistoryRows().first?.category == "Movie Search")
     #expect(networkModel.filteredHistoryRows().first?.severity == "Information")
+  }
 
+  /// The source-to-search and control-loop path stays keyboard traversable.
+  /// - Throws: A missing labeled Log control.
+  private func verifyKeyboardNavigation(_ controller: LogViewController, controls: [NSView]) throws {
+    let source = try control(NSPopUpButton.self, label: "History source", in: controls)
+    let search = try control(NSSearchField.self, label: "Search safe history messages and categories", in: controls)
+    let category = try control(NSPopUpButton.self, label: "History category", in: controls)
+    let severity = try control(NSPopUpButton.self, label: "History severity", in: controls)
+    let table = try control(NSTableView.self, label: "History entries", in: controls)
+    let recording = controls.compactMap { $0 as? NSButton }.first { $0.title == "Record network history" }
+    let copy = controls.compactMap { $0 as? NSButton }.first { $0.title == "Copy" }
+    let clear = controls.compactMap { $0 as? NSButton }.first { $0.title == "Clear Activity" }
+    guard let recording, let copy, let clear else {
+      Issue.record("Expected all controls in the Log key-view loop")
+      return
+    }
+    let keyViewOrder: [NSView] = [source, search, category, severity, recording, table, copy, clear]
+    for (current, next) in zip(keyViewOrder, keyViewOrder.dropFirst() + [source]) {
+      #expect(current.nextKeyView === next)
+    }
+
+    let window = NSWindow(contentViewController: controller)
+    window.makeKeyAndOrderFront(.none)
+    defer { window.orderOut(.none) }
+    #expect(window.makeFirstResponder(source))
+    window.selectNextKeyView(source)
+    let firstResponder = window.firstResponder
+    #expect(firstResponder === search || firstResponder === search.currentEditor())
   }
 
   /// AppKit measures wrapped rows and recomputes their actual geometry after a narrow column resize.

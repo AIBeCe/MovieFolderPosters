@@ -1,6 +1,6 @@
 import AppKit
-import FileSystem
 import Common
+import FileSystem
 import Persistence
 import XCTest
 
@@ -52,6 +52,7 @@ final class R12004LocalInformationUITests: MovieFolderPostersUITestCase {
     assertOptions(5, in: setup)
     for label in sourceLabels { XCTAssertFalse(setup.checkBoxes[label].isEnabled) }
     setup.buttons["Add Collection"].click()
+    XCTAssertTrue(app.tables.cells.firstMatch.waitForExistence(timeout: 10))
     relaunch(app)
     var edit = openEdit(in: app)
     assertOptions(5, in: edit)
