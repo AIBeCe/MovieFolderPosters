@@ -20,6 +20,16 @@ nonisolated public struct MovieFolderServiceFactory: Sendable {
     return try locations.makePersistenceStore(directory: container.appendingPathComponent("ProcessingLocks"))
   }
 
+  /// Opens the shared store for user-saved search corrections.
+  /// - Returns: The correction store in the calling process's shared container.
+  /// - Throws: A storage location or persistence error.
+  public func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore {
+    let directory = try locations.appGroupContainerURL().appendingPathComponent("FolderSearchCorrections")
+
+    return FolderSearchCorrectionStore(
+      store: try locations.makePersistenceStore(directory: directory, maximumRecordBytes: 8 * 1024 * 1024))
+  }
+
   /// Creates best-effort history using explicitly supplied process storage locations.
   public func makeActivityRecorder() -> any MovieFolderActivityServicing {
     do {
