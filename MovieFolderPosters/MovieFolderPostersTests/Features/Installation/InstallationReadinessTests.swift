@@ -234,7 +234,7 @@ private struct InstallationReadinessPersistenceFixture {
 }
 
 /// Thread-safe fake that counts calls to each readiness evidence source.
-private final class InstallationReadinessCallRecorder: InstallationReadinessEnvironment, @unchecked Sendable {
+nonisolated final class InstallationReadinessCallRecorder: InstallationReadinessEnvironment, @unchecked Sendable {
   /// Protects counters that may be read from multiple executors.
   private let lock = NSLock()
   /// Number of installation metadata reads.

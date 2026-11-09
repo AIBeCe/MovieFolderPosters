@@ -32,13 +32,24 @@ struct ConfigurationFlowBuilder: ConfigurationFlowBuilding {
     let repository = try services.makeConfigurationRepository()
     let processingStore = try services.makeCollectionProcessingStore()
     let recovery = try? services.makeProcessingRecoveryService()
+    let accessTokenValidator: any ProviderAccessTokenValidating
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        accessTokenValidator = AcceptanceTestAccessTokenValidator()
+      } else {
+        accessTokenValidator = NetworkAccessTokenValidator(requestDelegate: MovieFolderNetworkRequestRecorder(
+          networkHistoryService: networkHistory))
+      }
+    #else
+      accessTokenValidator = NetworkAccessTokenValidator(requestDelegate: MovieFolderNetworkRequestRecorder(
+        networkHistoryService: networkHistory))
+    #endif
     let service = try DirectoryConfigurationService(
       repository: repository,
       authorizations: services.makePrivateAuthorizationStore(),
       accessTokenStore: services.makeProviderAccessTokenStore(),
       processingCleanup: processingStore, activity: activity,
-      accessTokenValidator: NetworkAccessTokenValidator(requestDelegate: MovieFolderNetworkRequestRecorder(
-        networkHistoryService: networkHistory)),
+      accessTokenValidator: accessTokenValidator,
       recovery: recovery)
     Task.detached {
       do {
@@ -64,6 +75,21 @@ struct ConfigurationFlowBuilder: ConfigurationFlowBuilding {
       utilityService: MovieFolderFinderActionService(environment: LiveMoviePosterActionEnvironment(services: services)))
   }
 }
+
+#if DEBUG
+/// Validates only known non-secret token sentinels for the isolated host acceptance suite.
+private struct AcceptanceTestAccessTokenValidator: ProviderAccessTokenValidating {
+  func validateAccessToken(_ token: String) async throws {
+    switch token {
+    case "acceptance-test-token", "acceptance-valid-token": return
+    case "acceptance-invalid-token": throw MovieMetadataError.authentication
+    case "acceptance-offline-token":
+      throw MovieMetadataError.transport(code: URLError.notConnectedToInternet.rawValue)
+    default: throw MovieMetadataError.invalidConfiguration
+    }
+  }
+}
+#endif
 
 /// Owns independent host flows and routes application-wide events and policies.
 @MainActor

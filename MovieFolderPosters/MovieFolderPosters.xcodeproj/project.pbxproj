@@ -74,6 +74,7 @@
 		F10000000000000000000004 /* FinderSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSync.swift; sourceTree = "<group>"; };
 		F10000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F10000000000000000000006 /* MovieFolderPostersFinder.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MovieFolderPostersFinder.entitlements; sourceTree = "<group>"; };
+		F11000000000000000000002 /* MovieFolderPostersAcceptanceDragSource.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MovieFolderPostersAcceptanceDragSource.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F50000000000000000000002 /* TestPoster.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = TestPoster.png; sourceTree = "<group>"; };
 		FD1000000000000000000003 /* FinderRuntimeEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderRuntimeEnvironment.swift; sourceTree = "<group>"; };
 		FD1000000000000000000004 /* MovieFolderContextMenuHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieFolderContextMenuHandler.swift; sourceTree = "<group>"; };
@@ -106,6 +107,11 @@
 		4EA84254307BE08B005A22E4 /* MovieFolderPostersUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MovieFolderPostersUITests;
+			sourceTree = "<group>";
+		};
+		F11000000000000000000003 /* MovieFolderPostersAcceptanceDragSource */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MovieFolderPostersAcceptanceDragSource;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -152,6 +158,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F11000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -159,6 +172,7 @@
 			isa = PBXGroup;
 			children = (
 				4EA8423B307BE08A005A22E4 /* MovieFolderPosters */,
+				F11000000000000000000003 /* MovieFolderPostersAcceptanceDragSource */,
 				F10000000000000000000003 /* MovieFolderPostersFinder */,
 				4EA8424A307BE08B005A22E4 /* MovieFolderPostersTests */,
 				4EA84254307BE08B005A22E4 /* MovieFolderPostersUITests */,
@@ -170,6 +184,7 @@
 			isa = PBXGroup;
 			children = (
 				4EA84239307BE08A005A22E4 /* MovieFolderPosters.app */,
+				F11000000000000000000002 /* MovieFolderPostersAcceptanceDragSource.app */,
 				F10000000000000000000002 /* MovieFolderPostersFinder.appex */,
 				4EA84247307BE08B005A22E4 /* MovieFolderPostersTests.xctest */,
 				4EA84251307BE08B005A22E4 /* MovieFolderPostersUITests.xctest */,
@@ -319,6 +334,26 @@
 			productReference = F10000000000000000000002 /* MovieFolderPostersFinder.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		F11000000000000000000001 /* MovieFolderPostersAcceptanceDragSource */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F11000000000000000000007 /* Build configuration list for PBXNativeTarget "MovieFolderPostersAcceptanceDragSource" */;
+			buildPhases = (
+				F11000000000000000000004 /* Sources */,
+				F11000000000000000000005 /* Frameworks */,
+				F11000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F11000000000000000000003 /* MovieFolderPostersAcceptanceDragSource */,
+			);
+			name = MovieFolderPostersAcceptanceDragSource;
+			productName = MovieFolderPostersAcceptanceDragSource;
+			productReference = F11000000000000000000002 /* MovieFolderPostersAcceptanceDragSource.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -366,6 +401,7 @@
 				4EA84238307BE08A005A22E4 /* MovieFolderPosters */,
 				4EA84246307BE08B005A22E4 /* MovieFolderPostersTests */,
 				4EA84250307BE08B005A22E4 /* MovieFolderPostersUITests */,
+				F11000000000000000000001 /* MovieFolderPostersAcceptanceDragSource */,
 			);
 		};
 /* End PBXProject section */
@@ -401,6 +437,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F11000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -432,6 +475,13 @@
 				F10000000000000000000007 /* FinderSync.swift in Sources */,
 				FD1000000000000000000001 /* FinderRuntimeEnvironment.swift in Sources */,
 				FD1000000000000000000002 /* MovieFolderContextMenuHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F11000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -787,6 +837,48 @@
 			};
 			name = Release;
 		};
+		F11000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N74TV576H8;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Acceptance Drag Source";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dag.fikios.MovieFolderPosters.AcceptanceDragSource;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F11000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N74TV576H8;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Acceptance Drag Source";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dag.fikios.MovieFolderPosters.AcceptanceDragSource;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -831,6 +923,15 @@
 			buildConfigurations = (
 				F1000000000000000000000F /* Debug */,
 				F10000000000000000000010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F11000000000000000000007 /* Build configuration list for PBXNativeTarget "MovieFolderPostersAcceptanceDragSource" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F11000000000000000000008 /* Debug */,
+				F11000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

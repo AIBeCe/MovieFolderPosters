@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Common
+import FileSystem
 import Testing
 
 @testable import MovieFolderPosters
@@ -140,6 +141,8 @@ final class LocalDataExportSourcesFake: LocalDataExportServicing, @unchecked Sen
   private var holdsStorage = false
   /// Whether a metadata capture is currently suspended.
   var isStorageHeld: Bool { lock.withLock { storageContinuation != nil } }
+  /// Optional report supplied by presentation tests.
+  private let report: ApplicationLocalStorageReport?
   /// Holds one metadata capture without timers.
   func holdStorage() { lock.withLock { holdsStorage = true } }
   /// Releases held metadata capture.
@@ -153,7 +156,10 @@ final class LocalDataExportSourcesFake: LocalDataExportServicing, @unchecked Sen
   }
   /// Creates a controlled source without production storage.
   /// - Parameter evidence: Initial retained history and privacy evidence.
-  init(_ evidence: LocalDataExportInputs) { self.evidence = evidence }
+  init(_ evidence: LocalDataExportInputs, storageReport: ApplicationLocalStorageReport? = nil) {
+    self.evidence = evidence
+    report = storageReport
+  }
   /// Replaces committed evidence between preview and save.
   /// - Parameter evidence: New retained history and privacy evidence.
   func replace(_ evidence: LocalDataExportInputs) { lock.withLock { self.evidence = evidence } }
@@ -178,7 +184,7 @@ final class LocalDataExportSourcesFake: LocalDataExportServicing, @unchecked Sen
       }
     }
 
-    return .capture(sharedContainer: nil, hostApplicationSupport: nil)
+    return report ?? .capture(sharedContainer: nil, hostApplicationSupport: nil)
   }
 }
 
@@ -356,6 +362,51 @@ struct LocalDataPresentationTests {
     #expect(root is NSScrollView)
     #expect(table.tableColumns.map(\.title) == ["Category", "Estimated bytes", "Files", "Completeness"])
     #expect(table.numberOfRows == 0)
+  }
+
+  /// Shows unavailable and incomplete estimates as unknown instead of measured zero.
+  /// - Throws: Temporary filesystem setup or missing native controls.
+  @Test func unavailableAndIncompleteEstimatesAreNotPresentedAsZero() async throws {
+    _ = NSApplication.shared
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let posters = root.appendingPathComponent("Posters")
+    try FileManager.default.createDirectory(at: posters, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: posters.appendingPathComponent("unreadable-entry"),
+      withDestinationURL: root.appendingPathComponent("missing-target"))
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let report = ApplicationLocalStorageReport.capture(sharedContainer: root, hostApplicationSupport: nil)
+    let source = LocalDataExportSourcesFake(.init(activity: [], network: [], privacy: Data([1])), storageReport: report)
+    let pane = LocalDataPane(service: source)
+    let window = NSWindow(contentViewController: pane)
+    window.makeKeyAndOrderFront(.none)
+    defer { window.orderOut(.none) }
+    let controls = descendants(pane.view)
+    try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Refresh" }).performClick(.none)
+
+    for _ in 0..<20 where controls.compactMap({ $0 as? NSTableView }).first?.numberOfRows == 0 {
+      await Task.yield()
+    }
+
+    let table = try #require(controls.compactMap { $0 as? NSTableView }.first)
+    let postersRow = try #require(report.categories.firstIndex { $0.category == .posters })
+    let unavailableRow = try #require(report.categories.firstIndex { $0.category == .hostAuthorization })
+    let bytesColumn = try #require(table.tableColumns.first { $0.identifier.rawValue == "bytes" })
+    let filesColumn = try #require(table.tableColumns.first { $0.identifier.rawValue == "files" })
+    let partialBytes = try #require(pane.tableView(table, viewFor: bytesColumn, row: postersRow) as? NSTextField)
+    let partialFiles = try #require(pane.tableView(table, viewFor: filesColumn, row: postersRow) as? NSTextField)
+    let unavailableBytes = try #require(
+      pane.tableView(table, viewFor: bytesColumn, row: unavailableRow) as? NSTextField)
+    let unavailableFiles = try #require(
+      pane.tableView(table, viewFor: filesColumn, row: unavailableRow) as? NSTextField)
+
+    #expect(report.categories[postersRow].status == .partial)
+    #expect(report.categories[unavailableRow].status == .unavailable)
+    #expect(partialBytes.stringValue == "Incomplete")
+    #expect(partialFiles.stringValue == "Incomplete")
+    #expect(unavailableBytes.stringValue == "Unavailable")
+    #expect(unavailableFiles.stringValue == "Unavailable")
   }
 
   /// Uses native multiselection, date, and exact-preview controls.

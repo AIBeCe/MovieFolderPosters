@@ -8,6 +8,38 @@ import Testing
 
 /// Verifies local utility admission using real disposable authorization and processing stores.
 struct MovieFolderFinderActionServiceTests {
+  /// Inspection describes current collection policy without promoting saved movie evidence to confirmation.
+  @Test func inspectionStatusUsesCurrentIdentityAndKeepsEvidenceQualified() async throws {
+    let fixture = try MovieFolderFinderActionTestEnvironment()
+    defer { fixture.cleanup() }
+    try seed(fixture, title: "Dune")
+    let request = try MovieFolderContextMenuRequest(rootID: fixture.request.rootID,
+      target: .child(name: fixture.request.childName, identity: fixture.request.identity), action: .inspect)
+
+    let status = try await MovieFolderFinderActionService(environment: fixture).inspectionStatus(request)
+
+    #expect(status.contains("Current collection: Active; folder included; matching:"))
+    #expect(status.contains(
+      "Saved suppression, identity and outcome evidence below belongs to the recorded assessment."))
+    #expect(!status.contains("Dune"))
+  }
+
+  /// A stale child identity cannot open inspection for a replacement folder at the same path.
+  @Test func inspectionStatusRejectsReplacementChildIdentity() async throws {
+    let fixture = try MovieFolderFinderActionTestEnvironment()
+    defer { fixture.cleanup() }
+    try seed(fixture, title: "Dune")
+    let oldFolder = fixture.movies.appendingPathComponent(fixture.request.childName)
+    try FileManager.default.moveItem(at: oldFolder, to: fixture.movies.appendingPathComponent("Previous"))
+    try FileManager.default.createDirectory(at: oldFolder, withIntermediateDirectories: false)
+    let request = try MovieFolderContextMenuRequest(rootID: fixture.request.rootID,
+      target: .child(name: fixture.request.childName, identity: fixture.request.identity), action: .inspect)
+
+    await #expect(throws: MovieFolderUtilityError.changed) {
+      try await MovieFolderFinderActionService(environment: fixture).inspectionStatus(request)
+    }
+  }
+
   /// Artwork failure and partial collection work preserve a verified movie identity.
   @Test func copiesVerifiedFailureAndRetainsSettingsFence() async throws {
     let fixture = try MovieFolderFinderActionTestEnvironment()
@@ -336,6 +368,14 @@ private struct MovieFolderFinderActionTestEnvironment: MoviePosterActionEnvironm
   func makeConfigurationRepository() throws -> ConfigurationRepository { repository }
   func makePrivateAuthorizationStore() throws -> PersistenceStore { authorizations }
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore { processing }
+  /// Uses the test's disposable storage instead of actor-isolated protocol defaults.
+  func makePersistenceStore(directory: URL, maximumRecordBytes: Int?) throws -> PersistenceStore {
+    try PersistenceStore(directory: directory, maximumRecordBytes: maximumRecordBytes)
+  }
+  func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
+    ProcessingRecoveryService(store: try makePersistenceStore(
+      directory: container.appendingPathComponent("ProcessingRecovery"), maximumRecordBytes: 8_192))
+  }
   /// Removes all test-owned resources after leases and operations finish.
   func cleanup() { try? FileManager.default.removeItem(at: container) }
 }

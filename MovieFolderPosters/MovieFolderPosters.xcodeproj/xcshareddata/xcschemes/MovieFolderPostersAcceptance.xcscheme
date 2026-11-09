@@ -6,6 +6,10 @@
             <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="4EA84238307BE08A005A22E4" BuildableName="MovieFolderPosters.app" BlueprintName="MovieFolderPosters" ReferencedContainer="container:MovieFolderPosters.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="F11000000000000000000001" BuildableName="MovieFolderPostersAcceptanceDragSource.app" BlueprintName="MovieFolderPostersAcceptanceDragSource" ReferencedContainer="container:MovieFolderPosters.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES" shouldAutocreateTestPlan="YES">

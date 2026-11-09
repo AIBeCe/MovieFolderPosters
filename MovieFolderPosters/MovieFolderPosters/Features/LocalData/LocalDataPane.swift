@@ -40,7 +40,8 @@ final class LocalDataPane: NSViewController, NSTableViewDataSource, NSTableViewD
 
   override func loadView() {
     let refresh = NSButton(title: "Refresh", target: self, action: #selector(refreshUsage))
-    let export = NSButton(title: "Export Selected Local Data…", target: self, action: #selector(prepareLocalDataExport))
+    let export = NSButton(
+      title: "Export Selected Local Data…", target: self, action: #selector(prepareLocalDataExport))
     for (identifier, title, width) in [
       ("category", "Category", 190.0), ("bytes", "Estimated bytes", 130.0),
       ("files", "Files", 70.0), ("status", "Completeness", 110.0)
@@ -122,12 +123,26 @@ final class LocalDataPane: NSViewController, NSTableViewDataSource, NSTableViewD
     let usage = categories[row]
     let text =
       switch tableColumn?.identifier.rawValue {
-      case "bytes": ByteCountFormatter.string(fromByteCount: Int64(clamping: usage.logicalBytes), countStyle: .file)
-      case "files": String(usage.fileCount)
+      case "bytes": estimateText(usage.logicalBytes, status: usage.status, asByteCount: true)
+      case "files": estimateText(usage.fileCount, status: usage.status, asByteCount: false)
       case "status": usage.status == .notCreated ? "Not created" : usage.status.rawValue.capitalized
       default: usage.category.title
       }
 
     return NSTextField(labelWithString: text)
+  }
+
+  /// Keeps missing evidence distinct from a measured zero in the numeric columns.
+  /// - Parameters:
+  ///   - value: Measured byte or file total.
+  ///   - status: Completeness of the underlying measurement.
+  ///   - asByteCount: Whether to format the value as a byte estimate.
+  /// - Returns: The estimate or a clear unavailable/incomplete label.
+  private func estimateText(_ value: UInt64, status: DirectoryStorage.Status, asByteCount: Bool) -> String {
+    if status == .unavailable { return "Unavailable" }
+    if status == .partial && value == .zero { return "Incomplete" }
+    if asByteCount { return ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file) }
+
+    return String(value)
   }
 }

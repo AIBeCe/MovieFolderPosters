@@ -341,7 +341,9 @@ final class InclusionAuthorizationLifetimeProbe: DirectoryAuthorizationProviding
 }
 
 /// Reacquires real shared grants at the postcommit history boundary instead of relying on scheduling races.
-actor InclusionCommittedHistoryProbe: MovieFolderActivityServicing {
+nonisolated final class InclusionCommittedHistoryProbe: MovieFolderActivityServicing, @unchecked Sendable {
+  /// Protects activity and commit observations accessed across the async history boundary.
+  private let stateLock = NSLock()
   /// Committed collection repository, which must already be released by the mutating service.
   private let repository: ConfigurationRepository
   /// Shared authorization records whose prior lease must have drained.
@@ -353,15 +355,20 @@ actor InclusionCommittedHistoryProbe: MovieFolderActivityServicing {
   /// Weak directory-access lifetime observer.
   private let authorization: InclusionAuthorizationLifetimeProbe
   /// Whether the history callback observed the actual committed exclusion.
-  private(set) var observedCommittedExclusion = false
+  private var storedObservedCommittedExclusion = false
+  var observedCommittedExclusion: Bool { stateLock.withLock { storedObservedCommittedExclusion } }
   /// Whether the history callback could reacquire the bookmark's exclusive record access.
-  private(set) var observedReleasedBookmarkAccess = false
+  private var storedObservedReleasedBookmarkAccess = false
+  var observedReleasedBookmarkAccess: Bool { stateLock.withLock { storedObservedReleasedBookmarkAccess } }
   /// Whether the prior directory access had drained before optional history.
-  private(set) var observedReleasedDirectoryAccess = false
+  private var storedObservedReleasedDirectoryAccess = false
+  var observedReleasedDirectoryAccess: Bool { stateLock.withLock { storedObservedReleasedDirectoryAccess } }
   /// Whether the history callback could read settings through a newly acquired configuration access.
-  private(set) var observedReleasedConfigurationAccess = false
+  private var storedObservedReleasedConfigurationAccess = false
+  var observedReleasedConfigurationAccess: Bool { stateLock.withLock { storedObservedReleasedConfigurationAccess } }
   /// Actual events crossing this optional history boundary.
-  private(set) var recordedEvents: [MovieFolderActivityLogEvent] = []
+  private var storedRecordedEvents: [MovieFolderActivityLogEvent] = []
+  var recordedEvents: [MovieFolderActivityLogEvent] { stateLock.withLock { storedRecordedEvents } }
 
   /// Retains the independent stores and observers needed to verify the history boundary.
   init(
@@ -375,25 +382,30 @@ actor InclusionCommittedHistoryProbe: MovieFolderActivityServicing {
     self.authorization = authorization
   }
 
-  func record(_ event: MovieFolderActivityLogEvent) -> Bool {
-    recordedEvents.append(event)
-    observedReleasedDirectoryAccess = !authorization.hasActiveDirectoryAccess
+  func record(_ event: MovieFolderActivityLogEvent) async -> Bool {
+    stateLock.withLock {
+      storedRecordedEvents.append(event)
+      storedObservedReleasedDirectoryAccess = !authorization.hasActiveDirectoryAccess
+    }
     do {
       let key = "host-\(directory.id)-\(directory.authorizationVersion)"
       let bookmarkAccess = try authorizations.acquireAccess(for: key)
-      observedReleasedBookmarkAccess = bookmarkAccess != nil
       let configuration = try repository.read()
-      observedReleasedConfigurationAccess = true
-      observedCommittedExclusion = configuration.directories.first { $0.id == directory.id }?
+      let committedExclusion = configuration.directories.first { $0.id == directory.id }?
         .processingConfiguration.excludesFolder(identity: childIdentity) == true
+      stateLock.withLock {
+        storedObservedReleasedBookmarkAccess = bookmarkAccess != nil
+        storedObservedReleasedConfigurationAccess = true
+        storedObservedCommittedExclusion = committedExclusion
+      }
       withExtendedLifetime(bookmarkAccess) {}
     } catch { return false }
 
     return true
   }
 
-  func entries() -> [MovieFolderActivityLogEntry] { [] }
-  func clear() {}
+  func entries() async throws -> [MovieFolderActivityLogEntry] { [] }
+  func clear() async throws {}
 }
 
 /// Records scheduler intent without posting any distributed notification.

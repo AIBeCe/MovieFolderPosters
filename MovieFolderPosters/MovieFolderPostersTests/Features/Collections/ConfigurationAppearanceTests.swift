@@ -51,6 +51,31 @@ func appearanceExamplesApplyAndPersistTheClickedChoice() throws {
   #expect(buttons.filter { $0.state == .on }.count == 1)
 }
 
+/// Verifies acceptance appearance persistence uses its isolated file and leaves user defaults untouched.
+@Suite("Acceptance appearance storage")
+struct AcceptanceAppearanceStorageTests {
+  @Test @MainActor
+  func acceptanceAppearanceStoragePersistsWithoutReadingOrWritingUserDefaults() throws {
+    let suite = "AcceptanceAppearanceTests.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(AppColorAppearance.light.rawValue, forKey: "nativeAppColorAppearance")
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AcceptanceAppearance-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("AppAppearance")
+
+    let appearance = AppAppearanceSettings(defaults: defaults, acceptanceStorageURL: file)
+    #expect(appearance.choice == .system)
+    appearance.select(.dark)
+
+    #expect(try String(contentsOf: file, encoding: .utf8) == AppColorAppearance.dark.rawValue)
+    #expect(defaults.string(forKey: "nativeAppColorAppearance") == AppColorAppearance.light.rawValue)
+    #expect(AppAppearanceSettings(defaults: defaults, acceptanceStorageURL: file).choice == .dark)
+  }
+}
+
 /// Verifies that navigation requests use a weak delegate.
 @MainActor
 @Test func navigationRequestsUseAWeakDelegate() throws {

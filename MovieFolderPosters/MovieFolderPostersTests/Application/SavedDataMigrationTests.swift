@@ -61,7 +61,7 @@ nonisolated final class SavedDataMigrationProbe: SavedDataMigrationServicing, Se
 }
 
 /// The command's report accurately distinguishes upgrades from current or absent records.
-@Test func savedDataMigrationReportUsesActualCounts() {
+@Test @MainActor func savedDataMigrationReportUsesActualCounts() {
   let report = MovieFolderStorageMigrationReport(migratedRecordCount: 2, skippedCurrentRecordCount: 3,
     missingCollectionOutcomeRecordCount: 1)
   #expect(report.completionMessage.contains("Upgraded 2 saved records"))

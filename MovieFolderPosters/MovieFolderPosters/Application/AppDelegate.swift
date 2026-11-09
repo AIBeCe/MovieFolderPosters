@@ -42,7 +42,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidat
   /// Builds the live root for AppKit's normal launch path.
   override convenience init() {
     let services = MovieFolderServiceFactory(locations: MovieFolderSystemStorageLocations())
-    self.init(coordinator: AppCoordinator(services: services))
+    self.init(coordinator: AppCoordinator(services: services, appearance: Self.makeAppearanceSettings()))
+  }
+
+  /// Uses disposable appearance storage only for the isolated Debug acceptance launch.
+  private static func makeAppearanceSettings() -> AppAppearanceSettings {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--acceptance-test") {
+        guard let sharedRoot = try? MovieFolderEnvironment.appGroupContainerURL() else {
+          preconditionFailure("Acceptance appearance storage requires a valid isolated test root.")
+        }
+        return AppAppearanceSettings(
+          acceptanceStorageURL: sharedRoot.appendingPathComponent("AppAppearance"))
+      }
+    #endif
+
+    return AppAppearanceSettings()
   }
 
   /// Retains the application root before any lifecycle event is delivered.

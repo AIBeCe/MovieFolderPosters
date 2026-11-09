@@ -85,8 +85,8 @@ struct ConfigurationCoordinatorCoverageTests {
     coordinator.configurationViewControllerDidRequestInstallationReadiness(controller)
     await installation.waitForChecks(1)
     coordinator.configurationViewControllerDidRequestInstallationReadiness(controller)
-    #expect(await installation.checkCount == 1)
-    await installation.completeCheck()
+    #expect(installation.checkCount == 1)
+    installation.completeCheck()
     await installation.waitForCompletions(1)
     #expect(window.isVisible)
   }
@@ -286,27 +286,41 @@ private actor ConfigurationCoverageActivity: MovieFolderActivityServicing {
 }
 
 /// Supplies controlled installation evidence and exposes read completion to the test.
-private actor ConfigurationCoverageInstallation: InstallationReadinessServicing {
+nonisolated private final class ConfigurationCoverageInstallation: InstallationReadinessServicing,
+  @unchecked Sendable {
+  /// Protects gate state shared between the test and the coordinator's asynchronous request.
+  private let lock = NSLock()
   /// Number of readiness reports requested by the coordinator.
-  private(set) var checkCount = Int.zero
+  private var storedCheckCount = Int.zero
+  /// Thread-safe count of readiness reports requested.
+  var checkCount: Int { lock.withLock { storedCheckCount } }
   /// Number of held report calls that returned to the coordinator.
-  private(set) var completedCheckCount = Int.zero
+  private var storedCompletedCheckCount = Int.zero
+  /// Thread-safe count of held report calls that returned.
+  var completedCheckCount: Int { lock.withLock { storedCompletedCheckCount } }
   /// Holds the active report until the test exercises the coordinator's overlap guard.
   private var checkContinuation: CheckedContinuation<Void, Never>?
 
   /// Returns safe fixed evidence after recording the explicit check.
   func check() async -> InstallationReadinessReport {
-    checkCount += 1
-    await withCheckedContinuation { checkContinuation = $0 }
-    completedCheckCount += 1
+    await withCheckedContinuation { continuation in
+      lock.withLock {
+        storedCheckCount += 1
+        checkContinuation = continuation
+      }
+    }
+    lock.withLock { storedCompletedCheckCount += 1 }
 
     return InstallationReadinessReport(text: "Isolated installation fixture")
   }
 
   /// Completes the report currently held by the deterministic test gate.
   func completeCheck() {
-    checkContinuation?.resume()
-    checkContinuation = .none
+    let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+      defer { checkContinuation = .none }
+      return checkContinuation
+    }
+    continuation?.resume()
   }
 
   /// Yields until the requested number of held reports has returned.

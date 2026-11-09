@@ -174,7 +174,7 @@ final class R12004LocalInformationUITests: MovieFolderPostersUITestCase {
     setOptions(1, in: defaults)
     defaults.buttons[XCUIIdentifierCloseWindow].click()
     app.terminate()
-    try seedUnresolvedOutcome(collectionRoot: collection, child: child, sharedRoot: support.root,
+    try seedProcessingOutcome(collectionRoot: collection, child: child, sharedRoot: support.root,
       state: .failed, reason: .metadataFailure)
     app.launch()
     try retrySelected(child: child, app: app, root: support.root, closeResults: false)
@@ -219,7 +219,7 @@ final class R12004LocalInformationUITests: MovieFolderPostersUITestCase {
     setOptions(1, in: settings)
     settings.buttons[XCUIIdentifierCloseWindow].click()
     app.terminate()
-    try seedUnresolvedOutcome(collectionRoot: collection, child: child, sharedRoot: support.root,
+    try seedProcessingOutcome(collectionRoot: collection, child: child, sharedRoot: support.root,
       state: .failed, reason: .metadataFailure)
     try appendUnresolvedSibling(sibling, collection: collection, root: support.root)
     app.launch()
@@ -334,7 +334,7 @@ extension R12004LocalInformationUITests {
     try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
     addCollection(at: collection, in: app, main: app.windows["Movie Folder Posters"])
     app.terminate()
-    try seedUnresolvedOutcome(collectionRoot: collection, child: child, sharedRoot: root,
+    try seedProcessingOutcome(collectionRoot: collection, child: child, sharedRoot: root,
       state: retryable ? .failed : .unresolved, reason: retryable ? .metadataFailure : .manualMatchingRequired)
     app.launch()
     XCTAssertTrue(app.windows["Movie Folder Posters"].waitForExistence(timeout: 10))
@@ -402,7 +402,7 @@ extension R12004LocalInformationUITests {
     setOptions(1 << index, in: settings)
     settings.buttons[XCUIIdentifierCloseWindow].click()
     app.terminate()
-    try seedUnresolvedOutcome(collectionRoot: collection, child: child, sharedRoot: support.root,
+    try seedProcessingOutcome(collectionRoot: collection, child: child, sharedRoot: support.root,
       state: .failed, reason: .metadataFailure)
     app.launch()
     try retrySelected(child: child, app: app, root: support.root)

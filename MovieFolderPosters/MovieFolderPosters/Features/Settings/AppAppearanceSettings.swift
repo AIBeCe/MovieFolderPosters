@@ -17,6 +17,8 @@ final class AppAppearanceSettings {
   private static let defaultsKey = "nativeAppColorAppearance"
   /// The defaults store used to persist appearance selection.
   private let defaults: UserDefaults
+  /// Acceptance-only preference file that avoids reading or writing standard user defaults.
+  private let acceptanceStorageURL: URL?
 
   /// The current color appearance choice.
   private(set) var choice: AppColorAppearance
@@ -25,10 +27,18 @@ final class AppAppearanceSettings {
 
   /// Loads the saved choice, falling back to the system appearance.
   ///
-  /// - Parameter defaults: The defaults store to read and write.
-  init(defaults: UserDefaults = .standard) {
+  /// - Parameters:
+  ///   - defaults: The defaults store used by normal app launches.
+  ///   - acceptanceStorageURL: Isolated Debug acceptance storage, when supplied.
+  init(defaults: UserDefaults = .standard, acceptanceStorageURL: URL? = .none) {
     self.defaults = defaults
-    let storedValue = defaults.string(forKey: Self.defaultsKey)
+    self.acceptanceStorageURL = acceptanceStorageURL
+    let storedValue: String?
+    if let acceptanceStorageURL {
+      storedValue = try? String(contentsOf: acceptanceStorageURL, encoding: .utf8)
+    } else {
+      storedValue = defaults.string(forKey: Self.defaultsKey)
+    }
     choice = storedValue.flatMap(AppColorAppearance.init(rawValue:)) ?? .system
   }
 
@@ -38,7 +48,11 @@ final class AppAppearanceSettings {
   func select(_ choice: AppColorAppearance) {
     guard choice != self.choice else { return }
     self.choice = choice
-    defaults.set(choice.rawValue, forKey: Self.defaultsKey)
+    if let acceptanceStorageURL {
+      try? Data(choice.rawValue.utf8).write(to: acceptanceStorageURL, options: .atomic)
+    } else {
+      defaults.set(choice.rawValue, forKey: Self.defaultsKey)
+    }
     delegate?.appAppearanceSettingsDidChange(self)
   }
 

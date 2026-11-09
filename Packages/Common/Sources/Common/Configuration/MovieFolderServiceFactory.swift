@@ -154,9 +154,45 @@ nonisolated private struct UnavailableActivityService: MovieFolderActivityServic
 #if DEBUG
   /// Provides only a non-secret fixture token and never reaches the user's Keychain.
   nonisolated private struct AcceptanceTestAccessTokenStore: ProviderAccessTokenStoring {
-    func read() throws -> String? { "acceptance-test-token" }
-    func save(_ value: String) throws { throw ConfigurationError.invalidAccessToken }
-    func remove() throws { throw ConfigurationError.invalidAccessToken }
+    func read() throws -> String? {
+      let url = try tokenFileURL()
+      guard FileManager.default.fileExists(atPath: url.path) else { return "acceptance-test-token" }
+
+      do {
+        let data = try Data(contentsOf: url)
+        guard let token = String(data: data, encoding: .utf8) else {
+          throw ConfigurationError.credentialStorage(-1)
+        }
+
+        return token
+      } catch let error as ConfigurationError {
+        throw error
+      } catch {
+        throw ConfigurationError.credentialStorage(-1)
+      }
+    }
+
+    func save(_ value: String) throws {
+      do {
+        try Data(value.utf8).write(to: tokenFileURL(), options: .atomic)
+      } catch {
+        throw ConfigurationError.credentialStorage(-1)
+      }
+    }
+
+    func remove() throws {
+      let url = try tokenFileURL()
+      guard FileManager.default.fileExists(atPath: url.path) else { return }
+      do {
+        try FileManager.default.removeItem(at: url)
+      } catch {
+        throw ConfigurationError.credentialStorage(-1)
+      }
+    }
+
+    private func tokenFileURL() throws -> URL {
+      try MovieFolderEnvironment.appGroupContainerURL().appendingPathComponent("AcceptanceTestAccessToken")
+    }
   }
 #endif
 

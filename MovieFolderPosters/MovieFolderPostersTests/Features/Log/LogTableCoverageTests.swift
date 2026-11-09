@@ -7,6 +7,105 @@ import Testing
 /// Verifies the actual visible activity fields and their complete copyable multiline text.
 @MainActor
 struct LogTableCoverageTests {
+  /// Category, severity and text filters narrow rendered rows while the native key-view loop stays usable.
+  /// - Throws: A missing Log control or table cell.
+  @Test func structuredFiltersCombineAndControlsRemainKeyboardTraversable() async throws {
+    _ = NSApplication.shared
+    let model = LogViewModel(activityHistoryService: MovieFolderActivityServiceFake())
+    await model.record(MovieFolderActivityLogEvent(action: .posterRefresh, status: .failed))
+    await model.record(MovieFolderActivityLogEvent(action: .applicationOpened, status: .succeeded))
+    await model.record(MovieFolderActivityLogEvent(action: .automaticProcessing, status: .partial))
+
+    let controller = LogViewController(viewModel: model)
+    let controls = nativeViews(in: controller.view)
+    let source = try control(NSPopUpButton.self, label: "History source", in: controls)
+    let search = try control(NSSearchField.self, label: "Search safe history messages and categories", in: controls)
+    let category = try control(NSPopUpButton.self, label: "History category", in: controls)
+    let severity = try control(NSPopUpButton.self, label: "History severity", in: controls)
+    let table = try control(NSTableView.self, label: "History entries", in: controls)
+    let recording = try #require(controls.compactMap { $0 as? NSButton }
+      .first { $0.title == "Record network history" })
+    let copy = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Copy" })
+    let clear = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Clear Activity" })
+    let keyViewOrder: [NSView] = [source, search, category, severity, recording, table, copy, clear]
+    for (current, next) in zip(keyViewOrder, keyViewOrder.dropFirst() + [source]) {
+      #expect(current.nextKeyView === next)
+    }
+
+    let window = NSWindow(contentViewController: controller)
+    window.makeKeyAndOrderFront(.none)
+    defer { window.orderOut(.none) }
+    #expect(window.makeFirstResponder(source))
+    window.selectNextKeyView(source)
+    let firstResponder = window.firstResponder
+    #expect(firstResponder === search || firstResponder === search.currentEditor())
+
+    #expect(controller.numberOfRows(in: table) == 3)
+    category.selectItem(withTitle: "Poster Actions")
+    try applyFilterAction(from: category)
+    severity.selectItem(withTitle: "Error")
+    try applyFilterAction(from: severity)
+    search.stringValue = "poster"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: search))
+    #expect(controller.numberOfRows(in: table) == 1)
+    let textColumn = try #require(table.tableColumns.first { $0.identifier.rawValue == "text" })
+    let categoryColumn = try #require(table.tableColumns.first { $0.identifier.rawValue == "category" })
+    let severityColumn = try #require(table.tableColumns.first { $0.identifier.rawValue == "severity" })
+    let message = try #require(
+      controller.tableView(table, viewFor: textColumn, row: 0) as? LogHistoryTextCellView)
+    let categoryCell = try #require(
+      controller.tableView(table, viewFor: categoryColumn, row: 0) as? LogHistoryTextCellView)
+    let severityCell = try #require(
+      controller.tableView(table, viewFor: severityColumn, row: 0) as? LogHistoryTextCellView)
+    #expect(message.textField?.stringValue.localizedCaseInsensitiveContains("poster") == true)
+    #expect(categoryCell.textField?.stringValue == "Poster Actions")
+    #expect(severityCell.textField?.stringValue == "Error")
+
+    category.selectItem(withTitle: "Application")
+    try applyFilterAction(from: category)
+    #expect(controller.numberOfRows(in: table) == 0)
+    category.selectItem(withTitle: "All categories")
+    try applyFilterAction(from: category)
+    severity.selectItem(withTitle: "Information")
+    try applyFilterAction(from: severity)
+    search.stringValue = "Application startup"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: search))
+    #expect(controller.numberOfRows(in: table) == 1)
+    #expect(model.filteredHistoryRows().first?.category == "Application")
+    #expect(model.filteredHistoryRows().first?.severity == "Information")
+
+    let network = NetworkHistoryPresentationFake()
+    await network.append(.init(purpose: .movieSearch, result: .response(statusCode: 200)))
+    await network.append(.init(purpose: .posterDownload, result: .transportFailure))
+    let networkModel = LogViewModel(
+      activityHistoryService: MovieFolderActivityServiceFake(), networkHistoryService: network)
+    let networkController = LogViewController(viewModel: networkModel)
+    let networkWindow = NSWindow(contentViewController: networkController)
+    networkWindow.makeKeyAndOrderFront(.none)
+    defer { networkWindow.orderOut(.none) }
+    let networkControls = nativeViews(in: networkController.view)
+    let networkSource = try control(NSPopUpButton.self, label: "History source", in: networkControls)
+    let networkCategory = try control(NSPopUpButton.self, label: "History category", in: networkControls)
+    let networkSeverity = try control(NSPopUpButton.self, label: "History severity", in: networkControls)
+    let networkSearch = try control(
+      NSSearchField.self, label: "Search safe history messages and categories", in: networkControls)
+    let networkTable = try control(NSTableView.self, label: "History entries", in: networkControls)
+    networkSource.selectItem(withTitle: "Network")
+    try applyFilterAction(from: networkSource)
+    for _ in 0..<100 where networkModel.historyRows().count < 2 { await Task.yield() }
+    networkCategory.selectItem(withTitle: "Movie Search")
+    try applyFilterAction(from: networkCategory)
+    networkSeverity.selectItem(withTitle: "Information")
+    try applyFilterAction(from: networkSeverity)
+    networkSearch.stringValue = "HTTP response 200"
+    networkController.controlTextDidChange(
+      Notification(name: NSControl.textDidChangeNotification, object: networkSearch))
+    #expect(networkController.numberOfRows(in: networkTable) == 1)
+    #expect(networkModel.filteredHistoryRows().first?.category == "Movie Search")
+    #expect(networkModel.filteredHistoryRows().first?.severity == "Information")
+
+  }
+
   /// AppKit measures wrapped rows and recomputes their actual geometry after a narrow column resize.
   @Test func historyRowsWrapAndRecalculateHeightWithoutLosingSelection() async throws {
     _ = NSApplication.shared
@@ -154,5 +253,30 @@ struct LogTableCoverageTests {
     await model.clear()
     #expect(controller.numberOfRows(in: table) == 0)
     #expect(controller.tableView(table, viewFor: table.tableColumns.first, row: 0) == .none)
+  }
+
+  /// Applies an AppKit control's configured target/action pair as a user selection would.
+  /// - Parameter control: Filter control whose current selection should be applied.
+  /// - Throws: When the control has no target or action.
+  private func applyFilterAction(from control: NSPopUpButton) throws {
+    let target = try #require(control.target)
+    let action = try #require(control.action)
+    #expect(NSApplication.shared.sendAction(action, to: target, from: control))
+  }
+
+  /// Collects an AppKit subtree so tests can locate controls by their accessible labels.
+  /// - Parameter root: Root view whose descendants should be included.
+  /// - Returns: The root and descendants in tree order.
+  private func nativeViews(in root: NSView) -> [NSView] { [root] + root.subviews.flatMap(nativeViews) }
+
+  /// Finds a view by type and its stable accessibility label.
+  /// - Parameters:
+  ///   - type: Expected AppKit view subclass.
+  ///   - label: Accessibility label assigned by the controller.
+  ///   - views: Candidate native views.
+  /// - Returns: The matching control.
+  /// - Throws: When the controller does not expose the expected control.
+  private func control<View: NSView>(_ type: View.Type, label: String, in views: [NSView]) throws -> View {
+    try #require(views.compactMap { $0 as? View }.first { $0.accessibilityLabel() == label })
   }
 }
