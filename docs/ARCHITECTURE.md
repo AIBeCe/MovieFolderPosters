@@ -102,6 +102,58 @@ collections, preferences, and access tokens. Finder inclusion requests go throug
 a separate interface at the coordinator. One configuration service actor implements
 these capabilities and owns their persistence coordination.
 
+## Implemented module dependency graph
+
+The diagram below records the current Xcode target links and Swift package manifest
+dependencies. Arrows point from a dependent module or target to the module it imports.
+Test targets and their test-only dependencies are omitted.
+
+```mermaid
+flowchart TD
+    Host["AppKit host app"]
+    Finder["Finder extension"]
+
+    Common["Common<br/>Movie workflows, processing,<br/>configuration and app-facing NetworkClient"]
+    FileSystem["FileSystem<br/>Directory and poster operations"]
+    Persistence["Persistence<br/>Storage mechanisms"]
+    Parsing["MovieFolderParsing<br/>Release-name parsing"]
+    Log["Log<br/>Activity storage and retrieval"]
+    Network["Network<br/>Public movie API and provider composition"]
+    Contracts["Contracts<br/>Provider interface and shared values"]
+    HTTPTransport["HTTPTransport<br/>HTTP request execution"]
+    TMDb["TMDb<br/>TMDb provider implementation"]
+
+    Host --> Common
+    Host --> FileSystem
+    Host --> Persistence
+    Host --> Parsing
+
+    Finder --> Common
+    Finder --> FileSystem
+    Finder --> Persistence
+
+    Common --> Network
+    Common --> FileSystem
+    Common --> Persistence
+    Common --> Log
+    Common --> Parsing
+
+    Log --> Persistence
+
+    Network --> Contracts
+    Network --> HTTPTransport
+    Network --> TMDb
+
+    TMDb --> Contracts
+    TMDb --> HTTPTransport
+```
+
+The host and Finder targets do not depend directly on TMDb. Common depends on the
+Network facade; Network composes the TMDb provider through the shared Contracts API.
+HTTPTransport is a separate package used by both Network and TMDb. Log uses
+Persistence for its storage mechanics. These are implemented dependencies, verified
+against the Xcode target links and the package manifests in `Packages/`.
+
 For network operations, shared app integration owns a single `NetworkClient` type.
 It sits outside the feature code and outside the `Network` module. It understands app
 models and maps them to and from the public Network API. Feature clients expose only
