@@ -8,6 +8,40 @@ import Testing
 /// Exercises real action-window controls against deterministic external operation results.
 @Suite(.serialized) @MainActor
 struct MoviePosterActionCoordinatorCoverageTests {
+  /// Real controls retain visible rejected results and undo saved movies absent from the provider response.
+  @Test func rejectionControlsRenderAndUndoMoviesOutsideResults() async throws {
+    let service = WindowPosterService()
+    let request = request(.change)
+    let absent = try FolderMovieRejection(movieID: 99, title: "Absent movie", year: 1984)
+    await service.rejectMovie(absent, for: request)
+    let coordinator = MoviePosterActionCoordinator(service: service)
+    coordinator.start(request)
+    defer { coordinator.windowController?.close() }
+    let model = try #require(coordinator.viewModel)
+    await waitForSearchLanguage(model)
+    let controls = descendants(of: try #require(coordinator.windowController?.window?.contentView))
+    let pickers = controls.compactMap { $0 as? NSPopUpButton }
+    let saved = try #require(pickers.first { $0.itemTitles.contains("Absent movie (1984) · TMDb ID 99") })
+    #expect(saved.isEnabled)
+    let undo = try button("Undo Rejection", in: controls)
+    #expect(undo.isEnabled)
+    undo.performClick(.none)
+    await waitForIdle(model)
+    #expect(model.rejectedMovies.isEmpty)
+    #expect(model.searchResult == .none)
+    #expect(!undo.isEnabled)
+    try button("Search TMDb", in: controls).performClick(.none)
+    await waitForIdle(model)
+    model.selectMovie(id: 42)
+    try button("Reject Selected Movie", in: controls).performClick(.none)
+    await waitForIdle(model)
+    let results = try #require(pickers.first { $0 !== saved })
+    #expect(results.itemTitles.contains { $0.contains("TMDb ID 42") && $0.contains("Rejected") })
+    #expect(results.itemArray.first { $0.tag == 42 }?.isEnabled == true)
+    #expect(!((try button("Apply Selected Movie", in: controls)).isEnabled))
+    #expect(undo.isEnabled)
+  }
+
   /// Native correction buttons load, save, and clear fields in both presentation modes.
   @Test(arguments: [false, true])
   func correctionControlsRenderAndRestoreFields(attached: Bool) async throws {
@@ -206,6 +240,22 @@ struct MoviePosterActionCoordinatorCoverageTests {
 
 /// Supplies external responses while the coordinator, controls and model remain real.
 private actor WindowPosterService: MoviePosterActionServicing {
+  /// Saved fixture rejections, independent of provider results.
+  private var savedRejections: [FolderMovieRejection] = []
+
+  func movieRejections(for request: MoviePosterRequest) -> FolderMovieRejectionStore.VersionedRejections {
+    .init(movies: savedRejections, revision: .none)
+  }
+
+  func rejectMovie(_ movie: FolderMovieRejection, for request: MoviePosterRequest) {
+    savedRejections.removeAll { $0.movieID == movie.movieID }
+    savedRejections.append(movie)
+  }
+
+  func removeMovieRejection(movieID: Int, for request: MoviePosterRequest) {
+    savedRejections.removeAll { $0.movieID == movieID }
+  }
+
   /// Local correction returned by this fixture.
   private var savedCorrection: FolderSearchCorrection?
 

@@ -312,6 +312,22 @@ private actor DelegateConfigurationService: TestConfigurationServicing {
 
 /// Prevents networking and filesystem access from lifecycle-created poster windows.
 private actor DelegatePosterService: MoviePosterActionServicing, CollectionRetryServicing {
+  /// Saved fixture rejections, independent of provider results.
+  private var savedRejections: [FolderMovieRejection] = []
+
+  func movieRejections(for request: MoviePosterRequest) -> FolderMovieRejectionStore.VersionedRejections {
+    .init(movies: savedRejections, revision: .none)
+  }
+
+  func rejectMovie(_ movie: FolderMovieRejection, for request: MoviePosterRequest) {
+    savedRejections.removeAll { $0.movieID == movie.movieID }
+    savedRejections.append(movie)
+  }
+
+  func removeMovieRejection(movieID: Int, for request: MoviePosterRequest) {
+    savedRejections.removeAll { $0.movieID == movieID }
+  }
+
   /// Supplies no eligible selected work in isolated lifecycle tests.
   func retryFolder(for request: MoviePosterRequest) -> FolderRetryResult { .notEligible }
   /// Provides the authorized default language in this isolated service fixture.

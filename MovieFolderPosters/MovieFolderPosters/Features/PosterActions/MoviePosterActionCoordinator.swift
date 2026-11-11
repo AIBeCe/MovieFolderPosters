@@ -65,7 +65,7 @@ final class MoviePosterActionCoordinator: NSObject, NSWindowDelegate,
     content.delegate = self
     let window = NSWindow(contentViewController: content)
     window.title = "\(request.action.title) — \(request.childName)"
-    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 440 : 260))
+    window.setContentSize(NSSize(width: 620, height: request.action == .change ? 540 : 260))
     window.styleMask = parent == .none ? [.titled, .closable, .miniaturizable] : [.titled, .closable]
     window.isReleasedWhenClosed = false
     window.delegate = self
@@ -162,6 +162,14 @@ private final class MoviePosterActionViewController: NSViewController,
   private var renderedSearchFieldsRevision = 0
   /// Displays poster-bearing movie results.
   private let resultPicker = NSPopUpButton()
+  /// Saves an explicit rejection for the selected search result.
+  private let rejectButton = NSButton(title: "Reject Selected Movie", target: .none, action: .none)
+  /// Discloses saved rejection availability independently of search feedback.
+  private let rejectionLabel = NSTextField(wrappingLabelWithString: "")
+  /// Selects a saved rejection even when it is absent from current search results.
+  private let rejectionPicker = NSPopUpButton()
+  /// Reverses the selected saved rejection without applying a movie.
+  private let undoRejectionButton = NSButton(title: "Undo Rejection", target: .none, action: .none)
   /// Displays progress or success feedback.
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
   /// Displays user-facing failures.
@@ -217,6 +225,12 @@ private final class MoviePosterActionViewController: NSViewController,
       matchingLabel.maximumNumberOfLines = 3
       stack.addArrangedSubview(matchingLabel)
       stack.addArrangedSubview(makeResultPicker())
+      rejectButton.target = self
+      rejectButton.action = #selector(rejectSelectedMovie)
+      stack.addArrangedSubview(rejectButton)
+      rejectionLabel.textColor = .secondaryLabelColor
+      stack.addArrangedSubview(rejectionLabel)
+      stack.addArrangedSubview(makeRejectionControls())
     }
     stack.addArrangedSubview(statusLabel)
     stack.addArrangedSubview(errorLabel)
@@ -321,6 +335,22 @@ private final class MoviePosterActionViewController: NSViewController,
     return resultPicker
   }
 
+  /// Configures the independent saved-rejection picker and undo action.
+  /// - Returns: The row used to review and undo saved rejections.
+  private func makeRejectionControls() -> NSView {
+    rejectionPicker.target = self
+    rejectionPicker.action = #selector(rejectionSelectionChanged)
+    rejectionPicker.setAccessibilityLabel("Saved rejected movies for this folder")
+    rejectionPicker.widthAnchor.constraint(greaterThanOrEqualToConstant: 380).isActive = true
+    undoRejectionButton.target = self
+    undoRejectionButton.action = #selector(undoMovieRejection)
+    let row = NSStackView(views: [rejectionPicker, undoRejectionButton])
+    row.orientation = .horizontal
+    row.spacing = 8
+
+    return row
+  }
+
   /// Updates enabled controls, messages, and action-specific button behavior.
   private func render() {
     guard isViewLoaded else { return }
@@ -354,6 +384,11 @@ private final class MoviePosterActionViewController: NSViewController,
       viewSelectedButton.target = self
       viewSelectedButton.action = #selector(openSelectedMoviePage)
       viewSelectedButton.isEnabled = viewModel.canOpenSelectedMoviePage
+      rejectButton.isEnabled = viewModel.canRejectSelectedMovie
+      undoRejectionButton.isEnabled = viewModel.canUndoMovieRejection
+      rejectionLabel.stringValue = viewModel.rejectionStatus
+      rejectionPicker.isEnabled = viewModel.canStartAction && !viewModel.rejectedMovies.isEmpty
+      renderRejections()
       renderMovies()
     case .remove:
       primaryButton.title = "Remove Poster"
@@ -391,8 +426,9 @@ private final class MoviePosterActionViewController: NSViewController,
       let spellingMark = viewModel.possibleSpellingDifference(for: movie) == .none
         ? ""
         : " · Possible spelling difference"
+      let rejectionMark = viewModel.isMovieRejected(id: movie.id) ? " · Rejected" : ""
       resultPicker.addItem(
-        withTitle: "\(movie.title)\(originalTitle) (\(year)) · TMDb ID \(movie.id)\(spellingMark)")
+        withTitle: "\(movie.title)\(originalTitle) (\(year)) · TMDb ID \(movie.id)\(spellingMark)\(rejectionMark)")
       resultPicker.lastItem?.tag = movie.id
     }
     resultPicker.selectItem(at: 0)
@@ -400,6 +436,33 @@ private final class MoviePosterActionViewController: NSViewController,
       resultPicker.selectItem(withTag: selectedID)
     }
   }
+
+  /// Rebuilds saved rejections separately so undo never depends on a provider response.
+  private func renderRejections() {
+    rejectionPicker.removeAllItems()
+    if viewModel.rejectedMovies.isEmpty {
+      rejectionPicker.addItem(withTitle: "No saved rejected movies")
+      rejectionPicker.lastItem?.isEnabled = false
+      return
+    }
+    for movie in viewModel.rejectedMovies {
+      let year = movie.year.map(String.init) ?? "Year unknown"
+      rejectionPicker.addItem(withTitle: "\(movie.title) (\(year)) · TMDb ID \(movie.movieID)")
+      rejectionPicker.lastItem?.tag = movie.movieID
+    }
+    if let selectedID = viewModel.selectedRejectedMovieID { rejectionPicker.selectItem(withTag: selectedID) }
+  }
+
+  /// Saves the selected search result as rejected.
+  @objc private func rejectSelectedMovie() { viewModel.rejectSelectedMovie() }
+  /// Selects the saved rejection to undo without changing the search-result selection.
+  @objc private func rejectionSelectionChanged() {
+    guard let item = rejectionPicker.selectedItem else { return }
+
+    viewModel.selectRejectedMovie(id: item.tag)
+  }
+  /// Removes the independently selected rejection.
+  @objc private func undoMovieRejection() { viewModel.undoMovieRejection() }
 
   /// Copies the title field into the model.
   @objc private func queryChanged() { viewModel.setQuery(queryField.stringValue) }

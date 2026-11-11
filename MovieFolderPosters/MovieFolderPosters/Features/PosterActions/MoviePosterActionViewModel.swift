@@ -48,6 +48,12 @@ final class MoviePosterActionViewModel {
   private var hasLoadedSearchCorrection = false
   /// The last correction read from or committed to storage.
   private var savedSearchCorrection: FolderSearchCorrection?
+  /// Whether an authorized rejection read succeeded for this presentation.
+  private var hasLoadedMovieRejections = false
+  /// Saved rejections retained independently of the current search results.
+  private(set) var rejectedMovies: [FolderMovieRejection] = []
+  /// Saved rejection selected for an explicit undo.
+  private(set) var selectedRejectedMovieID: Int?
   /// Retains the active operation so the window can cancel it.
   private var operationTask: Task<Void, Never>?
   /// Distinguishes current work from results arriving after cancellation.
@@ -110,7 +116,26 @@ final class MoviePosterActionViewModel {
   /// Whether another page of search results is available.
   var hasMorePages: Bool { searchResult?.hasMorePages ?? false }
   /// Whether the selected movie can be applied now.
-  var canApplySelectedMovie: Bool { selectedMovie != .none && canStartAction }
+  var canApplySelectedMovie: Bool {
+    canStartAction && hasLoadedMovieRejections && selectedMovie != .none
+      && !isMovieRejected(id: selectedMovieID ?? .zero)
+  }
+  /// Whether the current search selection can be saved as a new rejection.
+  var canRejectSelectedMovie: Bool { action == .change && canApplySelectedMovie }
+  /// Whether a saved rejection is selected and its local storage is available.
+  var canUndoMovieRejection: Bool {
+    action == .change && canStartAction && hasLoadedMovieRejections
+      && rejectedMovies.contains { $0.movieID == selectedRejectedMovieID }
+  }
+  /// Explains local rejection availability independently of transient search feedback.
+  var rejectionStatus: String {
+    if !hasLoadedMovieRejections {
+      return "Saved rejections unavailable. Reopen Choose Movie to enable Apply, Reject, and Undo."
+    }
+
+    return rejectedMovies.isEmpty ? "No rejected movies for this folder." : "Saved rejections for this folder:"
+  }
+
   /// Whether a valid selected movie page can be opened.
   var canOpenSelectedMoviePage: Bool { (selectedMovie?.id ?? 0) > 0 }
   /// The action requested for this folder.
@@ -156,7 +181,12 @@ final class MoviePosterActionViewModel {
     yearText = defaultYearText
   }
 
-  /// Loads search language and any saved correction without contacting TMDb.
+  /// Determines whether a provider result has a saved rejection for this folder.
+  /// - Parameter id: The provider movie identifier.
+  /// - Returns: Whether the movie is explicitly rejected.
+  func isMovieRejected(id: Int) -> Bool { rejectedMovies.contains { $0.movieID == id } }
+
+  /// Loads search language, saved correction, and rejected movies without contacting TMDb.
   func prepareSearchFields() {
     guard request.action == .change, searchLanguage == .none else { return }
 
@@ -173,12 +203,26 @@ final class MoviePosterActionViewModel {
         correction = .failure(error)
       }
 
-      return (language, correction)
+      let rejections: Result<FolderMovieRejectionStore.VersionedRejections, any Error>
+      do {
+        rejections = .success(try await service.movieRejections(for: request))
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        rejections = .failure(error)
+      }
+
+      return (language, correction, rejections)
     }, completion: { [weak self] result in
       guard let self else { return }
 
       self.searchLanguage = result.0
       self.statusMessage = .none
+      if case .success(let rejections) = result.2 {
+        self.hasLoadedMovieRejections = true
+        self.rejectedMovies = rejections.movies
+        self.selectedRejectedMovieID = rejections.movies.first?.movieID
+      }
       switch result.1 {
       case .success(let correction):
         self.hasLoadedSearchCorrection = true
@@ -356,6 +400,16 @@ final class MoviePosterActionViewModel {
   /// Applies the selected movie's poster to the requested folder.
   func applySelectedMovie() {
     guard request.action == .change, canStartAction else { return }
+    guard hasLoadedMovieRejections else {
+      setError(rejectionStatus)
+      return
+    }
+
+    guard !isMovieRejected(id: selectedMovieID ?? .zero) else {
+      setError("Undo this movie's rejection before applying it.")
+      return
+    }
+
     guard let movie = selectedMovie else {
       setError("Choose a movie with a poster before applying it.")
       return
@@ -368,6 +422,58 @@ final class MoviePosterActionViewModel {
       operation: { try await service.applyPoster(movie, for: request) },
       completion: { [weak self] movieID in self?.statusMessage = "Poster updated from TMDb movie \(movieID)." }
     )
+  }
+
+  /// Selects a saved rejection independently of the current search response.
+  /// - Parameter id: The saved movie identifier to select for undo.
+  func selectRejectedMovie(id: Int) {
+    guard canStartAction, rejectedMovies.contains(where: { $0.movieID == id }) else { return }
+
+    selectedRejectedMovieID = id
+    publish()
+  }
+
+  /// Saves the selected result as rejected, publishing only after the write commits.
+  func rejectSelectedMovie() {
+    guard canRejectSelectedMovie, let movie = selectedMovie else { return }
+
+    let rejection: FolderMovieRejection
+    do {
+      rejection = try FolderMovieRejection(movieID: movie.id, title: movie.title, year: movie.releaseYear)
+    } catch {
+      setError("This movie's details cannot be saved as a rejection.")
+      return
+    }
+    let service = service
+    let request = request
+    perform("Rejecting selected movie…", allowsCancellation: false, operation: {
+      try await service.rejectMovie(rejection, for: request)
+    }, completion: { [weak self] _ in
+      guard let self else { return }
+
+      self.rejectedMovies.removeAll { $0.movieID == rejection.movieID }
+      self.rejectedMovies.append(rejection)
+      self.rejectedMovies.sort { $0.movieID < $1.movieID }
+      self.selectedRejectedMovieID = rejection.movieID
+      self.statusMessage = "Movie rejected for this folder. Undo the rejection before applying it."
+    })
+  }
+
+  /// Removes the independently selected saved rejection without selecting or applying a search result.
+  func undoMovieRejection() {
+    guard canUndoMovieRejection, let movieID = selectedRejectedMovieID else { return }
+
+    let service = service
+    let request = request
+    perform("Undoing rejection…", allowsCancellation: false, operation: {
+      try await service.removeMovieRejection(movieID: movieID, for: request)
+    }, completion: { [weak self] _ in
+      guard let self else { return }
+
+      self.rejectedMovies.removeAll { $0.movieID == movieID }
+      self.selectedRejectedMovieID = self.rejectedMovies.first?.movieID
+      self.statusMessage = "Rejection removed. The movie can be selected and applied explicitly."
+    })
   }
 
   /// Requests that the UI open the selected movie's TMDb page.

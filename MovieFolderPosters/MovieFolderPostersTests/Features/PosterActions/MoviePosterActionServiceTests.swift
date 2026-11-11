@@ -9,6 +9,59 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// Applying from an older presentation rereads saved rejections before provider or icon work.
+  @Test func applyingRejectedMovieRequiresUndoEvenFromStaleWindow() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let provider = ActionProvider()
+    let staleWindow = fixture.service(movieMetadataProvider: provider)
+    #expect(try await staleWindow.movieRejections(for: fixture.request).movies.isEmpty)
+    let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: "/chosen.png")
+    let rejection = try FolderMovieRejection(movieID: 7, title: "Dune", year: 2021)
+    try await fixture.service().rejectMovie(rejection, for: fixture.request)
+
+    await #expect(throws: MoviePosterActionServiceError.movieRejected) {
+      try await staleWindow.applyPoster(movie, for: fixture.request)
+    }
+    #expect(await provider.downloads.isEmpty)
+    #expect(await provider.searches.isEmpty)
+    #expect(MoviePosterActionServiceError.movieRejected.localizedDescription
+      == "Undo this movie's rejection before applying it.")
+    try await fixture.service().removeMovieRejection(movieID: 7, for: fixture.request)
+    #expect(try await staleWindow.applyPoster(movie, for: fixture.request) == 7)
+    #expect(await provider.downloads == ["/chosen.png"])
+  }
+
+  /// An injected persisted change during download prevents assignment; authorized host edits remain excluded.
+  /// The direct store write models changed saved evidence, without claiming another host action can bypass admission.
+  @Test func rejectionDuringArtworkDownloadPreventsAssignment() async throws {
+    let fixture = try PosterActionFixture()
+    defer { fixture.cleanup() }
+    let original = try FileSystemService().readCurrentFolderCandidate(
+      ofChild: fixture.request.childName, in: fixture.movies)
+    let provider = RejectionDownloadProvider()
+    let service = fixture.service(movieMetadataProvider: provider)
+    let movie = MovieMetadata(id: 7, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: "/chosen.png")
+    let operation = Task { try await service.applyPoster(movie, for: fixture.request) }
+    await provider.waitForDownload()
+    let rejection = try FolderMovieRejection(movieID: 7, title: "Dune", year: 2021)
+    await #expect(throws: ConfigurationError.busy) {
+      try await fixture.service().rejectMovie(rejection, for: fixture.request)
+    }
+    let identity = try FileSystemService().verifiedFolderIdentity(
+      at: fixture.movies.appendingPathComponent(fixture.request.childName), expectedIdentity: fixture.request.identity)
+    let store = try fixture.makeFolderMovieRejectionStore()
+    #expect(try store.rejections(for: identity, in: fixture.request.rootID).movies.isEmpty)
+    try store.rejectMovie(rejection, for: identity, in: fixture.request.rootID)
+    await provider.finishDownload()
+    await #expect(throws: MoviePosterActionServiceError.movieRejected) { try await operation.value }
+    #expect(try await service.matchedMovieID(for: fixture.request) == .none)
+    #expect(try FileSystemService().readCurrentFolderCandidate(
+      ofChild: fixture.request.childName, in: fixture.movies) == original)
+  }
+
   /// Rejection reads, saves, and undo survive reopening without token or provider access.
   @Test func movieRejectionsSurviveReopeningWithoutAToken() async throws {
     let fixture = try PosterActionFixture()
@@ -978,4 +1031,44 @@ struct MoviePosterActionServiceConfigurationTests {
       == [.started, .failed])
   }
 
+}
+
+/// Holds artwork delivery so another authorized service can commit a rejection before icon mutation.
+private actor RejectionDownloadProvider: MovieMetadataProvider {
+  /// Whether the apply request has entered the download boundary.
+  private var hasStarted = false
+  /// Test waiting for download entry.
+  private var startWaiter: CheckedContinuation<Void, Never>?
+  /// The suspended download resumed after the rejection commits.
+  private var downloadWaiter: CheckedContinuation<Void, Never>?
+
+  /// Waits for the actual provider boundary without relying on timing.
+  func waitForDownload() async {
+    if hasStarted { return }
+    await withCheckedContinuation { startWaiter = $0 }
+  }
+
+  /// Releases the suspended artwork after the test writes the rejection.
+  func finishDownload() {
+    downloadWaiter?.resume()
+    downloadWaiter = .none
+  }
+
+  func downloadPoster(path: String) async throws -> Data {
+    hasStarted = true
+    startWaiter?.resume()
+    startWaiter = .none
+    await withCheckedContinuation { downloadWaiter = $0 }
+    let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/TestPoster.png")
+
+    return try Data(contentsOf: resources)
+  }
+
+  func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) throws -> MovieSearchPage {
+    throw MovieMetadataError.invalidQuery
+  }
+
+  func alternativeTitles(movieID: Int) -> MovieAlternativeTitlesByID { [movieID: []] }
+  func releaseDates(movieID: Int) -> MovieReleaseDatesByID { [movieID: []] }
 }

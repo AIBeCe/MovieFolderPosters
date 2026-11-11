@@ -21,6 +21,15 @@ nonisolated public struct FolderMovieRejectionStore: Sendable {
     public let movies: [FolderMovieRejection]
     /// The latest edit to the collection's rejections, if tracked.
     public let revision: UUID?
+
+    /// Creates an immutable result containing the movies and revision read together.
+    /// - Parameters:
+    ///   - movies: The folder's saved rejections in provider identifier order.
+    ///   - revision: The associated collection revision, if any.
+    public init(movies: [FolderMovieRejection], revision: UUID?) {
+      self.movies = movies
+      self.revision = revision
+    }
   }
 
   /// Encoded rejection decisions for one configured collection.

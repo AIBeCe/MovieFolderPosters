@@ -130,6 +130,22 @@ enum ActionFailureCase: CaseIterable, Sendable {
 
 /// Supplies deterministic external outcomes to the real presentation model.
 private actor CoverageActionService: MoviePosterActionServicing {
+  /// Saved fixture rejections, independent of provider results.
+  private var savedRejections: [FolderMovieRejection] = []
+
+  func movieRejections(for request: MoviePosterRequest) -> FolderMovieRejectionStore.VersionedRejections {
+    .init(movies: savedRejections, revision: .none)
+  }
+
+  func rejectMovie(_ movie: FolderMovieRejection, for request: MoviePosterRequest) {
+    savedRejections.removeAll { $0.movieID == movie.movieID }
+    savedRejections.append(movie)
+  }
+
+  func removeMovieRejection(movieID: Int, for request: MoviePosterRequest) {
+    savedRejections.removeAll { $0.movieID == movieID }
+  }
+
   /// Whether a custom icon was present for removal.
   let removed: Bool
   /// Optional operation failure.

@@ -7,6 +7,177 @@ import Testing
 /// Exercises poster-action state, validation, cancellation, and delegation.
 @MainActor
 struct MoviePosterActionViewModelTests {
+  /// Rejections load locally, remain visible in results, and prevent accidental application.
+  @Test func loadsRejectionsWithoutSearchingAndBlocksRejectedSelection() async throws {
+    let service = ActionServiceStub()
+    let rejected = try FolderMovieRejection(movieID: 7, title: "Dune", year: 2021)
+    await service.configureRejections([rejected])
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg"),
+      Self.movie(id: 8, posterPath: "/other.jpg")], hasMorePages: false))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    #expect(model.rejectedMovies == [rejected])
+    #expect(await service.callCounts.search == 0)
+    model.search()
+    await waitForIdle(model)
+    #expect(model.movies.count == 2)
+    #expect(model.selectMovie(id: 7))
+    #expect(model.isMovieRejected(id: 7))
+    #expect(!model.canApplySelectedMovie)
+    #expect(!model.canRejectSelectedMovie)
+    model.applySelectedMovie()
+    #expect(await service.callCounts.apply == 0)
+    #expect(model.selectMovie(id: 8))
+    #expect(model.canApplySelectedMovie)
+    #expect(model.canRejectSelectedMovie)
+  }
+
+  /// Failed local reads permit provider search while all rejection-dependent edits stay disabled.
+  @Test func rejectionReadFailureAllowsSearchButBlocksApplyRejectAndUndo() async {
+    let service = ActionServiceStub()
+    await service.configureRejections([], readFails: true)
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")],
+      hasMorePages: false))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    #expect(model.canSearch)
+    #expect(model.rejectionStatus.contains("unavailable"))
+    model.search()
+    await waitForIdle(model)
+    model.selectMovie(id: 7)
+    #expect(!model.canApplySelectedMovie)
+    #expect(!model.canRejectSelectedMovie)
+    #expect(!model.canUndoMovieRejection)
+    model.applySelectedMovie()
+    model.rejectSelectedMovie()
+    model.undoMovieRejection()
+    #expect(await service.callCounts.apply == 0)
+    #expect(await service.rejectionWrites == 0)
+  }
+
+  /// A rejection can be reversed after its result disappears, without applying any movie.
+  @Test func rejectionAndUndoRemainIndependentOfSearchResults() async {
+    let service = ActionServiceStub()
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")],
+      hasMorePages: false))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    model.search()
+    await waitForIdle(model)
+    model.selectMovie(id: 7)
+    model.rejectSelectedMovie()
+    await waitForIdle(model)
+    #expect(model.isMovieRejected(id: 7))
+    #expect(model.selectedRejectedMovieID == 7)
+    model.setQuery("Another title")
+    #expect(model.movies.isEmpty)
+    #expect(model.canUndoMovieRejection)
+    model.undoMovieRejection()
+    await waitForIdle(model)
+    #expect(model.rejectedMovies.isEmpty)
+    #expect(await service.storedRejections.isEmpty)
+    #expect(await service.callCounts.apply == 0)
+    #expect(await service.rejectionWrites == 2)
+  }
+
+  /// Failed writes leave both the saved list and result eligibility unchanged.
+  @Test func rejectionWriteFailuresPreserveVisibleState() async throws {
+    let service = ActionServiceStub()
+    let rejected = try FolderMovieRejection(movieID: 9, title: "Old rejection", year: .none)
+    await service.configureRejections([rejected], writeFails: true)
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")],
+      hasMorePages: false))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    model.selectRejectedMovie(id: 9)
+    model.undoMovieRejection()
+    await waitForIdle(model)
+    #expect(model.rejectedMovies == [rejected])
+    #expect(model.errorMessage != .none)
+    model.search()
+    await waitForIdle(model)
+    model.selectMovie(id: 7)
+    model.rejectSelectedMovie()
+    await waitForIdle(model)
+    #expect(!model.isMovieRejected(id: 7))
+    #expect(model.canApplySelectedMovie)
+    #expect(model.rejectedMovies == [rejected])
+    #expect(await service.storedRejections == [rejected])
+  }
+
+  /// Local presentation changes only after successful rejection and undo commits.
+  @Test func rejectionWritesDoNotOptimisticallyChangeState() async {
+    let service = ActionServiceStub()
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")],
+      hasMorePages: false))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    model.search()
+    await waitForIdle(model)
+    model.selectMovie(id: 7)
+    await service.suspendNextRejectionWrite()
+    model.rejectSelectedMovie()
+    await service.waitForRejectionWrite()
+    #expect(model.isBusy)
+    #expect(model.rejectedMovies.isEmpty)
+    #expect(!model.allowsOperationCancellation)
+    await service.finishRejectionWrite()
+    await waitForIdle(model)
+    #expect(model.isMovieRejected(id: 7))
+    await service.suspendNextRejectionWrite()
+    model.undoMovieRejection()
+    await service.waitForRejectionWrite()
+    #expect(model.isMovieRejected(id: 7))
+    await service.finishRejectionWrite()
+    await waitForIdle(model)
+    #expect(model.rejectedMovies.isEmpty)
+    #expect(model.canApplySelectedMovie)
+  }
+
+  /// A late committed rejection cannot overwrite a configuration-invalidated window.
+  @Test func rejectionWriteDoesNotPublishAfterInvalidation() async {
+    let service = ActionServiceStub()
+    await service.setSearchResult(MovieSearchResult(movies: [Self.movie(id: 7, posterPath: "/dune.jpg")],
+      hasMorePages: false))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await waitForIdle(model)
+    model.search()
+    await waitForIdle(model)
+    model.selectMovie(id: 7)
+    await service.suspendNextRejectionWrite()
+    model.rejectSelectedMovie()
+    await service.waitForRejectionWrite()
+    model.configurationDidChange()
+    await service.finishRejectionWrite()
+    await waitForIdle(model)
+    #expect(model.rejectedMovies.isEmpty)
+    #expect(!model.canRejectSelectedMovie)
+    #expect(!model.canUndoMovieRejection)
+    #expect(model.errorMessage == "Directory configuration changed. Reopen this action to continue.")
+  }
+
+  /// Cancellation and changed authorization discard delayed rejection reads.
+  @Test(arguments: [false, true])
+  func rejectionReadDoesNotPublishAfterCancellation(invalidate: Bool) async throws {
+    let service = ActionServiceStub()
+    let rejected = try FolderMovieRejection(movieID: 7, title: "Dune", year: 2021)
+    await service.configureRejections([rejected], readDelay: .seconds(10))
+    let model = MoviePosterActionViewModel(service: service, request: request(.change))
+    model.prepareSearchFields()
+    await service.waitForRejectionRead()
+    if invalidate { model.configurationDidChange() } else { model.cancelRetryTask() }
+    await waitForIdle(model)
+    #expect(model.rejectedMovies.isEmpty)
+    #expect(!model.canApplySelectedMovie)
+    #expect(!model.canUndoMovieRejection)
+  }
+
   /// Saved fields load locally and become the inputs for an explicit search.
   @Test func savedCorrectionPrefillsChooseMovieWithoutSearching() async throws {
     let service = ActionServiceStub()
@@ -538,6 +709,106 @@ struct MoviePosterActionSearchReviewTests {
 
 /// Actor-isolated fake that records poster-action service calls.
 private actor ActionServiceStub: MoviePosterActionServicing {
+  /// Saved local rejections for this fixture.
+  private(set) var storedRejections: [FolderMovieRejection] = []
+  /// Number of attempted rejection edits.
+  private(set) var rejectionWrites = 0
+  /// Whether rejection reads fail.
+  private var rejectionReadFails = false
+  /// Whether rejection edits fail.
+  private var rejectionWriteFails = false
+  /// Controlled read delay for cancellation.
+  private var rejectionReadDelay = Duration.zero
+  /// Whether a read has started.
+  private var rejectionReadStarted = false
+  /// Test waiting for the authorized read.
+  private var rejectionReadWaiter: CheckedContinuation<Void, Never>?
+
+  /// Whether the next rejection edit should wait for the fixture.
+  private var suspendsRejectionWrite = false
+  /// Whether the controlled write has entered storage.
+  private var rejectionWriteStarted = false
+  /// Test waiting until the edit reaches storage.
+  private var rejectionWriteStartWaiter: CheckedContinuation<Void, Never>?
+  /// Controlled write released by the test.
+  private var rejectionWriteWaiter: CheckedContinuation<Void, Never>?
+
+  /// Holds the next rejection edit at the storage boundary.
+  func suspendNextRejectionWrite() {
+    suspendsRejectionWrite = true
+    rejectionWriteStarted = false
+  }
+
+  /// Waits until the controlled edit reaches storage.
+  func waitForRejectionWrite() async {
+    if rejectionWriteStarted { return }
+    await withCheckedContinuation { rejectionWriteStartWaiter = $0 }
+  }
+
+  /// Releases the edit, deliberately allowing a late service completion.
+  func finishRejectionWrite() {
+    rejectionWriteWaiter?.resume()
+    rejectionWriteWaiter = .none
+  }
+
+  /// Suspends configured edits until their test explicitly permits the commit.
+  private func awaitRejectionWritePermission() async {
+    guard suspendsRejectionWrite else { return }
+
+    suspendsRejectionWrite = false
+    rejectionWriteStarted = true
+    rejectionWriteStartWaiter?.resume()
+    rejectionWriteStartWaiter = .none
+    await withCheckedContinuation { rejectionWriteWaiter = $0 }
+  }
+
+  /// Configures local rejection storage independently of provider calls.
+  func configureRejections(
+    _ movies: [FolderMovieRejection], readFails: Bool = false, writeFails: Bool = false,
+    readDelay: Duration = .zero
+  ) {
+    storedRejections = movies
+    rejectionReadFails = readFails
+    rejectionWriteFails = writeFails
+    rejectionReadDelay = readDelay
+  }
+
+  /// Waits until the model enters the local rejection read.
+  func waitForRejectionRead() async {
+    if rejectionReadStarted { return }
+    await withCheckedContinuation { rejectionReadWaiter = $0 }
+  }
+
+  func movieRejections(for request: MoviePosterRequest) async throws -> FolderMovieRejectionStore.VersionedRejections {
+    rejectionReadStarted = true
+    rejectionReadWaiter?.resume()
+    rejectionReadWaiter = .none
+    try await Task.sleep(for: rejectionReadDelay)
+
+    guard !rejectionReadFails else { throw FolderMovieRejectionStore.StoreError.busy }
+
+    return .init(movies: storedRejections, revision: .none)
+  }
+
+  func rejectMovie(_ movie: FolderMovieRejection, for request: MoviePosterRequest) async throws {
+    rejectionWrites += 1
+    await awaitRejectionWritePermission()
+
+    guard !rejectionWriteFails else { throw FolderMovieRejectionStore.StoreError.busy }
+
+    storedRejections.removeAll { $0.movieID == movie.movieID }
+    storedRejections.append(movie)
+  }
+
+  func removeMovieRejection(movieID: Int, for request: MoviePosterRequest) async throws {
+    rejectionWrites += 1
+    await awaitRejectionWritePermission()
+
+    guard !rejectionWriteFails else { throw FolderMovieRejectionStore.StoreError.busy }
+
+    storedRejections.removeAll { $0.movieID == movieID }
+  }
+
   /// Counts calls made to each service operation.
   struct CallCounts: Equatable, Sendable {
     /// Number of searches.

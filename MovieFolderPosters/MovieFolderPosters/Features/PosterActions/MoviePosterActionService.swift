@@ -12,6 +12,13 @@ nonisolated protocol MoviePosterActionServicing: Sendable {
   /// Saves the selected folder's correction, or clears it when given nil.
   func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) async throws
 
+  /// Reads saved rejections after validating the selected folder's authorization and identity.
+  func movieRejections(for request: MoviePosterRequest) async throws -> FolderMovieRejectionStore.VersionedRejections
+  /// Commits one deliberate movie rejection without changing its poster.
+  func rejectMovie(_ movie: FolderMovieRejection, for request: MoviePosterRequest) async throws
+  /// Removes one saved rejection without applying the movie.
+  func removeMovieRejection(movieID: Int, for request: MoviePosterRequest) async throws
+
   /// Searches for movie metadata using a title and optional release year.
   ///
   /// - Parameters:
@@ -69,6 +76,8 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
   case accessTokenUnavailable
   /// The chosen result is not a valid poster-bearing movie.
   case invalidSelection
+  /// The selected movie has a saved rejection for this folder.
+  case movieRejected
   /// The title or release year does not satisfy the search contract.
   case invalidQuery
   /// The requested operation requires the explicit Choose Movie flow.
@@ -83,6 +92,7 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
     case .childChanged: "This movie folder changed. Reopen the action and try again."
     case .accessTokenUnavailable: "Add a TMDb read access token in Settings to use this action."
     case .invalidSelection: "Choose a movie with a poster before applying it."
+    case .movieRejected: "Undo this movie's rejection before applying it."
     case .invalidQuery: "Enter a movie title and a valid optional release year."
     case .invalidAction: "Open Choose Movie to review rejected movies."
     }
@@ -348,7 +358,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     case .accessTokenUnavailable: .authentication
     case .invalidSelection: .invalidSelection
     case .invalidQuery: .invalidQuery
-    case .invalidAction: .unavailable
+    case .invalidAction, .movieRejected: .unavailable
     }
 
     return AutomaticFolderProcessingFailure(reason: reason, stage: .validateIdentity, occurredAt: Date())
@@ -521,9 +531,19 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
 
     return try await withAuthorizedRoot(request) { context in
       try Task.checkCancellation()
+      let folderIdentity = try fileSystem.verifiedFolderIdentity(
+        at: context.root.appendingPathComponent(request.childName), expectedIdentity: request.identity)
+      let rejections = try environment.makeFolderMovieRejectionStore()
+        .rejections(for: folderIdentity, in: context.directory.id)
+
+      guard !rejections.movies.contains(where: { $0.movieID == movie.id }) else {
+        throw MoviePosterActionServiceError.movieRejected
+      }
+
       let movieMetadataProvider = try makeMovieMetadataProvider(
         for: context.configuration, collectionID: context.directory.id)
-      let processor = try makeProcessor(for: context, movieMetadataProvider: movieMetadataProvider)
+      let processor = try makeProcessor(
+        for: context, movieMetadataProvider: movieMetadataProvider, rejectedMovieID: movie.id)
       try checkConfigurationHasNotChanged(context)
 
       return try await processor.applyMoviePoster(
@@ -726,12 +746,14 @@ private extension MoviePosterActionService {
   ///   - context: The validated root and configuration processing state.
   ///   - movieMetadataProvider: The metadata provider used for this operation.
   ///   - searchCorrectionStore: Shared correction storage used only by selected retry.
+  ///   - rejectedMovieID: Selected movie whose rejection is rechecked immediately before icon assignment.
   /// - Returns: A processor configured for the current poster appearance.
   /// - Throws: A storage or configuration error when processor dependencies are unavailable.
   func makeProcessor(
     for context: AuthorizedCollectionRoot,
     movieMetadataProvider: any MovieMetadataProvider,
-    searchCorrectionStore: FolderSearchCorrectionStore? = .none
+    searchCorrectionStore: FolderSearchCorrectionStore? = .none,
+    rejectedMovieID: Int? = .none
   ) throws -> MovieFolderProcessor {
     let container = try environment.appGroupContainerURL()
     let recordDirectory = container.appendingPathComponent(
@@ -741,7 +763,9 @@ private extension MoviePosterActionService {
       repository: try environment.makeConfigurationRepository(),
       directory: context.directory,
       configuration: context.configuration,
-      root: context.root, rootIdentity: context.rootIdentity)
+      root: context.root, rootIdentity: context.rootIdentity,
+      rejectedMovieID: rejectedMovieID,
+      rejectionStore: rejectedMovieID == .none ? .none : try environment.makeFolderMovieRejectionStore())
 
     #if DEBUG
       let usesStubTMDbResponses = context.configuration.usesStubTMDbResponses
@@ -784,6 +808,11 @@ nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFol
   /// The persistent identity captured before processing begins.
   let rootIdentity: String
 
+  /// The explicit selection whose rejection must be checked before assignment.
+  let rejectedMovieID: Int?
+  /// Rejection storage used only for explicit poster selection.
+  let rejectionStore: FolderMovieRejectionStore?
+
   /// Holds the same configuration fence when a selected retry reuses automatic assignment.
   func checkAutomaticProcessing(in root: URL)
     throws -> PersistenceAccess? {
@@ -803,6 +832,16 @@ nonisolated private struct PosterActionCollectionConfigurationVerifier: MovieFol
     guard try FileSystemService().persistentDirectoryIdentity(at: root) == rootIdentity else {
       withExtendedLifetime(persistenceAccess) {}
       throw MoviePosterActionServiceError.configurationChanged
+    }
+
+    if let rejectedMovieID, let rejectionStore {
+      defer { withExtendedLifetime(persistenceAccess) {} }
+      let identity = try FileSystemService().verifiedFolderIdentity(
+        at: root.appendingPathComponent(candidate.name, isDirectory: true), expectedIdentity: candidate.identity)
+      let rejections = try rejectionStore.rejections(for: identity, in: directory.id)
+      guard !rejections.movies.contains(where: { $0.movieID == rejectedMovieID }) else {
+        throw MoviePosterActionServiceError.movieRejected
+      }
     }
 
     return persistenceAccess
