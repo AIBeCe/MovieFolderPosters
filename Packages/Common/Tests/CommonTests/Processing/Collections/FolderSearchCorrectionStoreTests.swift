@@ -5,6 +5,71 @@ import Testing
 
 /// Exercises saved corrections using real persistence records and independent store instances.
 struct FolderSearchCorrectionStoreTests {
+  /// Removing obsolete collections preserves retained fields and their revision.
+  @Test func removalKeepsConfiguredCorrectionsAndTheirRevision() throws {
+    try withStoreDirectory { directory in
+      let persistence = try PersistenceStore(directory: directory)
+      let store = FolderSearchCorrectionStore(store: persistence)
+      let retainedID = UUID()
+      let removedID = UUID()
+      let correction = try FolderSearchCorrection(title: "Movie", year: 1999)
+      try store.setCorrection(correction, for: "folder", in: retainedID)
+      try store.setCorrection(correction, for: "folder", in: removedID)
+      let retained = try store.versionedCorrection(for: "folder", in: retainedID)
+
+      try store.removeCorrections(keepingCollectionIDs: [retainedID])
+
+      #expect(try store.versionedCorrection(for: "folder", in: retainedID) == retained)
+      #expect(try store.correction(for: "folder", in: removedID) == .none)
+      #expect(try store.correction(for: "folder", in: UUID()) == .none)
+    }
+  }
+
+  /// A busy obsolete record is preserved and can be removed on a later attempt.
+  @Test func removalReportsBusyAndCanBeRetried() throws {
+    try withStoreDirectory { directory in
+      let persistence = try PersistenceStore(directory: directory)
+      let store = FolderSearchCorrectionStore(store: persistence)
+      let collectionID = UUID()
+      let correction = try FolderSearchCorrection(title: "Movie", year: .none)
+      try store.setCorrection(correction, for: "folder", in: collectionID)
+      do {
+        let access = try #require(try persistence.acquireAccess(for: recordKey(for: collectionID)))
+        defer { withExtendedLifetime(access) {} }
+        let original = try access.read()
+        #expect(throws: FolderSearchCorrectionStore.StoreError.busy) {
+          try store.removeCorrections(keepingCollectionIDs: [])
+        }
+        #expect(try access.read() == original)
+      }
+      try store.removeCorrections(keepingCollectionIDs: [])
+      #expect(try store.correction(for: "folder", in: collectionID) == .none)
+    }
+  }
+
+  /// Obsolete malformed records are deletable while configured malformed records remain byte-identical.
+  @Test func removalPreservesOnlyConfiguredMalformedRecords() throws {
+    try withStoreDirectory { directory in
+      let persistence = try PersistenceStore(directory: directory)
+      let store = FolderSearchCorrectionStore(store: persistence)
+      let retainedID = UUID()
+      let removedID = UUID()
+      let malformed = Data("{".utf8)
+      for collectionID in [retainedID, removedID] {
+        let access = try #require(try persistence.acquireAccess(for: recordKey(for: collectionID)))
+        try access.write(malformed)
+      }
+
+      try store.removeCorrections(keepingCollectionIDs: [retainedID])
+      do {
+        let access = try #require(try persistence.acquireAccess(for: recordKey(for: retainedID)))
+        #expect(try access.read() == malformed)
+      }
+      let access = try #require(try persistence.acquireAccess(for: recordKey(for: removedID)))
+      #expect(try access.read() == .none)
+    }
+  }
+
   /// A legacy record keeps its correction and gains a revision on the first real edit.
   @Test func legacyCorrectionGainsARevisionAfterEditing() throws {
     try withStoreDirectory { directory in

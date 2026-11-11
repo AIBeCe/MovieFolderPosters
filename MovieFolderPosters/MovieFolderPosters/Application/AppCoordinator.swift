@@ -50,7 +50,9 @@ struct ConfigurationFlowBuilder: ConfigurationFlowBuilding {
       accessTokenStore: services.makeProviderAccessTokenStore(),
       processingCleanup: processingStore, activity: activity,
       accessTokenValidator: accessTokenValidator,
-      recovery: recovery)
+      recovery: recovery,
+      removedCollectionCorrectionsCleaner: RemovedCollectionCorrectionsCleaner(
+        repository: repository, services: services))
     Task.detached {
       do {
         _ = try processingStore.pruneToConfiguredRoots()

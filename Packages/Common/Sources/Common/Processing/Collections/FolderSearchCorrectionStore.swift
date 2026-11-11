@@ -93,11 +93,26 @@ nonisolated public struct FolderSearchCorrectionStore: Sendable {
     try access.write(JSONEncoder().encode(record))
   }
 
+  /// Removes correction records for collections that are no longer configured.
+  /// - Parameter collectionIDs: Current configured collection identifiers.
+  /// - Throws: A persistence error, or busy when an obsolete record is locked.
+  public func removeCorrections(keepingCollectionIDs collectionIDs: Set<UUID>) throws {
+    let keys = Set(collectionIDs.map { recordKey(for: $0) })
+    let deferred = try store.pruneRecords(keepingKeys: keys)
+
+    guard deferred.isEmpty else { throw StoreError.busy }
+  }
+
+  /// Returns the storage key shared by correction reads, writes, and removal.
+  private func recordKey(for collectionID: UUID) -> String {
+    "folder-search-corrections:\(collectionID.uuidString)"
+  }
+
   /// Validates the folder key and locks its collection record.
   private func lockCorrectionRecord(in collectionID: UUID, for folderIdentity: String) throws -> PersistenceAccess {
     guard !folderIdentity.isEmpty else { throw StoreError.missingFolderIdentity }
 
-    guard let access = try store.acquireAccess(for: "folder-search-corrections:\(collectionID.uuidString)") else {
+    guard let access = try store.acquireAccess(for: recordKey(for: collectionID)) else {
       throw StoreError.busy
     }
 

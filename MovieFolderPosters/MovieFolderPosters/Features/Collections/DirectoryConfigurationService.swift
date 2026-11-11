@@ -23,6 +23,8 @@ actor DirectoryConfigurationService: CollectionConfigurationServicing, Configura
 
   /// Outcome cleanup retained independently of presentation and summary reads.
   private let processingCleanup: (any CollectionProcessingCleaning)?
+  /// Removes obsolete correction records after a collection removal commits.
+  private let removedCollectionCorrectionsCleaner: (any RemovedCollectionCorrectionsCleaning)?
   /// Records cleanup failures without changing committed configuration results.
   private let activity: any MovieFolderActivityRecording
 
@@ -42,6 +44,7 @@ actor DirectoryConfigurationService: CollectionConfigurationServicing, Configura
   ///   - processingCleanup: Retained outcome cleaner; omit only when the caller owns no outcome storage.
   ///   - activity: Recorder for cleanup failures independent of committed configuration changes.
   ///   - access token validator: Performs access token verification after the service admits the diagnostic.
+  ///   - removedCollectionCorrectionsCleaner: Removes correction records for collections absent from settings.
   init(
     repository: ConfigurationRepository, authorizations: PersistenceStore,
     accessTokenStore: any ProviderAccessTokenStoring,
@@ -50,7 +53,8 @@ actor DirectoryConfigurationService: CollectionConfigurationServicing, Configura
     processingCleanup: (any CollectionProcessingCleaning)? = .none,
     activity: any MovieFolderActivityRecording,
     accessTokenValidator: any ProviderAccessTokenValidating = NetworkAccessTokenValidator(),
-    recovery: ProcessingRecoveryService? = .none
+    recovery: ProcessingRecoveryService? = .none,
+    removedCollectionCorrectionsCleaner: (any RemovedCollectionCorrectionsCleaning)? = .none
   ) {
     self.repository = repository
     self.authorizations = authorizations
@@ -61,6 +65,7 @@ actor DirectoryConfigurationService: CollectionConfigurationServicing, Configura
     self.activity = activity
     self.accessTokenValidator = accessTokenValidator
     self.recovery = recovery
+    self.removedCollectionCorrectionsCleaner = removedCollectionCorrectionsCleaner
   }
 
   /// Reads configuration and assesses the current availability of each collection.
@@ -430,6 +435,11 @@ extension DirectoryConfigurationService {
     MovieFolderEnvironment.notifyHistoryConfigurationChanged()
     do {
       _ = try processingCleanup?.pruneToConfiguredRoots()
+    } catch {
+      await activity.record(MovieFolderActivityLogEvent(action: .collectionCleanup, status: .failed))
+    }
+    do {
+      try removedCollectionCorrectionsCleaner?.cleanCorrectionsForRemovedCollections()
     } catch {
       await activity.record(MovieFolderActivityLogEvent(action: .collectionCleanup, status: .failed))
     }
