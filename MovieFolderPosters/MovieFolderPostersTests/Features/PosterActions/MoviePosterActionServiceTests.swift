@@ -9,6 +9,41 @@ import Testing
 
 /// Exercises authorization and real processing using only disposable stores and folders.
 struct MoviePosterActionServiceTests {
+  /// Saving corrected fields makes the real host retry service reassess a conclusive result.
+  @Test func savedCorrectionMakesConclusiveHostResultRetryable() async throws {
+    let fixture = try PosterActionFixture(childName: "Wrong Movie (2021)")
+    defer { fixture.cleanup() }
+    let configuration = try fixture.repository.read()
+    let root = try #require(configuration.directories.first)
+    let context = CollectionProcessingContext(rootID: root.id, rootIdentity: try #require(root.identity),
+      authorizationVersion: root.authorizationVersion, credentialRevision: configuration.credentialRevision,
+      usesStubTMDbResponses: false, appearance: configuration.posterAppearance,
+      processingConfigurationRevision: root.processingConfiguration.revision)
+    var state = try fixture.processing.recordProcessingStart(context: context, action: .automatic)
+    state.folders = [FolderProcessingRecord(name: fixture.request.childName, identity: fixture.request.identity,
+      state: .failed, reason: .connectivity)]
+    state.isInventoryComplete = true
+    state.inspectedAt = Date()
+    state.currentRun?.runState = .partial
+    _ = try fixture.processing.commit(state, expectedRevision: state.revision)
+    let provider = ActionProvider()
+    let service = fixture.service(movieMetadataProvider: provider)
+    _ = try await service.retryFolder(for: fixture.request)
+    let negative = try fixture.processing.read(rootID: root.id)?.folders.first
+    #expect(negative?.processingState == .notFound)
+
+    try await service.setSearchCorrection(FolderSearchCorrection(title: "Dune", year: 2021), for: fixture.request)
+    let result = try await service.retryFolder(for: fixture.request)
+
+    guard case .attempted(let summary, _) = result else { Issue.record("Expected corrected retry."); return }
+
+    #expect(summary.assigned == 1)
+    let saved = try fixture.processing.read(rootID: root.id)?.folders.first
+    #expect(saved?.movieIdentitySource == .savedSearchCorrection)
+    #expect(saved?.isVerifiedDone == true)
+    #expect(await provider.searches == ["Wrong Movie:none", "Dune:none"])
+  }
+
   /// A local correction can be saved, reopened, and cleared without TMDb access.
   @Test func searchCorrectionSurvivesReopeningWithoutAToken() async throws {
     let fixture = try PosterActionFixture()

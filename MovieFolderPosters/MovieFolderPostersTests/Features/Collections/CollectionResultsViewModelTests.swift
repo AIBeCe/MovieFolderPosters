@@ -47,18 +47,19 @@ struct CollectionResultsViewModelTests {
     #expect(fixture.model.canFilter)
   }
 
-  /// Missing-year configuration outcomes require Choose Movie rather than a retry the processor will reject.
-  @Test func manualMatchingRequiredDisablesRetryButAllowsSelection() async {
+  /// Conclusive outcomes can request authoritative admission after a correction is edited.
+  @Test func manualMatchingRequiredAllowsServiceRecheck() async {
     let record = FolderProcessingRecord(name: "Dune", identity: "identity", state: .unresolved,
       reason: .manualMatchingRequired)
     let fixture = await makeFixture(folders: [record])
     fixture.model.selectRows(IndexSet(integer: .zero))
     #expect(fixture.model.canChooseMovie)
-    #expect(!fixture.model.canRetrySelected)
-    #expect(fixture.model.retryAvailability(for: record) == "Manual review required")
+    #expect(fixture.model.canRetrySelected)
+    #expect(fixture.model.retryAvailability(for: record) == "Retry rechecks saved corrections and retry limits")
     fixture.model.retrySelected()
     await settle()
-    #expect(await fixture.retry.requests.isEmpty)
+    #expect(await fixture.retry.requests.count == 1)
+    #expect(fixture.model.statusMessage.contains("no longer eligible"))
   }
   /// Loading and reloading saved evidence never requests poster processing.
   @Test func openingAndReloadingAreReadOnly() async {
@@ -259,8 +260,8 @@ struct CollectionResultsViewModelTests {
     #expect(!fixture.model.isBusy)
   }
 
-  /// Transient failures may retry while conclusive manual outcomes stay reviewable.
-  @Test func manualAndFutureOutcomesAreNotRetried() async {
+  /// Saved conclusive outcomes and deadlines are rechecked by the service.
+  @Test func manualAndFutureOutcomesRequestServiceRecheck() async {
     let future = Date().addingTimeInterval(3_600)
     let fixture = await makeFixture(folders: [
       FolderProcessingRecord(name: "Ambiguous", identity: "a", state: .severalMatches),
@@ -270,7 +271,63 @@ struct CollectionResultsViewModelTests {
     fixture.model.selectRows(IndexSet(integersIn: 0..<3))
     fixture.model.retrySelected()
     await settle()
-    #expect(await fixture.retry.requests.map(\.childName) == ["Eligible"])
+    #expect(await fixture.retry.requests.map(\.childName) == ["Ambiguous", "Eligible", "Future"])
+  }
+
+  /// A shared deadline stops a mixed selection after the service has skipped an unchanged conclusive row.
+  @Test func waitingResponseStopsMixedSelection() async {
+    let deadline = Date().addingTimeInterval(3_600)
+    let records = [
+      FolderProcessingRecord(name: "A", identity: "a", state: .notFound, reason: .noSuitableMovie),
+      FolderProcessingRecord(name: "B", identity: "b", state: .deferred, retryAt: deadline),
+      folder("C")
+    ]
+    let fixture = await makeFixture(folders: records)
+    await fixture.retry.holdResponses()
+    fixture.model.selectRows(IndexSet(integersIn: 0..<3))
+    fixture.model.retrySelected()
+    await settle()
+    #expect(await fixture.retry.requests.map(\.childName) == ["A"])
+    await fixture.retry.release(.notEligible)
+    await settle()
+    #expect(await fixture.retry.requests.map(\.childName) == ["A", "B"])
+    await fixture.retry.release(.waiting(until: deadline))
+    await settle()
+    #expect(await fixture.retry.requests.count == 2)
+    #expect(!fixture.model.isBusy)
+    #expect(fixture.model.statusMessage.contains("paused until"))
+    #expect(fixture.model.selectedRows.count == 3)
+  }
+
+  /// Authentication and protected outcomes remain unavailable for service retry requests.
+  @Test(arguments: [
+    FolderProcessingRecord(name: "Movie", identity: "child", state: .preserved),
+    FolderProcessingRecord(name: "Movie", identity: "child", state: .suppressed),
+    FolderProcessingRecord(name: "Movie", identity: "child", state: .excluded),
+    FolderProcessingRecord(name: "Movie", identity: "child", state: .failed, reason: .authentication),
+    FolderProcessingRecord(name: "Movie", state: .notFound, reason: .noSuitableMovie)
+  ])
+  func protectedOutcomesDoNotRequestRetry(record: FolderProcessingRecord) async {
+    let fixture = await makeFixture(folders: [record])
+    fixture.model.selectRows(IndexSet(integer: 0))
+    #expect(!fixture.model.canRetrySelected)
+    fixture.model.retrySelected()
+    await settle()
+    #expect(await fixture.retry.requests.isEmpty)
+  }
+
+  /// Reopening the results model preserves the ability to request a fresh conclusive-outcome check.
+  @Test func reopenedResultsCanRequestRetryForConclusiveOutcome() async {
+    let fixture = await makeFixture(folders: [
+      FolderProcessingRecord(name: "Movie", identity: "child", state: .notFound, reason: .noSuitableMovie)
+    ])
+    let reopened = CollectionResultsViewModel(rootID: fixture.source.rootID,
+      summaries: fixture.summaries, retryService: fixture.retry)
+    reopened.selectRows(IndexSet(integer: 0))
+    #expect(reopened.canRetrySelected)
+    reopened.retrySelected()
+    await settle()
+    #expect(await fixture.retry.requests.count == 1)
   }
 
   /// Stale, unavailable, and active-root projections block Choose Movie and Retry without hiding evidence.

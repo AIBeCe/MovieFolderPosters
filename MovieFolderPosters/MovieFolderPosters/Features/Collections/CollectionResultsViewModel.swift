@@ -99,7 +99,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
   }
   /// Selected unresolvedFolderRecords with saved evidence that permits requesting authoritative retry admission.
   private var eligibleSelectedFolderRecords: [FolderProcessingRecord] {
-    selectedFolderRecords.filter { isRetryEligible($0) }
+    selectedFolderRecords.filter { canRequestRetry($0) }
   }
 
   /// Observes existing summaries without starting search, inventory, or poster processing.
@@ -243,17 +243,14 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
 
   /// Describes retry availability without implying that saved evidence grants change permission.
   /// - Parameter folder: Saved folder evidence to describe.
-  /// - Returns: A safe reason or the earliest saved retry time.
+  /// - Returns: A safe reason for unavailability or an explanation of the service recheck.
   func retryAvailability(for folder: FolderProcessingRecord) -> String {
     guard savedProcessingEvidenceAllowsActions else { return "Unavailable until current results are loaded" }
     guard request(for: folder, action: .refresh) != .none else { return "Folder identity unavailable" }
-    if let retryAt = folder.nextRetryAt, retryAt > Date() {
-      return "Earliest " + DateFormatter.localizedString(from: retryAt, dateStyle: .medium, timeStyle: .short)
-        + "; retry explicitly"
-    }
-    guard isRetryEligible(folder) else { return "Manual review required" }
 
-    return folder.processingReason == .recoveryMode ? "Recovery mode is rechecked" : "Eligible for service recheck"
+    guard canRequestRetry(folder) else { return "Manual review required" }
+
+    return "Retry rechecks saved corrections and retry limits"
   }
 
   /// Runs one explicit selectedFolderIdentities in order and stops after shared admission rejection.
@@ -265,7 +262,7 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     for (index, folder) in folders.enumerated() {
       guard !Task.isCancelled, uiInvalidationGeneration == expectedGeneration else { break }
       guard savedProcessingEvidenceAllowsActions,
-        unresolvedFolderRecords.contains(where: { key(for: $0) == key(for: folder) && isRetryEligible($0) }),
+        unresolvedFolderRecords.contains(where: { key(for: $0) == key(for: folder) && canRequestRetry($0) }),
         let request = request(for: folder, action: .refresh)
       else {
         statusMessage = "Retries stopped because selected folder evidence changed. "
@@ -369,20 +366,17 @@ final class CollectionResultsViewModel: CollectionSummaryViewModelDelegate {
     Selection(name: folder.folderName, identity: folder.folderIdentity)
   }
 
-  /// Checks saved presentation evidence without replacing authoritative service admission.
-  private func isRetryEligible(_ folder: FolderProcessingRecord) -> Bool {
-    guard !folder.isVerifiedDone, request(for: folder, action: .refresh) != .none,
-      folder.nextRetryAt.map({ $0 <= Date() }) ?? true
-    else { return false }
+  /// Whether saved evidence permits requesting a current retry decision from the service.
+  private func canRequestRetry(_ folder: FolderProcessingRecord) -> Bool {
+    guard !folder.isVerifiedDone, request(for: folder, action: .refresh) != .none else { return false }
+
     switch folder.processingState {
-    case .notFound, .severalMatches, .preserved, .suppressed, .excluded: return false
-    case .done, .pending, .unresolved, .failed, .deferred, .uncertain: break
+    case .preserved, .suppressed, .excluded: return false
+    case .done, .pending, .notFound, .severalMatches, .unresolved, .failed, .deferred, .uncertain: break
     }
+
     switch folder.processingReason {
-    case .noSuitableMovie, .ambiguousMovie, .parsingProblem, .missingArtwork,
-      .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged, .manualMatchingRequired,
-      .conflictingMovieInformation:
-      return false
+    case .authentication, .policySuppressed, .existingPosterPreserved, .ownershipChanged: return false
     default: return true
     }
   }

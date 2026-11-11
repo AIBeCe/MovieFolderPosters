@@ -32,6 +32,11 @@ struct CollectionResultsViewControllerTests {
     #expect(observer.request?.rootID == rootID)
     #expect(observer.request?.action == .change)
     #expect(await retry.requestCount == .zero)
+    let retryButton = try #require(button(titled: "Retry Selected", in: controller.view))
+    #expect(retryButton.isEnabled)
+    retryButton.performClick(.none)
+    for _ in 0..<100 { await Task.yield() }
+    #expect(await retry.requestCount == 1)
     let doneButton = try #require(button(titled: "Done", in: controller.view))
     doneButton.performClick(.none)
     #expect(observer.didRequestClose)
