@@ -30,6 +30,16 @@ nonisolated public struct MovieFolderServiceFactory: Sendable {
       store: try locations.makePersistenceStore(directory: directory, maximumRecordBytes: 8 * 1024 * 1024))
   }
 
+  /// Opens the shared store for deliberate folder-specific movie rejections.
+  /// - Returns: The rejection store in the calling process's shared container.
+  /// - Throws: A storage location or persistence error.
+  public func makeFolderMovieRejectionStore() throws -> FolderMovieRejectionStore {
+    let directory = try locations.appGroupContainerURL().appendingPathComponent("FolderMovieRejections")
+
+    return FolderMovieRejectionStore(
+      store: try locations.makePersistenceStore(directory: directory, maximumRecordBytes: 8 * 1024 * 1024))
+  }
+
   /// Creates best-effort history using explicitly supplied process storage locations.
   public func makeActivityRecorder() -> any MovieFolderActivityServicing {
     do {
