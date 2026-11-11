@@ -71,6 +71,8 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
   case invalidSelection
   /// The title or release year does not satisfy the search contract.
   case invalidQuery
+  /// The requested operation requires the explicit Choose Movie flow.
+  case invalidAction
 
   /// A safe explanation appropriate for the action window.
   var errorDescription: String? {
@@ -82,6 +84,7 @@ nonisolated enum MoviePosterActionServiceError: Error, LocalizedError, Sendable 
     case .accessTokenUnavailable: "Add a TMDb read access token in Settings to use this action."
     case .invalidSelection: "Choose a movie with a poster before applying it."
     case .invalidQuery: "Enter a movie title and a valid optional release year."
+    case .invalidAction: "Open Choose Movie to review rejected movies."
     }
   }
 }
@@ -102,6 +105,8 @@ nonisolated protocol MoviePosterActionEnvironment: Sendable {
   func makeCollectionProcessingStore() throws -> CollectionProcessingStore
   /// Opens the correction store for the calling environment.
   func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore
+  /// Opens deliberate movie rejection storage for the calling environment.
+  func makeFolderMovieRejectionStore() throws -> FolderMovieRejectionStore
   /// Opens dedicated admission state in the same environment as the action's existing storage.
   func makeProcessingRecoveryService() throws -> ProcessingRecoveryService
 }
@@ -150,6 +155,10 @@ nonisolated struct LiveMoviePosterActionEnvironment: MoviePosterActionEnvironmen
   /// Opens the shared correction store using the live storage configuration.
   func makeFolderSearchCorrectionStore() throws -> FolderSearchCorrectionStore {
     try services.makeFolderSearchCorrectionStore()
+  }
+  /// Opens the shared rejection store using the live storage configuration.
+  func makeFolderMovieRejectionStore() throws -> FolderMovieRejectionStore {
+    try services.makeFolderMovieRejectionStore()
   }
   func makeProcessingRecoveryService() throws -> ProcessingRecoveryService {
     try services.makeProcessingRecoveryService()
@@ -339,6 +348,7 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
     case .accessTokenUnavailable: .authentication
     case .invalidSelection: .invalidSelection
     case .invalidQuery: .invalidQuery
+    case .invalidAction: .unavailable
     }
 
     return AutomaticFolderProcessingFailure(reason: reason, stage: .validateIdentity, occurredAt: Date())
@@ -365,8 +375,11 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   /// - Returns: The saved correction, if present.
   /// - Throws: Authorization, identity, cancellation, or storage errors.
   func searchCorrection(for request: MoviePosterRequest) async throws -> FolderSearchCorrection? {
-    try await withAuthorizedSearchCorrections(for: request) { store, collectionID, folderIdentity in
-      try store.correction(for: folderIdentity, in: collectionID)
+    try await withVerifiedFolderIdentity(for: request) { collectionID, folderIdentity in
+      let store = try environment.makeFolderSearchCorrectionStore()
+      try Task.checkCancellation()
+
+      return try store.correction(for: folderIdentity, in: collectionID)
     }
   }
 
@@ -376,9 +389,63 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - request: The authorized collection and selected child.
   /// - Throws: Authorization, identity, cancellation, or storage errors.
   func setSearchCorrection(_ correction: FolderSearchCorrection?, for request: MoviePosterRequest) async throws {
-    try await withAuthorizedSearchCorrections(for: request) { store, collectionID, folderIdentity in
+    try await withVerifiedFolderIdentity(for: request) { collectionID, folderIdentity in
+      let store = try environment.makeFolderSearchCorrectionStore()
+      try Task.checkCancellation()
       try store.setCorrection(correction, for: folderIdentity, in: collectionID)
     }
+  }
+
+  /// Reads deliberate movie rejections for the folder selected in Choose Movie.
+  /// - Parameter request: The Choose Movie request identifying the collection and child.
+  /// - Returns: Saved rejections and their current collection revision.
+  /// - Throws: Action, authorization, identity, cancellation, or storage errors.
+  func movieRejections(
+    for request: MoviePosterRequest
+  ) async throws -> FolderMovieRejectionStore.VersionedRejections {
+    try validateRejectionRequest(request)
+
+    return try await withVerifiedFolderIdentity(for: request) { collectionID, folderIdentity in
+      let store = try environment.makeFolderMovieRejectionStore()
+      try Task.checkCancellation()
+
+      return try store.rejections(for: folderIdentity, in: collectionID)
+    }
+  }
+
+  /// Records an explicitly rejected provider movie for the selected folder.
+  /// - Parameters:
+  ///   - movie: The validated provider identity and display metadata.
+  ///   - request: The Choose Movie request identifying the collection and child.
+  /// - Throws: Action, authorization, identity, cancellation, or storage errors.
+  func rejectMovie(_ movie: FolderMovieRejection, for request: MoviePosterRequest) async throws {
+    try validateRejectionRequest(request)
+
+    try await withVerifiedFolderIdentity(for: request) { collectionID, folderIdentity in
+      let store = try environment.makeFolderMovieRejectionStore()
+      try Task.checkCancellation()
+      try store.rejectMovie(movie, for: folderIdentity, in: collectionID)
+    }
+  }
+
+  /// Undoes one rejection without selecting or applying the movie.
+  /// - Parameters:
+  ///   - movieID: The positive provider movie identifier.
+  ///   - request: The Choose Movie request identifying the collection and child.
+  /// - Throws: Action, authorization, identity, cancellation, or storage errors.
+  func removeMovieRejection(movieID: Int, for request: MoviePosterRequest) async throws {
+    try validateRejectionRequest(request)
+
+    try await withVerifiedFolderIdentity(for: request) { collectionID, folderIdentity in
+      let store = try environment.makeFolderMovieRejectionStore()
+      try Task.checkCancellation()
+      try store.removeRejection(movieID: movieID, for: folderIdentity, in: collectionID)
+    }
+  }
+
+  /// Restricts rejection operations to the explicit movie-selection flow.
+  private func validateRejectionRequest(_ request: MoviePosterRequest) throws {
+    guard request.action == .change else { throw MoviePosterActionServiceError.invalidAction }
   }
 
   func searchMovies(for request: MoviePosterRequest, query: String, year: Int?,
@@ -542,9 +609,9 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
   ///   - operation: The synchronous operation using the verified collection and folder identities.
   /// - Returns: The result of the store operation.
   /// - Throws: Authorization, identity, cancellation, or storage errors.
-  private func withAuthorizedSearchCorrections<Value: Sendable>(
+  private func withVerifiedFolderIdentity<Value: Sendable>(
     for request: MoviePosterRequest,
-    operation: (FolderSearchCorrectionStore, UUID, String) throws -> Value
+    operation: (UUID, String) throws -> Value
   ) async throws -> Value {
     try await withExclusiveAction {
       try await withAuthorizedRoot(request) { context in
@@ -572,10 +639,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
         }
 
         try Task.checkCancellation()
-        let store = try environment.makeFolderSearchCorrectionStore()
-        try Task.checkCancellation()
 
-        return try operation(store, context.directory.id, folderIdentity)
+        return try operation(context.directory.id, folderIdentity)
       }
     }
   }
