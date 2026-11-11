@@ -229,7 +229,8 @@ actor MoviePosterActionService: MoviePosterActionServicing, CollectionRetryServi
           try Task.checkCancellation()
           let movieMetadataProvider = try makeMovieMetadataProvider(
             for: context.configuration, collectionID: context.directory.id)
-          let processor = try makeProcessor(for: context, movieMetadataProvider: movieMetadataProvider)
+          let processor = try makeProcessor(for: context, movieMetadataProvider: movieMetadataProvider,
+            searchCorrectionStore: environment.makeFolderSearchCorrectionStore())
           try checkConfigurationHasNotChanged(context)
 
           return try await processor.retryEligibleFolder(
@@ -659,11 +660,13 @@ private extension MoviePosterActionService {
   /// - Parameters:
   ///   - context: The validated root and configuration processing state.
   ///   - movieMetadataProvider: The metadata provider used for this operation.
+  ///   - searchCorrectionStore: Shared correction storage used only by selected retry.
   /// - Returns: A processor configured for the current poster appearance.
   /// - Throws: A storage or configuration error when processor dependencies are unavailable.
   func makeProcessor(
     for context: AuthorizedCollectionRoot,
-    movieMetadataProvider: any MovieMetadataProvider
+    movieMetadataProvider: any MovieMetadataProvider,
+    searchCorrectionStore: FolderSearchCorrectionStore? = .none
   ) throws -> MovieFolderProcessor {
     let container = try environment.appGroupContainerURL()
     let recordDirectory = container.appendingPathComponent(
@@ -697,7 +700,8 @@ private extension MoviePosterActionService {
       movieMatchingConfiguration: context.configuration.effectiveMovieMatchingConfiguration(for: context.directory),
       searchPageLimit: context.configuration.searchPageLimit,
       processingConfiguration: context.directory.processingConfiguration,
-      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: context.directory))
+      activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: context.directory),
+      searchCorrectionStore: searchCorrectionStore)
 
   }
 }

@@ -263,6 +263,11 @@ struct IsolatedFinderEnvironment: FinderRuntimeEnvironment {
       store: PersistenceStore(directory: testEnvironment.container.appendingPathComponent("Outcomes")),
       configuration: testEnvironment.repository)
   }
+  /// Opens corrections beneath this test's disposable container.
+  func searchCorrectionStore() throws -> FolderSearchCorrectionStore {
+    FolderSearchCorrectionStore(store: try PersistenceStore(
+      directory: testEnvironment.container.appendingPathComponent("FolderSearchCorrections")))
+  }
   func acquireDirectoryAccess(
     bookmark: Data, securityScoped: Bool, expectedIdentity: String?
   ) throws -> AuthorizedDirectoryAccess {

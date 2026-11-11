@@ -50,7 +50,7 @@ extension MovieFolderProcessor {
 
     var visit = AutomaticProcessingPass(
       collectionProcessingRecord: try recordProcessingStart(context: processingContext,
-        action: .automatic), activityLog: activity)
+        action: .automatic), activityLog: activity, correctionCollectionID: processingContext?.rootID)
     defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord) }
     let inventory = try processingCandidates(in: root, recording: &visit.collectionProcessingRecord)
     let candidates = inventory.filter { !processingConfiguration.excludesFolder(identity: $0.identity) }

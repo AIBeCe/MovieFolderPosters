@@ -22,6 +22,7 @@ nonisolated public enum FolderPosterOwnershipRecord: String, Codable, Sendable {
 nonisolated public enum MovieIdentitySource: String, Codable, Sendable {
   case conservativeMatch, explicitSelection, savedDecision
   case validatedIdentifier, nfoInformation, videoNameInformation, imageNameInformation
+  case savedSearchCorrection
 }
 /// The authoritative current result and supporting evidence for one visible child directory.
 nonisolated public struct FolderProcessingRecord: Codable, Sendable, Equatable, Identifiable {

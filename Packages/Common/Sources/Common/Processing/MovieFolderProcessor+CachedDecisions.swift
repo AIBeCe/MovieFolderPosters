@@ -40,7 +40,8 @@ extension MovieFolderProcessor {
         (record.status == .transientFailure && record.matchedMovieID != .none && record.posterPath != .none
           && record.lastFailure == .none && record.processingReason == .none)
 
-      if canReuseSavedArtwork, let movieID = record.matchedMovieID, let posterPath = record.posterPath {
+      if canReuseSavedArtwork, record.provisionalCorrectedMatch != true,
+        let movieID = record.matchedMovieID, let posterPath = record.posterPath {
         let assignment: SavedFolderPosterAssignment
         switch cachedPoster(for: posterPath) {
         case .valid(let bytes):
@@ -76,12 +77,19 @@ extension MovieFolderProcessor {
     access: PersistenceAccess,
     visit: inout AutomaticProcessingPass
   ) throws {
-    guard record.isLegacyUnresolvedResult || record.processingReason == .incompleteSearch || review,
-      case .parsed(let parsed) = parser.parse(candidate.name)
-    else { return }
+    guard record.isLegacyUnresolvedResult || record.processingReason == .incompleteSearch || review else { return }
+
+    let title: String
+    if let correction = visit.searchCorrection?.captured.correction {
+      title = correction.title
+    } else if case .parsed(let parsed) = parser.parse(candidate.name) {
+      title = parsed.title
+    } else {
+      return
+    }
 
     let queryKey = try Self.queryKey(
-      title: parsed.title,
+      title: title,
       year: .none,
       language: movieMatchingConfiguration.searchLanguage,
       credentialRevision: credentialRevision,
@@ -100,6 +108,8 @@ extension MovieFolderProcessor {
       movieIdentitySource: record.movieIdentitySource)
     visit.processingCache.folders[candidate.name]?.localInformationReadResultSHA256 =
       record.localInformationReadResultSHA256
+    visit.processingCache.folders[candidate.name]?.searchCorrectionSHA256 = record.searchCorrectionSHA256
+    visit.processingCache.folders[candidate.name]?.provisionalCorrectedMatch = record.provisionalCorrectedMatch
     try saveState(visit.processingCache, to: access, activity: visit.activityLog)
   }
 

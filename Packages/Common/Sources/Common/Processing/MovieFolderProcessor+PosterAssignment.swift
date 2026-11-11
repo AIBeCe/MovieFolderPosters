@@ -9,12 +9,15 @@ extension MovieFolderProcessor {
   ///   - data: The encoded record or image bytes consumed by this operation.
   ///   - candidate: The child folder evidence captured before this operation.
   ///   - root: The authorized collection directory containing the immediate child.
+  ///   - localInformationReadResultSHA256: Captured digest of selected local sources.
+  ///   - searchCorrection: Captured correction record to verify under the settings lock.
   /// - Throws: Persistence, authorization, changed-folder, or icon-operation errors from the required processing step.
   func assign(
     _ data: Data,
     to candidate: MovieFolderCandidate,
     in root: URL,
-    localInformationReadResultSHA256: String? = .none
+    localInformationReadResultSHA256: String? = .none,
+    searchCorrection: AutomaticSearchCorrection? = .none
   ) throws -> FolderPosterAssignmentResult {
     try Task.checkCancellation()
     let recoveryAccess = try recovery?.acquireProcessingAccess()
@@ -33,6 +36,8 @@ extension MovieFolderProcessor {
     if let localInformationReadResultSHA256 {
       try informationContext(candidate, root: root, sha256: localInformationReadResultSHA256).validate()
     }
+
+    try searchCorrection?.validate()
 
     return try posterAssigner.assignPoster(
       data, toChild: candidate.name, in: root,

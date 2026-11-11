@@ -19,6 +19,8 @@ public actor MovieFolderProcessor {
   let persistence: PersistenceStore
   /// Optional stable locks shared across processing-record generations.
   let processingLockStore: PersistenceStore?
+  /// User-saved search corrections shared by host and Finder.
+  let searchCorrectionStore: FolderSearchCorrectionStore?
   /// The metadata source used only when cached decisions or posters are insufficient.
   let provider: any MovieMetadataProvider
   /// The directory containing validated source poster bytes keyed by provider path.
@@ -77,6 +79,7 @@ public actor MovieFolderProcessor {
   ///   - activityLogContext: Trusted root-bound names and capture-time privacy for this processor.
   ///   - movieMatchingConfiguration: Effective choices captured for this collection's automatic matching.
   ///   - searchPageLimit: Global captured search budget; aggregation rejects values outside one through five.
+  ///   - searchCorrectionStore: Shared user decisions for automatic processing and selected retry.
   public init(
     inventoryReader: any CollectionInventoryReading = FileSystemService(),
     informationReader: any MovieFolderInformationReading = FileSystemService(),
@@ -99,8 +102,10 @@ public actor MovieFolderProcessor {
     searchPageLimit: Int = 3,
     processingConfiguration: CollectionProcessingConfiguration = CollectionProcessingConfiguration(),
     activityHistoryService: (any MovieFolderActivityRecording)? = .none,
-    activityLogContext: MovieFolderActivityLogContext? = .none
+    activityLogContext: MovieFolderActivityLogContext? = .none,
+    searchCorrectionStore: FolderSearchCorrectionStore? = .none
   ) {
+    self.searchCorrectionStore = searchCorrectionStore
     self.activityHistoryService = activityHistoryService
     self.activityLogContext = activityLogContext
     self.credentialRevision = credentialRevision

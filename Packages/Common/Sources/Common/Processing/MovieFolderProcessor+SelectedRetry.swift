@@ -57,7 +57,8 @@ extension MovieFolderProcessor {
 
     guard try canRetry(record, candidate: candidate, root: root) else { return .notEligible }
 
-    var preparation = AutomaticProcessingPass(processingCache: try loadState(from: access))
+    var preparation = AutomaticProcessingPass(
+      processingCache: try loadState(from: access), correctionCollectionID: processingContext.rootID)
     let hadPriorAssessment = preparation.processingCache.folders[child] != nil
     try prepareMovieInformation(candidate, root: root, visit: &preparation)
     let cache = preparation.processingCache
@@ -85,6 +86,7 @@ extension MovieFolderProcessor {
       processingCache: cache, collectionProcessingRecord: try recordProcessingStart(context:
         processingContext, action: .manual, child: child),
       activityLog: activity, localInformationReadResults: preparation.localInformationReadResults,
+      correctionCollectionID: processingContext.rootID, searchCorrection: preparation.searchCorrection,
       selectedRetryChildName: child)
     defer { interruptUnfinishedProcessing(&visit.collectionProcessingRecord, child: child) }
 

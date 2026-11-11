@@ -97,6 +97,7 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
     let container = try environment.containerURL()
     let records = container.appendingPathComponent("Processing/\(configuration.processingCacheRevision)")
     let repository = try environment.configurationRepository()
+    let searchCorrectionStore = try environment.searchCorrectionStore()
     let processingVerifier = FinderCollectionConfigurationVerifier(
       repository: repository, configuration: configuration, roots: roots)
     #if DEBUG
@@ -121,7 +122,8 @@ actor FinderConfigurationRuntime: DirectoryObservationSchedulerDelegate {
         movieMatchingConfiguration: configuration.effectiveMovieMatchingConfiguration(for: root.directory),
         searchPageLimit: configuration.searchPageLimit,
         processingConfiguration: root.directory.processingConfiguration,
-        activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: root.directory))
+        activityHistoryService: activity, activityLogContext: MovieFolderActivityLogContext(directory: root.directory),
+        searchCorrectionStore: searchCorrectionStore)
     }
     processingConfiguration = configuration
     logger.notice("Shared Keychain access token available")

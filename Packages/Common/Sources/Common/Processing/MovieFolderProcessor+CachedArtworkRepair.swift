@@ -172,6 +172,7 @@ extension MovieFolderProcessor {
         movie: savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate))
 
       guard let record = visit.processingCache.folders[candidate.name], record.fingerprint == candidate.fingerprint,
+        record.provisionalCorrectedMatch != true,
         let movieID = record.matchedMovieID, let posterPath = record.posterPath
       else { continue }
 

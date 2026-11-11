@@ -29,6 +29,8 @@ nonisolated protocol FinderRuntimeEnvironment: Sendable {
   ) throws -> any MovieMetadataProvider
   /// Opens authoritative collection outcomes.
   func processingStore() throws -> CollectionProcessingStore
+  /// Opens the shared user-saved search corrections.
+  func searchCorrectionStore() throws -> FolderSearchCorrectionStore
   /// Opens the durable processing gate within this environment's shared storage.
   func processingRecoveryService() throws -> ProcessingRecoveryService
   /// Resolves and retains authorization for a transferred or extension-owned bookmark.
@@ -124,6 +126,10 @@ nonisolated struct SystemFinderRuntimeEnvironment: FinderRuntimeEnvironment {
 
   func processingStore() throws -> CollectionProcessingStore {
     try services.makeCollectionProcessingStore()
+  }
+  /// Opens the shared user-saved search corrections.
+  func searchCorrectionStore() throws -> FolderSearchCorrectionStore {
+    try services.makeFolderSearchCorrectionStore()
   }
   func processingRecoveryService() throws -> ProcessingRecoveryService {
     try services.makeProcessingRecoveryService()

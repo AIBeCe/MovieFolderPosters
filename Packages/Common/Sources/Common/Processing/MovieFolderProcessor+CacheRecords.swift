@@ -46,6 +46,8 @@ nonisolated struct FolderProcessingCacheRecord: Codable {
     case requiresAutomaticReview = "requiresAutomaticReassessment"
     case acceptedMovieReleaseDates, savedMatchingRulesVersion
     case localInformationReadResultSHA256 = "localInformationDigest"
+    case searchCorrectionSHA256 = "searchCorrectionDigest"
+    case provisionalCorrectedMatch
   }
   /// How the saved movie identity was established.
   var movieIdentitySource: MovieIdentitySource?
@@ -61,6 +63,15 @@ nonisolated struct FolderProcessingCacheRecord: Codable {
 
   /// Digest of enabled local inputs used by this automatic assessment; no source contents are persisted.
   var localInformationReadResultSHA256: String? = .none
+  /// Digest of the effective correction used for the last unconfirmed assessment.
+  var searchCorrectionSHA256: String? = .none
+  /// A corrected match whose identity has not been committed by a successful assignment.
+  var provisionalCorrectedMatch: Bool? = .none
+
+  /// Whether this record carries an identity that an automatic assessment must preserve.
+  var protectsMovieIdentity: Bool {
+    movieIdentitySource == .explicitSelection || (matchedMovieID != .none && provisionalCorrectedMatch != true)
+  }
 
   /// Derives all source-classified years without duplicating writable year evidence.
   func sourceClassifiedMovieYears() -> [MovieYear] {

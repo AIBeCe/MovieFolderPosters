@@ -220,6 +220,7 @@ final class CollectionProcessingDetailsViewController: NSViewController, Collect
     case .imageNameInformation: "Image filename"
     case .explicitSelection: "Explicitly selected"
     case .savedDecision: "Saved decision"
+    case .savedSearchCorrection: "Saved search correction"
     case .none: "Not recorded"
     }
   }

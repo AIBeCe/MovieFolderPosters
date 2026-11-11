@@ -13,9 +13,15 @@ extension MovieFolderProcessor {
   ) async throws -> Bool {
     visit.activityLog?.begin(candidate.name, stage: .parse)
     visit.processingSummary.examined += 1
+    if visit.processingCache.folders[candidate.name]?.provisionalCorrectedMatch == true {
+      visit.processingCache.folders.removeValue(forKey: candidate.name)
+    }
     var attempt = FolderPosterAssignmentAttemptResult()
+    attempt.searchCorrection = visit.searchCorrection
     attempt.localInformationReadResultSHA256 = visit.localInformationReadResults[candidate.name]?.sha256
-    attempt.matchedMovie = savedActivityMovie(visit.processingCache.folders[candidate.name], candidate: candidate)
+    let saved = visit.processingCache.folders[candidate.name]
+    attempt.protectsSavedIdentity = saved?.fingerprint == candidate.fingerprint && saved?.protectsMovieIdentity == true
+    attempt.matchedMovie = savedActivityMovie(saved, candidate: candidate)
     do {
       try await matchAndAssignPoster(candidate, root: root, access: access, visit: &visit, attempt: &attempt)
     } catch let error where error is CollectionProcessingError || error is ConfigurationError {
@@ -26,6 +32,8 @@ extension MovieFolderProcessor {
       saveTemporaryFailure(candidate, in: &visit.processingCache, reason: .interrupted)
       visit.processingCache.folders[candidate.name]?.localInformationReadResultSHA256 =
         attempt.localInformationReadResultSHA256
+      visit.recordCorrectionEvidence(
+        for: candidate.name, correction: attempt.searchCorrection, protectsSavedIdentity: attempt.protectsSavedIdentity)
       try saveState(visit.processingCache, to: access, activity: visit.activityLog)
       visit.processingSummary.transientFailures += 1
       let record = failedFolderResult(candidate, stage: .search, reason: .interrupted)
@@ -74,6 +82,8 @@ extension MovieFolderProcessor {
       releaseDates: attempt.acceptedMovieReleaseDates)
     visit.processingCache.folders[candidate.name]?.localInformationReadResultSHA256 =
       attempt.localInformationReadResultSHA256
+    visit.recordCorrectionEvidence(
+      for: candidate.name, correction: attempt.searchCorrection, protectsSavedIdentity: attempt.protectsSavedIdentity)
     if attempt.matchedMovie != .none,
       visit.processingCache.folders[candidate.name]?.movieIdentitySource != .explicitSelection {
       visit.processingCache.folders[candidate.name]?.movieIdentitySource = attempt.movieIdentitySource
@@ -122,6 +132,8 @@ extension MovieFolderProcessor {
       reason: reason, failureReason: failure, releaseDates: attempt.acceptedMovieReleaseDates)
     visit.processingCache.folders[candidate.name]?.localInformationReadResultSHA256 =
       attempt.localInformationReadResultSHA256
+    visit.recordCorrectionEvidence(
+      for: candidate.name, correction: attempt.searchCorrection, protectsSavedIdentity: attempt.protectsSavedIdentity)
     if let identitySource { visit.processingCache.folders[candidate.name]?.movieIdentitySource = identitySource }
     visit.processingCache.folders[candidate.name]?.retryDate = retryAt
     var record = failedFolderResult(candidate, stage: attempt.failedProcessingStage, movie: attempt.matchedMovie,
@@ -157,6 +169,8 @@ extension MovieFolderProcessor {
       reason: evidence.reason, failureReason: evidence.failureReason, releaseDates: attempt.acceptedMovieReleaseDates)
     visit.processingCache.folders[candidate.name]?.localInformationReadResultSHA256 =
       attempt.localInformationReadResultSHA256
+    visit.recordCorrectionEvidence(
+      for: candidate.name, correction: attempt.searchCorrection, protectsSavedIdentity: attempt.protectsSavedIdentity)
     if let identitySource { visit.processingCache.folders[candidate.name]?.movieIdentitySource = identitySource }
 
     if let retryDate = try effectiveRootBackoff(for: error) {
@@ -198,27 +212,46 @@ extension MovieFolderProcessor {
     _ candidate: MovieFolderCandidate, root: URL, access: PersistenceAccess,
     visit: inout AutomaticProcessingPass, attempt: inout FolderPosterAssignmentAttemptResult
   ) async throws {
-    let (information, context) = try prepareMatchingInformation(candidate, root: root, visit: &visit, attempt: &attempt)
+    let (readResult, context) = try prepareMatchingInformation(candidate, root: root, visit: &visit, attempt: &attempt)
+    let resolver = LocalMovieInformationResolver()
     let title: String
     let year: Int?
-    switch information {
-    case .title(let selectedTitle, let selectedYear, let source):
-      title = selectedTitle
-      year = selectedYear
-      attempt.movieIdentitySource = source.identitySource
-    case .unparseableFolder:
-      try recordUnresolvedAttempt(candidate, reason: .parsingProblem, access: access, visit: &visit)
-      return
-    case .conflicting:
-      try recordUnresolvedAttempt(candidate, reason: .conflictingMovieInformation, access: access, visit: &visit)
-      return
-    case .unusable:
-      try recordUnresolvedAttempt(candidate, reason: .manualMatchingRequired, access: access, visit: &visit)
-      return
-    case .identifiers(let identifiers):
-      try await matchAndAssignIdentifierPoster(identifiers, context: context, access: access,
-        visit: &visit, attempt: &attempt)
-      return
+    let explicitIdentifiers: [MovieIdentifier]
+    if let correction = context.searchCorrection?.captured.correction {
+      switch resolver.resolve(folderName: candidate.name, readResult: readResult, correction: correction) {
+      case .search(let fields, let identifiers):
+        title = fields.title
+        year = fields.year
+        explicitIdentifiers = identifiers
+        attempt.movieIdentitySource = .savedSearchCorrection
+      case .conflicting:
+        try recordUnresolvedAttempt(candidate, reason: .conflictingMovieInformation, access: access, visit: &visit)
+        return
+      case .unusable:
+        try recordUnresolvedAttempt(candidate, reason: .manualMatchingRequired, access: access, visit: &visit)
+        return
+      }
+    } else {
+      explicitIdentifiers = []
+      switch resolver.resolve(folderName: candidate.name, readResult: readResult) {
+      case .title(let selectedTitle, let selectedYear, let source):
+        title = selectedTitle
+        year = selectedYear
+        attempt.movieIdentitySource = source.identitySource
+      case .unparseableFolder:
+        try recordUnresolvedAttempt(candidate, reason: .parsingProblem, access: access, visit: &visit)
+        return
+      case .conflicting:
+        try recordUnresolvedAttempt(candidate, reason: .conflictingMovieInformation, access: access, visit: &visit)
+        return
+      case .unusable:
+        try recordUnresolvedAttempt(candidate, reason: .manualMatchingRequired, access: access, visit: &visit)
+        return
+      case .identifiers(let identifiers):
+        try await matchAndAssignIdentifierPoster(identifiers, context: context, access: access,
+          visit: &visit, attempt: &attempt)
+        return
+      }
     }
 
     if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, year == .none {
@@ -242,13 +275,32 @@ extension MovieFolderProcessor {
 
     try saveState(visit.processingCache, to: access, activity: visit.activityLog)
 
-    guard case .matched(let movie, let releaseDates) = identityResult, let posterPath = movie.posterPath,
-      !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else {
+    guard case .matched(let movie, let releaseDates) = identityResult else {
       let (reason, identifiedMovie) = unresolvedIdentity(identityResult)
       try recordUnresolvedAttempt(candidate, reason: reason, movie: identifiedMovie,
         releaseDates: identityResult.acceptedMovieReleaseDates, identitySource: attempt.movieIdentitySource,
         access: access, visit: &visit)
+      return
+    }
+
+    if !explicitIdentifiers.isEmpty {
+      let resolution = try await informationProvider(context).resolveMovieIdentifiers(
+        explicitIdentifiers, language: movieMatchingConfiguration.searchLanguage)
+
+      switch resolution {
+      case .matched(let identified) where identified.id == movie.id: break
+      case .matched, .conflicting:
+        try recordUnresolvedAttempt(candidate, reason: .conflictingMovieInformation, access: access, visit: &visit)
+        return
+      case .notFound:
+        try recordUnresolvedAttempt(candidate, reason: .noSuitableMovie, access: access, visit: &visit)
+        return
+      }
+    }
+
+    guard let posterPath = movie.posterPath, !posterPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      try recordUnresolvedAttempt(candidate, reason: .missingArtwork, movie: movie,
+        releaseDates: releaseDates, identitySource: attempt.movieIdentitySource, access: access, visit: &visit)
       return
     }
 
@@ -264,14 +316,14 @@ extension MovieFolderProcessor {
   ///   - root: Authorized collection root.
   ///   - visit: Processing state that retains the bounded information read.
   ///   - attempt: Attempt receiving the digest of its initial inputs.
-  /// - Returns: The interpreted information and its matching freshness context.
+  /// - Returns: The bounded information and its matching freshness context.
   /// - Throws: Cancellation, changed directory identity, or local read errors.
   private func prepareMatchingInformation(
     _ candidate: MovieFolderCandidate,
     root: URL,
     visit: inout AutomaticProcessingPass,
     attempt: inout FolderPosterAssignmentAttemptResult
-  ) throws -> (AutomaticMovieInformation, MovieInformationReadContext) {
+  ) throws -> (MovieFolderInformationReadResult, MovieInformationReadContext) {
     let readResult: MovieFolderInformationReadResult
     if let existing = visit.localInformationReadResults[candidate.name] {
       readResult = existing
@@ -280,10 +332,11 @@ extension MovieFolderProcessor {
       visit.localInformationReadResults = [candidate.name: readResult]
     }
     attempt.localInformationReadResultSHA256 = readResult.sha256
-    let context = informationContext(candidate, root: root, sha256: readResult.sha256)
+    let context = informationContext(
+      candidate, root: root, sha256: readResult.sha256, searchCorrection: visit.searchCorrection)
     visit.localInformationContexts = [candidate.name: context]
 
-    return (LocalMovieInformationResolver().resolve(folderName: candidate.name, readResult: readResult), context)
+    return (readResult, context)
   }
 
   /// Matches a validated provider identifier and assigns its artwork after rechecking the selected folder.
@@ -359,15 +412,29 @@ extension MovieFolderProcessor {
     visit.activityLog?.movie = movie
     attempt.failedProcessingStage = .artwork
     visit.activityLog?.stage = .artwork
-    let imageData = try await posterBytes(for: assignment.posterPath, visit: &visit)
+    let imageData: Data
+    do {
+      imageData = try await posterBytes(for: assignment.posterPath, visit: &visit)
+    } catch {
+      try visit.searchCorrection?.validate()
+      throw error
+    }
 
     guard try await validateSelectedCandidate(candidate, root: assignment.root, visit: &visit) else { return }
 
     attempt.failedProcessingStage = .assignPoster
     visit.activityLog?.stage = .assignPoster
     let result = try assign(imageData, to: candidate, in: assignment.root,
-      localInformationReadResultSHA256: attempt.localInformationReadResultSHA256)
+      localInformationReadResultSHA256: attempt.localInformationReadResultSHA256,
+      searchCorrection: visit.searchCorrection)
     visit.activityLog?.append(result == .assigned ? .posterApplied : .preserved)
+
+    if result == .existingIconPreserved, attempt.searchCorrection?.captured.correction != .none {
+      try saveAssignedState(
+        visit.processingCache, to: assignment.persistenceAccess, candidate: candidate, root: assignment.root,
+        processingState: &visit.collectionProcessingRecord, activity: visit.activityLog)
+      return
+    }
 
     var completedRecord = FolderProcessingCacheRecord(
       fingerprint: candidate.fingerprint,
@@ -380,6 +447,7 @@ extension MovieFolderProcessor {
       movieIdentitySource: attempt.movieIdentitySource ?? .conservativeMatch
     )
     completedRecord.localInformationReadResultSHA256 = attempt.localInformationReadResultSHA256
+    completedRecord.searchCorrectionSHA256 = visit.searchCorrection?.sha256
     completedRecord.acceptedMovieReleaseDates = attempt.acceptedMovieReleaseDates
     completedRecord.savedMatchingRulesVersion = Self.savedMatchingRulesVersion
     completedRecord.nameParserRevision = ReleaseNameParser.revision
@@ -405,9 +473,13 @@ extension MovieFolderProcessor {
     access: PersistenceAccess, visit: inout AutomaticProcessingPass
   ) throws {
     if let context = visit.localInformationContexts[candidate.name] { try context.validate() }
+    let saved = visit.processingCache.folders[candidate.name]
+    let protectsSavedIdentity = saved?.fingerprint == candidate.fingerprint && saved?.protectsMovieIdentity == true
     recordUnresolved(candidate, in: &visit.processingCache, reason: reason, movie: movie, releaseDates: releaseDates)
     visit.processingCache.folders[candidate.name]?.localInformationReadResultSHA256 =
       visit.localInformationReadResults[candidate.name]?.sha256
+    visit.recordCorrectionEvidence(
+      for: candidate.name, correction: visit.searchCorrection, protectsSavedIdentity: protectsSavedIdentity)
     if let identitySource, movie != .none,
       visit.processingCache.folders[candidate.name]?.movieIdentitySource != .explicitSelection {
       visit.processingCache.folders[candidate.name]?.movieIdentitySource = identitySource
@@ -463,9 +535,9 @@ extension MovieFolderProcessor {
       now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {
       return cached.searchResult()
     } else {
-      let context = informationContext(candidate, root: root,
-        sha256: try visit.localInformationReadResults[candidate.name]?.sha256
-          ?? readMovieInformation(candidate, root: root).sha256)
+      let context = try visit.localInformationContexts[candidate.name] ?? informationContext(candidate, root: root,
+        sha256: visit.localInformationReadResults[candidate.name]?.sha256
+          ?? readMovieInformation(candidate, root: root).sha256, searchCorrection: visit.searchCorrection)
       let search = try await informationProvider(context).searchMovies(title: title, year: year,
         language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
       try Task.checkCancellation()
@@ -541,6 +613,10 @@ struct AutomaticProcessingPass {
   var localInformationReadResults: [String: MovieFolderInformationReadResult] = [:]
   /// Immutable input contracts used before unresolved decisions are persisted.
   var localInformationContexts: [String: MovieInformationReadContext] = [:]
+  /// Configured collection used for correction lookups.
+  var correctionCollectionID: UUID? = .none
+  /// Captured correction for the current member.
+  var searchCorrection: AutomaticSearchCorrection? = .none
   /// Counts reported to the caller independently of durable outcomes.
   var processingSummary = ProcessingSummary()
   /// Whether provider admission ended this traversal without a normal collection-wide completion.
@@ -549,6 +625,18 @@ struct AutomaticProcessingPass {
   var attemptedPosterImagePaths = Set<String>()
   /// Restricts result deferral and interruption to one member for an explicit retry.
   var selectedRetryChildName: String? = .none
+
+  /// Stamps an inconclusive result without changing a previously confirmed identity's protection.
+  mutating func recordCorrectionEvidence(
+    for folder: String, correction: AutomaticSearchCorrection?, protectsSavedIdentity: Bool
+  ) {
+    guard let correction, !protectsSavedIdentity else { return }
+
+    let digest = correction.sha256
+    let hasMovie = processingCache.folders[folder]?.matchedMovieID != .none
+    processingCache.folders[folder]?.searchCorrectionSHA256 = digest
+    if digest != .none && hasMovie { processingCache.folders[folder]?.provisionalCorrectedMatch = true }
+  }
 }
 
 /// Evidence retained as a fresh attempt advances across suspension points.
@@ -557,6 +645,10 @@ struct FolderPosterAssignmentAttemptResult {
   var failedProcessingStage: FolderProcessingStage = .parse
   /// Captured digest stamped on every outcome from this attempt.
   var localInformationReadResultSHA256: String? = .none
+  /// Correction evidence retained only for fresh automatic matching attempts.
+  var searchCorrection: AutomaticSearchCorrection? = .none
+  /// Whether the attempt began with a saved identity that must remain protected.
+  var protectsSavedIdentity = false
   /// Source that actually established this attempt's provider identity.
   var movieIdentitySource: MovieIdentitySource? = .none
   /// The established movie identity, if matching succeeded.
