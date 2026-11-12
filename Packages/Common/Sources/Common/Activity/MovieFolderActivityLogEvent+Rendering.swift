@@ -19,6 +19,7 @@ extension MovieFolderActivityLogEvent {
       parts.append("Collection details were not recorded.")
     }
     if let reason { parts.append(reasonDescription(reason)) }
+    if let matchingDiagnostics { parts.append(matchingDiagnostics.summary) }
     if let failure {
       parts.append("Failure during \(stageDescription(failure.stage)): \(failureDescription(failure.reason)).")
       parts.append(recoveryDescription(failure.reason))
@@ -117,40 +118,7 @@ extension MovieFolderActivityLogEvent {
 
   /// Converts a closed saved assessment to fixed, actionable text.
   private func reasonDescription(_ reason: FolderProcessingReason) -> String {
-    switch reason {
-    case .noSuitableMovie: "No suitable provider movie was found."
-    case .ambiguousMovie: "Choose the intended movie from unresolved results."
-    case .incompleteSearch: "Search results are incomplete, so a unique movie could not be established. "
-      + "Refine the search or review Maximum search pages in Settings."
-    case .missingArtwork: "The confirmed movie has no usable artwork."
-    case .parsingProblem: "The folder name could not establish a movie; choose a movie manually."
-    case .existingPosterPreserved: "An existing custom icon was preserved."
-    case .policySuppressed: "A saved processing choice suppressed this folder."
-    case .processingFailure: "The folder operation did not complete."
-    case .retryDeferred: "The saved retry eligibility boundary has not passed."
-    case .interrupted: "The previous processing run was interrupted."
-    case .inventoryPending: "Folder inventory is incomplete."
-    case .storageUnavailable: "Required storage was unavailable; restore access and try again."
-    case .inspectionFailure: "Folder inspection failed; check access and try again."
-    case .metadataFailure: "Movie metadata could not be established."
-    case .posterFailure: "Poster artwork could not be applied."
-    case .filesystemFailure: "A filesystem operation failed; check folder access."
-    case .savedIdentityUnavailable: "The saved movie identity is unavailable; choose the movie again."
-    case .ownershipChanged: "Poster ownership changed; refresh the folder before retrying."
-    case .capacityExceeded: "Storage capacity was insufficient."
-    case .cachePersistenceFailure: "The movie decision or artwork cache could not be saved."
-    case .authentication: "Update the TMDb access token before retrying."
-    case .rateLimited: "The provider requested a pause before further requests."
-    case .unknown: "The processing reason was not established."
-    case .connectivity: "The provider could not be reached; check connectivity."
-    case .serverFailure: "The provider reported a server failure."
-    case .invalidResponse: "The provider response was invalid."
-    case .recoveryMode: "Recovery mode pauses processing; review recovery settings."
-    case .manualMatchingRequired: "Choose the intended movie manually."
-    case .conflictingMovieInformation:
-      "The movie information disagrees. Choose the intended movie manually."
-    case .explicitExclusion: "The folder is explicitly excluded from automatic processing."
-    }
+    reason.userDescription + "."
   }
 
   /// Fixed names for safe processing stages.

@@ -108,7 +108,8 @@ struct LogTableCoverageTests {
       Issue.record("Expected all controls in the Log key-view loop")
       return
     }
-    let keyViewOrder: [NSView] = [source, search, category, severity, recording, table, copy, clear]
+    let details = try control(NSButton.self, label: "Matching Details", in: controls)
+    let keyViewOrder: [NSView] = [source, search, category, severity, recording, table, details, copy, clear]
     for (current, next) in zip(keyViewOrder, keyViewOrder.dropFirst() + [source]) {
       #expect(current.nextKeyView === next)
     }

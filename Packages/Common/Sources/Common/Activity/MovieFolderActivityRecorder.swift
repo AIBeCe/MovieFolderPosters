@@ -103,7 +103,8 @@ public actor MovieFolderActivityRecorder: MovieFolderActivityServicing {
     let collectionID = committedRemoval?.collectionID ?? event.collectionID
 
     guard let collectionID else {
-      let activityEventToAppend = event.target == .none ? event : event.redactingCollectionIdentifiers()
+      let activityEventToAppend = event.target == .none && event.matchingDiagnostics == .none
+        ? event : event.redactingCollectionIdentifiers()
       try await appendBoundedActivityEvent(activityEventToAppend, to: activityHistoryStore, accessMode: .boundedWait)
 
       return .appended

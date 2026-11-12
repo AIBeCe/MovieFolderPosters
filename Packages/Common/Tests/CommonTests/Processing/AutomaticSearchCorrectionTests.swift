@@ -42,6 +42,36 @@ struct AutomaticSearchCorrectionTests {
     if !agrees { #expect(try scenario.record()?.processingReason == .conflictingMovieInformation) }
   }
 
+  /// Final identifier reconciliation supersedes a preliminary successful corrected-title match.
+  @Test(arguments: [0, 1, 2, 3])
+  func correctionDiagnosticsRetainFinalIdentifierDecision(_ disposition: Int) async throws {
+    let scenario = try CorrectionScenario(name: "Wrong Movie [imdb:tt0078748]")
+    defer { scenario.cleanup() }
+    try scenario.save(FolderSearchCorrection(title: "Dune", year: 2021))
+    let history = ProcessingActivityProbe()
+    let identified = MovieMetadata(id: disposition == 0 ? 42 : 348, title: "Dune", originalTitle: "Dune",
+      releaseYear: 2021, posterPath: "/poster.jpg")
+    let lookups: [String: MovieMetadata?] = disposition == 3 ? [:]
+      : ["tt0078748": disposition == 2 ? .none : identified]
+    let provider = CountingProvider(imdbMovies: lookups)
+    let directory = MonitoredDirectory(id: scenario.context.rootID, path: scenario.fixture.movies.path,
+      transferBookmark: Data(), authorizationVersion: UUID())
+    let processor = MovieFolderProcessor(persistence: scenario.fixture.persistence, provider: provider,
+      cacheDirectory: scenario.fixture.cache, posterAssigner: scenario.fixture.assigner,
+      activityHistoryService: history, activityLogContext: .init(directory: directory),
+      searchCorrectionStore: scenario.corrections)
+    _ = try await processor.process(root: scenario.fixture.movies, processingContext: scenario.context)
+    let diagnostics = try #require(await history.events.first?.matchingDiagnostics)
+    let outcomes: [MovieMatchingDiagnostics.Outcome] = [
+      .matched, .identifierConflict, .identifierNotFound, .notEvaluated
+    ]
+    #expect(diagnostics.outcome == outcomes[disposition])
+    #expect(diagnostics.source == .savedSearchCorrection)
+    #expect(diagnostics.query?.title == "Dune")
+    #expect(diagnostics.candidates.first?.verdict == .compatible)
+    #expect(await provider.posterCount == (disposition == 0 ? 1 : 0))
+  }
+
   /// A save-and-clear cycle or a changed correction during artwork cannot authorize the stale attempt.
   @Test(arguments: [false, true])
   func correctionChangesInterruptInFlightAssignment(duringArtwork: Bool) async throws {

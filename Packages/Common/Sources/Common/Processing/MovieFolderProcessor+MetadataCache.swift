@@ -60,11 +60,15 @@ extension MovieFolderProcessor {
   /// Loads every eligible alias sequentially and applies the fixed five-ID ceiling before cache lookup.
   func fetchAlternativeTitlesAndReleaseDates(
     title: String, year: Int?, search: MovieSearchResult, state: inout CollectionProcessingCache,
-    metadataProvider: (any MovieMetadataProvider)? = .none
+    metadataProvider: (any MovieMetadataProvider)? = .none, activity: ProcessorActivityLog? = .none
   ) async throws -> MovieMatchResult {
     let metadataProvider = metadataProvider ?? provider
     if let issue = matcher.candidateIssue(title: title, year: year, search: search,
-      configuration: movieMatchingConfiguration) { return .unresolved(issue) }
+      configuration: movieMatchingConfiguration) {
+      activity?.matchingDiagnostics = activity?.matchingDiagnostics?.recording(outcome: .init(issue))
+
+      return .unresolved(issue)
+    }
     let identifiers = matcher.candidateIDs(year: year, search: search)
     var evidence = MovieAlternativeTitlesByID()
     for id in identifiers {
@@ -83,7 +87,11 @@ extension MovieFolderProcessor {
 
       guard result.count == 1, let titles = result[id], titles.allSatisfy({
         !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      }) else { return .unresolved(.incompleteTitleEvidence) }
+      }) else {
+        activity?.matchingDiagnostics = activity?.matchingDiagnostics?.recording(outcome: .incompleteTitleEvidence)
+
+        return .unresolved(.incompleteTitleEvidence)
+      }
 
       evidence[id] = titles
       let cached = CachedMovieAlternativeTitles(movieID: id, titles: titles, createdAt: now())
@@ -100,20 +108,35 @@ extension MovieFolderProcessor {
           matcher.titleMatches(title, movie: movie, configuration: movieMatchingConfiguration,
             alternativeTitles: evidence) else { continue }
 
-        guard movie.releaseYear != .none else { return .unresolved(.incompleteYearEvidence) }
+        guard movie.releaseYear != .none else {
+          activity?.matchingDiagnostics = activity?.matchingDiagnostics?.recording(outcome: .incompleteYearEvidence)
+
+          return .unresolved(.incompleteYearEvidence)
+        }
 
         try Task.checkCancellation()
         let result = try await metadataProvider.releaseDates(movieID: id)
         try Task.checkCancellation()
 
-        guard result.count == 1, let events = result[id] else { return .unresolved(.incompleteYearEvidence) }
+        guard result.count == 1, let events = result[id] else {
+          activity?.matchingDiagnostics = activity?.matchingDiagnostics?.recording(outcome: .incompleteYearEvidence)
+
+          return .unresolved(.incompleteYearEvidence)
+        }
 
         dates[id] = events
       }
     }
 
-    return matcher.matchMovie(title: title, year: year, search: search,
+    let result = matcher.matchMovie(title: title, year: year, search: search,
       configuration: movieMatchingConfiguration, alternativeTitles: evidence, releaseDates: dates)
+    activity?.matchingDiagnostics = activity?.matchingDiagnostics?.recording(
+      candidates: search.movies.prefix(5).map { movie in
+        .init(movie: movie, verdict: matcher.candidateVerdict(title: title, year: year, movie: movie,
+          search: search, configuration: movieMatchingConfiguration, alternativeTitles: evidence, releaseDates: dates))
+      }, outcome: .init(result))
+
+    return result
   }
 }
 

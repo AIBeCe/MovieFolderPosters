@@ -91,6 +91,22 @@ final class LogViewModel {
       [$0.timeText, $0.message, $0.category, $0.severity].joined(separator: "\t")
     }.joined(separator: "\n")
   }
+  /// Saved evidence for one selected activity entry; identity fences replacement and removal.
+  struct MatchingDetails: Equatable {
+    /// Stable retained activity identity.
+    let entryID: UUID
+    /// Complete saved evidence without reconstructing historical matching inputs.
+    let text: String
+  }
+  /// Details are available only for one visible activity selection outside Clear.
+  var selectedMatchingDetails: MatchingDetails? {
+    guard historySource == .activity, !isClearing, selectedEntryIDs.count == 1,
+      let entry = activityEntries.first(where: { selectedEntryIDs.contains($0.id) }),
+      let diagnostics = entry.event.matchingDiagnostics else { return .none }
+
+    return MatchingDetails(entryID: entry.id, text: diagnostics.text)
+  }
+
   /// Committed entries in retained sequence order.
   private(set) var activityEntries: [MovieFolderActivityLogEntry] = []
   /// Whether a history read is outstanding.

@@ -254,6 +254,9 @@ extension MovieFolderProcessor {
       }
     }
 
+    visit.activityLog?.matchingDiagnostics = MovieMatchingDiagnostics(
+      selectedTitle: title, selectedYear: year, source: attempt.movieIdentitySource)
+
     if movieMatchingConfiguration.requiresReleaseYearForAutomaticMatching, year == .none {
       try recordUnresolvedAttempt(candidate, reason: .manualMatchingRequired, access: access, visit: &visit)
       return
@@ -268,7 +271,7 @@ extension MovieFolderProcessor {
     else { return }
 
     let identityResult = try await fetchAlternativeTitlesAndReleaseDates(title: title, year: year, search: search,
-      state: &visit.processingCache, metadataProvider: informationProvider(context))
+      state: &visit.processingCache, metadataProvider: informationProvider(context), activity: visit.activityLog)
     try Task.checkCancellation()
 
     guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
@@ -284,15 +287,21 @@ extension MovieFolderProcessor {
     }
 
     if !explicitIdentifiers.isEmpty {
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(outcome: .notEvaluated)
       let resolution = try await informationProvider(context).resolveMovieIdentifiers(
         explicitIdentifiers, language: movieMatchingConfiguration.searchLanguage)
 
       switch resolution {
-      case .matched(let identified) where identified.id == movie.id: break
+      case .matched(let identified) where identified.id == movie.id:
+        visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(outcome: .matched)
       case .matched, .conflicting:
+        visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+          outcome: .identifierConflict)
         try recordUnresolvedAttempt(candidate, reason: .conflictingMovieInformation, access: access, visit: &visit)
         return
       case .notFound:
+        visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+          outcome: .identifierNotFound)
         try recordUnresolvedAttempt(candidate, reason: .noSuitableMovie, access: access, visit: &visit)
         return
       }
@@ -360,6 +369,7 @@ extension MovieFolderProcessor {
     attempt.movieIdentitySource = .validatedIdentifier
     attempt.failedProcessingStage = .search
     visit.activityLog?.stage = .search
+    visit.activityLog?.matchingDiagnostics = MovieMatchingDiagnostics(source: .validatedIdentifier)
     let resolution = try await metadataProvider.resolveMovieIdentifiers(identifiers,
       language: movieMatchingConfiguration.searchLanguage)
     try Task.checkCancellation()
@@ -367,11 +377,18 @@ extension MovieFolderProcessor {
     guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return }
     let movie: MovieMetadata
     switch resolution {
-    case .matched(let resolved): movie = resolved
+    case .matched(let resolved):
+      movie = resolved
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+        candidates: [.init(movie: resolved, verdict: .identifierResolved)], outcome: .identifierMatched)
     case .conflicting:
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+        outcome: .identifierConflict)
       try recordUnresolvedAttempt(candidate, reason: .conflictingMovieInformation, access: access, visit: &visit)
       return
     case .notFound:
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+        outcome: .identifierNotFound)
       try recordUnresolvedAttempt(candidate, reason: .noSuitableMovie, access: access, visit: &visit)
       return
     }
@@ -533,13 +550,26 @@ extension MovieFolderProcessor {
       usesStubTMDbResponses: usesStubTMDbResponses, pageLimit: searchPageLimit)
     if let cached = visit.processingCache.queries[queryKey],
       now().timeIntervalSince(cached.createdAt) < configuration.queryCacheLifetime {
-      return cached.searchResult()
+      let search = cached.searchResult()
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+        query: .init(title: title, year: year, language: movieMatchingConfiguration.searchLanguage,
+          pageLimit: searchPageLimit, origin: .cached),
+        search: .init(candidateCount: search.movies.count, hasMorePages: search.hasMorePages),
+        candidates: search.movies.prefix(5).map { .init(movie: $0, verdict: .notEvaluated) })
+
+      return search
     } else {
       let context = try visit.localInformationContexts[candidate.name] ?? informationContext(candidate, root: root,
         sha256: visit.localInformationReadResults[candidate.name]?.sha256
           ?? readMovieInformation(candidate, root: root).sha256, searchCorrection: visit.searchCorrection)
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+        query: .init(title: title, year: year, language: movieMatchingConfiguration.searchLanguage,
+          pageLimit: searchPageLimit, origin: .fresh))
       let search = try await informationProvider(context).searchMovies(title: title, year: year,
         language: movieMatchingConfiguration.searchLanguage, pageLimit: searchPageLimit)
+      visit.activityLog?.matchingDiagnostics = visit.activityLog?.matchingDiagnostics?.recording(
+        search: .init(candidateCount: search.movies.count, hasMorePages: search.hasMorePages),
+        candidates: search.movies.prefix(5).map { .init(movie: $0, verdict: .notEvaluated) })
       try Task.checkCancellation()
 
       guard try await validateSelectedCandidate(candidate, root: root, visit: &visit) else { return .none }

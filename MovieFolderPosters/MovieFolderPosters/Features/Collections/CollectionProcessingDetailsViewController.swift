@@ -289,42 +289,8 @@ extension FolderProcessingState {
 
 /// Supplies concise explanations for persisted folder assessment reasons.
 extension FolderProcessingReason {
-  /// Safe user-facing reason that contains no raw provider or filesystem error.
-  var displayDescription: String {
-    switch self {
-    case .explicitExclusion: "Excluded from collection processing"
-    case .noSuitableMovie: "No suitable movie found"
-    case .ambiguousMovie: "Multiple possible movies remain"
-    case .incompleteSearch: "Search did not finish"
-    case .missingArtwork: "Poster artwork was unavailable"
-    case .parsingProblem: "Folder name could not be parsed"
-    case .manualMatchingRequired: "Choose the intended movie manually"
-    case .conflictingMovieInformation:
-      "The movie information disagrees. Choose the intended movie manually."
-    case .existingPosterPreserved: "An existing poster was preserved"
-    case .policySuppressed: "Processing was suppressed by configuration"
-    case .processingFailure: "Processing failed"
-    case .retryDeferred: "Retry was deferred"
-    case .interrupted: "Processing was interrupted"
-    case .inventoryPending: "Folder inventory is pending"
-    case .storageUnavailable: "Result storage is unavailable"
-    case .inspectionFailure: "Folder inspection failed"
-    case .metadataFailure: "Movie metadata could not be read"
-    case .posterFailure: "Poster could not be applied"
-    case .filesystemFailure: "Filesystem operation failed"
-    case .savedIdentityUnavailable: "Saved movie identity is unavailable"
-    case .ownershipChanged: "Poster ownership evidence changed"
-    case .capacityExceeded: "The result capacity was reached"
-    case .cachePersistenceFailure: "Processing cache could not be saved"
-    case .authentication: "The metadata service rejected authentication"
-    case .rateLimited: "The metadata service temporarily limited requests"
-    case .connectivity: "The metadata service could not be reached"
-    case .serverFailure: "The metadata service is temporarily unavailable"
-    case .invalidResponse: "The metadata service returned an invalid response"
-    case .recoveryMode: "Recovery mode pauses processing"
-    case .unknown: "The reason was not classified"
-    }
-  }
+  /// Uses the same reason wording as persisted activity history.
+  var displayDescription: String { userDescription }
 }
 
 /// Supplies readable ownership statements without exposing internal proof data.

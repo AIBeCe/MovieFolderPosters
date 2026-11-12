@@ -1,10 +1,27 @@
 import AppKit
 import Common
 
+/// Receives navigation requests without transferring window ownership to the controller.
+@MainActor
+protocol LogViewControllerDelegate: AnyObject {
+  /// Opens the saved evidence for the controller's current selection.
+  func logViewController(
+    _ controller: LogViewController, didRequestMatchingDetails details: LogViewModel.MatchingDetails
+  )
+  /// Invalidates evidence presentation when its selected source entry changes or disappears.
+  func logViewController(
+    _ controller: LogViewController, didSelectMatchingDetails details: LogViewModel.MatchingDetails?
+  )
+}
+
 /// Displays the host activity history in a table with a clear action.
 @MainActor
 final class LogViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate,
   LogViewModelDelegate, NSSearchFieldDelegate {
+  /// Weak navigation receiver retained by the owning flow.
+  weak var delegate: (any LogViewControllerDelegate)?
+  /// Opens saved matching evidence for the single selected activity entry.
+  private let matchingDetailsButton = NSButton(title: "Matching Details…", target: .none, action: .none)
   /// The activity log displayed by this controller.
   private let viewModel: LogViewModel
   /// Selects an independently retained source.
@@ -76,6 +93,9 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     }
     networkHistoryRecordingCheckbox.target = self
     networkHistoryRecordingCheckbox.action = #selector(recordingChanged)
+    matchingDetailsButton.target = self
+    matchingDetailsButton.action = #selector(showMatchingDetails)
+    matchingDetailsButton.setAccessibilityLabel("Matching Details")
     copyButton.target = self
     copyButton.action = #selector(copy(_:))
     copyButton.keyEquivalent = "c"
@@ -146,7 +166,7 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     explanation.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
     explanation.textColor = .secondaryLabelColor
     explanation.setAccessibilityLabel(explanation.stringValue)
-    let footer = NSStackView(views: [explanation, NSView(), copyButton, clearButton])
+    let footer = NSStackView(views: [explanation, NSView(), matchingDetailsButton, copyButton, clearButton])
     footer.orientation = .horizontal
     footer.alignment = .centerY
 
@@ -156,7 +176,8 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
   /// Establishes predictable keyboard focus order across the history controls.
   private func configureKeyboardNavigation() {
     let keyboardControls: [NSView] = [historySourcePopUpButton, historySearchField, categoryFilterPopUpButton,
-      severityFilterPopUpButton, networkHistoryRecordingCheckbox, historyTableView, copyButton, clearButton]
+      severityFilterPopUpButton, networkHistoryRecordingCheckbox, historyTableView, matchingDetailsButton,
+      copyButton, clearButton]
     for (current, next) in zip(keyboardControls, keyboardControls.dropFirst() + [historySourcePopUpButton]) {
       current.nextKeyView = next
     }
@@ -298,6 +319,13 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     NSPasteboard.general.setString(viewModel.textForSelectedHistoryRows(), forType: .string)
   }
 
+  /// Forwards navigation only when a single current activity entry has saved evidence.
+  @objc private func showMatchingDetails() {
+    guard let details = viewModel.selectedMatchingDetails else { return }
+
+    delegate?.logViewController(self, didRequestMatchingDetails: details)
+  }
+
   /// Persists the explicit network recording preference.
   @objc private func recordingChanged() {
     let enabled = networkHistoryRecordingCheckbox.state == .on
@@ -322,6 +350,8 @@ final class LogViewController: NSViewController, NSTableViewDataSource, NSTableV
     historySourcePopUpButton.isEnabled = !viewModel.isClearing
     networkHistoryRecordingCheckbox.state = viewModel.isNetworkHistoryRecordingEnabled ? .on : .off
     networkHistoryRecordingCheckbox.isEnabled = !viewModel.isSavingNetworkRecordingPreference
+    matchingDetailsButton.isEnabled = viewModel.selectedMatchingDetails != .none
+    delegate?.logViewController(self, didSelectMatchingDetails: viewModel.selectedMatchingDetails)
     copyButton.isEnabled = !viewModel.selectedRows.isEmpty
     clearButton.title = "Clear \(viewModel.historySource.rawValue)"
     statusLabel.stringValue = viewModel.statusText

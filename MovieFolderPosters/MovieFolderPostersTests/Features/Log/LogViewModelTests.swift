@@ -287,7 +287,7 @@ private struct IgnoredActivityChangeNotifier: MovieFolderActivityChangeNotifying
 }
 
 /// Isolated network source with explicit saved preference and failure controls.
-actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing {
+actor NetworkHistoryPresentationFake {
   /// Retained entries independent of activity storage.
   private var history: [MovieFolderNetworkHistoryEntry] = []
   /// Saved opt-in preference defaults off.
@@ -318,3 +318,6 @@ actor NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing {
     expectedNetworkHistoryConfigurationRevision: UUID, collectionID: UUID?
   ) {}
 }
+
+// Keep protocol nonisolation inference off the actor declaration and its synchronous initializer.
+extension NetworkHistoryPresentationFake: MovieFolderNetworkHistoryServicing {}

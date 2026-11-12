@@ -44,6 +44,8 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
   public let retryAt: Date?
   /// Actual counters produced by one completed collection visit.
   public let processingSummary: ProcessingSummary?
+  /// Historical bounded matching inputs and actual candidate decisions, subject to collection privacy.
+  public let matchingDiagnostics: MovieMatchingDiagnostics?
   /// Presence records an explicit fallback; absence preserves the old event encoding.
   private let detailsOmitted: Bool?
   /// Whether details exceeded the event byte bound and were intentionally replaced by fixed text.
@@ -52,6 +54,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
   /// Stable persisted field names retained when the Swift lifecycle property name changed.
   private enum CodingKeys: String, CodingKey {
     case action, collectionID, target, folderResult, reason, failure, retryAt, processingSummary, detailsOmitted
+    case matchingDiagnostics
     case activityGroupID = "operationID"
     case status = "outcome"
   }
@@ -68,12 +71,14 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
   ///   - failure: Typed failure evidence without raw descriptions.
   ///   - retryAt: Earliest eligibility for a later attempt.
   ///   - processingSummary: Actual completed-visit counters.
+  ///   - matchingDiagnostics: Bounded historical inputs and matcher evidence; removed without public provenance.
   ///   - activityLogContext: Root-bound capture and privacy evidence required to retain identifying target fields.
   public init(
     action: Action, status: Status, activityGroupID: UUID? = .none, collectionID: UUID? = .none,
     target: MovieFolderActivityLogTarget? = .none, folderResult: FolderResult? = .none,
     reason: FolderProcessingReason? = .none, failure: AutomaticFolderProcessingFailure? = .none,
     retryAt: Date? = .none, processingSummary: ProcessingSummary? = .none,
+    matchingDiagnostics: MovieMatchingDiagnostics? = .none,
     activityLogContext: MovieFolderActivityLogContext? = .none
   ) {
     let capturedPrivateHistory = activityLogContext?.usesPrivateHistory ?? false
@@ -88,6 +93,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
     self.failure = failure
     self.retryAt = retryAt
     self.processingSummary = processingSummary
+    self.matchingDiagnostics = hasCollectionProvenance && !capturedPrivateHistory ? matchingDiagnostics : .none
     detailsOmitted = .none
   }
 
@@ -121,6 +127,7 @@ nonisolated public struct MovieFolderActivityLogEvent: Codable, Sendable, Equata
     self.retryAt = retryAt
     self.processingSummary = processingSummary
     self.detailsOmitted = detailsOmitted
+    matchingDiagnostics = .none
   }
 
   /// Maps summary evidence conservatively so deferred, competing, or failed work never claims completion.

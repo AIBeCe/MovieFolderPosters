@@ -17,6 +17,8 @@ final class ProcessorActivityLog {
   var child: String?
   /// Confirmed identity, populated only after a match or verified saved decision.
   var movie: MovieMetadata?
+  /// Immutable evidence advanced only by this current attempt, never persisted under processing locks.
+  var matchingDiagnostics: MovieMatchingDiagnostics?
   /// Most recent actual operation boundary used for safe error reporting.
   var stage: FolderProcessingStage = .validateIdentity
   /// Whether the current child already has a recorded terminal operation result.
@@ -40,6 +42,8 @@ final class ProcessorActivityLog {
     self.child = child
     self.movie = movie
     self.stage = stage
+    matchingDiagnostics = action == .automaticProcessing
+      ? MovieMatchingDiagnostics(source: movie == .none ? .none : .savedDecision) : .none
     hasTerminalResult = false
     hasRecordedPersistenceFailure = false
   }
@@ -69,7 +73,8 @@ final class ProcessorActivityLog {
       action: action, status: status, activityGroupID: groupID, childFolderName: child,
       movieID: movie?.id, movieTitle: movie?.title.isEmpty == false ? movie?.title : .none,
       movieYear: movie?.releaseYear,
-      folderResult: result, reason: reason, failure: failure, retryAt: retryAt))
+      folderResult: result, reason: reason, failure: failure, retryAt: retryAt,
+      matchingDiagnostics: matchingDiagnostics?.recording(finalResult: result, finalReason: reason)))
     if events.count > 500 { events.removeFirst(events.count - 500) }
   }
 

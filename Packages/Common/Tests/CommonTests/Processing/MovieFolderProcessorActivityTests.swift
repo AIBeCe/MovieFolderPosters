@@ -37,6 +37,11 @@ struct MovieFolderProcessorActivityTests {
     let event = try #require(await history.events.first)
     #expect(event.folderResult == .notFound)
     #expect(event.reason == .noSuitableMovie)
+    #expect(event.matchingDiagnostics?.selectedTitle == "Dune")
+    #expect(event.matchingDiagnostics?.selectedYear == 2021)
+    #expect(event.matchingDiagnostics?.query?.year == .none)
+    #expect(event.matchingDiagnostics?.search?.candidateCount == 0)
+    #expect(event.matchingDiagnostics?.outcome == .noSuitableMatch)
     #expect(event.target?.movieID == .none)
     #expect(event.target?.movieTitle == .none)
   }
@@ -123,6 +128,9 @@ struct MovieFolderProcessorActivityTests {
     let event = try #require(await history.events.first)
     #expect(event.folderResult == .cancelled)
     #expect(event.failure?.stage == .search)
+    #expect(event.matchingDiagnostics?.query?.title == "Dune")
+    #expect(event.matchingDiagnostics?.query?.origin == .fresh)
+    #expect(event.matchingDiagnostics?.search == .none)
     #expect(event.target?.childFolderName == "Dune (2021)")
   }
 
@@ -165,6 +173,7 @@ struct MovieFolderProcessorActivityTests {
     #expect(event.collectionID == .none)
     #expect(event.activityGroupID == .none)
     #expect(event.target == .none)
+    #expect(event.matchingDiagnostics == .none)
     try fixture.addFolder("Arrival (2016)")
     _ = try await processor.process(root: fixture.movies)
     #expect(await history.events.last?.target?.childFolderName == "Arrival (2016)")
@@ -181,6 +190,124 @@ struct MovieFolderProcessorActivityTests {
     #expect(try await !processor.removePoster(
       root: fixture.movies, child: candidate.name, expectedIdentity: candidate.identity))
     #expect(await history.events.first?.folderResult == .noPosterToRemove)
+  }
+
+  /// Two fresh members reuse the actual cached query without inventing a provider-year restriction.
+  @Test func cachedQueryDiagnosticsDescribeTheActualRequest() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    try fixture.addFolder("Dune (2021)")
+    try fixture.addFolder("Dune.2021.1080p")
+    let history = ProcessingActivityProbe()
+    let provider = CountingProvider()
+    _ = try await processor(fixture, provider: provider, history: history).process(root: fixture.movies)
+    let diagnostics = await history.events.compactMap(\.matchingDiagnostics)
+    #expect(await provider.searchCount == 1)
+    #expect(diagnostics.count == 2)
+    #expect(diagnostics.filter { $0.query?.origin == .fresh }.count == 1)
+    #expect(diagnostics.filter { $0.query?.origin == .cached }.count == 1)
+    #expect(diagnostics.allSatisfy { $0.query?.year == .none && $0.selectedYear == 2021 })
+    #expect(diagnostics.allSatisfy { $0.candidates.first?.verdict == .compatible })
+    #expect(diagnostics.allSatisfy { $0.finalResult == .posterApplied })
+  }
+
+  /// Candidate mismatches and a missing poster explain the actual terminal blocker independently.
+  @Test func actualCandidateChecksDoNotClaimPosterSuccess() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    try fixture.addFolder("Dune (2021)")
+    let matching = MovieMetadata(id: 42, title: "Dune", originalTitle: "Dune", releaseYear: 2021, posterPath: .none)
+    let wrongTitle = MovieMetadata(id: 43, title: "Alien", originalTitle: "Alien", releaseYear: 2021,
+      posterPath: "/alien.jpg")
+    let wrongYear = MovieMetadata(id: 44, title: "Dune", originalTitle: "Dune", releaseYear: 1984,
+      posterPath: "/old.jpg")
+    let history = ProcessingActivityProbe()
+    let provider = CountingProvider(search: .init(movies: [matching, wrongTitle, wrongYear], hasMorePages: false))
+    _ = try await processor(fixture, provider: provider, history: history).process(root: fixture.movies)
+    let diagnostics = try #require(await history.events.first?.matchingDiagnostics)
+    #expect(diagnostics.candidates.map(\.verdict) == [.compatible, .titleMismatch, .outsideYearWindow])
+    #expect(diagnostics.outcome == .matched)
+    #expect(diagnostics.finalReason == .missingArtwork)
+    #expect(diagnostics.summary.contains(FolderProcessingReason.missingArtwork.userDescription))
+    #expect(await provider.posterCount == 0)
+  }
+
+  /// A rejected year prerequisite differs from a completed empty search.
+  @Test func missingRequiredYearDoesNotInventASearch() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    try fixture.addFolder("Dune")
+    let history = ProcessingActivityProbe()
+    let provider = CountingProvider()
+    let directory = MonitoredDirectory(id: UUID(), path: fixture.movies.path, transferBookmark: Data(),
+      authorizationVersion: UUID())
+    let processor = MovieFolderProcessor(persistence: fixture.persistence, provider: provider,
+      cacheDirectory: fixture.cache,
+      movieMatchingConfiguration: .init(requiresReleaseYearForAutomaticMatching: true),
+      activityHistoryService: history, activityLogContext: .init(directory: directory))
+    _ = try await processor.process(root: fixture.movies)
+    let diagnostics = try #require(await history.events.first?.matchingDiagnostics)
+    #expect(diagnostics.selectedTitle == "Dune")
+    #expect(diagnostics.query == .none)
+    #expect(diagnostics.search == .none)
+    #expect(diagnostics.outcome == .notEvaluated)
+    #expect(await provider.searchCount == 0)
+  }
+
+  /// A primary year within the lookup window still needs dated release evidence for the selected year.
+  @Test func releaseYearMismatchExplainsWhyCandidateWasRejected() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    try fixture.addFolder("Dune (2021)")
+    let history = ProcessingActivityProbe()
+    let provider = CountingProvider(primaryReleaseYear: 2020)
+    _ = try await processor(fixture, provider: provider, history: history).process(root: fixture.movies)
+    let diagnostics = try #require(await history.events.first?.matchingDiagnostics)
+    #expect(diagnostics.selectedYear == 2021)
+    #expect(diagnostics.candidates.first?.year == 2020)
+    #expect(diagnostics.candidates.first?.verdict == .yearMismatch)
+    #expect(diagnostics.outcome == .noSuitableMatch)
+    #expect(diagnostics.summary.contains("selected release year 2021"))
+    #expect(await provider.posterCount == 0)
+  }
+
+  /// A failed first search records its attempted inputs without inventing an empty response.
+  @Test func providerFailureRetainsAttemptedInputs() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    try fixture.addFolder("Dune (2021)")
+    let history = ProcessingActivityProbe()
+    let provider = CountingProvider(searchError: .authentication)
+    _ = try await processor(fixture, provider: provider, history: history).process(root: fixture.movies)
+    let diagnostics = try #require(await history.events.first?.matchingDiagnostics)
+    #expect(diagnostics.query?.title == "Dune")
+    #expect(diagnostics.query?.year == .none)
+    #expect(diagnostics.query?.origin == .fresh)
+    #expect(diagnostics.search == .none)
+    #expect(diagnostics.candidates.isEmpty)
+    #expect(diagnostics.finalReason == .authentication)
+    #expect(diagnostics.outcome == .notEvaluated)
+  }
+
+  /// Identifier matching does not fabricate title-search inputs or normalized title checks.
+  @Test func identifierDiagnosticsDescribeOnlyTheActualResolution() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    try fixture.addFolder("Movie [imdb:tt0078748]")
+    let movie = MovieMetadata(id: 348, title: "Alien", originalTitle: "Alien", releaseYear: 1979,
+      posterPath: "/alien.jpg")
+    let history = ProcessingActivityProbe()
+    let provider = CountingProvider(imdbMovies: ["tt0078748": movie])
+    _ = try await processor(fixture, provider: provider, history: history).process(root: fixture.movies)
+    let diagnostics = try #require(await history.events.first?.matchingDiagnostics)
+    #expect(diagnostics.source == .validatedIdentifier)
+    #expect(diagnostics.selectedTitle == .none)
+    #expect(diagnostics.query == .none)
+    #expect(diagnostics.search == .none)
+    #expect(diagnostics.outcome == .identifierMatched)
+    #expect(diagnostics.candidates.first?.verdict == .identifierResolved)
+    #expect(!diagnostics.text.contains("tt0078748"))
+    #expect(await provider.searchCount == 0)
   }
 
   /// Builds a processor using real isolated filesystem effects and a retained event probe.

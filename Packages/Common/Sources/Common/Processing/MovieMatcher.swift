@@ -100,6 +100,24 @@ nonisolated struct MovieMatcher: Sendable {
     return qualified
   }
 
+  /// Reports qualification using the same candidate-window, title, and dated-year functions as identity matching.
+  func candidateVerdict(
+    title: String, year: Int?, movie: MovieMetadata, search: MovieSearchResult,
+    configuration: MovieMatchingConfiguration, alternativeTitles: MovieAlternativeTitlesByID,
+    releaseDates: MovieReleaseDatesByID
+  ) -> MovieMatchingDiagnostics.Verdict {
+    guard candidateIDs(year: year, search: search).contains(movie.id) else { return .outsideYearWindow }
+
+    guard titleMatches(title, movie: movie, configuration: configuration,
+      alternativeTitles: alternativeTitles) else { return .titleMismatch }
+
+    guard let qualified = yearQualifiedMovies([movie], year: year, releaseDates: releaseDates) else {
+      return .incompleteYearEvidence
+    }
+
+    return qualified.isEmpty ? .yearMismatch : .compatible
+  }
+
   /// Determines exact title compatibility independently of release-year qualification.
   func titleMatches(_ title: String, movie: MovieMetadata, configuration: MovieMatchingConfiguration,
                     alternativeTitles: MovieAlternativeTitlesByID?) -> Bool {

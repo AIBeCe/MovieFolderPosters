@@ -82,6 +82,7 @@ nonisolated public struct MovieFolderActivityLogContext: Sendable {
   ///   - failure: Allowlisted failure stage and category.
   ///   - retryAt: Earliest retry eligibility; never a promise of scheduled work.
   ///   - processingSummary: Actual counters for the completed collection visit.
+  ///   - matchingDiagnostics: Bounded historical matching evidence, removed for private history.
   /// - Returns: Structured evidence with capture-time private identifiers and names removed.
   public func event(
     action: MovieFolderActivityLogEvent.Action, status: MovieFolderActivityLogEvent.Status,
@@ -89,11 +90,11 @@ nonisolated public struct MovieFolderActivityLogContext: Sendable {
     movieTitle: String? = .none, movieYear: Int? = .none,
     folderResult: MovieFolderActivityLogEvent.FolderResult? = .none, reason: FolderProcessingReason? = .none,
     failure: AutomaticFolderProcessingFailure? = .none, retryAt: Date? = .none,
-    processingSummary: ProcessingSummary? = .none
+    processingSummary: ProcessingSummary? = .none, matchingDiagnostics: MovieMatchingDiagnostics? = .none
   ) -> MovieFolderActivityLogEvent {
     MovieFolderActivityLogEvent(action: action, status: status, activityGroupID: activityGroupID,
       collectionID: collectionID, target: target(childFolderName: childFolderName, movieID: movieID,
         movieTitle: movieTitle, movieYear: movieYear), folderResult: folderResult, reason: reason,
-      failure: failure, retryAt: retryAt, processingSummary: processingSummary, activityLogContext: self)
+      failure: failure, retryAt: retryAt, processingSummary: processingSummary, matchingDiagnostics: matchingDiagnostics, activityLogContext: self)
   }
 }

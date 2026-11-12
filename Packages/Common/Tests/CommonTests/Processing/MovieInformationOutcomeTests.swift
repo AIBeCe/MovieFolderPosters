@@ -116,7 +116,7 @@ func movieInformationOutcomeDistinguishesConflictFromUnusableInputs(kind: Int) a
 @Test func movieInformationOutcomeConflictGuidanceAndWireRoundTrip() throws {
   let event = MovieFolderActivityLogEvent(action: .automaticProcessing, status: .partial,
     folderResult: .unresolved, reason: .conflictingMovieInformation)
-  #expect(event.text.contains("The movie information disagrees. Choose the intended movie manually."))
+  #expect(event.text.contains("Movie identifiers or local movie information conflict; choose manually."))
   let malformed = MovieFolderActivityLogEvent(action: .automaticProcessing, status: .partial,
     folderResult: .unresolved, reason: .manualMatchingRequired)
   #expect(!malformed.text.contains("disagrees"))
