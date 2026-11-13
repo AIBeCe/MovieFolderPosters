@@ -22,6 +22,19 @@ extension MovieMatchingDiagnostics {
     } else {
       lines.append("Search response: Not recorded.")
     }
+    if let previousAttempt {
+      lines += ["", "Earlier search title: \(previousAttempt.selectedTitle)",
+        "Earlier selected year: \(previousAttempt.selectedYear.map(String.init) ?? "Not recorded")",
+        "Earlier input source: \(previousAttempt.source.map(sourceDescription) ?? "Not recorded")",
+        "Earlier query: \(previousAttempt.query.title)",
+        "Earlier search year sent: \(previousAttempt.query.year.map(String.init) ?? "None (unrestricted)")",
+        "Earlier search language: \(previousAttempt.query.language.rawValue)",
+        "Earlier response: \(previousAttempt.search.candidateCount) candidate records.",
+        "Earlier search completeness: Complete"]
+      if previousAttempt.selectedTitleWasOmitted || previousAttempt.query.titleWasOmitted {
+        lines.append("Some earlier search-title characters were omitted.")
+      }
+    }
     lines.append("Matching outcome: \(outcomeDescription)")
     if candidates.isEmpty { lines.append("Candidate details: None recorded.") }
     for candidate in candidates {
@@ -40,7 +53,13 @@ extension MovieMatchingDiagnostics {
   /// Concise final explanation, grounded in the terminal result and actual candidate checks.
   public var summary: String {
     if finalResult == .posterApplied { return "The poster was applied automatically." }
+    if previousAttempt?.search.candidateCount == 0,
+      search?.candidateCount == 0, search?.hasMorePages == false {
+      return "The selected title and folder-name fallback both returned no movies."
+    }
     if let finalReason {
+      if finalReason == .incompleteSearch { return finalReason.userDescription }
+
       let detail = candidateExplanation
 
       return "Automatic poster result: \(finalReason.userDescription)" + (detail.isEmpty ? "" : " \(detail)")

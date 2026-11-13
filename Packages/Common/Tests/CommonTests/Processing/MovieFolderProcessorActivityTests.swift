@@ -46,6 +46,162 @@ struct MovieFolderProcessorActivityTests {
     #expect(event.target?.movieTitle == .none)
   }
 
+  /// A completed empty filename search retries the folder title and retains both queries in history.
+  @Test func emptyVideoNameSearchRetriesFolderTitle() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let folder = "This.Is.Spinal.Tap.1984.BluRay.Remux.1080p.AVC.DTS-HD.MA.5.1-HiFi-AsRequested"
+    try fixture.addFolder(folder)
+    try Data().write(to: fixture.movies.appendingPathComponent(folder).appendingPathComponent("aWJl.mkv"))
+    let movie = MovieMetadata(id: 11_031, title: "This Is Spinal Tap", originalTitle: "This Is Spinal Tap",
+      releaseYear: 1984, posterPath: "/spinal-tap.jpg")
+    let provider = CountingProvider(searchesByTitle: [
+      "aWJl": MovieSearchResult(movies: [], hasMorePages: false),
+      "This Is Spinal Tap": MovieSearchResult(movies: [movie], hasMorePages: false)
+    ])
+    let history = ProcessingActivityProbe()
+    let processor = processor(fixture, provider: provider, history: history,
+      movieMatchingConfiguration: MovieMatchingConfiguration(readsImmediateVideoNames: true))
+
+    let summary = try await processor.process(root: fixture.movies)
+    let event = try #require(await history.events.first)
+    let diagnostics = try #require(event.matchingDiagnostics)
+
+    #expect(summary.assigned == 1)
+    #expect(await provider.searchQueries == ["aWJl", "This Is Spinal Tap"])
+    #expect(event.folderResult == .posterApplied)
+    #expect(event.target?.movieID == 11_031)
+    #expect(diagnostics.selectedTitle == "This Is Spinal Tap")
+    #expect(diagnostics.source == .conservativeMatch)
+    #expect(diagnostics.previousAttempt?.selectedTitle == "aWJl")
+    #expect(diagnostics.previousAttempt?.source == .videoNameInformation)
+    #expect(diagnostics.previousAttempt?.search.candidateCount == 0)
+    #expect(diagnostics.query?.title == "This Is Spinal Tap")
+    #expect(diagnostics.search?.candidateCount == 1)
+    #expect(diagnostics.text.contains("Earlier search title: aWJl"))
+    #expect(diagnostics.text.contains("Search query: This Is Spinal Tap"))
+  }
+
+  /// An empty folder-name retry leaves a clear unresolved outcome with both attempted queries retained.
+  @Test func emptyVideoAndFolderSearchesRemainNotFound() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let folder = "This.Is.Spinal.Tap.1984.BluRay"
+    try fixture.addFolder(folder)
+    try Data().write(to: fixture.movies.appendingPathComponent(folder).appendingPathComponent("aWJl.mkv"))
+    let provider = CountingProvider(searchesByTitle: [
+      "aWJl": MovieSearchResult(movies: [], hasMorePages: false),
+      "This Is Spinal Tap": MovieSearchResult(movies: [], hasMorePages: false)
+    ])
+    let history = ProcessingActivityProbe()
+    let processor = processor(fixture, provider: provider, history: history,
+      movieMatchingConfiguration: MovieMatchingConfiguration(readsImmediateVideoNames: true))
+
+    let summary = try await processor.process(root: fixture.movies)
+    let event = try #require(await history.events.first)
+    let diagnostics = try #require(event.matchingDiagnostics)
+
+    #expect(summary.unresolved == 1)
+    #expect(await provider.searchQueries == ["aWJl", "This Is Spinal Tap"])
+    #expect(event.reason == .noSuitableMovie)
+    #expect(diagnostics.previousAttempt?.search.candidateCount == 0)
+    #expect(diagnostics.search?.candidateCount == 0)
+    #expect(diagnostics.summary == "The selected title and folder-name fallback both returned no movies.")
+  }
+
+  /// An incomplete empty response cannot authorize a fallback search.
+  @Test func incompleteVideoSearchDoesNotRetryFolderTitle() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let folder = "Dune.2021.BluRay"
+    try fixture.addFolder(folder)
+    try Data().write(to: fixture.movies.appendingPathComponent(folder).appendingPathComponent("Wrong.Movie.mkv"))
+    let provider = CountingProvider(searchesByTitle: [
+      "Wrong Movie": MovieSearchResult(movies: [], hasMorePages: true)
+    ])
+    let history = ProcessingActivityProbe()
+    let processor = processor(fixture, provider: provider, history: history,
+      movieMatchingConfiguration: MovieMatchingConfiguration(readsImmediateVideoNames: true))
+
+    _ = try await processor.process(root: fixture.movies)
+
+    #expect(await provider.searchQueries == ["Wrong Movie"])
+    #expect(await history.events.first?.reason == .incompleteSearch)
+    #expect(await history.events.first?.matchingDiagnostics?.previousAttempt == .none)
+  }
+
+  /// An empty cached filename result still advances to the folder title and retains its cache provenance.
+  @Test func cachedEmptyVideoSearchStillRetriesFolderTitle() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let folders = ["Dune (2021)", "Dune.2021.1080p"]
+    for folder in folders {
+      try fixture.addFolder(folder)
+      try Data().write(to: fixture.movies.appendingPathComponent(folder).appendingPathComponent("Wrong.Movie.mkv"))
+    }
+    let movie = MovieMetadata(id: 42, title: "Dune", originalTitle: "Dune", releaseYear: 2021,
+      posterPath: "/dune.jpg")
+    let provider = CountingProvider(searchesByTitle: [
+      "Wrong Movie": MovieSearchResult(movies: [], hasMorePages: false),
+      "Dune": MovieSearchResult(movies: [movie], hasMorePages: false)
+    ])
+    let history = ProcessingActivityProbe()
+    let processor = processor(fixture, provider: provider, history: history,
+      movieMatchingConfiguration: MovieMatchingConfiguration(readsImmediateVideoNames: true))
+
+    let summary = try await processor.process(root: fixture.movies)
+    let events = await history.events
+    let diagnostics = events.compactMap(\.matchingDiagnostics)
+
+    #expect(summary.assigned == 2)
+    #expect(await provider.searchQueries == ["Wrong Movie", "Dune"])
+    #expect(diagnostics.count == 2)
+    #expect(diagnostics.contains { $0.previousAttempt?.query.origin == .fresh })
+    #expect(diagnostics.contains { $0.previousAttempt?.query.origin == .cached })
+    #expect(diagnostics.contains { $0.query?.origin == .fresh })
+    #expect(diagnostics.contains { $0.query?.origin == .cached })
+  }
+
+  /// Equivalent parsed titles do not trigger a duplicate folder-name provider query.
+  @Test func identicalVideoAndFolderTitlesDoNotSearchTwice() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let folder = "Dune.2021.1080p"
+    try fixture.addFolder(folder)
+    try Data().write(to: fixture.movies.appendingPathComponent(folder).appendingPathComponent("Dune.2021.mkv"))
+    let provider = CountingProvider(search: MovieSearchResult(movies: [], hasMorePages: false))
+    let history = ProcessingActivityProbe()
+    let processor = processor(fixture, provider: provider, history: history,
+      movieMatchingConfiguration: MovieMatchingConfiguration(readsImmediateVideoNames: true))
+
+    _ = try await processor.process(root: fixture.movies)
+
+    #expect(await provider.searchQueries == ["Dune"])
+    #expect(await history.events.first?.matchingDiagnostics?.previousAttempt == .none)
+  }
+
+  /// A nonempty unsuitable result is a real rejection and must not trigger a weaker folder query.
+  @Test func unsuitableVideoCandidatesDoNotRetryFolderTitle() async throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.base) }
+    let folder = "Dune.2021.BluRay"
+    try fixture.addFolder(folder)
+    try Data().write(to: fixture.movies.appendingPathComponent(folder).appendingPathComponent("Wrong.Movie.mkv"))
+    let wrongMovie = MovieMetadata(id: 99, title: "Other Movie", originalTitle: "Other Movie",
+      releaseYear: 2021, posterPath: "/other.jpg")
+    let provider = CountingProvider(searchesByTitle: [
+      "Wrong Movie": MovieSearchResult(movies: [wrongMovie], hasMorePages: false)
+    ])
+    let history = ProcessingActivityProbe()
+    let processor = processor(fixture, provider: provider, history: history,
+      movieMatchingConfiguration: MovieMatchingConfiguration(readsImmediateVideoNames: true))
+
+    _ = try await processor.process(root: fixture.movies)
+
+    #expect(await provider.searchQueries == ["Wrong Movie"])
+    #expect(await history.events.first?.reason == .noSuitableMovie)
+  }
+
   /// Parsing, ambiguity and incomplete search remain distinct from a conclusive no-match result.
   @Test(arguments: [FolderProcessingReason.parsingProblem, .ambiguousMovie, .incompleteSearch])
   func unresolvedReasonsRemainDistinct(_ reason: FolderProcessingReason) async throws {
@@ -312,14 +468,16 @@ struct MovieFolderProcessorActivityTests {
 
   /// Builds a processor using real isolated filesystem effects and a retained event probe.
   private func processor(
-    _ fixture: Fixture, provider: CountingProvider = CountingProvider(), history: ProcessingActivityProbe
+    _ fixture: Fixture, provider: CountingProvider = CountingProvider(), history: ProcessingActivityProbe,
+    movieMatchingConfiguration: MovieMatchingConfiguration = MovieMatchingConfiguration()
   ) -> MovieFolderProcessor {
     let directory = MonitoredDirectory(
       id: UUID(), path: fixture.movies.path, transferBookmark: Data(), authorizationVersion: UUID())
 
     return MovieFolderProcessor(
       persistence: fixture.persistence, provider: provider, cacheDirectory: fixture.cache,
-      activityHistoryService: history, activityLogContext: MovieFolderActivityLogContext(directory: directory))
+      movieMatchingConfiguration: movieMatchingConfiguration, activityHistoryService: history,
+      activityLogContext: MovieFolderActivityLogContext(directory: directory))
   }
 }
 

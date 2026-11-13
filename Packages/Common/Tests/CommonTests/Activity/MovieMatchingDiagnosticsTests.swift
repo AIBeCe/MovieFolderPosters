@@ -53,6 +53,50 @@ struct MovieMatchingDiagnosticsTests {
     #expect(!inconsistent.summary.contains("More than one movie"))
   }
 
+  /// A folder retry preserves the first empty query and records final candidate evidence separately.
+  @Test func folderFallbackDiagnosticsRetainBothSearches() throws {
+    let movie = MovieMetadata(id: 11_031, title: "This Is Spinal Tap", originalTitle: "This Is Spinal Tap",
+      releaseYear: 1984, posterPath: "/poster.jpg")
+    let initial = MovieMatchingDiagnostics(selectedTitle: "aWJl", source: .videoNameInformation,
+      query: .init(title: "aWJl", year: .none, language: .english, pageLimit: 3, origin: .fresh),
+      search: .init(candidateCount: 0, hasMorePages: false), outcome: .noSuitableMatch)
+    let fallback = initial.beginningFolderFallback(
+      title: "This Is Spinal Tap", year: 1984, source: .conservativeMatch)
+      .recording(query: .init(title: "This Is Spinal Tap", year: .none, language: .english,
+        pageLimit: 3, origin: .fresh), search: .init(candidateCount: 1, hasMorePages: false),
+        candidates: [.init(movie: movie, verdict: .compatible)], outcome: .matched)
+
+    #expect(fallback.previousAttempt?.selectedTitle == "aWJl")
+    #expect(fallback.previousAttempt?.query.title == "aWJl")
+    #expect(fallback.previousAttempt?.search.candidateCount == 0)
+    #expect(fallback.selectedTitle == "This Is Spinal Tap")
+    #expect(fallback.query?.title == "This Is Spinal Tap")
+    #expect(fallback.candidates.first?.id == 11_031)
+    #expect(fallback.text.contains("Earlier search title: aWJl"))
+    #expect(fallback.text.contains("Search query: This Is Spinal Tap"))
+
+    let encoded = try JSONEncoder().encode(fallback)
+    #expect(try JSONDecoder().decode(MovieMatchingDiagnostics.self, from: encoded) == fallback)
+    var legacy = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    legacy.removeValue(forKey: "previousAttempt")
+    let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+    #expect(try JSONDecoder().decode(MovieMatchingDiagnostics.self, from: legacyData).previousAttempt == .none)
+  }
+
+  /// An incomplete fallback response is never summarized as two conclusive empty searches.
+  @Test func incompleteFolderFallbackSummaryRetainsPageLimitReason() {
+    let initial = MovieMatchingDiagnostics(selectedTitle: "aWJl", source: .videoNameInformation,
+      query: .init(title: "aWJl", year: .none, language: .english, pageLimit: 3, origin: .fresh),
+      search: .init(candidateCount: 0, hasMorePages: false), outcome: .noSuitableMatch)
+    let fallback = initial.beginningFolderFallback(
+      title: "This Is Spinal Tap", year: 1984, source: .conservativeMatch)
+      .recording(query: .init(title: "This Is Spinal Tap", year: .none, language: .english,
+        pageLimit: 3, origin: .fresh), search: .init(candidateCount: 0, hasMorePages: true),
+        outcome: .incompleteSearch, finalReason: .incompleteSearch)
+
+    #expect(fallback.summary == "Search page limit reached before matching finished; choose manually")
+  }
+
   /// Decoding cannot introduce unbounded evidence that capture-time constructors would reject.
   @Test func decodedEvidenceMustRespectCaptureBounds() throws {
     let valid = MovieMatchingDiagnostics(selectedTitle: "Dune")

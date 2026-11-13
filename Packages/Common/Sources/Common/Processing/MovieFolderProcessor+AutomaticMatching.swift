@@ -214,8 +214,8 @@ extension MovieFolderProcessor {
   ) async throws {
     let (readResult, context) = try prepareMatchingInformation(candidate, root: root, visit: &visit, attempt: &attempt)
     let resolver = LocalMovieInformationResolver()
-    let title: String
-    let year: Int?
+    var title: String
+    var year: Int?
     let explicitIdentifiers: [MovieIdentifier]
     if let correction = context.searchCorrection?.captured.correction {
       switch resolver.resolve(folderName: candidate.name, readResult: readResult, correction: correction) {
@@ -265,10 +265,30 @@ extension MovieFolderProcessor {
     attempt.failedProcessingStage = .search
     visit.activityLog?.stage = .search
 
-    guard let search = try await searchMovies(
+    guard var search = try await searchMovies(
       MovieSearchRequest(title: title, year: .none, candidate: candidate, root: root, access: access),
       visit: &visit)
     else { return }
+
+    if search.movies.isEmpty, !search.hasMorePages,
+      context.searchCorrection?.captured.correction == nil,
+      let folderTitle = resolver.folderTitle(for: candidate.name),
+      folderTitle.title.localizedCaseInsensitiveCompare(title) != .orderedSame {
+      if let diagnostics = visit.activityLog?.matchingDiagnostics {
+        visit.activityLog?.matchingDiagnostics = diagnostics.recording(outcome: .noSuitableMatch)
+          .beginningFolderFallback(title: folderTitle.title, year: folderTitle.year, source: .conservativeMatch)
+      }
+      title = folderTitle.title
+      year = folderTitle.year
+      attempt.movieIdentitySource = .conservativeMatch
+
+      guard let folderSearch = try await searchMovies(
+        MovieSearchRequest(title: title, year: .none, candidate: candidate, root: root, access: access),
+        visit: &visit)
+      else { return }
+
+      search = folderSearch
+    }
 
     let identityResult = try await fetchAlternativeTitlesAndReleaseDates(title: title, year: year, search: search,
       state: &visit.processingCache, metadataProvider: informationProvider(context), activity: visit.activityLog)

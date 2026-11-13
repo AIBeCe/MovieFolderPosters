@@ -73,6 +73,33 @@ qualification. Keyboard/VoiceOver and Light/Dark rendered validation remain unpe
   VoiceOver, Light/Dark appearance and full-app E2E behavior remain unverified.
 - The user approved the completed implementation for commit.
 
+## Approved automatic folder-title retry
+
+The user approved a follow-up to automatic matching after observing that TMDb manual search found a
+movie from the collection folder title when the automatic filename-based query found none.
+
+Approved behavior:
+
+- After a complete search returns zero movies, automatic matching parses the immediate folder title and
+  retries once when that title differs from the selected title.
+- Keep the automatic TMDb query year unrestricted; use the parsed folder year as matcher evidence.
+- Do not retry after incomplete searches, provider failures, nonempty candidate responses, saved
+  corrections, explicit identifiers, or when the parsed folder title is equivalent to the selected title.
+- Retain both attempts in bounded, backward-compatible Matching Details evidence.
+
+Implementation is complete. Focused Common execution passed 66 tests across three matching-related suites.
+The filter included automatic-correction, local-information, processor-activity, and matching-diagnostics
+test names. The new regressions cover successful
+retry, both searches empty, incomplete first search, cached first search, equivalent titles, nonempty rejected
+candidates, retained two-search evidence, legacy decoding, and accurate incomplete-search wording. The test
+command was `common_swift test --no-parallel --filter
+"MovieFolderProcessorActivityTests|MovieMatchingDiagnosticsTests|LocalMovieInformationTests|AutomaticSearchCorrectionTests"`
+through `scripts/test-support/common-tests.sh`. SwiftPM emitted an existing unnecessary-`await` warning in
+unchanged `MovieFolderProcessorMatchingAcceptanceTests.swift:130`. A broader unfiltered Common run was
+stopped after stalling in unrelated keychain tests and exposed two unrelated history-configuration version
+expectation failures; it is not counted as passing evidence. No live collection was processed for these
+checks. Acceptance Testing and Validation remain separate authorization gates.
+
 ## Remaining implementation scope
 
 Automatic rejection enforcement, removal of rejection records for removed collections, and reviewed reuse

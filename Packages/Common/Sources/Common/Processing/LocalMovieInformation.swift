@@ -45,6 +45,15 @@ nonisolated struct LocalMovieInformationResolver {
     }
   }
 
+  /// Parses the folder title independently for the completed-empty-search fallback.
+  /// - Parameter folderName: The immediate child name used as the final title source.
+  /// - Returns: The parsed folder title and year, or no value when the folder cannot supply a title.
+  func folderTitle(for folderName: String) -> (title: String, year: Int?)? {
+    guard case .parsed(let parsed) = parser.parse(folderName) else { return .none }
+
+    return (parsed.title, parsed.year)
+  }
+
   /// Resolves a saved correction while retaining selected explicit identifiers.
   /// - Parameters:
   ///   - folderName: The immediate child name, which can carry explicit identifiers.

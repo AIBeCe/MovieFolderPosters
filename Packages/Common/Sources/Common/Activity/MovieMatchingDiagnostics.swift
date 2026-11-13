@@ -95,6 +95,50 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
       titlesWereOmitted = title.wasOmitted || original.wasOmitted
     }
   }
+  /// The completed empty search that immediately preceded a folder-name retry.
+  public struct PreviousSearchAttempt: Codable, Sendable, Equatable {
+    /// The title selected from the higher-priority information source.
+    public let selectedTitle: String
+    /// The selected year before the folder-name retry.
+    public let selectedYear: Int?
+    /// The information source used for the earlier query.
+    public let source: MovieIdentitySource?
+    /// The exact query actually sent or reused.
+    public let query: Query
+    /// The complete empty response that authorized the fallback.
+    public let search: Search
+    /// Whether selected-title characters were omitted by the diagnostic size bound.
+    public let selectedTitleWasOmitted: Bool
+
+    /// Creates the bounded prior attempt retained beside the folder-name retry.
+    init(selectedTitle: String, selectedYear: Int?, source: MovieIdentitySource?, query: Query, search: Search) {
+      let boundedTitle = BoundedMatchingText(selectedTitle)
+      self.selectedTitle = boundedTitle.text
+      self.selectedYear = selectedYear
+      self.source = source
+      self.query = query
+      self.search = search
+      selectedTitleWasOmitted = boundedTitle.wasOmitted
+    }
+
+    /// Rejects persisted prior attempts that do not satisfy the bounded empty-search contract.
+    public init(from decoder: any Decoder) throws {
+      let fields = try decoder.container(keyedBy: CodingKeys.self)
+      selectedTitle = try fields.decode(String.self, forKey: .selectedTitle)
+      selectedYear = try fields.decodeIfPresent(Int.self, forKey: .selectedYear)
+      source = try fields.decodeIfPresent(MovieIdentitySource.self, forKey: .source)
+      query = try fields.decode(Query.self, forKey: .query)
+      search = try fields.decode(Search.self, forKey: .search)
+      selectedTitleWasOmitted = try fields.decode(Bool.self, forKey: .selectedTitleWasOmitted)
+
+      guard search.candidateCount == 0, !search.hasMorePages,
+        BoundedMatchingText(selectedTitle).text == selectedTitle,
+        BoundedMatchingText(query.title).text == query.title else {
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+          debugDescription: "Prior matching attempt must be a bounded, completed empty search."))
+      }
+    }
+  }
   /// Actual selected interpretation, independently of the provider's search-year parameter.
   public let selectedTitle: String?
   /// Actual selected local or corrected year.
@@ -117,6 +161,8 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
   public let finalReason: FolderProcessingReason?
   /// Overall actual matching conclusion.
   public let outcome: Outcome
+  /// The single higher-priority search that completed empty before a folder-name retry.
+  public let previousAttempt: PreviousSearchAttempt?
 
   /// Captures immutable bounded evidence; candidate overflow remains explicit.
   /// - Parameters:
@@ -132,7 +178,8 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
   public init(
     selectedTitle: String? = .none, selectedYear: Int? = .none, source: MovieIdentitySource? = .none,
     query: Query? = .none, search: Search? = .none, candidates: [Candidate] = [], outcome: Outcome = .notEvaluated,
-    finalResult: MovieFolderActivityLogEvent.FolderResult? = .none, finalReason: FolderProcessingReason? = .none
+    finalResult: MovieFolderActivityLogEvent.FolderResult? = .none, finalReason: FolderProcessingReason? = .none,
+    previousAttempt: PreviousSearchAttempt? = .none
   ) {
     let boundedTitle = selectedTitle.map(BoundedMatchingText.init)
     self.selectedTitle = boundedTitle?.text
@@ -146,6 +193,7 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
     self.outcome = outcome
     self.finalResult = finalResult
     self.finalReason = finalReason
+    self.previousAttempt = previousAttempt
   }
 
   /// Replaces only observed request/response evidence without losing selected inputs.
@@ -155,7 +203,21 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
     Self(selectedTitle: selectedTitle, selectedYear: selectedYear, source: source,
       query: query ?? self.query, search: search ?? self.search, candidates: candidates ?? self.candidates,
       outcome: outcome ?? self.outcome, finalResult: finalResult ?? self.finalResult,
-      finalReason: finalReason ?? self.finalReason, selectedTitleWasOmitted: selectedTitleWasOmitted)
+      finalReason: finalReason ?? self.finalReason, selectedTitleWasOmitted: selectedTitleWasOmitted,
+      previousAttempt: previousAttempt)
+  }
+
+  /// Starts a folder-name search while retaining the completed empty search being replaced.
+  func beginningFolderFallback(title: String, year: Int?, source: MovieIdentitySource) -> Self {
+    guard previousAttempt == .none, let selectedTitle, let query, let search,
+      search.candidateCount == 0, !search.hasMorePages else { return self }
+
+    let previous = PreviousSearchAttempt(
+      selectedTitle: selectedTitle, selectedYear: selectedYear, source: self.source,
+      query: query, search: search)
+
+    return Self(selectedTitle: title, selectedYear: year, source: source, outcome: .notEvaluated,
+      finalResult: finalResult, finalReason: finalReason, previousAttempt: previous)
   }
 
   /// Rejects persisted evidence that bypasses the capture-time size and text bounds.
@@ -174,7 +236,9 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
     outcome = try fields.decode(Outcome.self, forKey: .outcome)
     finalResult = try fields.decodeIfPresent(MovieFolderActivityLogEvent.FolderResult.self, forKey: .finalResult)
     finalReason = try fields.decodeIfPresent(FolderProcessingReason.self, forKey: .finalReason)
-    let texts = [selectedTitle, query?.title].compactMap { $0 }
+    previousAttempt = try fields.decodeIfPresent(PreviousSearchAttempt.self, forKey: .previousAttempt)
+    let texts = [selectedTitle, query?.title, previousAttempt?.selectedTitle, previousAttempt?.query.title]
+      .compactMap { $0 }
       + candidates.flatMap { [$0.title, $0.originalTitle] }
 
     guard candidates.count <= 5, omittedCandidateCount >= 0,
@@ -189,7 +253,7 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
   private init(selectedTitle: String?, selectedYear: Int?, source: MovieIdentitySource?, query: Query?,
                search: Search?, candidates: [Candidate], outcome: Outcome,
                finalResult: MovieFolderActivityLogEvent.FolderResult?, finalReason: FolderProcessingReason?,
-               selectedTitleWasOmitted: Bool) {
+               selectedTitleWasOmitted: Bool, previousAttempt: PreviousSearchAttempt?) {
     self.selectedTitle = selectedTitle
     self.selectedYear = selectedYear
     self.source = source
@@ -201,6 +265,7 @@ nonisolated public struct MovieMatchingDiagnostics: Codable, Sendable, Equatable
     self.outcome = outcome
     self.finalResult = finalResult
     self.finalReason = finalReason
+    self.previousAttempt = previousAttempt
   }
 }
 

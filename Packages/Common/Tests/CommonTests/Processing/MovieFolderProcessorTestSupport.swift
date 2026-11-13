@@ -93,12 +93,16 @@ actor CountingProvider {
 
   /// The number of search requests observed by the test provider.
   private(set) var searchCount = Int.zero
+  /// Titles actually supplied to the movie-search endpoint.
+  private(set) var searchQueries = [String]()
   /// The IMDb identifiers requested by the processor.
   private(set) var imdbLookups: [String] = []
   /// The number of source-image downloads observed by the test provider.
   private(set) var posterCount = Int.zero
   /// An optional configured search response overriding the default movie fixture.
   private let search: MovieSearchResult?
+  /// Optional per-title responses for deterministic fallback search scenarios.
+  private let searchesByTitle: [String: MovieSearchResult]
   /// Configured IMDb responses, including explicit not-found results.
   private let imdbMovies: [String: MovieMetadata?]
   /// Primary release year supplied independently of unfiltered request parameters.
@@ -140,6 +144,7 @@ actor CountingProvider {
   ///   - failuresRemaining: How many initial provider requests must fail before normal responses resume.
   init(
     search: MovieSearchResult? = .none,
+    searchesByTitle: [String: MovieSearchResult] = [:],
     imdbMovies: [String: MovieMetadata?] = [:],
     primaryReleaseYear: Int = 2021,
     delaysSearch: Bool = false,
@@ -151,6 +156,7 @@ actor CountingProvider {
     failuresRemaining: Int = .max
   ) {
     self.search = search
+    self.searchesByTitle = searchesByTitle
     self.imdbMovies = imdbMovies
     self.primaryReleaseYear = primaryReleaseYear
     self.delaysSearch = delaysSearch
@@ -181,7 +187,9 @@ actor CountingProvider {
   func searchMoviePage(title: String, year: Int?, language: MovieSearchLanguage, page: Int) async throws
     -> MovieSearchPage {
     if page > 1 {
-      guard (2...6).contains(page), search?.hasMorePages == true else { throw MovieMetadataError.invalidQuery }
+      guard (2...6).contains(page), response(for: title)?.hasMorePages == true else {
+        throw MovieMetadataError.invalidQuery
+      }
 
       return MovieSearchPage(movies: [], page: page, totalPages: 6)
     }
@@ -197,6 +205,7 @@ actor CountingProvider {
     title: String, year: Int?, language: MovieSearchLanguage = .english
   ) async throws -> MovieSearchResult {
     searchCount += 1
+    searchQueries.append(title)
     if let nextSearchError {
       self.nextSearchError = .none
       throw nextSearchError
@@ -217,6 +226,8 @@ actor CountingProvider {
       }
     }
 
+    if let response = searchesByTitle[title] { return response }
+
     return search
       ?? MovieSearchResult(
         movies: [
@@ -224,6 +235,11 @@ actor CountingProvider {
             id: 42, title: title, originalTitle: title, releaseYear: primaryReleaseYear,
             posterPath: "/dune.jpg")
         ], hasMorePages: false)
+  }
+
+  /// Looks up the response that controls this query's page metadata.
+  private func response(for title: String) -> MovieSearchResult? {
+    searchesByTitle[title] ?? search
   }
 
   /// Returns the configured IMDb result or rejects an unconfigured lookup.
