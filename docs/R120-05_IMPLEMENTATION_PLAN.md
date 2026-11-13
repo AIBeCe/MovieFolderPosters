@@ -4,10 +4,9 @@ Issue: https://github.com/AIBeCe/MovieFolderPosters/issues/19
 
 ## Phase and authorization
 
-Work proceeds one approved implementation point at a time on
-`feature/remember-explicit-corrections`. The user approved point 1.12's completed implementation and
-authorized its commit. Acceptance Testing, Validation, and feature completion remain separate gates.
-Final feature documentation is updated on develop during feature completion.
+Implementation is integrated on `develop`. Acceptance Testing and formal Validation were not performed;
+the user instructed feature completion after the implementation commit. The focused Common checks below
+are implementation evidence, not formal Validation.
 
 ## Existing implementation
 
@@ -99,6 +98,15 @@ unchanged `MovieFolderProcessorMatchingAcceptanceTests.swift:130`. A broader unf
 stopped after stalling in unrelated keychain tests and exposed two unrelated history-configuration version
 expectation failures; it is not counted as passing evidence. No live collection was processed for these
 checks. Acceptance Testing and Validation remain separate authorization gates.
+
+## Feature completion
+
+- Feature branch `feature/remember-explicit-corrections` fast-forwarded into `develop` at `fc37878`.
+- The automatic folder-title retry and matching evidence are included in that implementation commit.
+- Focused Common verification passed 66 tests across three matching-related suites; details and limits are
+  recorded above. Formal Validation, SwiftLint, Acceptance Testing, full-app E2E and live Finder qualification
+  were not performed.
+- User requested feature completion; this documentation update is committed separately on `develop`.
 
 ## Remaining implementation scope
 
